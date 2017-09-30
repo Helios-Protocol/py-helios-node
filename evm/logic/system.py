@@ -2,6 +2,7 @@ from evm import constants
 from evm import mnemonics
 from evm.exceptions import (
     Halt,
+    Revert,
 )
 
 from evm.opcode import (
@@ -28,9 +29,20 @@ def return_op(computation):
     raise Halt('RETURN')
 
 
+def revert(computation):
+    start_position, size = computation.stack.pop(num_items=2, type_hint=constants.UINT256)
+
+    computation.extend_memory(start_position, size)
+
+    output = computation.memory.read(start_position, size)
+    computation.output = bytes(output)
+    raise Revert(bytes(output))
+
+
 def suicide(computation):
     beneficiary = force_bytes_to_address(computation.stack.pop(type_hint=constants.BYTES))
     _suicide(computation, beneficiary)
+    raise Halt('SUICIDE')
 
 
 def suicide_eip150(computation):

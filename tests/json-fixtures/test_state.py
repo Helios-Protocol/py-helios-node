@@ -22,6 +22,7 @@ from evm.vm.forks import (
     FrontierVM,
     HomesteadVM,
     SpuriousDragonVM,
+    ByzantiumVM,
 )
 from evm.rlp.headers import (
     BlockHeader,
@@ -130,7 +131,7 @@ def fixture_vm_class(fixture_data):
     elif fork_name == 'EIP158':
         return SpuriousDragonVMForTesting
     elif fork_name == 'Byzantium':
-        pytest.skip("Byzantium VM has not been implemented")
+        return ByzantiumVM
     elif fork_name == 'Constantinople':
         pytest.skip("Constantinople VM has not been implemented")
     elif fork_name == 'Metropolis':

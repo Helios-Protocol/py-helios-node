@@ -23,6 +23,7 @@ from evm.vm.forks import (
     FrontierVM,
     HomesteadVM as BaseHomesteadVM,
     SpuriousDragonVM,
+    ByzantiumVM,
 )
 from evm.rlp.headers import (
     BlockHeader,
@@ -111,7 +112,10 @@ def chain_vm_configuration(fixture_data, fixture):
             (0, HomesteadVM),
         )
     elif 'TransitionTests/bcEIP158ToByzantium' in fixture_path:
-        pytest.skip('Byzantium VM rules not yet supported')
+        return (
+            (0, SpuriousDragonVM),
+            (5, ByzantiumVM),
+        )
     elif '/Homestead/' in fixture_path or fixture_key.endswith('Homestead'):
         return (
             (0, HomesteadVM),
@@ -124,12 +128,14 @@ def chain_vm_configuration(fixture_data, fixture):
         return (
             (0, SpuriousDragonVM),
         )
-    elif fixture_key.endswith('Metropolis'):
-        pytest.skip('Metropolis VM rules not yet supported')
     elif fixture_key.endswith('Byzantium'):
-        pytest.skip('Byzantium VM rules not yet supported')
+        return (
+            (0, ByzantiumVM),
+        )
     elif fixture_key.endswith('Constantinople'):
         pytest.skip('Constantinople VM rules not yet supported')
+    elif fixture_key.endswith('Metropolis'):
+        pytest.skip('Metropolis VM rules not yet supported')
     elif fixture_key.endswith('Frontier') or fixture['network'] == 'Frontier':
         return MAINNET_VM_CONFIGURATION
     else:

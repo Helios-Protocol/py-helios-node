@@ -42,6 +42,7 @@ class BaseCall(Opcode):
             memory_output_start_position,
             memory_output_size,
             should_transfer_value,
+            is_static,
         ) = self.get_call_params(computation)
 
         computation.extend_memory(memory_input_start_position, memory_input_size)
@@ -95,6 +96,7 @@ class BaseCall(Opcode):
                 'code': code,
                 'code_address': code_address,
                 'should_transfer_value': should_transfer_value,
+                'is_static': is_static,
             }
             if sender is not None:
                 child_msg_kwargs['sender'] = sender
@@ -111,6 +113,9 @@ class BaseCall(Opcode):
             if child_computation.error:
                 computation.stack.push(0)
             else:
+                computation.stack.push(1)
+
+            if not child_computation.error or not child_computation.error.zeros_return_data:
                 actual_output_size = min(memory_output_size, len(child_computation.output))
                 computation.gas_meter.return_gas(child_computation.gas_meter.gas_remaining)
                 computation.memory.write(
@@ -118,7 +123,6 @@ class BaseCall(Opcode):
                     actual_output_size,
                     child_computation.output[:actual_output_size],
                 )
-                computation.stack.push(1)
 
 
 class Call(BaseCall):
@@ -152,6 +156,7 @@ class Call(BaseCall):
             memory_output_start_position,
             memory_output_size,
             True,  # should_transfer_value,
+            computation.msg.is_static,  # is_static
         )
 
 
@@ -185,6 +190,7 @@ class CallCode(BaseCall):
             memory_output_start_position,
             memory_output_size,
             True,  # should_transfer_value,
+            computation.msg.is_static,  # is_static
         )
 
 
@@ -221,6 +227,34 @@ class DelegateCall(BaseCall):
             memory_output_start_position,
             memory_output_size,
             False,  # should_transfer_value,
+            computation.msg.is_static,  # is_static
+        )
+
+
+class StaticCall(BaseCall):
+    def get_call_params(self, computation):
+        gas = computation.stack.pop(type_hint=constants.UINT256)
+        to = force_bytes_to_address(computation.stack.pop(type_hint=constants.BYTES))
+
+        (
+            memory_input_start_position,
+            memory_input_size,
+            memory_output_start_position,
+            memory_output_size,
+        ) = computation.stack.pop(num_items=5, type_hint=constants.UINT256)
+
+        return (
+            gas,
+            0,  # value
+            to,
+            None,  # sender
+            None,  # code_address
+            memory_input_start_position,
+            memory_input_size,
+            memory_output_start_position,
+            memory_output_size,
+            False,  # should_transfer_value,
+            True,  # is_static
         )
 
 

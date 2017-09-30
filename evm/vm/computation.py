@@ -63,7 +63,7 @@ class Computation(object):
     children = None
 
     _output = b''
-    error = None
+    _error = None
 
     logs = None
     accounts_to_delete = None
@@ -162,14 +162,23 @@ class Computation(object):
     #
     @property
     def output(self):
-        if self.error:
+        if self.error and self.error.zeros_return_data:
             return b''
         else:
             return self._output
 
     @output.setter
     def output(self, value):
+        validate_is_bytes(value)
         self._output = value
+
+    @property
+    def error(self):
+        return self._error
+
+    @error.setter
+    def error(self, value):
+        self._error = value
 
     def register_account_for_deletion(self, beneficiary):
         validate_canonical_address(beneficiary, title="Suicide beneficiary address")
@@ -248,38 +257,37 @@ class Computation(object):
 
     def __exit__(self, exc_type, exc_value, traceback):
         if exc_value and isinstance(exc_value, VMError):
-            if self.logger is not None:
-                self.logger.debug(
-                    "COMPUTATION ERROR: gas: %s | from: %s | to: %s | value: %s | depth: %s | error: %s",  # noqa: E501
-                    self.msg.gas,
-                    encode_hex(self.msg.sender),
-                    encode_hex(self.msg.to),
-                    self.msg.value,
-                    self.msg.depth,
-                    exc_value,
-                )
-            self.error = exc_value
-            self.gas_meter.consume_gas(
-                self.gas_meter.gas_remaining,
-                reason=" ".join((
-                    "Zeroing gas due to VM Exception:",
-                    str(exc_value),
-                )),
+            self.logger.debug(
+                "COMPUTATION ERROR: gas: %s | from: %s | to: %s | value: %s | depth: %s | error: %s",  # noqa: E501
+                self.msg.gas,
+                encode_hex(self.msg.sender),
+                encode_hex(self.msg.to),
+                self.msg.value,
+                self.msg.depth,
+                exc_value,
             )
+            self.error = exc_value
+            if self.error.burns_gas:
+                self.gas_meter.consume_gas(
+                    self.gas_meter.gas_remaining,
+                    reason=" ".join((
+                        "Zeroing gas due to VM Exception:",
+                        str(exc_value),
+                    )),
+                )
 
             # suppress VM exceptions
             return True
         elif exc_type is None:
-            if self.logger is not None:
-                self.logger.debug(
-                    (
-                        "COMPUTATION SUCCESS: from: %s | to: %s | value: %s | depth: %s | "
-                        "gas-used: %s | gas-remaining: %s"
-                    ),
-                    encode_hex(self.msg.sender),
-                    encode_hex(self.msg.to),
-                    self.msg.value,
-                    self.msg.depth,
-                    self.msg.gas - self.gas_meter.gas_remaining,
-                    self.gas_meter.gas_remaining,
-                )
+            self.logger.debug(
+                (
+                    "COMPUTATION SUCCESS: from: %s | to: %s | value: %s | depth: %s | "
+                    "gas-used: %s | gas-remaining: %s"
+                ),
+                encode_hex(self.msg.sender),
+                encode_hex(self.msg.to),
+                self.msg.value,
+                self.msg.depth,
+                self.msg.gas - self.gas_meter.gas_remaining,
+                self.gas_meter.gas_remaining,
+            )
