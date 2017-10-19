@@ -1,19 +1,34 @@
 import copy
+import functools
 
 from cytoolz import merge
 
 from evm import constants
+from evm.exceptions import (
+    WriteProtection,
+)
 from evm import opcode_values
 from evm import mnemonics
 
 from evm.opcode import as_opcode
 
 from evm.logic import (
-    system,
     call,
+    logging,
+    storage,
+    system,
 )
 
 from evm.vm.forks.spurious_dragon.opcodes import SPURIOUS_DRAGON_OPCODES
+
+
+def no_static(opcode_fn):
+    @functools.wraps(opcode_fn)
+    def inner(computation):
+        if computation.msg.is_static:
+            raise WriteProtection("Cannot modify state while inside of a STATICCALL context")
+        return opcode_fn(computation)
+    return inner
 
 
 UPDATED_OPCODES = {
@@ -25,7 +40,60 @@ UPDATED_OPCODES = {
     opcode_values.STATICCALL: call.StaticCall.configure(
         name='opcode:STATICCALL',
         mnemonic=mnemonics.STATICCALL,
-        gas_cost=constants.GAS_CALL,
+        gas_cost=constants.GAS_CALL_EIP150,
+    )(),
+    #
+    # Logging
+    #
+    opcode_values.LOG0: as_opcode(
+        logic_fn=no_static(logging.log0),
+        mnemonic=mnemonics.LOG0,
+        gas_cost=constants.GAS_LOG,
+    ),
+    opcode_values.LOG1: as_opcode(
+        logic_fn=no_static(logging.log1),
+        mnemonic=mnemonics.LOG1,
+        gas_cost=constants.GAS_LOG,
+    ),
+    opcode_values.LOG2: as_opcode(
+        logic_fn=no_static(logging.log2),
+        mnemonic=mnemonics.LOG2,
+        gas_cost=constants.GAS_LOG,
+    ),
+    opcode_values.LOG3: as_opcode(
+        logic_fn=no_static(logging.log3),
+        mnemonic=mnemonics.LOG3,
+        gas_cost=constants.GAS_LOG,
+    ),
+    opcode_values.LOG4: as_opcode(
+        logic_fn=no_static(logging.log4),
+        mnemonic=mnemonics.LOG4,
+        gas_cost=constants.GAS_LOG,
+    ),
+    #
+    # Create
+    #
+    opcode_values.CREATE: system.CreateByzantium.configure(
+        name='opcode:CREATE',
+        mnemonic=mnemonics.CREATE,
+        gas_cost=constants.GAS_CREATE,
+    )(),
+    # TODO: CREATE2
+    #
+    # Storage
+    #
+    opcode_values.SSTORE: as_opcode(
+        logic_fn=no_static(storage.sstore),
+        mnemonic=mnemonics.SSTORE,
+        gas_cost=constants.GAS_NULL,
+    ),
+    #
+    # Self Destruct
+    #
+    opcode_values.SSTORE: as_opcode(
+        logic_fn=no_static(system.selfdestruct_eip161),
+        mnemonic=mnemonics.SSTORE,
+        gas_cost=constants.GAS_NULL,
     ),
 }
 

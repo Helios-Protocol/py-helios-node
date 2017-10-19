@@ -231,7 +231,7 @@ class DelegateCall(BaseCall):
         )
 
 
-class StaticCall(BaseCall):
+class StaticCall(Call):
     def get_call_params(self, computation):
         gas = computation.stack.pop(type_hint=constants.UINT256)
         to = force_bytes_to_address(computation.stack.pop(type_hint=constants.BYTES))
@@ -241,7 +241,7 @@ class StaticCall(BaseCall):
             memory_input_size,
             memory_output_start_position,
             memory_output_size,
-        ) = computation.stack.pop(num_items=5, type_hint=constants.UINT256)
+        ) = computation.stack.pop(num_items=4, type_hint=constants.UINT256)
 
         return (
             gas,

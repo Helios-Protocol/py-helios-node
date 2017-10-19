@@ -3,6 +3,7 @@ from evm import mnemonics
 from evm.exceptions import (
     Halt,
     Revert,
+    WriteProtection,
 )
 
 from evm.opcode import (
@@ -39,24 +40,24 @@ def revert(computation):
     raise Revert(bytes(output))
 
 
-def suicide(computation):
+def selfdestruct(computation):
     beneficiary = force_bytes_to_address(computation.stack.pop(type_hint=constants.BYTES))
-    _suicide(computation, beneficiary)
-    raise Halt('SUICIDE')
+    _selfdestruct(computation, beneficiary)
+    raise Halt('SELFDESTRUCT')
 
 
-def suicide_eip150(computation):
+def selfdestruct_eip150(computation):
     beneficiary = force_bytes_to_address(computation.stack.pop(type_hint=constants.BYTES))
     with computation.vm.state_db(read_only=True) as state_db:
         if not state_db.account_exists(beneficiary):
             computation.gas_meter.consume_gas(
-                constants.GAS_SUICIDE_NEWACCOUNT,
-                reason=mnemonics.SUICIDE,
+                constants.GAS_SELFDESTRUCT_NEWACCOUNT,
+                reason=mnemonics.SELFDESTRUCT,
             )
-    _suicide(computation, beneficiary)
+    _selfdestruct(computation, beneficiary)
 
 
-def suicide_eip161(computation):
+def selfdestruct_eip161(computation):
     beneficiary = force_bytes_to_address(computation.stack.pop(type_hint=constants.BYTES))
     with computation.vm.state_db(read_only=True) as state_db:
         is_dead = (
@@ -65,13 +66,13 @@ def suicide_eip161(computation):
         )
         if is_dead and state_db.get_balance(computation.msg.storage_address):
             computation.gas_meter.consume_gas(
-                constants.GAS_SUICIDE_NEWACCOUNT,
-                reason=mnemonics.SUICIDE,
+                constants.GAS_SELFDESTRUCT_NEWACCOUNT,
+                reason=mnemonics.SELFDESTRUCT,
             )
-    _suicide(computation, beneficiary)
+    _selfdestruct(computation, beneficiary)
 
 
-def _suicide(computation, beneficiary):
+def _selfdestruct(computation, beneficiary):
     with computation.vm.state_db() as state_db:
         local_balance = state_db.get_balance(computation.msg.storage_address)
         beneficiary_balance = state_db.get_balance(beneficiary)
@@ -84,7 +85,7 @@ def _suicide(computation, beneficiary):
         state_db.set_balance(computation.msg.storage_address, 0)
 
     computation.vm.logger.debug(
-        "SUICIDE: %s (%s) -> %s",
+        "SELFDESTRUCT: %s (%s) -> %s",
         encode_hex(computation.msg.storage_address),
         local_balance,
         encode_hex(beneficiary),
@@ -92,7 +93,7 @@ def _suicide(computation, beneficiary):
 
     # 3rd: Register the account to be deleted
     computation.register_account_for_deletion(beneficiary)
-    raise Halt('SUICIDE')
+    raise Halt('SELFDESTRUCT')
 
 
 class Create(Opcode):
@@ -166,3 +167,10 @@ class Create(Opcode):
 class CreateEIP150(Create):
     def max_child_gas_modifier(self, gas):
         return max_child_gas_eip150(gas)
+
+
+class CreateByzantium(CreateEIP150):
+    def __call__(self, computation):
+        if computation.msg.is_static:
+            raise WriteProtection("Cannot modify state while inside of a STATICCALL context")
+        return super(CreateEIP150, self).__call__(computation)

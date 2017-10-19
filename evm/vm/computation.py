@@ -8,6 +8,9 @@ from evm.constants import (
 from evm.exceptions import (
     VMError,
 )
+from evm.logic.invalid import (
+    InvalidOpcode,
+)
 from evm.validation import (
     validate_canonical_address,
     validate_uint256,
@@ -158,7 +161,7 @@ class Computation(object):
             self.memory.extend(start_position, size)
 
     #
-    # Runtime Operations
+    # Computed properties.
     #
     @property
     def output(self):
@@ -180,8 +183,17 @@ class Computation(object):
     def error(self, value):
         self._error = value
 
+    #
+    # Runtime operations
+    #
+    def get_opcode_fn(self, opcode):
+        try:
+            return self.vm.opcodes[opcode]
+        except KeyError:
+            return InvalidOpcode(opcode)
+
     def register_account_for_deletion(self, beneficiary):
-        validate_canonical_address(beneficiary, title="Suicide beneficiary address")
+        validate_canonical_address(beneficiary, title="Self destruct beneficiary address")
 
         if self.msg.storage_address in self.accounts_to_delete:
             raise ValueError(
@@ -245,12 +257,16 @@ class Computation(object):
     def __enter__(self):
         if self.logger is not None:
             self.logger.debug(
-                "COMPUTATION STARTING: gas: %s | from: %s | to: %s | value: %s | depth %s",
+                (
+                    "COMPUTATION STARTING: gas: %s | from: %s | to: %s | value: %s "
+                    "| depth %s | static: %s"
+                ),
                 self.msg.gas,
                 encode_hex(self.msg.sender),
                 encode_hex(self.msg.to),
                 self.msg.value,
                 self.msg.depth,
+                "y" if self.msg.is_static else "n",
             )
 
         return self
@@ -258,12 +274,16 @@ class Computation(object):
     def __exit__(self, exc_type, exc_value, traceback):
         if exc_value and isinstance(exc_value, VMError):
             self.logger.debug(
-                "COMPUTATION ERROR: gas: %s | from: %s | to: %s | value: %s | depth: %s | error: %s",  # noqa: E501
+                (
+                    "COMPUTATION ERROR: gas: %s | from: %s | to: %s | value: %s | "
+                    "depth: %s | static: %s | error: %s"
+                ),
                 self.msg.gas,
                 encode_hex(self.msg.sender),
                 encode_hex(self.msg.to),
                 self.msg.value,
                 self.msg.depth,
+                "y" if self.msg.is_static else "n",
                 exc_value,
             )
             self.error = exc_value
@@ -281,13 +301,14 @@ class Computation(object):
         elif exc_type is None:
             self.logger.debug(
                 (
-                    "COMPUTATION SUCCESS: from: %s | to: %s | value: %s | depth: %s | "
-                    "gas-used: %s | gas-remaining: %s"
+                    "COMPUTATION SUCCESS: from: %s | to: %s | value: %s | "
+                    "depth: %s | static: %s | gas-used: %s | gas-remaining: %s"
                 ),
                 encode_hex(self.msg.sender),
                 encode_hex(self.msg.to),
                 self.msg.value,
                 self.msg.depth,
+                "y" if self.msg.is_static else "n",
                 self.msg.gas - self.gas_meter.gas_remaining,
                 self.gas_meter.gas_remaining,
             )

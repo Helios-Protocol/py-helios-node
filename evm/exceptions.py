@@ -118,3 +118,11 @@ class Revert(VMError):
     """
     burns_gas = False
     zeros_return_data = False
+
+
+class WriteProtection(VMError):
+    """
+    Error raised if an attempt to modify the state database is made while
+    operating inside of a STATICCALL context.
+    """
+    pass
