@@ -37,9 +37,17 @@ UPDATED_OPCODES = {
         mnemonic=mnemonics.REVERT,
         gas_cost=constants.GAS_ZERO,
     ),
+    #
+    # Call
+    #
     opcode_values.STATICCALL: call.StaticCall.configure(
         name='opcode:STATICCALL',
         mnemonic=mnemonics.STATICCALL,
+        gas_cost=constants.GAS_CALL_EIP150,
+    )(),
+    opcode_values.CALL: call.CallByzantium.configure(
+        name='opcode:CALL',
+        mnemonic=mnemonics.CALL,
         gas_cost=constants.GAS_CALL_EIP150,
     )(),
     #

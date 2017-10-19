@@ -2,6 +2,7 @@ from evm import constants
 
 from evm.exceptions import (
     OutOfGas,
+    WriteProtection,
 )
 from evm.opcode import (
     Opcode,
@@ -229,35 +230,6 @@ class DelegateCall(BaseCall):
             False,  # should_transfer_value,
             computation.msg.is_static,  # is_static
         )
-
-
-class StaticCall(Call):
-    def get_call_params(self, computation):
-        gas = computation.stack.pop(type_hint=constants.UINT256)
-        to = force_bytes_to_address(computation.stack.pop(type_hint=constants.BYTES))
-
-        (
-            memory_input_start_position,
-            memory_input_size,
-            memory_output_start_position,
-            memory_output_size,
-        ) = computation.stack.pop(num_items=4, type_hint=constants.UINT256)
-
-        return (
-            gas,
-            0,  # value
-            to,
-            None,  # sender
-            None,  # code_address
-            memory_input_start_position,
-            memory_input_size,
-            memory_output_start_position,
-            memory_output_size,
-            False,  # should_transfer_value,
-            True,  # is_static
-        )
-
-
 #
 # EIP150
 #
@@ -319,3 +291,44 @@ class CallEIP161(CallEIP150):
         transfer_gas_fee = constants.GAS_CALLVALUE if value else 0
         create_gas_fee = constants.GAS_NEWACCOUNT if (account_is_dead and value) else 0
         return transfer_gas_fee + create_gas_fee
+
+
+#
+# Byzantium
+#
+class StaticCall(CallEIP161):
+    def get_call_params(self, computation):
+        gas = computation.stack.pop(type_hint=constants.UINT256)
+        to = force_bytes_to_address(computation.stack.pop(type_hint=constants.BYTES))
+
+        (
+            memory_input_start_position,
+            memory_input_size,
+            memory_output_start_position,
+            memory_output_size,
+        ) = computation.stack.pop(num_items=4, type_hint=constants.UINT256)
+
+        return (
+            gas,
+            0,  # value
+            to,
+            None,  # sender
+            None,  # code_address
+            memory_input_start_position,
+            memory_input_size,
+            memory_output_start_position,
+            memory_output_size,
+            False,  # should_transfer_value,
+            True,  # is_static
+        )
+
+
+class CallByzantium(CallEIP161):
+    def get_call_params(self, computation):
+        call_params = super(CallByzantium, self).get_call_params(computation)
+        value = call_params[1]
+        if computation.msg.is_static and value != 0:
+            raise WriteProtection("Cannot modify state while inside of a STATICCALL context")
+        return call_params
+
+
