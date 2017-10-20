@@ -28,18 +28,28 @@ def _compute_adjusted_exponent_length(exponent_bytes):
         )
 
 
-def _compute_complexity(modulus_length, base_length):
-    complexity_anchor = max(modulus_length, base_length)
-
+def _compute_complexity(length):
     # TODO: extract to function
-    if complexity_anchor <= 64:
-        return complexity_anchor ** 2
-    elif complexity_anchor <= 1024:
+    if length <= 64:
+        return length ** 2
+    elif length <= 1024:
         return (
-            complexity_anchor ** 2 // 4 + 96 * complexity_anchor - 3072
+            length ** 2 // 4 + 96 * length - 3072
         )
     else:
-        return 2 ** 2 // 16 + 480 * complexity_anchor - 199680
+        return 2 ** 2 // 16 + 480 * length - 199680
+
+
+def _compute_modexp_gas_fee(exponent_bytes, base_length, modulus_length):
+    adjusted_exponent_length = _compute_adjusted_exponent_length(exponent_bytes)
+    complexity = _compute_complexity(max(modulus_length, base_length))
+
+    gas_fee = (
+        complexity *
+        max(adjusted_exponent_length, 1) //
+        constants.GAS_MOD_EXP_QUADRATIC_DENOMINATOR
+    )
+    return gas_fee
 
 
 def precompile_modexp(computation):
@@ -78,13 +88,10 @@ def precompile_modexp(computation):
     modulus = big_endian_to_int(modulus_bytes)
 
     # compute gas cost
-    adjusted_exponent_length = _compute_adjusted_exponent_length(exponent_bytes)
-    complexity = _compute_complexity(modulus_length, base_length)
-
-    gas_fee = (
-        complexity *
-        max(adjusted_exponent_length, 1) //
-        constants.GAS_MOD_EXP_QUADRATIC_DENOMINATOR
+    gas_fee = _compute_modexp_gas_fee(
+        exponent_bytes=exponent_bytes,
+        base_length=base_length,
+        modulus_length=modulus_length,
     )
     computation.gas_meter.consume_gas(gas_fee, reason='MODEXP Precompile')
 
