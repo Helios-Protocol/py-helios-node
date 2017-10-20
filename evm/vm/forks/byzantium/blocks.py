@@ -4,9 +4,16 @@ from rlp.sedes import (
 from evm.rlp.headers import (
     BlockHeader,
 )
+from evm.rlp.receipts import (
+    Receipt,
+)
+from evm.utils.padding import (
+    pad32,
+)
 from evm.vm.forks.spurious_dragon.blocks import (
     SpuriousDragonBlock,
 )
+
 from .transactions import (
     ByzantiumTransaction,
 )
@@ -23,7 +30,7 @@ class ByzantiumBlock(SpuriousDragonBlock):
     def make_receipt(self, transaction, computation):
         old_receipt = super(ByzantiumBlock, self).make_receipt(transaction, computation)
         receipt = Receipt(
-            state_root=b'\x00' if computation.error else b'\x01',
+            state_root=pad32(b'\x00' if computation.error else b'\x01'),
             gas_used=old_receipt.gas_used,
             logs=old_receipt.logs,
         )
