@@ -1,5 +1,3 @@
-import hashlib
-
 from eth_keys import keys
 from eth_keys.exceptions import (
     BadSignature,
@@ -17,27 +15,11 @@ from evm.validation import (
 
 from evm.utils.numeric import (
     big_endian_to_int,
-    ceil32,
-    get_highest_bit_index,
-    int_to_big_endian,
 )
 from evm.utils.padding import (
     pad32,
     pad32r,
-    zpad_right,
-    zpad_left,
 )
-
-
-def precompiled_sha256(computation):
-    word_count = ceil32(len(computation.msg.data)) // 32
-    gas_fee = constants.GAS_SHA256 + word_count * constants.GAS_SHA256WORD
-
-    computation.gas_meter.consume_gas(gas_fee, reason="SHA256 Precompile")
-    input_bytes = computation.msg.data
-    hash = hashlib.sha256(input_bytes).digest()
-    computation.output = hash
-    return computation
 
 
 def precompile_ecrecover(computation):
