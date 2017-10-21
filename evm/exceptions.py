@@ -126,3 +126,11 @@ class WriteProtection(VMError):
     operating inside of a STATICCALL context.
     """
     pass
+
+
+class OutOfBoundsRead(VMError):
+    """
+    Error raised to indicate an attempt was made to read data beyond then
+    boundaries of the buffer (such as with RETURNDATACOPY)
+    """
+    pass

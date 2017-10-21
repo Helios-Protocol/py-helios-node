@@ -14,6 +14,7 @@ from evm.opcode import as_opcode
 
 from evm.logic import (
     call,
+    context,
     logging,
     storage,
     system,
@@ -36,6 +37,19 @@ UPDATED_OPCODES = {
         logic_fn=system.revert,
         mnemonic=mnemonics.REVERT,
         gas_cost=constants.GAS_ZERO,
+    ),
+    #
+    # Context
+    #
+    opcode_values.RETURNDATASIZE: as_opcode(
+        logic_fn=context.returndatasize,
+        mnemonic=mnemonics.RETURNDATASIZE,
+        gas_cost=constants.GAS_BASE,
+    ),
+    opcode_values.RETURNDATACOPY: as_opcode(
+        logic_fn=context.returndatacopy,
+        mnemonic=mnemonics.RETURNDATACOPY,
+        gas_cost=constants.GAS_VERYLOW,
     ),
     #
     # Call

@@ -183,6 +183,17 @@ class Computation(object):
     def error(self, value):
         self._error = value
 
+    @property
+    def return_data(self):
+        if not self.children:
+            return b''
+        last_child = self.children[-1]
+        if last_child.error:
+            # TODO: handle CREATE and returning error text.
+            return b''
+        else:
+            return last_child.output
+
     #
     # Runtime operations
     #
