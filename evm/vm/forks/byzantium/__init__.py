@@ -10,6 +10,7 @@ from evm.utils.address import (
 from ..frontier import FRONTIER_PRECOMPILES
 from ..spurious_dragon import SpuriousDragonVM
 
+from .headers import create_byzantium_header_from_parent
 from .opcodes import BYZANTIUM_OPCODES
 from .blocks import ByzantiumBlock
 
@@ -30,4 +31,6 @@ ByzantiumVM = SpuriousDragonVM.configure(
     opcodes=BYZANTIUM_OPCODES,
     # RLP
     _block_class=ByzantiumBlock,
+    # Methods
+    create_header_from_parent=staticmethod(create_byzantium_header_from_parent),
 )
