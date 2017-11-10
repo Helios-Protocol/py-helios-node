@@ -10,7 +10,7 @@ from evm.exceptions import (
     StackDepthLimit,
     ContractCreationCollision,
 )
-from evm import precompile
+from evm import precompiles
 
 from evm.vm.message import (
     Message,
@@ -40,10 +40,10 @@ from .headers import (
 
 
 FRONTIER_PRECOMPILES = {
-    force_bytes_to_address(b'\x01'): precompile.precompile_ecrecover,
-    force_bytes_to_address(b'\x02'): precompile.precompiled_sha256,
-    force_bytes_to_address(b'\x03'): precompile.precompile_ripemd160,
-    force_bytes_to_address(b'\x04'): precompile.precompile_identity,
+    force_bytes_to_address(b'\x01'): precompiles.precompile_ecrecover,
+    force_bytes_to_address(b'\x02'): precompiles.precompile_sha256,
+    force_bytes_to_address(b'\x03'): precompiles.precompile_ripemd160,
+    force_bytes_to_address(b'\x04'): precompiles.precompile_identity,
 }
 
 

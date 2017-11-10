@@ -2,9 +2,13 @@ from cytoolz import (
     merge,
 )
 
+from evm import constants
 from evm import precompiles
 from evm.utils.address import (
     force_bytes_to_address,
+)
+from evm.validation import (
+    validate_lte,
 )
 
 from ..frontier import FRONTIER_PRECOMPILES
@@ -23,6 +27,16 @@ BYZANTIUM_PRECOMPILES = merge(
 )
 
 
+def _byzantium_get_block_reward(block_number):
+    return constants.EIP649_BLOCK_REWARD
+
+
+def _byzantium_get_uncle_reward(block_number, uncle):
+    validate_lte(uncle.block_number, constants.MAX_UNCLE_DEPTH)
+    block_number_delta = block_number - uncle.block_number
+    return (8 - block_number_delta) * constants.EIP649_BLOCK_REWARD // 8
+
+
 ByzantiumVM = SpuriousDragonVM.configure(
     name='ByzantiumVM',
     # precompiles
@@ -32,5 +46,7 @@ ByzantiumVM = SpuriousDragonVM.configure(
     # RLP
     _block_class=ByzantiumBlock,
     # Methods
-    create_header_from_parent=staticmethod(create_byzantium_header_from_parent),
+    create_header_from_parent=classmethod(create_byzantium_header_from_parent),
+    get_block_reward=staticmethod(_byzantium_get_block_reward),
+    get_uncle_reward=staticmethod(_byzantium_get_uncle_reward),
 )

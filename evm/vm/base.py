@@ -7,7 +7,6 @@ import logging
 
 from evm.constants import (
     BLOCK_REWARD,
-    NEPHEW_REWARD,
     UNCLE_DEPTH_PENALTY_FACTOR,
 )
 from evm.exceptions import (
@@ -32,18 +31,19 @@ class VM(object):
     individual VM classes for each fork of the protocol rules within that
     network.
     """
+    chaindb = None
     opcodes = None
     _block_class = None
     _precompiles = None
 
-    def __init__(self, header, chaindb):
-        if chaindb is None:
+    def __init__(self, header, chaindb=None):
+        if chaindb is None and self.chaindb is None:
             raise ValueError("VM classes must have a `db`")
-
-        self.chaindb = chaindb
+        elif chaindb is not None:
+            self.chaindb = chaindb
 
         block_class = self.get_block_class()
-        self.block = block_class.from_header(header=header, chaindb=chaindb)
+        self.block = block_class.from_header(header=header, chaindb=self.chaindb)
 
     @classmethod
     def configure(cls,
@@ -156,7 +156,12 @@ class VM(object):
         return BLOCK_REWARD
 
     def get_nephew_reward(self, block_number):
-        return NEPHEW_REWARD
+        return self.get_block_reward(block_number) // 32
+
+    def get_uncle_reward(self, block_number, uncle):
+        return BLOCK_REWARD * (
+            UNCLE_DEPTH_PENALTY_FACTOR + uncle.block_number - block_number
+        ) // UNCLE_DEPTH_PENALTY_FACTOR
 
     def import_block(self, block):
         self.configure_header(
@@ -201,9 +206,7 @@ class VM(object):
             )
 
             for uncle in block.uncles:
-                uncle_reward = BLOCK_REWARD * (
-                    UNCLE_DEPTH_PENALTY_FACTOR + uncle.block_number - block.number
-                ) // UNCLE_DEPTH_PENALTY_FACTOR
+                uncle_reward = self.get_uncle_reward(block.number, uncle)
                 state_db.delta_balance(uncle.coinbase, uncle_reward)
                 self.logger.debug(
                     "UNCLE REWARD REWARD: %s -> %s",

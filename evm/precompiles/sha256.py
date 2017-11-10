@@ -7,7 +7,7 @@ from evm.utils.numeric import (
 )
 
 
-def precompiled_sha256(computation):
+def precompile_sha256(computation):
     word_count = ceil32(len(computation.msg.data)) // 32
     gas_fee = constants.GAS_SHA256 + word_count * constants.GAS_SHA256WORD
 
