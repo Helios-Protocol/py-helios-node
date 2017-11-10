@@ -48,7 +48,6 @@ def compute_byzantium_difficulty(parent_header, timestamp):
     if num_bomb_periods >= 0:
         return max(difficulty + 2**num_bomb_periods, DIFFICULTY_MINIMUM)
     else:
-        print(locals())
         return difficulty
 
 
