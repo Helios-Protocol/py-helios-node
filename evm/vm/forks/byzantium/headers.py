@@ -1,4 +1,5 @@
 from evm.constants import (
+    EMPTY_UNCLE_HASH,
     DIFFICULTY_ADJUSTMENT_DENOMINATOR,
     DIFFICULTY_MINIMUM,
     BOMB_EXPONENTIAL_PERIOD,
@@ -7,36 +8,36 @@ from evm.constants import (
 )
 from evm.validation import (
     validate_gt,
+    validate_header_params_for_configuration,
 )
 from evm.vm.forks.frontier.headers import (
     create_frontier_header_from_parent,
 )
 
 
-def compute_byzantium_difficulty(parent_header, num_uncles, timestamp):
+def compute_byzantium_difficulty(parent_header, timestamp):
     """
     https://github.com/ethereum/EIPs/issues/100
     TODO: figure out how to know about uncles in this context...
     """
-    parent_tstamp = parent_header.timestamp
-    validate_gt(timestamp, parent_tstamp, title="Header.timestamp")
-    offset = parent_header.difficulty // DIFFICULTY_ADJUSTMENT_DENOMINATOR
+    parent_timestamp = parent_header.timestamp
+    validate_gt(timestamp, parent_timestamp, title="Header.timestamp")
 
-    sign = max(
+    parent_difficulty = parent_header.difficulty
+    offset = parent_difficulty // DIFFICULTY_ADJUSTMENT_DENOMINATOR
+
+    has_uncles = parent_header.uncles_hash != EMPTY_UNCLE_HASH
+    adj_factor = max(
         (
-            (2 if num_uncles else 1) -
-            (
-                (timestamp - parent_header.timestamp) //
-                BYZANTIUM_DIFFICULTY_ADJUSTMENT_CUTOFF
-            )
+            (2 if has_uncles else 1) -
+            ((timestamp - parent_timestamp) // BYZANTIUM_DIFFICULTY_ADJUSTMENT_CUTOFF)
         ),
         -99,
     )
-
-    difficulty = int(max(
-        parent_header.difficulty + offset * sign,
+    difficulty = max(
+        parent_difficulty + offset * adj_factor,
         min(parent_header.difficulty, DIFFICULTY_MINIMUM)
-    ))
+    )
     num_bomb_periods = (
         max(
             0,
@@ -47,17 +48,32 @@ def compute_byzantium_difficulty(parent_header, num_uncles, timestamp):
     if num_bomb_periods >= 0:
         return max(difficulty + 2**num_bomb_periods, DIFFICULTY_MINIMUM)
     else:
+        print(locals())
         return difficulty
 
 
-def create_byzantium_header_from_parent(vm_class, parent_header, **header_params):
+def create_byzantium_header_from_parent(parent_header, **header_params):
     if 'difficulty' not in header_params:
         header_params.setdefault('timestamp', parent_header.timestamp + 1)
 
-        parent_uncles = vm_class.chaindb.get_block_uncles(parent_header.uncles_hash)
         header_params['difficulty'] = compute_byzantium_difficulty(
             parent_header=parent_header,
-            num_uncles=len(parent_uncles),
             timestamp=header_params['timestamp'],
         )
     return create_frontier_header_from_parent(parent_header, **header_params)
+
+
+def configure_byzantium_header(vm, **header_params):
+    validate_header_params_for_configuration(header_params)
+
+    for field_name, value in header_params.items():
+        setattr(vm.block.header, field_name, value)
+
+    if 'timestamp' in header_params and vm.block.header.block_number > 0:
+        parent_header = vm.block.get_parent_header()
+        vm.block.header.difficulty = compute_byzantium_difficulty(
+            parent_header,
+            header_params['timestamp'],
+        )
+
+    return vm.block.header

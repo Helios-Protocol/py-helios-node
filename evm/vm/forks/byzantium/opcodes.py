@@ -112,10 +112,10 @@ UPDATED_OPCODES = {
     #
     # Self Destruct
     #
-    opcode_values.SSTORE: as_opcode(
+    opcode_values.SELFDESTRUCT: as_opcode(
         logic_fn=no_static(system.selfdestruct_eip161),
-        mnemonic=mnemonics.SSTORE,
-        gas_cost=constants.GAS_NULL,
+        mnemonic=mnemonics.SELFDESTRUCT,
+        gas_cost=constants.GAS_SELFDESTRUCT_EIP150,
     ),
 }
 

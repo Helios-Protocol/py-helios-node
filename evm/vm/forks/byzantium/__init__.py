@@ -14,7 +14,10 @@ from evm.validation import (
 from ..frontier import FRONTIER_PRECOMPILES
 from ..spurious_dragon import SpuriousDragonVM
 
-from .headers import create_byzantium_header_from_parent
+from .headers import (
+    create_byzantium_header_from_parent,
+    configure_byzantium_header,
+)
 from .opcodes import BYZANTIUM_OPCODES
 from .blocks import ByzantiumBlock
 
@@ -46,7 +49,8 @@ ByzantiumVM = SpuriousDragonVM.configure(
     # RLP
     _block_class=ByzantiumBlock,
     # Methods
-    create_header_from_parent=classmethod(create_byzantium_header_from_parent),
+    create_header_from_parent=staticmethod(create_byzantium_header_from_parent),
+    configure_header=configure_byzantium_header,
     get_block_reward=staticmethod(_byzantium_get_block_reward),
     get_uncle_reward=staticmethod(_byzantium_get_uncle_reward),
 )

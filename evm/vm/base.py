@@ -15,9 +15,6 @@ from evm.exceptions import (
 from evm.utils.keccak import (
     keccak,
 )
-from evm.utils.hexadecimal import (
-    encode_hex,
-)
 
 from .computation import (
     Computation,
@@ -71,7 +68,6 @@ class VM(object):
             # read_only databases.
             assert state.root_hash == self.block.header.state_root
         elif self.block.header.state_root != state.root_hash:
-            self.logger.debug("Updating block's state_root to %s", encode_hex(state.root_hash))
             self.block.header.state_root = state.root_hash
 
         # remove the reference to the underlying `db` object to ensure that no
