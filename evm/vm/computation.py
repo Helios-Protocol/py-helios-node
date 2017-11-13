@@ -248,7 +248,7 @@ class Computation(object):
             return self.gas_meter.gas_refunded + sum(c.get_gas_refund() for c in self.children)
 
     def get_gas_used(self):
-        if self.error:
+        if self.error and self.error.burns_gas:
             return self.msg.gas
         else:
             return max(
@@ -257,7 +257,7 @@ class Computation(object):
             )
 
     def get_gas_remaining(self):
-        if self.error:
+        if self.error and self.error.burns_gas:
             return 0
         else:
             return self.gas_meter.gas_remaining

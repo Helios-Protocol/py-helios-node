@@ -138,50 +138,38 @@ def _execute_frontier_transaction(vm, transaction):
     #
     # 2) Post Computation
     #
-    if computation.error:
-        # Miner Fees
-        transaction_fee = transaction.gas * transaction.gas_price
-        if vm.logger:
-            vm.logger.debug('TRANSACTION FEE: %s', transaction_fee)
+    # Self Destruct Refunds
+    accounts_to_delete = computation.get_accounts_for_deletion()
+    num_deletions = len(accounts_to_delete)
+    if num_deletions:
+        computation.gas_meter.refund_gas(constants.REFUND_SELFDESTRUCT * num_deletions)
+
+    # Gas Refunds
+    gas_remaining = computation.get_gas_remaining()
+    gas_refunded = computation.get_gas_refund()
+    gas_used = transaction.gas - gas_remaining
+    gas_refund = min(gas_refunded, gas_used // 2)
+    gas_refund_amount = (gas_refund + gas_remaining) * transaction.gas_price
+
+    if gas_refund_amount:
+        vm.logger.debug(
+            'TRANSACTION REFUND: %s -> %s',
+            gas_refund_amount,
+            encode_hex(message.sender),
+        )
+
         with vm.state_db() as state_db:
-            coinbase_balance = state_db.get_balance(vm.block.header.coinbase)
-            state_db.set_balance(
-                vm.block.header.coinbase,
-                coinbase_balance + transaction_fee,
-            )
-    else:
-        # Self Destruct Refunds
-        num_deletions = len(computation.get_accounts_for_deletion())
-        if num_deletions:
-            computation.gas_meter.refund_gas(constants.REFUND_SELFDESTRUCT * num_deletions)
+            sender_balance = state_db.get_balance(message.sender)
+            state_db.set_balance(message.sender, sender_balance + gas_refund_amount)
 
-        # Gas Refunds
-        gas_remaining = computation.get_gas_remaining()
-        gas_refunded = computation.get_gas_refund()
-        gas_used = transaction.gas - gas_remaining
-        gas_refund = min(gas_refunded, gas_used // 2)
-        gas_refund_amount = (gas_refund + gas_remaining) * transaction.gas_price
-
-        if gas_refund_amount:
-            if vm.logger:
-                vm.logger.debug(
-                    'TRANSACTION REFUND: %s -> %s',
-                    gas_refund_amount,
-                    encode_hex(message.sender),
-                )
-
-            with vm.state_db() as state_db:
-                sender_balance = state_db.get_balance(message.sender)
-                state_db.set_balance(message.sender, sender_balance + gas_refund_amount)
-
-        # Miner Fees
-        transaction_fee = (transaction.gas - gas_remaining - gas_refund) * transaction.gas_price
-        if vm.logger:
-            vm.logger.debug(
-                'TRANSACTION FEE: %s -> %s',
-                transaction_fee,
-                encode_hex(vm.block.header.coinbase),
-            )
+    # Miner Fees
+    transaction_fee = (transaction.gas - gas_remaining - gas_refund) * transaction.gas_price
+    if transaction_fee:
+        vm.logger.debug(
+            'TRANSACTION FEE: %s -> %s',
+            transaction_fee,
+            encode_hex(vm.block.header.coinbase),
+        )
         with vm.state_db() as state_db:
             coinbase_balance = state_db.get_balance(vm.block.header.coinbase)
             state_db.set_balance(
@@ -194,12 +182,7 @@ def _execute_frontier_transaction(vm, transaction):
         for account, beneficiary in computation.get_accounts_for_deletion():
             # TODO: need to figure out how we prevent multiple selfdestructs from
             # the same account and if this is the right place to put this.
-            if vm.logger is not None:
-                vm.logger.debug('DELETING ACCOUNT: %s', encode_hex(account))
-
-            # TODO: this balance setting is likely superflous and can be
-            # removed since `delete_account` does this.
-            state_db.set_balance(account, 0)
+            vm.logger.debug('DELETING ACCOUNT: %s', encode_hex(account))
             state_db.delete_account(account)
 
     return computation

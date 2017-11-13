@@ -217,7 +217,7 @@ class FrontierBlock(BaseBlock):
             in computation.get_log_entries()
         ]
 
-        if computation.error:
+        if computation.error and computation.error.burns_gas:
             tx_gas_used = transaction.gas
         else:
             gas_remaining = computation.get_gas_remaining()
