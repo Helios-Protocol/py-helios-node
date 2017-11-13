@@ -116,7 +116,7 @@ class BaseCall(Opcode):
             else:
                 computation.stack.push(1)
 
-            if not child_computation.error or not child_computation.error.zeros_return_data:
+            if not child_computation.error:
                 actual_output_size = min(memory_output_size, len(child_computation.output))
                 computation.gas_meter.return_gas(child_computation.gas_meter.gas_remaining)
                 computation.memory.write(

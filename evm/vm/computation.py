@@ -136,14 +136,13 @@ class Computation(object):
         before_cost = memory_gas_cost(before_size)
         after_cost = memory_gas_cost(after_size)
 
-        if self.logger is not None:
-            self.logger.debug(
-                "MEMORY: size (%s -> %s) | cost (%s -> %s)",
-                before_size,
-                after_size,
-                before_cost,
-                after_cost,
-            )
+        self.logger.debug(
+            "MEMORY: size (%s -> %s) | cost (%s -> %s)",
+            before_size,
+            after_size,
+            before_cost,
+            after_cost,
+        )
 
         if size:
             if before_cost < after_cost:
@@ -165,7 +164,7 @@ class Computation(object):
     #
     @property
     def output(self):
-        if self.error and self.error.zeros_return_data:
+        if self.error:
             return b''
         else:
             return self._output
@@ -266,19 +265,18 @@ class Computation(object):
     # Context Manager API
     #
     def __enter__(self):
-        if self.logger is not None:
-            self.logger.debug(
-                (
-                    "COMPUTATION STARTING: gas: %s | from: %s | to: %s | value: %s "
-                    "| depth %s | static: %s"
-                ),
-                self.msg.gas,
-                encode_hex(self.msg.sender),
-                encode_hex(self.msg.to),
-                self.msg.value,
-                self.msg.depth,
-                "y" if self.msg.is_static else "n",
-            )
+        self.logger.debug(
+            (
+                "COMPUTATION STARTING: gas: %s | from: %s | to: %s | value: %s "
+                "| depth %s | static: %s"
+            ),
+            self.msg.gas,
+            encode_hex(self.msg.sender),
+            encode_hex(self.msg.to),
+            self.msg.value,
+            self.msg.depth,
+            "y" if self.msg.is_static else "n",
+        )
 
         return self
 
