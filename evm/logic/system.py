@@ -160,8 +160,8 @@ class Create(Opcode):
         if child_computation.error:
             computation.stack.push(0)
         else:
-            computation.gas_meter.return_gas(child_computation.gas_meter.gas_remaining)
             computation.stack.push(contract_address)
+        computation.gas_meter.return_gas(child_computation.gas_meter.gas_remaining)
 
 
 class CreateEIP150(Create):

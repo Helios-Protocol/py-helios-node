@@ -1,7 +1,9 @@
 from evm import constants
 
 from evm.exceptions import (
+    InsufficientFunds,
     OutOfGas,
+    StackDepthLimit,
     WriteProtection,
 )
 from evm.opcode import (
@@ -63,46 +65,53 @@ class BaseCall(Opcode):
         insufficient_funds = should_transfer_value and sender_balance < value
         stack_too_deep = computation.msg.depth + 1 > constants.STACK_DEPTH_LIMIT
 
-        if insufficient_funds or stack_too_deep:
-            if self.logger:
-                if insufficient_funds:
-                    err_message = "Insufficient Funds: have: {0} | need: {1}".format(
-                        sender_balance,
-                        value,
-                    )
-                elif stack_too_deep:
-                    err_message = "Stack Limit Reached"
-                else:
-                    raise Exception("Invariant: Unreachable code path")
+        # Child message construction
+        with computation.vm.state_db(read_only=True) as state_db:
+            if code_address:
+                code = state_db.get_code(code_address)
+            else:
+                code = state_db.get_code(to)
 
-                self.logger.debug(
-                    "%s failure: %s",
-                    self.mnemonic,
-                    err_message,
+        child_msg_kwargs = {
+            'gas': child_msg_gas,
+            'value': value,
+            'to': to,
+            'data': call_data,
+            'code': code,
+            'code_address': code_address,
+            'should_transfer_value': should_transfer_value,
+            'is_static': is_static,
+        }
+        if sender is not None:
+            child_msg_kwargs['sender'] = sender
+
+        child_msg = computation.prepare_child_message(**child_msg_kwargs)
+
+        if insufficient_funds or stack_too_deep:
+            child_computation = computation.vm.initialize_computation(child_msg)
+
+            if insufficient_funds:
+                err_message = "Insufficient Funds: have: {0} | need: {1}".format(
+                    sender_balance,
+                    value,
                 )
+                child_computation.error = InsufficientFunds(err_message)
+            elif stack_too_deep:
+                err_message = "Stack Limit Reached"
+                child_computation.error = StackDepthLimit(err_message)
+            else:
+                raise Exception("Invariant: Unreachable code path")
+
+            self.logger.debug(
+                "%s failure: %s",
+                self.mnemonic,
+                err_message,
+            )
+            computation.children.append(child_computation)
             computation.gas_meter.return_gas(child_msg_gas)
             computation.stack.push(0)
+
         else:
-            with computation.vm.state_db(read_only=True) as state_db:
-                if code_address:
-                    code = state_db.get_code(code_address)
-                else:
-                    code = state_db.get_code(to)
-
-            child_msg_kwargs = {
-                'gas': child_msg_gas,
-                'value': value,
-                'to': to,
-                'data': call_data,
-                'code': code,
-                'code_address': code_address,
-                'should_transfer_value': should_transfer_value,
-                'is_static': is_static,
-            }
-            if sender is not None:
-                child_msg_kwargs['sender'] = sender
-
-            child_msg = computation.prepare_child_message(**child_msg_kwargs)
 
             if child_msg.is_create:
                 child_computation = computation.vm.apply_create_message(child_msg)

@@ -181,9 +181,15 @@ class Computation(object):
         last_child = self.children[-1]
         if last_child.error:
             # TODO: handle CREATE and returning error text.
-            return b''
+            if last_child.msg.is_create:
+                return last_child.output
+            else:
+                return b''
         else:
-            return last_child.output
+            if last_child.msg.is_create:
+                return b''
+            else:
+                return last_child.output
 
     #
     # Runtime operations
