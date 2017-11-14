@@ -57,10 +57,10 @@ def _execute_frontier_transaction(vm, transaction):
 
     vm.validate_transaction(transaction)
 
-    gas_cost = transaction.gas * transaction.gas_price
+    gas_fee = transaction.gas * transaction.gas_price
     with vm.state_db() as state_db:
         # Buy Gas
-        state_db.delta_balance(transaction.sender, -1 * gas_cost)
+        state_db.delta_balance(transaction.sender, -1 * gas_fee)
 
         # Increment Nonce
         state_db.increment_nonce(transaction.sender)
@@ -215,7 +215,8 @@ def _apply_frontier_message(vm, message):
 
     if computation.error:
         vm.revert(snapshot)
-    if computation.msg.is_static:
+    elif computation.msg.is_static:
+        # TODO: is this necessary?
         vm.revert(snapshot)
     else:
         vm.commit(snapshot)
@@ -232,10 +233,10 @@ def _apply_frontier_create_message(vm, message):
         contract_code = computation.output
 
         if contract_code:
-            contract_code_gas_cost = len(contract_code) * constants.GAS_CODEDEPOSIT
+            contract_code_gas_fee = len(contract_code) * constants.GAS_CODEDEPOSIT
             try:
                 computation.gas_meter.consume_gas(
-                    contract_code_gas_cost,
+                    contract_code_gas_fee,
                     reason="Write contract code for CREATE",
                 )
             except OutOfGas:
