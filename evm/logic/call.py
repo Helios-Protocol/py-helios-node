@@ -340,5 +340,3 @@ class CallByzantium(CallEIP161):
         if computation.msg.is_static and value != 0:
             raise WriteProtection("Cannot modify state while inside of a STATICCALL context")
         return call_params
-
-
