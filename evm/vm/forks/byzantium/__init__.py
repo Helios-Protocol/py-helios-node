@@ -26,6 +26,9 @@ BYZANTIUM_PRECOMPILES = merge(
     FRONTIER_PRECOMPILES,
     {
         force_bytes_to_address(b'\x05'): precompiles.precompile_modexp,
+        force_bytes_to_address(b'\x06'): precompiles.precompile_ecadd,
+        force_bytes_to_address(b'\x07'): precompiles.precompile_ecmul,
+        force_bytes_to_address(b'\x08'): precompiles.precompile_ecpairing,
     },
 )
 

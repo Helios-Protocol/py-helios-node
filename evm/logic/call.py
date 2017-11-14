@@ -110,7 +110,6 @@ class BaseCall(Opcode):
             computation.children.append(child_computation)
             computation.gas_meter.return_gas(child_msg_gas)
             computation.stack.push(0)
-
         else:
 
             if child_msg.is_create:

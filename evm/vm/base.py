@@ -143,7 +143,7 @@ class VM(object):
                     "OPCODE: 0x%x (%s) | pc: %s",
                     opcode,
                     opcode_fn.mnemonic,
-                    computation.code.pc - 1,
+                    max(0, computation.code.pc - 1),
                 )
 
                 try:

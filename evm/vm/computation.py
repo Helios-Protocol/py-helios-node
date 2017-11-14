@@ -183,8 +183,10 @@ class Computation(object):
             # TODO: handle CREATE and returning error text.
             if last_child.msg.is_create:
                 return last_child.output
-            else:
+            elif last_child.error.zeros_return_data:
                 return b''
+            else:
+                return last_child.output
         else:
             if last_child.msg.is_create:
                 return b''
