@@ -3,9 +3,7 @@ from evm import constants
 
 def blockhash(computation):
     block_number = computation.stack.pop(type_hint=constants.UINT256)
-
     block_hash = computation.vm.get_ancestor_hash(block_number)
-
     computation.stack.push(block_hash)
 
 

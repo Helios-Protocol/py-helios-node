@@ -28,7 +28,6 @@ def _compute_adjusted_exponent_length(exponent_length, first_32_exponent_bytes):
 
 
 def _compute_complexity(length):
-    # TODO: extract to function
     if length <= 64:
         return length ** 2
     elif length <= 1024:
@@ -114,8 +113,6 @@ def _modexp(data):
 def precompile_modexp(computation):
     """
     https://github.com/ethereum/EIPs/pull/198
-
-    TODO: test against test vectors from EIP
     """
     gas_fee = _compute_modexp_gas_fee(computation.msg.data)
     computation.gas_meter.consume_gas(gas_fee, reason='MODEXP Precompile')

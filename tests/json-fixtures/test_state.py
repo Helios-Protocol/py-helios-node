@@ -117,6 +117,10 @@ SpuriousDragonVMForTesting = SpuriousDragonVM.configure(
     name='SpuriousDragonVMForTesting',
     get_ancestor_hash=get_block_hash_for_testing,
 )
+ByzantiumVMForTesting = ByzantiumVM.configure(
+    name='ByzantiumVMForTesting',
+    get_ancestor_hash=get_block_hash_for_testing,
+)
 
 
 @pytest.fixture
@@ -131,7 +135,7 @@ def fixture_vm_class(fixture_data):
     elif fork_name == 'EIP158':
         return SpuriousDragonVMForTesting
     elif fork_name == 'Byzantium':
-        return ByzantiumVM
+        return ByzantiumVMForTesting
     elif fork_name == 'Constantinople':
         pytest.skip("Constantinople VM has not been implemented")
     elif fork_name == 'Metropolis':

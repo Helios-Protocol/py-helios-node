@@ -134,9 +134,10 @@ class VM(object):
                 opcode_fn = computation.get_opcode_fn(opcode)
 
                 computation.logger.trace(
-                    "OPCODE: 0x%x (%s)",
+                    "OPCODE: 0x%x (%s) | pc: %s",
                     opcode,
                     opcode_fn.mnemonic,
+                    computation.code.pc - 1,
                 )
 
                 try:

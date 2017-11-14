@@ -66,7 +66,7 @@ class Computation(object):
     children = None
 
     _output = b''
-    _error = None
+    error = None
 
     logs = None
     accounts_to_delete = None
@@ -164,7 +164,7 @@ class Computation(object):
     #
     @property
     def output(self):
-        if self.error:
+        if self.error and self.error.zeros_return_data:
             return b''
         else:
             return self._output
@@ -173,14 +173,6 @@ class Computation(object):
     def output(self, value):
         validate_is_bytes(value)
         self._output = value
-
-    @property
-    def error(self):
-        return self._error
-
-    @error.setter
-    def error(self, value):
-        self._error = value
 
     @property
     def return_data(self):
