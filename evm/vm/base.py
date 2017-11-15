@@ -120,17 +120,11 @@ class VM(object):
         """
         raise NotImplementedError("Must be implemented by subclasses")
 
-    def initialize_computation(self, message):
-        """
-        Initialize a Computation object from a message.
-        """
-        return Computation(self, message)
-
     def apply_computation(self, message):
         """
         Perform the computation that would be triggered by the VM message.
         """
-        with self.initialize_computation(message) as computation:
+        with Computation(self, message) as computation:
             # Early exit on pre-compiles
             if message.code_address in self.precompiles:
                 self.precompiles[message.code_address](computation)

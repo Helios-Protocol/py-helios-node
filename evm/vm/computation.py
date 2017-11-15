@@ -66,6 +66,7 @@ class Computation(object):
     children = None
 
     _output = b''
+    return_data = b''
     error = None
 
     logs = None
@@ -174,28 +175,32 @@ class Computation(object):
         validate_is_bytes(value)
         self._output = value
 
-    @property
-    def return_data(self):
-        if not self.children:
-            return b''
-        last_child = self.children[-1]
-        if last_child.error:
-            # TODO: handle CREATE and returning error text.
-            if last_child.msg.is_create:
-                return last_child.output
-            elif last_child.error.zeros_return_data:
-                return b''
-            else:
-                return last_child.output
-        else:
-            if last_child.msg.is_create:
-                return b''
-            else:
-                return last_child.output
-
     #
     # Runtime operations
     #
+    def apply_child_computation(self, child_msg):
+        if child_msg.is_create:
+            child_computation = self.vm.apply_create_message(child_msg)
+        else:
+            child_computation = self.vm.apply_message(child_msg)
+
+        self.add_child_computation(child_computation)
+        return child_computation
+
+    def add_child_computation(self, child_computation):
+        if child_computation.error:
+            if child_computation.msg.is_create:
+                self.return_data = child_computation.output
+            elif child_computation.error.zeros_return_data:
+                self.return_data = b''
+            else:
+                self.return_data = child_computation.output
+        else:
+            if child_computation.msg.is_create:
+                self.return_data = b''
+            else:
+                self.return_data = child_computation.output
+
     def get_opcode_fn(self, opcode):
         try:
             return self.vm.opcodes[opcode]
