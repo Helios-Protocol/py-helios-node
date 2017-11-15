@@ -4,9 +4,6 @@ from evm.precompiles.modexp import (
     _modexp,
     _compute_modexp_gas_fee,
 )
-from evm.utils.numeric import (
-    big_endian_to_int,
-)
 from evm.utils.hexadecimal import (
     decode_hex,
 )
@@ -48,8 +45,6 @@ EIP198_VECTOR_C = decode_hex(
 def test_modexp_gas_fee_calcultation(data, expected):
     actual = _compute_modexp_gas_fee(data)
     assert actual == expected
-
-
 
 
 @pytest.mark.parametrize(

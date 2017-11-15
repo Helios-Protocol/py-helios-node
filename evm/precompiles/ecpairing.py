@@ -82,7 +82,7 @@ def _extract_point(data_slice):
     x2_i_bytes = data_slice[64:96]
     x2_r_bytes = data_slice[96:128]
     y2_i_bytes = data_slice[128:160]
-    y2_r_bytes = data_slice[168:196]
+    y2_r_bytes = data_slice[160:192]
 
     x1 = big_endian_to_int(x1_bytes)
     y1 = big_endian_to_int(y1_bytes)
