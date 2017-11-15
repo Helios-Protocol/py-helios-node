@@ -215,9 +215,6 @@ def _apply_frontier_message(vm, message):
 
     if computation.error:
         vm.revert(snapshot)
-    elif computation.msg.is_static:
-        # TODO: is this necessary?
-        vm.revert(snapshot)
     else:
         vm.commit(snapshot)
 
