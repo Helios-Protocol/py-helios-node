@@ -1,13 +1,8 @@
-import rlp
-
 from evm.vm.forks.spurious_dragon.transactions import (
     SpuriousDragonTransaction,
     SpuriousDragonUnsignedTransaction,
 )
 
-from evm.utils.numeric import (
-    int_to_big_endian,
-)
 from evm.utils.transactions import (
     create_transaction_signature,
 )

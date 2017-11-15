@@ -176,6 +176,7 @@ def test_get_log_entries(computation):
                                         [1, 2, 3],
                                         b'')]
 
+
 def test_get_log_entries_with_vmerror(computation):
     # Trigger an out of gas error causing get log entries to be ()
     computation.add_log_entry(CANONICAL_ADDRESS_A, [1, 2, 3], b'')

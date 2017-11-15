@@ -7,9 +7,6 @@ from evm.rlp.headers import (
 from evm.rlp.receipts import (
     Receipt,
 )
-from evm.utils.padding import (
-    pad32,
-)
 from evm.vm.forks.spurious_dragon.blocks import (
     SpuriousDragonBlock,
 )

@@ -240,6 +240,8 @@ class DelegateCall(BaseCall):
             False,  # should_transfer_value,
             computation.msg.is_static,  # is_static
         )
+
+
 #
 # EIP150
 #
