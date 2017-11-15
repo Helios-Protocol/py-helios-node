@@ -4,7 +4,8 @@ from py_ecc import (
 
 from evm import constants
 from evm.exceptions import (
-    ValidationError
+    ValidationError,
+    VMError,
 )
 from evm.utils.bn128 import (
     validate_point,
@@ -22,17 +23,19 @@ EXPONENT = bn128.FQ12.one()
 
 
 def precompile_ecpairing(computation):
-    if computation.msg.data % 192:
+    if len(computation.msg.data) % 192:
         # data length must be an exact multiple of 192
-        return computation
+        raise VMError("Invalid ECPAIRING parameters")
 
-    num_points = computation.msg.data // 192
+    num_points = len(computation.msg.data) // 192
     gas_fee = constants.GAS_ECPAIRING_BASE + num_points * constants.GAS_ECPAIRING_PER_POINT
 
     computation.gas_meter.consume_gas(gas_fee, reason='ECPAIRING Precompile')
 
-    result = _ecpairing(computation.msg.data)
-    assert False
+    try:
+        result = _ecpairing(computation.msg.data)
+    except ValidationError:
+        raise VMError("Invalid ECPAIRING parameters")
 
     if result is True:
         computation.output = pad32(b'\x01')

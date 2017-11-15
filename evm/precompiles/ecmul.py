@@ -4,7 +4,8 @@ from py_ecc import (
 
 from evm import constants
 from evm.exceptions import (
-    ValidationError
+    ValidationError,
+    VMError,
 )
 from evm.utils.bn128 import (
     validate_point,
@@ -25,7 +26,7 @@ def precompile_ecmul(computation):
     try:
         result = _ecmull(computation.msg.data)
     except ValidationError:
-        return computation
+        raise VMError("Invalid ECMUL parameters")
 
     result_bytes = b''.join((
         pad32(int_to_big_endian(result[0].n)),
