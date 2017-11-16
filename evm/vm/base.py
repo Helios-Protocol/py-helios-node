@@ -33,12 +33,8 @@ class VM(object):
     _block_class = None
     _precompiles = None
 
-    def __init__(self, header, chaindb=None):
-        if chaindb is None and self.chaindb is None:
-            raise ValueError("VM classes must have a `db`")
-        elif chaindb is not None:
-            self.chaindb = chaindb
-
+    def __init__(self, header, chaindb):
+        self.chaindb = chaindb
         block_class = self.get_block_class()
         self.block = block_class.from_header(header=header, chaindb=self.chaindb)
 

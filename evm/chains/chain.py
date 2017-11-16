@@ -122,13 +122,9 @@ class Chain(object):
         validate_block_number(block_number)
         for n in reversed(self.vms_by_range.keys()):
             if block_number >= n:
-                base_vm_class = self.vms_by_range[n]
-                break
+                return self.vms_by_range[n]
         else:
             raise VMNotFound("No vm available for block #{0}".format(block_number))
-
-        vm_class = base_vm_class.configure(chaindb=self.chaindb)
-        return vm_class
 
     def get_vm(self, header=None):
         """
@@ -138,7 +134,7 @@ class Chain(object):
             header = self.header
 
         vm_class = self.get_vm_class_for_block_number(header.block_number)
-        return vm_class(header=header)
+        return vm_class(header=header, chaindb=self.chaindb)
 
     #
     # Header/Block Retrieval

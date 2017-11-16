@@ -200,6 +200,7 @@ class Computation(object):
                 self.return_data = b''
             else:
                 self.return_data = child_computation.output
+        self.children.append(child_computation)
 
     def get_opcode_fn(self, opcode):
         try:
