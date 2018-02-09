@@ -1,6 +1,9 @@
 import argparse
 import asyncio
 import atexit
+from multiprocessing.managers import (
+    BaseManager,
+)
 import logging
 import sys
 
@@ -25,19 +28,12 @@ from trinity.constants import (
     ROPSTEN,
     SYNC_LIGHT,
 )
-from trinity.db.core import (
-    PipeDB,
-)
-from trinity.db.chaindb import (
-    PipeChainDB,
-)
 from trinity.utils.chains import (
     ChainConfig,
 )
 from trinity.utils.ipc import (
     wait_for_ipc,
     kill_processes_gracefully,
-    serve_object_over_ipc,
 )
 from trinity.utils.logging import (
     setup_trinity_logging,
@@ -168,13 +164,6 @@ def main():
         kwargs={'log_queue': log_queue}
     )
 
-    # Next initialize the chaindb process
-    chaindb_server_process = ctx.Process(
-        target=run_chaindb_process,
-        args=(chain_config,),
-        kwargs={'log_queue': log_queue}
-    )
-
     # For now we just run the light sync against ropsten by default.
     networking_process = ctx.Process(
         target=run_networking_process,
@@ -186,9 +175,6 @@ def main():
     database_server_process.start()
     wait_for_ipc(chain_config.database_ipc_path)
 
-    chaindb_server_process.start()
-    wait_for_ipc(chain_config.chaindb_ipc_path)
-
     networking_process.start()
 
     try:
@@ -197,7 +183,6 @@ def main():
         logger.info('Keyboard Interrupt: Stopping')
         kill_processes_gracefully(
             networking_process,
-            chaindb_server_process,
             database_server_process,
         )
 
@@ -205,15 +190,34 @@ def main():
 @with_queued_logging
 def run_database_process(chain_config, db_class):
     db = db_class(db_path=chain_config.database_dir)
-    logger = logging.getLogger('trinity.database.server')
+    chaindb = ChainDB(db)
 
-    serve_object_over_ipc(db, chain_config.database_ipc_path, logger=logger)
+    class DBManager(BaseManager):
+        pass
+
+    DBManager.register('get_db', callable=lambda: db)
+    DBManager.register('get_chaindb', callable=lambda: chaindb)
+
+    manager = DBManager(address=chain_config.database_ipc_path)
+    server = manager.get_server()
+
+    server.serve_forever()
 
 
 @with_queued_logging
 def run_networking_process(chain_config, sync_mode):
     logger = logging.getLogger('trinity.networking.server')
-    chaindb = PipeChainDB(chain_config.chaindb_ipc_path)
+
+    class DBManager(BaseManager):
+        pass
+
+    DBManager.register('get_db')
+    DBManager.register('get_chaindb')
+
+    manager = DBManager(address=chain_config.database_ipc_path)
+    manager.connect()
+
+    chaindb = manager.get_chaindb()
 
     if not is_data_dir_initialized(chain_config):
         # TODO: this will only work as is for chains with known genesis
@@ -251,13 +255,3 @@ def run_networking_process(chain_config, sync_mode):
         loop.close()
 
     atexit.register(cleanup)
-
-
-@with_queued_logging
-def run_chaindb_process(chain_config):
-    logger = logging.getLogger('trinity.chaindb.server')
-
-    db = PipeDB(chain_config.database_ipc_path)
-    chaindb = ChainDB(db)
-
-    serve_object_over_ipc(chaindb, chain_config.chaindb_ipc_path, logger=logger)

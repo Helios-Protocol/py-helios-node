@@ -49,6 +49,11 @@ from evm.p2p.peer import (
 )
 
 
+async def _run_async(fn, *args):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, fn, *args)
+
+
 class LightChain(Chain, PeerPoolSubscriber):
     logger = logging.getLogger("evm.p2p.lightchain.LightChain")
     max_consecutive_timeouts = 5
@@ -203,7 +208,7 @@ class LightChain(Chain, PeerPoolSubscriber):
         raise TooManyTimeouts()
 
     async def get_sync_start_block(self, peer: LESPeer, head_info: les.HeadInfo) -> int:
-        chain_head = self.chaindb.get_canonical_head()
+        chain_head = await _run_async(self.chaindb.get_canonical_head)
         last_peer_announcement = self._last_processed_announcements.get(peer)
         if chain_head.block_number == GENESIS_BLOCK_NUMBER:
             start_block = GENESIS_BLOCK_NUMBER
@@ -225,7 +230,7 @@ class LightChain(Chain, PeerPoolSubscriber):
                 raise LESAnnouncementProcessingError(
                     "Too many timeouts when fetching headers from {}".format(peer))
             for header in headers:
-                self.chaindb.persist_header_to_db(header)
+                await _run_async(self.chaindb.persist_header_to_db, header)
             start_block = chain_head.block_number
         else:
             start_block = last_peer_announcement.block_number - head_info.reorg_depth
@@ -234,7 +239,8 @@ class LightChain(Chain, PeerPoolSubscriber):
     # TODO: Distribute requests among our peers, ensuring the selected peer has the info we want
     # and respecting the flow control rules.
     async def process_announcement(self, peer: LESPeer, head_info: les.HeadInfo) -> None:
-        if self.chaindb.header_exists(head_info.block_hash):
+        header_exists = await _run_async(self.chaindb.header_exists, head_info.block_hash)
+        if header_exists:
             self.logger.debug(
                 "Skipping processing of %s from %s as head has already been fetched",
                 head_info, peer)
@@ -252,7 +258,7 @@ class LightChain(Chain, PeerPoolSubscriber):
                 raise LESAnnouncementProcessingError(
                     "Too many timeouts when fetching headers from {}".format(peer))
             for header in batch:
-                self.chaindb.persist_header_to_db(header)
+                await _run_async(self.chaindb.persist_header_to_db, header)
                 start_block = header.block_number
             self.logger.info("synced headers up to #%s", start_block)
 
@@ -269,7 +275,7 @@ class LightChain(Chain, PeerPoolSubscriber):
         Raises BlockNotFound if it is not found.
         """
         try:
-            block_hash = self.chaindb.lookup_block_hash(block_number)
+            block_hash = await _run_async(self.chaindb.lookup_block_hash, block_number)
         except KeyError:
             raise BlockNotFound(
                 "No block with number {} found on local chain".format(block_number))
@@ -279,7 +285,7 @@ class LightChain(Chain, PeerPoolSubscriber):
     async def get_block_by_hash(self, block_hash: bytes) -> BaseBlock:
         peer = await self.get_best_peer()
         try:
-            header = self.chaindb.get_block_header_by_hash(block_hash)
+            header = await _run_async(self.chaindb.get_block_header_by_hashk, block_hash)
         except BlockNotFound:
             self.logger.debug("Fetching header %s from %s", encode_hex(block_hash), peer)
             header = await peer.get_block_header_by_hash(block_hash)
