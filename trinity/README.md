@@ -8,3 +8,4 @@
 - `TRINITY_DATA_DIR` - The root directory where the chain data will be stored for the currently running chain.
 - `TRINITY_NODEKEY` - The path to a file where the devp2p private key is stored.
 - `TRINITY_DATABASE_IPC` - The path to the socket for low level database connections.
+- `TRINITY_CHAINDB_IPC` - The path to the socket for high level chaindb connections.
