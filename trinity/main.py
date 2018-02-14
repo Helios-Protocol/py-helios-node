@@ -2,6 +2,9 @@ import argparse
 import asyncio
 import atexit
 import sys
+from multiprocessing.managers import (
+    BaseManager,
+)
 
 from evm.db.backends.level import LevelDB
 from evm.db.chain import ChainDB
@@ -189,7 +192,7 @@ def run_database_process(chain_config, db_class):
     db = db_class(db_path=chain_config.database_dir)
     chaindb = ChainDB(db)
 
-    class DBManager(ctx.Manager):
+    class DBManager(BaseManager):
         pass
 
     DBManager.register('get_db', callable=lambda: db)
@@ -203,7 +206,7 @@ def run_database_process(chain_config, db_class):
 
 @with_queued_logging
 def run_networking_process(chain_config, sync_mode):
-    class DBManager(ctx.Manager):
+    class DBManager(BaseManager):
         pass
 
     DBManager.register('get_db')
@@ -240,7 +243,10 @@ def run_networking_process(chain_config, sync_mode):
 
     loop = asyncio.get_event_loop()
 
-    loop.run_until_complete(run())
+    try:
+        loop.run_until_complete(run())
+    except KeyboardInterrupt:
+        pass
 
     def cleanup():
         # This is to instruct chain.run() to exit, which will cause the event loop to stop.

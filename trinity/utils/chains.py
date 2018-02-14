@@ -151,7 +151,6 @@ class ChainConfig:
         return get_database_socket_path(self.chain_identifier, self.data_dir)
 
     @property
-    @property
     def nodekey_path(self):
         if self._nodekey_path is None:
             if self._nodekey is not None:

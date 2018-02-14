@@ -1,32 +1,39 @@
 import asyncio
+import functools
 
 from multiprocessing.managers import (
     BaseProxy,
 )
 
 
-class ChainDBProxy(BaseProxy):
-    def get_canonical_head(self):
-        return self._callmethod('get_canonical_head')
-
-    async def persist_header_to_db(self, header):
+def async_method(method_name):
+    async def method(self, *args, **kwargs):
         loop = asyncio.get_event_loop()
 
         return await loop.run_in_executor(
             None,
-            self._callmethod,
-            'persist_header_to_db',
-            (header,),
+            functools.partial(self._callmethod, kwds=kwargs),
+            method_name,
+            args,
         )
+    return method
 
-    def header_exists(self, block_hash):
-        return self._callmethod('header_exists', (block_hash,))
 
-    def lookup_block_hash(self, block_number):
-        return self._callmethod('lookup_block_hash', (block_number,))
+def sync_method(method_name):
+    def method(self, *args, **kwargs):
+        return self._callmethod(method_name, args, kwargs)
+    return method
 
-    def get_block_header_by_hash(self, block_hash):
-        return self._callmethod('get_block_header_by_hash', (block_hash,))
 
-    def get_score(self, block_hash):
-        return self._callmethod('get_score', (block_hash,))
+class ChainDBProxy(BaseProxy):
+    coro_get_block_header_by_hash = async_method('get_block_header_by_hash')
+    coro_get_canonical_head = async_method('get_canonical_head')
+    coro_header_exists = async_method('header_exists')
+    coro_lookup_block_hash = async_method('lookup_block_hash')
+    coro_persist_header_to_db = async_method('persist_header_to_db')
+
+    get_block_header_by_hash = sync_method('get_block_header_by_hash')
+    get_canonical_head = sync_method('get_canonical_head')
+    get_score = sync_method('get_score')
+    header_exists = sync_method('header_exists')
+    lookup_block_hash = sync_method('lookup_block_hash')
