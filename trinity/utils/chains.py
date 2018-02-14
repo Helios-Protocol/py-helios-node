@@ -79,21 +79,6 @@ def get_database_socket_path(chain_identifier, data_dir=None):
     )
 
 
-CHAINDB_SOCKET_FILENAME = 'chaindb.ipc'
-
-
-def get_chaindb_socket_path(chain_identifier, data_dir=None):
-    """
-    Returns the path to the private key used for devp2p connections.
-    """
-    if data_dir is None:
-        data_dir = get_default_data_dir(chain_identifier)
-    return os.environ.get(
-        'TRINITY_CHAINDB_IPC',
-        os.path.join(data_dir, CHAINDB_SOCKET_FILENAME),
-    )
-
-
 #
 # Nodekey loading
 #
@@ -166,9 +151,6 @@ class ChainConfig:
         return get_database_socket_path(self.chain_identifier, self.data_dir)
 
     @property
-    def chaindb_ipc_path(self):
-        return get_chaindb_socket_path(self.chain_identifier, self.data_dir)
-
     @property
     def nodekey_path(self):
         if self._nodekey_path is None:
