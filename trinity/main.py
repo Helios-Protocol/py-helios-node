@@ -3,8 +3,6 @@ import asyncio
 import atexit
 import sys
 
-from aioprocessing.managers import AioSyncManager
-
 from evm.db.backends.level import LevelDB
 from evm.db.chain import ChainDB
 
@@ -191,7 +189,7 @@ def run_database_process(chain_config, db_class):
     db = db_class(db_path=chain_config.database_dir)
     chaindb = ChainDB(db)
 
-    class DBManager(AioSyncManager):
+    class DBManager(ctx.Manager):
         pass
 
     DBManager.register('get_db', callable=lambda: db)
@@ -205,7 +203,7 @@ def run_database_process(chain_config, db_class):
 
 @with_queued_logging
 def run_networking_process(chain_config, sync_mode):
-    class DBManager(AioSyncManager):
+    class DBManager(ctx.Manager):
         pass
 
     DBManager.register('get_db')
