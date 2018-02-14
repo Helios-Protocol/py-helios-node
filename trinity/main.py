@@ -1,10 +1,10 @@
 import argparse
 import asyncio
 import atexit
-import sys
 from multiprocessing.managers import (
     BaseManager,
 )
+import sys
 
 from evm.db.backends.level import LevelDB
 from evm.db.chain import ChainDB
@@ -21,6 +21,7 @@ from trinity.chains import (
     initialize_database,
     is_data_dir_initialized,
     is_database_initialized,
+    serve_chaindb,
 )
 from trinity.cli import console
 from trinity.constants import (
@@ -28,6 +29,7 @@ from trinity.constants import (
     SYNC_LIGHT,
 )
 from trinity.db.chain import ChainDBProxy
+from trinity.db.base import DBProxy
 from trinity.utils.chains import (
     ChainConfig,
 )
@@ -190,18 +192,8 @@ def main():
 @with_queued_logging
 def run_database_process(chain_config, db_class):
     db = db_class(db_path=chain_config.database_dir)
-    chaindb = ChainDB(db)
 
-    class DBManager(BaseManager):
-        pass
-
-    DBManager.register('get_db', callable=lambda: db)
-    DBManager.register('get_chaindb', callable=lambda: chaindb, proxytype=ChainDBProxy)
-
-    manager = DBManager(address=chain_config.database_ipc_path)
-    server = manager.get_server()
-
-    server.serve_forever()
+    serve_chaindb(db, chain_config.database_ipc_path)
 
 
 @with_queued_logging
@@ -209,7 +201,7 @@ def run_networking_process(chain_config, sync_mode):
     class DBManager(BaseManager):
         pass
 
-    DBManager.register('get_db')
+    DBManager.register('get_db', proxytype=DBProxy)
     DBManager.register('get_chaindb', proxytype=ChainDBProxy)
 
     manager = DBManager(address=chain_config.database_ipc_path)
