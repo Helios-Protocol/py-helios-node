@@ -114,23 +114,20 @@ class BaseChainDB:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     def persist_block_to_db(self, block):
-        '''
+        """
         Chain must do follow-up work to persist transactions to db
-        '''
+        """
         raise NotImplementedError("ChainDB classes must implement this method")
 
     #
     # Transaction and Receipt API
     #
-    @to_list
     def get_receipts(self, header, receipt_class):
         raise NotImplementedError("ChainDB classes must implement this method")
 
-    @to_list
     def get_block_transaction_hashes(self, block_header):
         raise NotImplementedError("ChainDB classes must implement this method")
 
-    @to_list
     def get_block_transactions(self, block_header, transaction_class):
         raise NotImplementedError("ChainDB classes must implement this method")
 

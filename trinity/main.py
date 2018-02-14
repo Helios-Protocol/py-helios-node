@@ -1,11 +1,9 @@
 import argparse
 import asyncio
 import atexit
-from multiprocessing.managers import (
-    BaseManager,
-)
-import logging
 import sys
+
+from aioprocessing.managers import AioSyncManager
 
 from evm.db.backends.level import LevelDB
 from evm.db.chain import ChainDB
@@ -28,6 +26,7 @@ from trinity.constants import (
     ROPSTEN,
     SYNC_LIGHT,
 )
+from trinity.db.chain import ChainDBProxy
 from trinity.utils.chains import (
     ChainConfig,
 )
@@ -181,10 +180,10 @@ def main():
         networking_process.join()
     except KeyboardInterrupt:
         logger.info('Keyboard Interrupt: Stopping')
-        kill_processes_gracefully(
-            networking_process,
-            database_server_process,
-        )
+        kill_processes_gracefully(networking_process)
+        logger.info('KILLED networking_process')
+        kill_processes_gracefully(database_server_process)
+        logger.info('KILLED database_server_process')
 
 
 @with_queued_logging
@@ -192,11 +191,11 @@ def run_database_process(chain_config, db_class):
     db = db_class(db_path=chain_config.database_dir)
     chaindb = ChainDB(db)
 
-    class DBManager(BaseManager):
+    class DBManager(AioSyncManager):
         pass
 
     DBManager.register('get_db', callable=lambda: db)
-    DBManager.register('get_chaindb', callable=lambda: chaindb)
+    DBManager.register('get_chaindb', callable=lambda: chaindb, proxytype=ChainDBProxy)
 
     manager = DBManager(address=chain_config.database_ipc_path)
     server = manager.get_server()
@@ -206,13 +205,11 @@ def run_database_process(chain_config, db_class):
 
 @with_queued_logging
 def run_networking_process(chain_config, sync_mode):
-    logger = logging.getLogger('trinity.networking.server')
-
-    class DBManager(BaseManager):
+    class DBManager(AioSyncManager):
         pass
 
     DBManager.register('get_db')
-    DBManager.register('get_chaindb')
+    DBManager.register('get_chaindb', proxytype=ChainDBProxy)
 
     manager = DBManager(address=chain_config.database_ipc_path)
     manager.connect()
@@ -232,21 +229,20 @@ def run_networking_process(chain_config, sync_mode):
     peer_pool = PeerPool(LESPeer, chaindb, chain_config.network_id, chain_config.nodekey)
 
     async def run():
-        asyncio.ensure_future(peer_pool.run())
-        # chain.run() will run in a loop until our atexit handler is called, at which point it returns
-        # and we cleanly stop the pool and chain.
-        await chain.run()
-        await peer_pool.stop()
-        await chain.stop()
+        try:
+            asyncio.ensure_future(peer_pool.run())
+            # chain.run() will run in a loop until our atexit handler is called, at which point it returns
+            # and we cleanly stop the pool and chain.
+            await chain.run()
+        finally:
+            await peer_pool.stop()
+            await chain.stop()
 
     chain = chain_class(chaindb, peer_pool)
 
     loop = asyncio.get_event_loop()
 
-    try:
-        loop.run_until_complete(run())
-    except KeyboardInterrupt:
-        logger.info('KeyboardInterrupt: Stopping')
+    loop.run_until_complete(run())
 
     def cleanup():
         # This is to instruct chain.run() to exit, which will cause the event loop to stop.
