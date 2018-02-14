@@ -1,12 +1,8 @@
 import asyncio
-import logging
 
 from multiprocessing.managers import (
     BaseProxy,
 )
-
-
-logger = logging.getLogger('trinity.DEBUG')
 
 
 class ChainDBProxy(BaseProxy):
