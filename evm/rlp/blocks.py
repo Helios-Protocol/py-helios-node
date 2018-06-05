@@ -30,6 +30,12 @@ class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
         if cls.transaction_class is None:
             raise AttributeError("Block subclasses must declare a transaction_class")
         return cls.transaction_class
+    
+    @classmethod
+    def get_receive_transaction_class(cls) -> Type[BaseTransaction]:
+        if cls.receive_transaction_class is None:
+            raise AttributeError("Block subclasses must declare a receive_transaction_class")
+        return cls.receive_transaction_class
 
     @classmethod
     @abstractmethod
@@ -39,6 +45,10 @@ class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
         """
         raise NotImplementedError("Must be implemented by subclasses")
 
+    @property
+    def sender(self):
+        return self.header.sender
+    
     @property
     @abstractmethod
     def hash(self) -> Hash32:
@@ -61,3 +71,25 @@ class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
 
     def __str__(self) -> str:
         return "Block #{b.number}".format(b=self)
+
+
+class BaseQueueBlock(BaseBlock):
+    @abstractmethod
+    def as_complete_block(self):
+        raise NotImplementedError("Must be implemented by subclasses")
+        
+
+    def add_transaction(self, transaction):
+        transactions = self.transactions + (transaction, )
+        
+        return self.copy(
+            transactions=transactions,
+        )
+        
+    def add_receive_transaction(self, receive_transaction):
+        receive_transactions = self.receive_transactions + (receive_transaction, )
+        
+        return self.copy(
+            receive_transactions=receive_transactions,
+        )
+        

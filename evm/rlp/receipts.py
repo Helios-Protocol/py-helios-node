@@ -24,14 +24,14 @@ from typing import Iterable
 class Receipt(rlp.Serializable):
 
     fields = [
-        ('state_root', binary),
+        ('status_code', binary),
         ('gas_used', big_endian_int),
         ('bloom', int256),
         ('logs', CountableList(Log))
     ]
 
     def __init__(self,
-                 state_root: bytes,
+                 status_code: bytes,
                  gas_used: int,
                  logs: Iterable[Log],
                  bloom: int=None) -> None:
@@ -41,7 +41,7 @@ class Receipt(rlp.Serializable):
             bloom = int(BloomFilter.from_iterable(bloomables))
 
         super(Receipt, self).__init__(
-            state_root=state_root,
+            status_code=status_code,
             gas_used=gas_used,
             bloom=bloom,
             logs=logs,

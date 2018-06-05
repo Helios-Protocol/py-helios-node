@@ -1,4 +1,3 @@
-
 import rlp
 
 from eth_keys import keys
@@ -13,11 +12,9 @@ from evm.utils.numeric import (
     is_even,
     int_to_big_endian,
 )
-from typing import Union
 
-from evm.rlp.transactions import (
-    BaseTransaction,
-    BaseReceiveTransaction
+from evm.rlp.headers import (
+    BaseBlockHeader,
 )
 
 
@@ -25,8 +22,8 @@ EIP155_CHAIN_ID_OFFSET = 35
 V_OFFSET = 27
 
 
-def is_eip_155_signed_transaction(transaction: BaseTransaction) -> bool:
-    if transaction.v >= EIP155_CHAIN_ID_OFFSET:
+def is_eip_155_signed_block_header(block_header: BaseBlockHeader) -> bool:
+    if block_header.v >= EIP155_CHAIN_ID_OFFSET:
         return True
     else:
         return False
@@ -46,13 +43,13 @@ def extract_signature_v(v: int) -> int:
         return V_OFFSET
 
 
-#require chain id
-def create_transaction_signature(transaction: Union[BaseTransaction, BaseReceiveTransaction], private_key, chain_id):
-    transaction_parts = rlp.decode(rlp.encode(transaction))
+def create_block_header_signature(block_header: BaseBlockHeader, private_key, chain_id):
+    transaction_parts = rlp.decode(rlp.encode(block_header))
     transaction_parts_for_signature = (
         transaction_parts[:-3] + [int_to_big_endian(chain_id), b'', b'']
     )
     message = rlp.encode(transaction_parts_for_signature)
+    
     signature = private_key.sign_msg(message)
 
     canonical_v, r, s = signature.vrs
@@ -62,19 +59,19 @@ def create_transaction_signature(transaction: Union[BaseTransaction, BaseReceive
     return v, r, s
 
 
-def validate_transaction_signature(transaction: Union[BaseTransaction, BaseReceiveTransaction]) -> None:
-    if is_eip_155_signed_transaction(transaction):
-        v = extract_signature_v(transaction.v)
+def validate_block_header_signature(block_header: BaseBlockHeader) -> None:
+    if is_eip_155_signed_block_header(block_header):
+        v = extract_signature_v(block_header.v)
     else:
-        v = transaction.v
+        v = block_header.v
 
     canonical_v = v - 27
-    vrs = (canonical_v, transaction.r, transaction.s)
+    vrs = (canonical_v, block_header.r, block_header.s)
     signature = keys.Signature(vrs=vrs)
-    
-    transaction_parts = rlp.decode(rlp.encode(transaction))
+     
+    transaction_parts = rlp.decode(rlp.encode(block_header))
     transaction_parts_for_signature = (
-        transaction_parts[:-3] + [int_to_big_endian(transaction.chain_id), b'', b'']
+        transaction_parts[:-3] + [int_to_big_endian(block_header.chain_id), b'', b'']
     )
     message = rlp.encode(transaction_parts_for_signature)
     
@@ -87,27 +84,33 @@ def validate_transaction_signature(transaction: Union[BaseTransaction, BaseRecei
         raise ValidationError("Invalid Signature")
 
 
-def extract_transaction_sender(transaction: Union[BaseTransaction, BaseReceiveTransaction]) -> bytes:
-    if is_eip_155_signed_transaction(transaction):
-        if is_even(transaction.v):
+def extract_block_header_sender(block_header: BaseBlockHeader) -> bytes:
+    if is_eip_155_signed_block_header(block_header):
+        if is_even(block_header.v):
             v = 28
         else:
             v = 27
     else:
-        v = transaction.v
+        v = block_header.v
 
-    r, s = transaction.r, transaction.s
+    r, s = block_header.r, block_header.s
 
     canonical_v = v - 27
     vrs = (canonical_v, r, s)
     signature = keys.Signature(vrs=vrs)
     
-    transaction_parts = rlp.decode(rlp.encode(transaction))
+    transaction_parts = rlp.decode(rlp.encode(block_header))
     transaction_parts_for_signature = (
-        transaction_parts[:-3] + [int_to_big_endian(transaction.chain_id), b'', b'']
+        transaction_parts[:-3] + [int_to_big_endian(block_header.chain_id), b'', b'']
     )
     message = rlp.encode(transaction_parts_for_signature)
     
     public_key = signature.recover_public_key_from_msg(message)
     sender = public_key.to_canonical_address()
     return sender
+
+
+
+
+
+

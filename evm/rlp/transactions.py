@@ -135,42 +135,87 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         """
         raise NotImplementedError("Must be implemented by subclasses")
 
-    #
-    # Conversion to and creation of unsigned transactions.
-    #
-    @abstractmethod
-    def get_message_for_signing(self) -> bytes:
-        """
-        Return the bytestring that should be signed in order to create a signed transactions
-        """
-        raise NotImplementedError("Must be implemented by subclasses")
-
-    @classmethod
-    @abstractmethod
-    def create_unsigned_transaction(self, *args: Any, **kwargs: Any) -> 'BaseTransaction':
-        """
-        Create an unsigned transaction.
-        """
+    
+    @abstractmethod    
+    def get_signed(self, private_key, chain_id) -> 'BaseTransaction':
         raise NotImplementedError("Must be implemented by subclasses")
 
 
-class BaseUnsignedTransaction(rlp.Serializable, BaseTransactionCommonMethods, metaclass=ABCMeta):
+
+
+class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
     fields = [
-        ('nonce', big_endian_int),
-        ('gas_price', big_endian_int),
-        ('gas', big_endian_int),
-        ('to', address),
-        ('value', big_endian_int),
-        ('data', binary),
+        ('sender_block_hash', big_endian_int),
+        ('transaction', big_endian_int),
+        ('v', big_endian_int),
+        ('r', big_endian_int),
+        ('s', big_endian_int),
     ]
 
-    #
-    # API that must be implemented by all Transaction subclasses.
-    #
-    @abstractmethod
-    def as_signed_transaction(self, private_key: bytes) -> 'BaseTransaction':
+    @classmethod
+    def from_base_transaction(cls, transaction: 'BaseReceiveTransaction') -> 'BaseReceiveTransaction':
+        return rlp.decode(rlp.encode(transaction), sedes=cls)
+
+    @property
+    def hash(self) -> bytes:
+        return keccak(rlp.encode(self))
+
+    @property
+    def sender(self) -> Address:
         """
-        Return a version of this transaction which has been signed using the
-        provided `private_key`
+        Convenience property for the return value of `get_sender`
+        """
+        return self.transaction.get_sender()
+    
+    @property
+    def receiver(self) -> Address:
+        """
+        Convenience property for the return value of `get_sender`
+        """
+        return self.get_receiver()
+
+    # +-------------------------------------------------------------+
+    # | API that must be implemented by all Transaction subclasses. |
+    # +-------------------------------------------------------------+
+
+    #
+    # Validation
+    #
+    def validate(self) -> None:
+        """
+        Hook called during instantiation to ensure that all transaction
+        parameters pass validation rules.
+        """
+        self.check_signature_validity()
+
+    #
+    # Signature and Sender
+    #
+    @property
+    def is_signature_valid(self) -> bool:
+        try:
+            self.check_signature_validity()
+        except ValidationError:
+            return False
+        else:
+            return True
+
+    @abstractmethod
+    def check_signature_validity(self) -> None:
+        """
+        Checks signature validity, raising a ValidationError if the signature
+        is invalid.
         """
         raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def get_receiver(self) -> Address:
+        """
+        Get the 20-byte address which received this transaction.
+        """
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def get_signed(self, private_key, chain_id) -> 'BaseReceiveTransaction':
+        raise NotImplementedError("Must be implemented by subclasses")
+

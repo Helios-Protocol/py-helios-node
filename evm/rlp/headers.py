@@ -1,3 +1,7 @@
+from abc import (
+    ABCMeta,
+    abstractmethod
+)
 import time
 from typing import (
     Any,
@@ -40,6 +44,16 @@ from evm.exceptions import (
     ValidationError,
 )
 
+from evm.validation import (
+    validate_uint256,
+    validate_is_integer,
+    validate_is_bytes,
+    validate_lt_secpk1n,
+    validate_lte,
+    validate_gte,
+    validate_canonical_address,
+)
+
 from evm.utils.hexadecimal import (
     encode_hex,
 )
@@ -63,44 +77,24 @@ from evm.vm.execution_context import (
 )
 
 
-class MiningHeader(rlp.Serializable):
-    fields = [
-        ('parent_hash', hash32),
-        ('uncles_hash', hash32),
-        ('coinbase', address),
-        ('state_root', trie_root),
-        ('transaction_root', trie_root),
-        ('receipt_root', trie_root),
-        ('bloom', int256),
-        ('difficulty', big_endian_int),
-        ('block_number', big_endian_int),
-        ('gas_limit', big_endian_int),
-        ('gas_used', big_endian_int),
-        ('timestamp', big_endian_int),
-        ('extra_data', binary),
-    ]
-
-
 HeaderParams = Union[Optional[int], bytes, Address, Hash32]
 
-
-class BlockHeader(rlp.Serializable):
+class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
     fields = [
         ('parent_hash', hash32),
-        ('uncles_hash', hash32),
-        ('coinbase', address),
-        ('state_root', trie_root),
         ('transaction_root', trie_root),
+        ('receive_transaction_root', trie_root),
         ('receipt_root', trie_root),
         ('bloom', int256),
-        ('difficulty', big_endian_int),
         ('block_number', big_endian_int),
         ('gas_limit', big_endian_int),
         ('gas_used', big_endian_int),
         ('timestamp', big_endian_int),
         ('extra_data', binary),
-        ('mix_hash', binary),
-        ('nonce', Binary(8, allow_empty=True))
+        ('closing_balance', big_endian_int),
+        ('v', big_endian_int),
+        ('r', big_endian_int),
+        ('s', big_endian_int),
     ]
 
     @overload
@@ -109,61 +103,58 @@ class BlockHeader(rlp.Serializable):
 
     @overload  # noqa: F811
     def __init__(self,
-                 difficulty: int,
                  block_number: int,
                  gas_limit: int,
+                 closing_balance: int=0,
                  timestamp: int=None,
-                 coinbase: Address=ZERO_ADDRESS,
                  parent_hash: Hash32=ZERO_HASH32,
-                 uncles_hash: Hash32=EMPTY_UNCLE_HASH,
-                 state_root: Hash32=BLANK_ROOT_HASH,
                  transaction_root: Hash32=BLANK_ROOT_HASH,
+                 receive_transaction_root: Hash32=BLANK_ROOT_HASH,
                  receipt_root: Hash32=BLANK_ROOT_HASH,
                  bloom: int=0,
                  gas_used: int=0,
                  extra_data: bytes=b'',
-                 mix_hash: Hash32=ZERO_HASH32,
-                 nonce: bytes=GENESIS_NONCE) -> None:
+                 v: int=0,
+                 r: int=0,
+                 s: int=0) -> None:
         ...
 
     def __init__(self,  # noqa: F811
-                 difficulty,
                  block_number,
                  gas_limit,
+                 closing_balance=0,
                  timestamp=None,
-                 coinbase=ZERO_ADDRESS,
                  parent_hash=ZERO_HASH32,
-                 uncles_hash=EMPTY_UNCLE_HASH,
-                 state_root=BLANK_ROOT_HASH,
                  transaction_root=BLANK_ROOT_HASH,
+                 receive_transaction_root=BLANK_ROOT_HASH,
                  receipt_root=BLANK_ROOT_HASH,
                  bloom=0,
                  gas_used=0,
                  extra_data=b'',
-                 mix_hash=ZERO_HASH32,
-                 nonce=GENESIS_NONCE):
+                 v=0,
+                 r=0,
+                 s=0):
         if timestamp is None:
             timestamp = int(time.time())
-        super(BlockHeader, self).__init__(
+        super(BaseBlockHeader, self).__init__(
             parent_hash=parent_hash,
-            uncles_hash=uncles_hash,
-            coinbase=coinbase,
-            state_root=state_root,
             transaction_root=transaction_root,
+            receive_transaction_root=receive_transaction_root,
             receipt_root=receipt_root,
             bloom=bloom,
-            difficulty=difficulty,
             block_number=block_number,
             gas_limit=gas_limit,
             gas_used=gas_used,
             timestamp=timestamp,
             extra_data=extra_data,
-            mix_hash=mix_hash,
-            nonce=nonce,
+            closing_balance=closing_balance,
+            v=v,
+            r=r,
+            s=s,
         )
 
     def __repr__(self) -> str:
-        return '<BlockHeader #{0} {1}>'.format(
+        return '<BaseBlockHeader #{0} {1}>'.format(
             self.block_number,
             encode_hex(self.hash)[2:10],
         )
@@ -177,43 +168,39 @@ class BlockHeader(rlp.Serializable):
         return self._hash
 
     @property
-    def mining_hash(self) -> Hash32:
-        return keccak(rlp.encode(self[:-2], MiningHeader))
-
-    @property
     def hex_hash(self):
         return encode_hex(self.hash)
 
     @classmethod
     def from_parent(cls,
-                    parent: 'BlockHeader',
+                    parent: 'BaseBlockHeader',
                     gas_limit: int,
-                    difficulty: int,
-                    timestamp: int,
-                    coinbase: Address=ZERO_ADDRESS,
-                    nonce: bytes=None,
+                    timestamp: int=None,
                     extra_data: bytes=None,
                     transaction_root: bytes=None,
-                    receipt_root: bytes=None) -> 'BlockHeader':
+                    receive_transaction_root: bytes=None,
+                    receipt_root: bytes=None,
+                    closing_balance: int=0) -> 'BaseBlockHeader':
         """
         Initialize a new block header with the `parent` header as the block's
         parent hash.
         """
+        if timestamp is None:
+            timestamp = int(time.time())
         header_kwargs = {
             'parent_hash': parent.hash,
-            'coinbase': coinbase,
-            'state_root': parent.state_root,
             'gas_limit': gas_limit,
-            'difficulty': difficulty,
             'block_number': parent.block_number + 1,
             'timestamp': timestamp,
         }
-        if nonce is not None:
-            header_kwargs['nonce'] = nonce
+        if closing_balance is not 0:
+            header_kwargs['closing_balance'] = closing_balance
         if extra_data is not None:
             header_kwargs['extra_data'] = extra_data
         if transaction_root is not None:
             header_kwargs['transaction_root'] = transaction_root
+        if receive_transaction_root is not None:
+            header_kwargs['receive_transaction_root'] = receive_transaction_root
         if receipt_root is not None:
             header_kwargs['receipt_root'] = receipt_root
 
@@ -224,15 +211,99 @@ class BlockHeader(rlp.Serializable):
             self, prev_hashes: Union[Tuple[bytes], Tuple[bytes, bytes]]) -> ExecutionContext:
 
         return ExecutionContext(
-            coinbase=self.coinbase,
             timestamp=self.timestamp,
             block_number=self.block_number,
-            difficulty=self.difficulty,
             gas_limit=self.gas_limit,
             prev_hashes=prev_hashes,
         )
+        
+    #
+    # Signature and Sender
+    #
+    @property
+    def is_signature_valid(self) -> bool:
+        try:
+            self.check_signature_validity()
+        except ValidationError:
+            return False
+        else:
+            return True
+      
+
+    @property
+    def sender(self) -> Address:
+        """
+        Convenience property for the return value of `get_sender`
+        """
+        return self.get_sender()
+    
+    @abstractmethod
+    def check_signature_validity(self) -> None:
+        """
+        Checks signature validity, raising a ValidationError if the signature
+        is invalid.
+        """
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def get_sender(self) -> Address:
+        """
+        Get the 20-byte address which sent this transaction.
+        """
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def get_signed(self, private_key, chain_id) -> 'BaseBlockHeader':
+        raise NotImplementedError("Must be implemented by subclasses")
 
 
+        
+
+
+from evm.utils.blocks import (
+    create_block_header_signature,
+    extract_block_header_sender,
+    validate_block_header_signature,
+    is_eip_155_signed_block_header,
+    extract_chain_id,
+)
+
+
+class BlockHeader(BaseBlockHeader):
+    def check_signature_validity(self):
+        validate_block_header_signature(self)
+
+    def get_sender(self):
+        return extract_block_header_sender(self)
+    
+        
+    def get_signed(self, private_key, chain_id):
+        v,r,s = create_block_header_signature(self, private_key, chain_id)
+        return self.copy(
+                v=v,
+                r=r,
+                s=s,
+                )
+
+    @property
+    def chain_id(self):
+        if is_eip_155_signed_block_header(self):
+            return extract_chain_id(self.v)
+
+
+    @property
+    def v_min(self):
+        if is_eip_155_signed_block_header(self):
+            return 35 + (2 * self.chain_id)
+
+
+    @property
+    def v_max(self):
+        if is_eip_155_signed_block_header(self):
+            return 36 + (2 * self.chain_id)
+
+        
+        
 class CollationHeader(rlp.Serializable):
     """The header of a collation signed by the proposer."""
 
@@ -303,3 +374,5 @@ class CollationHeader(rlp.Serializable):
         header_kwargs = cls._decode_header_to_dict(encoded_header)
         header = cls(**header_kwargs)
         return header
+
+#test = BaseUnsignedBlockHeader()

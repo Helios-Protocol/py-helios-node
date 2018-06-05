@@ -23,11 +23,30 @@ class HeaderNotFound(PyEVMError):
     """
     Raised when a header with the given number/hash does not exist.
     """
-
+    
 
 class BlockNotFound(PyEVMError):
     """
     Raised when the block with the given number/hash does not exist.
+    """
+    pass
+
+class BlockOnWrongChain(PyEVMError):
+    """
+    Raised when a block interacts with a chain it doesnt belong to
+    """
+    pass
+
+
+class IncorrectBlockType(PyEVMError):
+    """
+    Raised when the block is queueblock when it should be block or vice-versa
+    """
+    pass
+
+class IncorrectBlockHeaderType(PyEVMError):
+    """
+    Raised when the block is queueblock when it should be block or vice-versa
     """
     pass
 
@@ -137,6 +156,27 @@ class InsufficientFunds(VMError):
     requested value.
     """
     pass
+
+class ReceiveTransactionIncorrectSenderBlockHash(VMError):
+    """
+    Raised when a receive transaction is found that has a sender block hash
+    that doesnt match the one in our database.
+    """
+    pass
+
+class ReceiveTransactionNotInDb(VMError):
+    """
+    Raised when a receive transaction is not found in our db
+    """
+    pass
+
+class ReceivingTransactionForWrongWallet(VMError):
+    """
+    Raised when a someone tries to receive a transaction sent to someone else.
+    """
+    pass
+
+
 
 
 class StackDepthLimit(VMError):

@@ -22,6 +22,11 @@ from evm.constants import (
 from evm.exceptions import (
     ValidationError,
 )
+from eth_keys.datatypes import(
+        BaseKey,
+        PublicKey,
+        PrivateKey
+)
 
 
 def validate_is_bytes(value, title="Value"):
@@ -232,15 +237,15 @@ def validate_gas_limit(gas_limit, parent_gas_limit):
 
 
 ALLOWED_HEADER_FIELDS = {
-    'coinbase',
+    'closing_balance',
     'gas_limit',
     'timestamp',
     'extra_data',
-    'mix_hash',
-    'nonce',
-    'uncles_hash',
     'transaction_root',
     'receipt_root',
+    'v',
+    'r',
+    's',
 }
 
 
@@ -254,3 +259,8 @@ def validate_header_params_for_configuration(header_params):
                 ", ".join(tuple(sorted(extra_fields))),
             )
         )
+
+def validate_private_key(private_key):
+    if not isinstance(private_key, PrivateKey):
+        raise ValidationError("This is not a private key")
+        

@@ -18,7 +18,6 @@ from evm.validation import (
 
 from evm.rlp.transactions import (
     BaseTransaction,
-    BaseUnsignedTransaction,
 )
 
 from evm.utils.transactions import (
@@ -75,39 +74,8 @@ class FrontierTransaction(BaseTransaction):
             data=self.data,
         ))
 
-    @classmethod
-    def create_unsigned_transaction(cls, nonce, gas_price, gas, to, value, data):
-        return FrontierUnsignedTransaction(nonce, gas_price, gas, to, value, data)
 
 
-class FrontierUnsignedTransaction(BaseUnsignedTransaction):
-
-    def validate(self):
-        validate_uint256(self.nonce, title="Transaction.nonce")
-        validate_is_integer(self.gas_price, title="Transaction.gas_price")
-        validate_uint256(self.gas, title="Transaction.gas")
-        if self.to != CREATE_CONTRACT_ADDRESS:
-            validate_canonical_address(self.to, title="Transaction.to")
-        validate_uint256(self.value, title="Transaction.value")
-        validate_is_bytes(self.data, title="Transaction.data")
-        super(FrontierUnsignedTransaction, self).validate()
-
-    def as_signed_transaction(self, private_key):
-        v, r, s = create_transaction_signature(self, private_key)
-        return FrontierTransaction(
-            nonce=self.nonce,
-            gas_price=self.gas_price,
-            gas=self.gas,
-            to=self.to,
-            value=self.value,
-            data=self.data,
-            v=v,
-            r=r,
-            s=s,
-        )
-
-    def get_intrinsic_gas(self):
-        return _get_frontier_intrinsic_gas(self.data)
 
 
 def _get_frontier_intrinsic_gas(transaction_data):

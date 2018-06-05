@@ -22,9 +22,7 @@ from eth_utils import (
 )
 
 from eth_hash.auto import keccak
-from evm.consensus.pow import (
-    check_pow,
-)
+
 from evm.constants import (
     GENESIS_PARENT_HASH,
     MAX_PREV_HEADER_DEPTH,
@@ -35,9 +33,17 @@ from evm.db.chain import BaseChainDB  # noqa: F401
 from evm.exceptions import (
     HeaderNotFound,
     ValidationError,
+    IncorrectBlockType,
+    IncorrectBlockHeaderType,
+    BlockOnWrongChain,
 )
 from evm.rlp.blocks import (  # noqa: F401
     BaseBlock,
+    BaseQueueBlock,
+)
+from evm.rlp.transactions import (  # noqa: F401
+    BaseTransaction,
+    BaseReceiveTransaction
 )
 from evm.rlp.headers import (
     BlockHeader,
@@ -56,12 +62,20 @@ from evm.utils.headers import (
 from evm.validation import (
     validate_length_lte,
     validate_gas_limit,
+    validate_private_key,
 )
 from evm.vm.message import (
     Message,
 )
 from evm.vm.state import BaseState  # noqa: F401
-
+from eth_typing import (
+    Hash32,
+)
+from eth_keys.datatypes import(
+        BaseKey,
+        PublicKey,
+        PrivateKey
+)
 
 class BaseVM(Configurable, metaclass=ABCMeta):
     block = None  # type: BaseBlock
@@ -69,7 +83,8 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     fork = None  # type: str
     chaindb = None  # type: BaseChainDB
     _state_class = None  # type: Type[BaseState]
-
+    network_id = 0
+    
     @abstractmethod
     def __init__(self, header, chaindb):
         pass
@@ -123,9 +138,6 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     def import_block(self, block):
         raise NotImplementedError("VM classes must implement this method")
 
-    @abstractmethod
-    def mine_block(self, *args, **kwargs):
-        raise NotImplementedError("VM classes must implement this method")
 
     @abstractmethod
     def set_block_transactions(self, base_block, new_header, transactions, receipts):
@@ -134,9 +146,9 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     #
     # Finalization
     #
-    @abstractmethod
-    def finalize_block(self, block):
-        raise NotImplementedError("VM classes must implement this method")
+#    @abstractmethod
+#    def finalize_block(self, block):
+#        raise NotImplementedError("VM classes must implement this method")
 
     @abstractmethod
     def pack_block(self, block, *args, **kwargs):
@@ -145,17 +157,6 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     #
     # Headers
     #
-    @classmethod
-    @abstractmethod
-    def compute_difficulty(cls, parent_header, timestamp):
-        """
-        Compute the difficulty for a block header.
-
-        :param parent_header: the parent header
-        :param timestamp: the timestamp of the child header
-        """
-        raise NotImplementedError("VM classes must implement this method")
-
     @abstractmethod
     def configure_header(self, **header_params):
         """
@@ -187,43 +188,10 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     def get_block_class(cls) -> Type['BaseBlock']:
         raise NotImplementedError("VM classes must implement this method")
 
-    @staticmethod
-    @abstractmethod
-    def get_block_reward() -> int:
-        """
-        Return the amount in **wei** that should be given to a miner as a reward
-        for this block.
-
-          .. note::
-            This is an abstract method that must be implemented in subclasses
-        """
-        raise NotImplementedError("VM classes must implement this method")
-
-    @classmethod
-    @abstractmethod
-    def get_nephew_reward(cls) -> int:
-        """
-        Return the reward which should be given to the miner of the given `nephew`.
-
-          .. note::
-            This is an abstract method that must be implemented in subclasses
-        """
-        raise NotImplementedError("VM classes must implement this method")
 
     @classmethod
     @abstractmethod
     def get_prev_hashes(cls, last_block_hash, chaindb):
-        raise NotImplementedError("VM classes must implement this method")
-
-    @staticmethod
-    @abstractmethod
-    def get_uncle_reward(block_number: int, uncle: BaseBlock) -> int:
-        """
-        Return the reward which should be given to the miner of the given `uncle`.
-
-          .. note::
-            This is an abstract method that must be implemented in subclasses
-        """
         raise NotImplementedError("VM classes must implement this method")
 
     #
@@ -231,10 +199,6 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     #
     @abstractmethod
     def create_transaction(self, *args, **kwargs):
-        raise NotImplementedError("VM classes must implement this method")
-
-    @abstractmethod
-    def create_unsigned_transaction(self, *args, **kwargs):
         raise NotImplementedError("VM classes must implement this method")
 
     @classmethod
@@ -259,14 +223,6 @@ class BaseVM(Configurable, metaclass=ABCMeta):
 
         :raises: ValidationError if the transaction is not valid to apply
         """
-        raise NotImplementedError("VM classes must implement this method")
-
-    @abstractmethod
-    def validate_seal(self, header: BlockHeader) -> None:
-        raise NotImplementedError("VM classes must implement this method")
-
-    @abstractmethod
-    def validate_uncle(self, block, uncle, uncle_parent):
         raise NotImplementedError("VM classes must implement this method")
 
     #
@@ -295,15 +251,29 @@ class VM(BaseVM):
         - ``block_class``: The :class:`~evm.rlp.blocks.Block` class for blocks in this VM ruleset.
         - ``_state_class``: The :class:`~evm.vm.state.State` class used by this VM for execution.
     """
-    def __init__(self, header, chaindb):
+    def __init__(self, header, chaindb, private_key: BaseKey, network_id):
         self.chaindb = chaindb
-        self.block = self.get_block_class().from_header(header=header, chaindb=self.chaindb)
-        self.state = self.get_state_class()(
-            db=self.chaindb.db,
-            execution_context=self.block.header.create_execution_context(self.previous_hashes),
-            state_root=self.block.header.state_root,
-        )
+        self.wallet_address = chaindb.wallet_address
+        self.private_key = private_key
+        self.network_id = network_id
+        
+        # new for helios: we want to make sure the newly created block is a queueblock
+        # TODO: make sure the VM doesnt need this to be a normal block under normal operations
+        # When a new block is imported, it just replaces self.block with a normal block.
+        # apply transactions doesnt, though. So will need to have some check there.
+        # also check to make sure the code below gives the correct type of block
+        if chaindb.header_exists(header.hash):
+            self.block = self.get_block_class().from_header(header=header, chaindb=self.chaindb)
+            if self.block.header.sender != self.wallet_address:
+                raise BlockOnWrongChain("Block sender doesnt match chain wallet address")
+            self.logger.debug("Initializing VM with completed block")
+        else:
+            self.block = self.get_queue_block_class().from_header(header=header)
+            self.logger.debug("Initializing VM with queue block")
+        
 
+        self.state = self.get_state_class().from_saved_state_root(db=self.chaindb.db, execution_context=self.block.header.create_execution_context(self.previous_hashes))
+        
     #
     # Logging
     #
@@ -329,7 +299,6 @@ class VM(BaseVM):
         new_header = header.copy(
             bloom=int(BloomFilter(header.bloom) | receipt.bloom),
             gas_used=receipt.gas_used,
-            state_root=state_root,
         )
 
         return new_header, receipt, computation
@@ -345,6 +314,7 @@ class VM(BaseVM):
                          code,
                          code_address=None,
                          ):
+        exit("NOT IMPLEMENTED YET")
         """
         Execute raw bytecode in the context of the current state of
         the virtual machine.
@@ -392,65 +362,109 @@ class VM(BaseVM):
     #
     # Mining
     #
-    def import_block(self, block):
+    def import_block(self, block, *args, **kwargs):
         """
         Import the given block to the chain.
         """
+        if not isinstance(block, self.get_queue_block_class()):
+            if block.sender != self.wallet_address:
+                raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
+            
+        #TODO: if importing queueblock, verify it here first before trying to import.
         self.block = self.block.copy(
             header=self.configure_header(
-                coinbase=block.header.coinbase,
                 gas_limit=block.header.gas_limit,
                 timestamp=block.header.timestamp,
                 extra_data=block.header.extra_data,
-                mix_hash=block.header.mix_hash,
-                nonce=block.header.nonce,
-                uncles_hash=keccak(rlp.encode(block.uncles)),
-            ),
-            uncles=block.uncles,
+                v=block.header.v,
+                r=block.header.r,
+                s=block.header.s,
+            )
         )
         # we need to re-initialize the `state` to update the execution context.
-        self.state = self.get_state_class()(
-            db=self.chaindb.db,
-            execution_context=self.block.header.create_execution_context(self.previous_hashes),
-            state_root=self.block.header.state_root,
-        )
+        self.state = self.get_state_class().from_saved_state_root(
+                db=self.chaindb.db, 
+                execution_context=self.block.header.create_execution_context(self.previous_hashes)
+                )
 
-        # run all of the transactions.
+        #run all of the transactions.
         last_header, receipts = self._apply_all_transactions(block.transactions, self.block.header)
-
+        
+        #then run all receive transactions
+        last_header, receive_receipts = self._apply_all_transactions(block.receive_transactions, last_header)
+        
+        #then combine
+        receipts.extend(receive_receipts)
+        
         self.block = self.set_block_transactions(
             self.block,
             last_header,
             block.transactions,
             receipts,
         )
+        
+        self.block = self.set_block_receive_transactions(
+            self.block,
+            self.block.header,
+            block.transactions
+        )
+        
 
-        return self.mine_block()
-
-    def mine_block(self, *args, **kwargs):
-        """
-        Mine the current block. Proxies to self.pack_block method.
-        """
+        #TODO: find out if this packing is nessisary
         packed_block = self.pack_block(self.block, *args, **kwargs)
-
-        if packed_block.number == 0:
-            final_block = packed_block
-        else:
-            final_block = self.finalize_block(packed_block)
-
+        
+        if isinstance(packed_block, self.get_queue_block_class()):
+            """
+            If it is a queueblock, then it must be signed now.
+            It cannot be signed earlier because the header fields were changing
+            """
+            if self.private_key is None:
+                raise ValueError("Cannot sign block because no private key given")
+            self.logger.debug("signing block")
+            packed_block = packed_block.as_complete_block(self.private_key, self.network_id)
+            
         # Perform validation
-        self.validate_block(final_block)
+        self.validate_block(packed_block)
+        
+        #save all send transactions in the state as receivable
+        self.save_transactions_as_receivable(self.block.header, self.block.transactions)
+        
+        self.state.account_db.persist(save_state_root=True)
+        
+        return packed_block
 
-        return final_block
+    def save_transaction_as_receivable(self,block_header, transaction):
+        self.state.account_db.add_receivable_transaction(transaction.to, transaction.hash, block_header.hash)
+        
+    def save_transactions_as_receivable(self,block_header, transactions):
+        for transaction in transactions:
+            self.save_transaction_as_receivable(block_header, transaction)
+        
+        
+#    def mine_block(self, *args, **kwargs):
+#        """
+#        Mine the current block. Proxies to self.pack_block method.
+#        """
+#        packed_block = self.pack_block(self.block, *args, **kwargs)
+#
+#        if packed_block.number == 0:
+#            final_block = packed_block
+#        else:
+#            final_block = self.finalize_block(packed_block)
+#
+#        # Perform validation
+#        self.validate_block(final_block)
+#
+#        return final_block
 
     def set_block_transactions(self, base_block, new_header, transactions, receipts):
-
+       
         tx_root_hash, tx_kv_nodes = make_trie_root_and_nodes(transactions)
         self.chaindb.persist_trie_data_dict(tx_kv_nodes)
 
         receipt_root_hash, receipt_kv_nodes = make_trie_root_and_nodes(receipts)
         self.chaindb.persist_trie_data_dict(receipt_kv_nodes)
-
+        
         return base_block.copy(
             transactions=transactions,
             header=new_header.copy(
@@ -458,40 +472,22 @@ class VM(BaseVM):
                 receipt_root=receipt_root_hash,
             ),
         )
+            
+    def set_block_receive_transactions(self, base_block, new_header, transactions):
+
+        tx_root_hash, tx_kv_nodes = make_trie_root_and_nodes(transactions)
+        self.chaindb.persist_trie_data_dict(tx_kv_nodes)
+
+        return base_block.copy(
+            receive_transactions=transactions,
+            header=new_header.copy(
+                receive_transaction_root=tx_root_hash
+            ),
+        )
 
     #
     # Finalization
     #
-    def finalize_block(self, block):
-        """
-        Perform any finalization steps like awarding the block mining reward.
-        """
-        block_reward = self.get_block_reward() + (
-            len(block.uncles) * self.get_nephew_reward()
-        )
-
-        self.state.account_db.delta_balance(block.header.coinbase, block_reward)
-        self.logger.debug(
-            "BLOCK REWARD: %s -> %s",
-            block_reward,
-            block.header.coinbase,
-        )
-
-        for uncle in block.uncles:
-            uncle_reward = self.get_uncle_reward(block.number, uncle)
-            self.state.account_db.delta_balance(uncle.coinbase, uncle_reward)
-            self.logger.debug(
-                "UNCLE REWARD REWARD: %s -> %s",
-                uncle_reward,
-                uncle.coinbase,
-            )
-        # We need to call `persist` here since the state db batches
-        # all writes until we tell it to write to the underlying db
-        # TODO: Refactor to only use batching/journaling for tx processing
-        self.state.account_db.persist()
-
-        return block.copy(header=block.header.copy(state_root=self.state.state_root))
-
     def pack_block(self, block, *args, **kwargs):
         """
         Pack block for mining.
@@ -507,11 +503,6 @@ class VM(BaseVM):
         :param bytes mix_hash: 32 bytes
         :param bytes nonce: 8 bytes
         """
-        if 'uncles' in kwargs:
-            uncles = kwargs.pop('uncles')
-            kwargs.setdefault('uncles_hash', keccak(rlp.encode(block.uncles)))
-        else:
-            uncles = block.uncles
 
         provided_fields = set(kwargs.keys())
         known_fields = set(BlockHeader._meta.field_names)
@@ -527,7 +518,7 @@ class VM(BaseVM):
             )
 
         header = block.header.copy(**kwargs)
-        packed_block = block.copy(uncles=uncles, header=header)
+        packed_block = block.copy(header=header)
 
         return packed_block
 
@@ -563,6 +554,17 @@ class VM(BaseVM):
             return cls.block_class
 
     @classmethod
+    def get_queue_block_class(cls) -> Type['BaseQueueBlock']:
+        """
+        Return the :class:`~evm.rlp.blocks.Block` class that this VM uses for queue blocks.
+        """
+        if cls.queue_block_class is None:
+            raise AttributeError("No `queue_block_class` has been set for this VM")
+        else:
+            return cls.queue_block_class
+        
+        
+    @classmethod
     @functools.lru_cache(maxsize=32)
     @to_tuple
     def get_prev_hashes(cls, last_block_hash, chaindb):
@@ -584,7 +586,52 @@ class VM(BaseVM):
         Convenience API for accessing the previous 255 block hashes.
         """
         return self.get_prev_hashes(self.block.header.parent_hash, self.chaindb)
-
+    
+    
+    #
+    # Queueblocks
+    #
+        
+    def add_transaction_to_queue_block(self, block, transaction:BaseTransaction) -> BaseQueueBlock:
+        """
+        adds a transaction to the given queueblock. Does not apply to state, does not save to database
+        import_block will later calculate most things for the header
+        Simply adds the transaction to the given block
+        """
+        #TODO: check to make sure running import_block on this adds all required header fields
+        if not isinstance(block, self.get_queue_block_class()):
+            raise IncorrectBlockType("Tried to add transaction to queueblock, but given block is not a queueblock")
+            
+        transactions = block.transactions + (transaction, )
+        
+        return block.copy(
+            transactions=transactions,
+        )
+    
+    def add_receive_transaction_to_queue_block(self, block, transaction:BaseReceiveTransaction) -> BaseQueueBlock:
+        """
+        adds a transaction to the given queueblock. Does not apply to state, does not save to database
+        import_block will later calculate most things for the header
+        Simply adds the transaction to the given block
+        """
+        #TODO: check to make sure running import_block on this adds all required header fields
+        if not isinstance(block, self.get_queue_block_class()):
+            raise IncorrectBlockType("Tried to add transaction to queueblock, but given block is not a queueblock")
+            
+        transactions = block.receive_transactions + (transaction, )
+        
+        return block.copy(
+            receive_transactions=transactions,
+        )
+    
+    def get_complete_block(self, block, private_key) -> BaseBlock:
+        """
+        signs the header of the given block and changes it to a complete block
+        doesnt validate the header before doing so
+        """
+        return block.as_complete_block(private_key, self.network_id)
+    
+        
     #
     # Transactions
     #
@@ -593,19 +640,28 @@ class VM(BaseVM):
         Proxy for instantiating a signed transaction for this VM.
         """
         return self.get_transaction_class()(*args, **kwargs)
-
-    def create_unsigned_transaction(self, *args, **kwargs):
+    
+    def create_receive_transaction(self, *args, **kwargs):
         """
-        Proxy for instantiating an unsigned transaction for this VM.
+        Proxy for instantiating a signed transaction for this VM.
         """
-        return self.get_transaction_class().create_unsigned_transaction(*args, **kwargs)
-
+        return self.get_receive_transaction_class()(*args, **kwargs)
+            
+        
+        
     @classmethod
     def get_transaction_class(cls):
         """
         Return the class that this VM uses for transactions.
         """
         return cls.get_block_class().get_transaction_class()
+    
+    @classmethod
+    def get_receive_transaction_class(cls):
+        """
+        Return the class that this VM uses for transactions.
+        """
+        return cls.get_block_class().get_receive_transaction_class()
 
     #
     # Validate
@@ -614,7 +670,7 @@ class VM(BaseVM):
         """
         Validate the the given block.
         """
-        if not isinstance(block, self.get_block_class()):
+        if not (isinstance(block, self.get_block_class()) or isinstance(block, self.get_queue_block_class())):
             raise ValidationError(
                 "This vm ({0!r}) is not equipped to validate a block of type {1!r}".format(
                     self,
@@ -622,6 +678,9 @@ class VM(BaseVM):
                 )
             )
         if not block.is_genesis:
+            #check signature validity. this will raise a validation error
+            block.header.check_signature_validity()
+
             parent_header = get_parent_header(block.header, self.chaindb)
 
             validate_gas_limit(block.header.gas_limit, parent_header.gas_limit)
@@ -652,62 +711,11 @@ class VM(BaseVM):
             raise ValidationError(
                 "Block's transaction_root ({0}) does not match expected value: {1}".format(
                     block.header.transaction_root, tx_root_hash))
-
-        if len(block.uncles) > MAX_UNCLES:
+        re_tx_root_hash, _ = make_trie_root_and_nodes(block.receive_transactions)
+        if re_tx_root_hash != block.header.receive_transaction_root:
             raise ValidationError(
-                "Blocks may have a maximum of {0} uncles.  Found "
-                "{1}.".format(MAX_UNCLES, len(block.uncles))
-            )
-
-        if not self.chaindb.exists(block.header.state_root):
-            raise ValidationError(
-                "`state_root` was not found in the db.\n"
-                "- state_root: {0}".format(
-                    block.header.state_root,
-                )
-            )
-        local_uncle_hash = keccak(rlp.encode(block.uncles))
-        if local_uncle_hash != block.header.uncles_hash:
-            raise ValidationError(
-                "`uncles_hash` and block `uncles` do not match.\n"
-                " - num_uncles       : {0}\n"
-                " - block uncle_hash : {1}\n"
-                " - header uncle_hash: {2}".format(
-                    len(block.uncles),
-                    local_uncle_hash,
-                    block.header.uncle_hash,
-                )
-            )
-
-    def validate_seal(self, header: BlockHeader) -> None:
-        """
-        Validate the seal on the given header.
-        """
-        check_pow(
-            header.block_number, header.mining_hash,
-            header.mix_hash, header.nonce, header.difficulty)
-
-    def validate_uncle(self, block, uncle, uncle_parent):
-        """
-        Validate the given uncle in the context of the given block.
-        """
-        if uncle.block_number >= block.number:
-            raise ValidationError(
-                "Uncle number ({0}) is higher than block number ({1})".format(
-                    uncle.block_number, block.number))
-
-        if uncle.block_number != uncle_parent.block_number + 1:
-            raise ValidationError(
-                "Uncle number ({0}) is not one above ancestor's number ({1})".format(
-                    uncle.block_number, uncle_parent.block_number))
-        if uncle.timestamp < uncle_parent.timestamp:
-            raise ValidationError(
-                "Uncle timestamp ({0}) is before ancestor's timestamp ({1})".format(
-                    uncle.timestamp, uncle_parent.timestamp))
-        if uncle.gas_used > uncle.gas_limit:
-            raise ValidationError(
-                "Uncle's gas usage ({0}) is above the limit ({1})".format(
-                    uncle.gas_used, uncle.gas_limit))
+                "Block's receive transaction_root ({0}) does not match expected value: {1}".format(
+                    block.header.receive_transaction_root, re_tx_root_hash))
 
     #
     # State
@@ -721,7 +729,32 @@ class VM(BaseVM):
             raise AttributeError("No `_state_class` has been set for this VM")
 
         return cls._state_class
-
+    
+#    def get_state(self, header: BlockHeader=None) -> BaseState:
+#        """
+#        Return the state for the given blockHeader
+#        """
+#        if header == None:
+#            header = self.block.header
+#           
+#        canonical_header = self.chaindb.get_canonical_head()
+#        head_block_number = canonical_header.block_number
+#                
+#        if header.block_number == head_block_number +1:
+#            header = canonical_header
+#            
+#        return self.get_state_class()(
+#            db=self.chaindb.db,
+#            execution_context=self.block.header.create_execution_context(self.previous_hashes),
+#            state_root=self.get_state_root(header),
+#        )
+#        
+#    def get_state_root(self, header: BlockHeader=None) -> Hash32:
+#        """
+#        Return the state_root for the given blockHeader
+#        """
+#        return self.chaindb.get_state_root_from_block_hash(header.hash)
+        
     @contextlib.contextmanager
     def state_in_temp_block(self):
         header = self.block.header

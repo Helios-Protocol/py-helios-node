@@ -21,6 +21,12 @@ from evm.utils.datatypes import (
     Configurable,
 )
 
+import rlp
+from evm.db.schema import SchemaV1
+from evm.rlp.sedes import(
+    trie_root
+)
+
 if TYPE_CHECKING:
     from evm.computation import (  # noqa: F401
         BaseComputation,
@@ -72,12 +78,6 @@ class BaseState(Configurable, metaclass=ABCMeta):
     # Block Object Properties (in opcodes)
     #
 
-    @property
-    def coinbase(self):
-        """
-        Return the current ``coinbase`` from the current :attr:`~execution_context`
-        """
-        return self.execution_context.coinbase
 
     @property
     def timestamp(self):
@@ -93,12 +93,6 @@ class BaseState(Configurable, metaclass=ABCMeta):
         """
         return self.execution_context.block_number
 
-    @property
-    def difficulty(self):
-        """
-        Return the current ``difficulty`` from the current :attr:`~execution_context`
-        """
-        return self.execution_context.difficulty
 
     @property
     def gas_limit(self):
@@ -127,7 +121,25 @@ class BaseState(Configurable, metaclass=ABCMeta):
         """
         return self.account_db.state_root
 
-    #
+
+    def save_current_state_root(self) -> None:
+        """
+        Saves the current state_root to the database to be loaded later
+        passes through to account db
+        """
+        self.account_db.save_current_state_root
+        
+    
+    @classmethod    
+    def from_saved_state_root(cls, db, execution_context) -> 'BaseState':
+        """
+        Loads the last saved state root
+        """
+        state_root = cls.get_account_db_class().get_saved_state_root(db) 
+        return cls(db, execution_context, state_root)
+
+            
+    #   
     # Access self._chaindb
     #
     def snapshot(self):
@@ -223,20 +235,24 @@ class BaseState(Configurable, metaclass=ABCMeta):
     def get_transaction_executor(self):
         return self.transaction_executor(self)
 
-    @abstractmethod
-    def execute_transaction(self):
-        raise NotImplementedError()
+#    @abstractmethod
+#    def execute_transaction(self):
+#        raise NotImplementedError()
+        
+    def execute_transaction(self, transaction):
+        executor = self.get_transaction_executor()
+        if executor == None:
+            raise ValueError("No transaction executor given")
+        return executor(transaction)
 
 
 class BaseTransactionExecutor(metaclass=ABCMeta):
     def __init__(self, vm_state):
         self.vm_state = vm_state
 
+    @abstractmethod
     def get_transaction_context(self, transaction):
-        return self.vm_state.get_transaction_context_class()(
-            gas_price=transaction.gas_price,
-            origin=transaction.sender,
-        )
+        raise NotImplementedError()
 
     def __call__(self, transaction):
         valid_transaction = self.validate_transaction(transaction)
@@ -247,7 +263,7 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
 
     @abstractmethod
     def validate_transaction(self):
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @abstractmethod
     def build_evm_message(self):

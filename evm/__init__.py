@@ -14,8 +14,6 @@ setup_trace_logging()
 from evm.chains import (  # noqa: F401
     Chain,
     MainnetChain,
-    MainnetTesterChain,
-    RopstenChain,
 )
 
 #

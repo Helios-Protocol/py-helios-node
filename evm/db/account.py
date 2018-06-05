@@ -33,6 +33,7 @@ from evm.db.journal import (
 )
 from evm.rlp.accounts import (
     Account,
+    TransactionKey,
 )
 from evm.validation import (
     validate_is_bytes,
@@ -47,8 +48,13 @@ from evm.utils.padding import (
     pad32,
 )
 
+from evm.db.schema import SchemaV1
+
 from .hash_trie import HashTrie
 
+from evm.rlp.sedes import(
+    trie_root
+)
 
 # Use lru-dict instead of functools.lru_cache because the latter doesn't let us invalidate a single
 # entry, so we'd have to invalidate the whole cache in _set_account() and that turns out to be too
@@ -202,6 +208,7 @@ class AccountDB(BaseAccountDB):
         AccountDB synchronizes the snapshot/revert/persist of both of the
         journals.
         """
+        self.db = db
         self._batchdb = BatchDB(db)
         self._batchtrie = BatchDB(db)
         self._journaldb = JournalDB(self._batchdb)
@@ -300,6 +307,87 @@ class AccountDB(BaseAccountDB):
         self.set_nonce(address, current_nonce + 1)
 
     #
+    # Block number
+    #
+    def get_block_number(self, address):
+        validate_canonical_address(address, title="Storage Address")
+
+        account = self._get_account(address)
+        return account.block_number
+
+    def set_block_number(self, address, block_number):
+        validate_canonical_address(address, title="Storage Address")
+        validate_uint256(block_number, title="Block Number")
+
+        account = self._get_account(address)
+        self._set_account(address, account.copy(block_number=block_number))
+
+    def increment_block_number(self, address):
+        current_block_number = self.get_block_number(address)
+        self.set_block_number(address, current_block_number + 1)
+        
+       
+    #
+    # Receivable Transactions
+    #
+    def get_receivable_transactions(self, address):
+        validate_canonical_address(address, title="Storage Address")
+
+        account = self._get_account(address)
+
+        return account.receivable_transactions
+    
+    def get_receivable_transaction(self, address, transaction_hash):
+        validate_is_bytes(transaction_hash, title="Transaction Hash")
+        all_tx = self.get_receivable_transactions(address)
+        for tx_key in all_tx:
+            if tx_key.transaction_hash == transaction_hash:
+                return tx_key
+        return False
+        
+        
+    def add_receivable_transaction(self, address, transaction_hash, sender_block_hash):
+        validate_canonical_address(address, title="Storage Address")
+        validate_is_bytes(transaction_hash, title="Transaction Hash")
+        validate_is_bytes(sender_block_hash, title="Sender Block Hash")
+        
+        #first lets make sure we don't already have the transaction
+        if self.get_receivable_transaction(address, transaction_hash) is not False:
+            raise ValueError("Tried to save a receivable transaction that was already saved")
+
+        account = self._get_account(address)
+        receivable_transactions = account.receivable_transactions
+        
+        new_receivable_transactions = receivable_transactions + (TransactionKey(transaction_hash, sender_block_hash), )
+        
+        self._set_account(address, account.copy(receivable_transactions=new_receivable_transactions)) 
+        
+    def delete_receivable_transaction(self, address, transaction_hash):
+        validate_canonical_address(address, title="Storage Address")
+        validate_is_bytes(transaction_hash, title="Transaction Hash")
+        
+        account = self._get_account(address)
+        receivable_transactions = list(self.get_receivable_transactions(address))
+        i = 0
+        found = False
+        for tx_key in receivable_transactions:
+            if tx_key.transaction_hash == transaction_hash:
+                found = True
+                break
+            i +=1
+            
+        if found == True:
+            del receivable_transactions[i]
+        else:
+            raise ValueError("transaction hash {0} not found in receivable_transactions database for wallet {1}".format(transaction_hash, address))
+        
+        final = tuple(receivable_transactions)
+        print("test")
+        print(final)
+        self._set_account(address, account.copy(receivable_transactions=tuple(receivable_transactions)))
+    
+    
+    #
     # Code
     #
     def get_code(self, address):
@@ -394,10 +482,12 @@ class AccountDB(BaseAccountDB):
         self._journaltrie.persist()
         return self.state_root
 
-    def persist(self) -> None:
+    def persist(self, save_state_root = False) -> None:
         self.make_state_root()
         self._batchtrie.commit(apply_deletes=False)
         self._batchdb.commit(apply_deletes=True)
+        if save_state_root:
+            self.save_current_state_root()
 
     def _log_pending_accounts(self) -> None:
         accounts_displayed = set()  # type: Set[bytes]
@@ -418,3 +508,31 @@ class AccountDB(BaseAccountDB):
                         encode_hex(account.storage_root),
                         encode_hex(account.code_hash),
                     )
+    
+    def save_current_state_root(self) -> None:
+        """
+        Saves the current state_root to the database to be loaded later
+        """
+        self.logger.debug("Saving current state root")
+        #if self.state_root==BLANK_ROOT_HASH:
+        #    raise ValueError("cannot save state root because it is BLANK_ROOT_HASH")
+        current_state_root_lookup_key = SchemaV1.make_current_state_root_lookup_key()
+        
+        self.db.set(
+            current_state_root_lookup_key,
+            rlp.encode(self.state_root, sedes=trie_root),
+        )
+    
+    @classmethod    
+    def get_saved_state_root(cls, db) -> Hash32:
+        """
+        Loads the last saved state root
+        """
+
+        current_state_root_lookup_key = SchemaV1.make_current_state_root_lookup_key()
+        try:
+            loaded_state_root = rlp.decode(db[current_state_root_lookup_key], sedes=trie_root)
+        except KeyError:
+            raise ValueError("There is no saved state root to load")
+               
+        return loaded_state_root

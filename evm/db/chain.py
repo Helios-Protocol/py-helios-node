@@ -13,7 +13,9 @@ from typing import (
     Tuple,
     Type,
     TYPE_CHECKING,
+    Union,
 )
+
 
 import rlp
 
@@ -23,7 +25,8 @@ from trie import (
 
 from eth_typing import (
     BlockNumber,
-    Hash32
+    Hash32,
+    Address
 )
 
 from eth_utils import (
@@ -58,21 +61,30 @@ from evm.utils.hexadecimal import (
 from evm.validation import (
     validate_uint256,
     validate_word,
+    validate_canonical_address,
 )
 
+from evm.rlp import sedes as evm_rlp_sedes
+from evm.rlp.sedes import(
+    trie_root,
+    address
+)
 if TYPE_CHECKING:
     from evm.rlp.blocks import (  # noqa: F401
         BaseBlock
     )
     from evm.rlp.transactions import (  # noqa: F401
-        BaseTransaction
+        BaseTransaction,
+        BaseReceiveTransaction
     )
 
 
 class TransactionKey(rlp.Serializable):
     fields = [
+        ('wallet_address', address),
         ('block_number', rlp.sedes.big_endian_int),
         ('index', rlp.sedes.big_endian_int),
+        ('is_receive', rlp.sedes.boolean),
     ]
 
 
@@ -110,14 +122,6 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_block_uncles(self, uncles_hash: Hash32) -> List[BlockHeader]:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def get_score(self, block_hash: Hash32) -> int:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
     def persist_header(self, header: BlockHeader) -> Tuple[BlockHeader, ...]:
         raise NotImplementedError("ChainDB classes must implement this method")
 
@@ -126,10 +130,6 @@ class BaseChainDB(metaclass=ABCMeta):
     #
     @abstractmethod
     def persist_block(self, block: 'BaseBlock') -> None:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def persist_uncles(self, uncles: Tuple[BlockHeader]) -> Hash32:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     #
@@ -189,8 +189,10 @@ class BaseChainDB(metaclass=ABCMeta):
 
 
 class ChainDB(BaseChainDB):
-    def __init__(self, db: BaseDB) -> None:
+    def __init__(self, db: BaseDB, wallet_address:Address) -> None:
         self.db = db
+        validate_canonical_address(wallet_address, "Wallet Address") 
+        self.wallet_address = wallet_address
 
     #
     # Canonical Chain API
@@ -200,7 +202,7 @@ class ChainDB(BaseChainDB):
         Return the block hash for the given block number.
         """
         validate_uint256(block_number, title="Block Number")
-        number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(block_number)
+        number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(self.wallet_address, block_number)
         try:
             return rlp.decode(
                 self.db[number_to_hash_key],
@@ -228,13 +230,14 @@ class ChainDB(BaseChainDB):
         Raises CanonicalHeadNotFound if no canonical head has been set.
         """
         try:
-            canonical_head_hash = self.db[SchemaV1.make_canonical_head_hash_lookup_key()]
+            canonical_head_hash = self.db[SchemaV1.make_canonical_head_hash_lookup_key(self.wallet_address)]
         except KeyError:
             raise CanonicalHeadNotFound("No canonical head set for this chain")
         return self.get_block_header_by_hash(
             cast(Hash32, canonical_head_hash),
         )
-
+    
+        
     #
     # Header API
     #
@@ -259,37 +262,6 @@ class ChainDB(BaseChainDB):
             )
         return _decode_block_header(header_rlp)
 
-    def get_block_uncles(self, uncles_hash: Hash32) -> List[BlockHeader]:
-        """
-        Returns an iterable of uncle headers specified by the given uncles_hash
-        """
-        validate_word(uncles_hash, title="Uncles Hash")
-        try:
-            encoded_uncles = self.db[uncles_hash]
-        except KeyError:
-            raise HeaderNotFound(
-                "No uncles found for hash {0}".format(uncles_hash)
-            )
-        else:
-            return rlp.decode(encoded_uncles, sedes=rlp.sedes.CountableList(BlockHeader))
-
-    def get_score(self, block_hash: Hash32) -> int:
-        """
-        Returns the score for the header with the given hash.
-
-        Raises HeaderNotFound if no header with the given has is found in the database.
-        """
-        try:
-            encoded_score = self.db[SchemaV1.make_block_hash_to_score_lookup_key(block_hash)]
-        except KeyError:
-            raise HeaderNotFound(
-                "No header with hash {0} found".format(encode_hex(block_hash))
-            )
-        else:
-            return rlp.decode(
-                encoded_score,
-                sedes=rlp.sedes.big_endian_int,
-            )
 
     # TODO: This method should take a chain of headers as that's the most common use case
     # and it'd be much faster than inserting each header individually.
@@ -308,28 +280,21 @@ class ChainDB(BaseChainDB):
             rlp.encode(header),
         )
 
-        if is_genesis:
-            score = header.difficulty
-        else:
-            score = self.get_score(header.parent_hash) + header.difficulty
-
-        self.db.set(
-            SchemaV1.make_block_hash_to_score_lookup_key(header.hash),
-            rlp.encode(score, sedes=rlp.sedes.big_endian_int),
-        )
 
         try:
-            head_score = self.get_score(self.get_canonical_head().hash)
+            head_block_number = self.get_canonical_head().block_number
         except CanonicalHeadNotFound:
             new_headers = self._set_as_canonical_chain_head(header)
         else:
-            if score > head_score:
+            if header.block_number > head_block_number:
                 new_headers = self._set_as_canonical_chain_head(header)
             else:
                 new_headers = tuple()
 
         return new_headers
+    
 
+        
     # TODO: update this to take a `hash` rather than a full header object.
     def _set_as_canonical_chain_head(self, header: BlockHeader) -> Tuple[BlockHeader, ...]:
         """
@@ -360,7 +325,7 @@ class ChainDB(BaseChainDB):
         for h in new_canonical_headers:
             self._add_block_number_to_hash_lookup(h)
 
-        self.db.set(SchemaV1.make_canonical_head_hash_lookup_key(), header.hash)
+        self.db.set(SchemaV1.make_canonical_head_hash_lookup_key(self.wallet_address), header.hash)
 
         return new_canonical_headers
 
@@ -403,6 +368,7 @@ class ChainDB(BaseChainDB):
         block number.
         """
         block_number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(
+            self.wallet_address,
             header.block_number
         )
         self.db.set(
@@ -410,6 +376,103 @@ class ChainDB(BaseChainDB):
             rlp.encode(header.hash, sedes=rlp.sedes.binary),
         )
 
+    #chronological head number is always 0   
+#    def set_chronological_head_number(self, ch_head_number: ChBlockNumber) -> None:
+#        """
+#        sets the given chronological block number as chronological head
+#        """
+#        try:
+#            self.get_block_hash_from_cronological_block_number(ch_head_number)
+#        except ChronologicalBlockNumberNotFound:
+#            raise ValueError("Cannot set chronological head for chronological block number that doesnt exist. chronological number: {}".format(ch_head_number))
+#            
+#            
+#        chronological_head_number_key = SchemaV1.make_chronological_head_number_lookup_key()
+#        self.db.set(
+#            chronological_head_number_key,
+#            rlp.encode(ch_head_number, sedes=rlp.sedes.big_endian_int),
+#        )
+        
+#    def get_chronological_head_number(self) -> int:
+#        """
+#        gets the chronological head number
+#        """
+#        chronological_head_number_key = SchemaV1.make_chronological_head_number_lookup_key()
+#        try:
+#            return rlp.decode(self.db[chronological_head_number_key], rlp.sedes.big_endian_int)
+#        except KeyError:
+#            raise ValueError("No chronological head number found")
+        
+#    def add_block_hash_to_chronological_journal(self, block_hash: Hash32, is_genesis = False) -> None:
+#        """
+#        adds the block hash to the chronological journal, and sets it as new chronological head.
+#        """
+#        #first make sure the block exists
+#        try:
+#            self.get_block_header_by_hash(block_hash)
+#        except HeaderNotFound:
+#            raise ValueError("Cannot use unknown block hash as chronological head: {}".format(
+#                block_hash))
+#        
+#        #get previous chronological head number
+#        try:
+#            chronological_head_number = self.get_chronological_head_number()
+#        except ValueError:
+#            new_chronological_head_number = 0
+#        else:
+#            #save this one as prev + 1
+#            new_chronological_head_number = chronological_head_number + 1
+#        
+#        chronological_block_number_key = SchemaV1.make_chronological_block_number_lookup_key(
+#            new_chronological_head_number
+#        )
+#        
+#        self.db.set(
+#            chronological_block_number_key,
+#            rlp.encode(block_hash, sedes=evm_rlp_sedes.Hash32),
+#        )
+#        #lets also save the reverse lookup
+#        block_hash_to_chronological_number_key = SchemaV1.make_block_hash_to_chronological_number_lookup_key(
+#            block_hash
+#        )
+#        
+#        self.db.set(
+#            block_hash_to_chronological_number_key,
+#            rlp.encode(new_chronological_head_number, sedes=rlp.sedes.big_endian_int),
+#        )
+#        
+#        #finally save this one as the new chronological head
+#        self.set_chronological_head_number(new_chronological_head_number)
+#        
+#    def get_chronological_block_number_from_block_hash(self, block_hash: Hash32) -> int:
+#        """
+#        gets the chronological block number for a given block hash
+#        """
+#        block_hash_to_chronological_number_key = SchemaV1.make_block_hash_to_chronological_number_lookup_key(
+#            block_hash
+#        )
+#        try:
+#            return rlp.decode(self.db[block_hash_to_chronological_number_key], sedes=rlp.sedes.big_endian_int)
+#        except KeyError:
+#            raise ValueError("Cannot find chronological block number for block hash: {}".format(
+#                block_hash))
+#        
+#    def get_block_hash_from_cronological_block_number(self, ch_number: ChBlockNumber) -> Hash32:
+#        """
+#        gets the block hash for a given chronological block number
+#        """
+#        chronological_block_number_key = SchemaV1.make_chronological_block_number_lookup_key(
+#            ch_number
+#        )
+#        try:
+#            return rlp.decode(self.db[chronological_block_number_key], sedes=evm_rlp_sedes.Hash32)
+#        except KeyError:
+#            raise ChronologicalBlockNumberNotFound(
+#                "Chronological block number {} not found".format(ch_number))
+#        
+#    
+
+    
     #
     # Block API
     #
@@ -424,22 +487,9 @@ class ChainDB(BaseChainDB):
         for header in new_canonical_headers:
             for index, transaction_hash in enumerate(self.get_block_transaction_hashes(header)):
                 self._add_transaction_to_canonical_chain(transaction_hash, header, index)
+            for index, transaction_hash in enumerate(self.get_block_receive_transaction_hashes(header)):
+                self._add_receive_transaction_to_canonical_chain(transaction_hash, header, index)
 
-        if hasattr(block, "uncles"):
-            uncles_hash = self.persist_uncles(block.uncles)
-            assert uncles_hash == block.header.uncles_hash
-
-    def persist_uncles(self, uncles: Tuple[BlockHeader]) -> Hash32:
-        """
-        Persists the list of uncles to the database.
-
-        Returns the uncles hash.
-        """
-        uncles_hash = keccak(rlp.encode(uncles))
-        self.db.set(
-            uncles_hash,
-            rlp.encode(uncles, sedes=rlp.sedes.CountableList(BlockHeader)))
-        return uncles_hash
 
     #
     # Transaction API
@@ -463,19 +513,46 @@ class ChainDB(BaseChainDB):
 
         Returns the updated `transactions_root` for updated block header.
         """
+
         transaction_db = HexaryTrie(self.db, root_hash=block_header.transaction_root)
+        transaction_db[index_key] = rlp.encode(transaction)
+        return transaction_db.root_hash
+    
+    def add_receive_transaction(self,
+                        block_header: BlockHeader,
+                        index_key: int,
+                        transaction: 'BaseReceiveTransaction') -> Hash32:
+        """
+        Adds the given transaction to the provide block header.
+
+        Returns the updated `transactions_root` for updated block header.
+        """
+
+        transaction_db = HexaryTrie(self.db, root_hash=block_header.receive_transaction_root)
         transaction_db[index_key] = rlp.encode(transaction)
         return transaction_db.root_hash
 
     def get_block_transactions(
             self,
             header: BlockHeader,
-            transaction_class: Type['BaseTransaction']) -> Iterable['BaseTransaction']:
+            transaction_class: 'BaseTransaction') -> Iterable['BaseTransaction']:
         """
         Returns an iterable of transactions for the block speficied by the
         given block header.
         """
+            
         return self._get_block_transactions(header.transaction_root, transaction_class)
+    
+    def get_block_receive_transactions(
+            self,
+            header: BlockHeader,
+            transaction_class: 'BaseReceiveTransaction') -> Iterable['BaseReceiveTransaction']:
+        """
+        Returns an iterable of transactions for the block speficied by the
+        given block header.
+        """
+            
+        return self._get_block_transactions(header.receive_transaction_root, transaction_class)
 
     @to_list
     def get_block_transaction_hashes(self, block_header: BlockHeader) -> Iterable[Hash32]:
@@ -485,6 +562,18 @@ class ChainDB(BaseChainDB):
         """
         all_encoded_transactions = self._get_block_transaction_data(
             block_header.transaction_root,
+        )
+        for encoded_transaction in all_encoded_transactions:
+            yield keccak(encoded_transaction)
+            
+    @to_list
+    def get_block_receive_transaction_hashes(self, block_header: BlockHeader) -> Iterable[Hash32]:
+        """
+        Returns an iterable of the transaction hashes from th block specified
+        by the given block header.
+        """
+        all_encoded_transactions = self._get_block_transaction_data(
+            block_header.receive_transaction_root,
         )
         for encoded_transaction in all_encoded_transactions:
             yield keccak(encoded_transaction)
@@ -529,6 +618,30 @@ class ChainDB(BaseChainDB):
         else:
             raise TransactionNotFound(
                 "No transaction is at index {} of block {}".format(transaction_index, block_number))
+            
+    def get_receive_transaction_by_index(
+            self,
+            block_number: BlockNumber,
+            transaction_index: int,
+            transaction_class: 'BaseReceiveTransaction') -> 'BaseReceiveTransaction':
+        """
+        Returns the transaction at the specified `transaction_index` from the
+        block specified by `block_number` from the canonical chain.
+
+        Raises TransactionNotFound if no block
+        """
+        try:
+            block_header = self.get_canonical_block_header_by_number(block_number)
+        except HeaderNotFound:
+            raise TransactionNotFound("Block {} is not in the canonical chain".format(block_number))
+        transaction_db = HexaryTrie(self.db, root_hash=block_header.receive_transaction_root)
+        encoded_index = rlp.encode(transaction_index)
+        if encoded_index in transaction_db:
+            encoded_transaction = transaction_db[encoded_index]
+            return rlp.decode(encoded_transaction, sedes=transaction_class)
+        else:
+            raise TransactionNotFound(
+                "No transaction is at index {} of block {}".format(transaction_index, block_number))
 
     def get_transaction_index(self, transaction_hash: Hash32) -> Tuple[BlockNumber, int]:
         """
@@ -547,7 +660,7 @@ class ChainDB(BaseChainDB):
                 "Transaction {} not found in canonical chain".format(encode_hex(transaction_hash)))
 
         transaction_key = rlp.decode(encoded_key, sedes=TransactionKey)
-        return (transaction_key.block_number, transaction_key.index)
+        return (transaction_key.wallet_address, transaction_key.block_number, transaction_key.index, transaction_key.is_receive)
 
     def _get_block_transaction_data(self, transaction_root: Hash32) -> Iterable[Hash32]:
         '''
@@ -566,7 +679,7 @@ class ChainDB(BaseChainDB):
     def _get_block_transactions(
             self,
             transaction_root: Hash32,
-            transaction_class: Type['BaseTransaction']) -> Iterable['BaseTransaction']:
+            transaction_class: Union['BaseTransaction', 'BaseReceiveTransaction']) -> Iterable[Union['BaseTransaction', 'BaseReceiveTransaction']]:
         """
         Memoizable version of `get_block_transactions`
         """
@@ -583,7 +696,8 @@ class ChainDB(BaseChainDB):
     def _add_transaction_to_canonical_chain(self,
                                             transaction_hash: Hash32,
                                             block_header: BlockHeader,
-                                            index: int) -> None:
+                                            index: int
+                                            ) -> None:
         """
         :param bytes transaction_hash: the hash of the transaction to add the lookup for
         :param block_header: The header of the block with the txn that is in the canonical chain
@@ -591,15 +705,65 @@ class ChainDB(BaseChainDB):
         - add lookup from transaction hash to the block number and index that the body is stored at
         - remove transaction hash to body lookup in the pending pool
         """
-        transaction_key = TransactionKey(block_header.block_number, index)
+        if block_header.sender != self.wallet_address:
+            raise ValueError("Cannot add transaction to canonical chain because it is from a block on a different chain")
+        transaction_key = TransactionKey(self.wallet_address, block_header.block_number, index, False)
+        self.db.set(
+            SchemaV1.make_transaction_hash_to_block_lookup_key(transaction_hash),
+            rlp.encode(transaction_key),
+        )
+        
+    def _add_receive_transaction_to_canonical_chain(self,
+                                            transaction_hash: Hash32,
+                                            block_header: BlockHeader,
+                                            index: int
+                                            ) -> None:
+        """
+        :param bytes transaction_hash: the hash of the transaction to add the lookup for
+        :param block_header: The header of the block with the txn that is in the canonical chain
+        :param int index: the position of the transaction in the block
+        - add lookup from transaction hash to the block number and index that the body is stored at
+        - remove transaction hash to body lookup in the pending pool
+        """
+        if block_header.sender != self.wallet_address:
+            raise ValueError("Cannot add transaction to canonical chain because it is from a block on a different chain")
+        transaction_key = TransactionKey(self.wallet_address, block_header.block_number, index, True)
         self.db.set(
             SchemaV1.make_transaction_hash_to_block_lookup_key(transaction_hash),
             rlp.encode(transaction_key),
         )
 
+    
+    #
+    # State
+    #
+#    def get_state_root_from_block_hash(self, block_hash: Hash32) -> Hash32:
+#        """
+#        Retrieves the state root for a given block hash
+#        """
+#        try:
+#            return rlp.decode(
+#                self.db[SchemaV1.make_block_hash_to_state_root_lookup_key(block_hash)],
+#                sedes=trie_root,
+#            )
+#        except KeyError:
+#            raise HeaderToStateRootMapNotFound(
+#                "No header->state_root map found"
+#            )
+#    
+#    def set_block_hash_to_state_root_map(self, block_hash: Hash32, state_root, Hash32) -> None:
+#        """
+#        Saves the block hash -> state root lookup to database
+#        """
+#        self.db.set(
+#            SchemaV1.make_block_hash_to_state_root_lookup_key(block_hash),
+#            rlp.encode(state_root, sedes=trie_root),
+#        )   
+#    
     #
     # Raw Database API
     #
+    
     def exists(self, key: bytes) -> bool:
         """
         Returns True if the given key exists in the database.
@@ -624,8 +788,6 @@ def _decode_block_header(header_rlp: bytes) -> BlockHeader:
 
 
 class AsyncChainDB(ChainDB):
-    async def coro_get_score(self, block_hash: Hash32) -> int:
-        raise NotImplementedError()
 
     async def coro_get_block_header_by_hash(self, block_hash: Hash32) -> BlockHeader:
         raise NotImplementedError()
@@ -640,9 +802,6 @@ class AsyncChainDB(ChainDB):
         raise NotImplementedError()
 
     async def coro_persist_header(self, header: BlockHeader) -> Tuple[BlockHeader, ...]:
-        raise NotImplementedError()
-
-    async def coro_persist_uncles(self, uncles: Tuple[BlockHeader]) -> Hash32:
         raise NotImplementedError()
 
     async def coro_persist_trie_data_dict(self, trie_data_dict: Dict[bytes, bytes]) -> None:

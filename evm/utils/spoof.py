@@ -6,8 +6,7 @@ from evm.constants import (
 
 
 from evm.rlp.transactions import (
-    BaseTransaction,
-    BaseUnsignedTransaction,
+    BaseTransaction
 )
 from typing import Callable, Union, Any
 
@@ -21,7 +20,7 @@ SPOOF_ATTRIBUTES_DEFAULTS = {
 class SpoofAttributes:
     def __init__(
             self,
-            spoof_target: Union[BaseTransaction, BaseUnsignedTransaction],
+            spoof_target: BaseTransaction,
             **overrides: Any) -> None:
         self.spoof_target = spoof_target
         self.overrides = overrides
