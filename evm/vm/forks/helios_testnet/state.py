@@ -109,7 +109,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             self.vm_state.account_db.increment_nonce(transaction.sender)
     
             # Setup VM Message
-            message_gas = transaction.gas - transaction.intrinsic_gas
+            message_gas = transaction.gas - transaction.intrinsic_gas 
             
             #when a contract is created with a send transaction, do no computation.
             #we have to put the computation back. because it needs to charge computation 
@@ -165,9 +165,15 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             transaction_context = self.get_transaction_context(transaction)
             gas_fee = transaction.transaction.gas * transaction_context.gas_price
     
-    
+            # TODO:
+            # fail niceley here so we can put a failed tx. the failed tx can be seen in the receipt status_code
+            # we will have to refund the sender the money if this is the case.
+            # so the amount of gas the send tx paid is saved as transaction.transaction.gas
             # Setup VM Message
-            message_gas = transaction.transaction.gas - transaction.transaction.intrinsic_gas -1 * gas_fee
+            #message_gas = transaction.transaction.gas - transaction.transaction.intrinsic_gas -1 * gas_fee
+            # I tested this, if this tx uses more gas than what was charged to the send tx it will fail.
+            message_gas = transaction.transaction.gas -1 * gas_fee 
+
     
             if transaction.transaction.to == constants.CREATE_CONTRACT_ADDRESS:
                 contract_address = generate_contract_address(
@@ -252,12 +258,19 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
         # Gas Refunds
         gas_remaining = computation.get_gas_remaining()
         gas_refunded = computation.get_gas_refund()
-        gas_used = transaction.gas - gas_remaining
-        gas_refund = min(gas_refunded, gas_used // 2)
-        gas_refund_amount = (gas_refund + gas_remaining) * transaction.gas_price
+        if isinstance(transaction, BaseTransaction):
+            gas_used = transaction.gas - gas_remaining
+            gas_refund = min(gas_refunded, gas_used // 2)
+            gas_refund_amount = (gas_refund + gas_remaining) * transaction.gas_price
+        else:
+            gas_used = transaction.transaction.gas - gas_remaining
+            gas_refund = min(gas_refunded, gas_used // 2)
+            gas_refund_amount = (gas_refund + gas_remaining) * transaction.transaction.gas_price
+            
+        
         
         #only refund if this is a send transaction
-        if isinstance(transaction, BaseTransaction) :
+        if isinstance(transaction, BaseTransaction):
             if gas_refund_amount:
                 self.vm_state.logger.debug(
                     'TRANSACTION REFUND: %s -> %s',
@@ -291,12 +304,11 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             self.vm_state.account_db.set_balance(account, 0)
             self.vm_state.account_db.delete_account(account)
             
-
+        
         #
         # EIP161 state clearing
         #
         touched_accounts = collect_touched_accounts(computation)
-
         for account in touched_accounts:
             should_delete = (
                 self.vm_state.account_db.account_exists(account) and
@@ -308,7 +320,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
                     encode_hex(account),
                 )
                 self.vm_state.account_db.delete_account(account)
-
+    
         return computation
 
 

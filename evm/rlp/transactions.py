@@ -24,10 +24,7 @@ from evm.exceptions import (
 
 from evm.rlp.sedes import (
     address,
-)
-
-from evm.vm.computation import (
-    BaseComputation
+    hash32,
 )
 
 
@@ -55,7 +52,7 @@ class BaseTransactionCommonMethods:
         """
         raise NotImplementedError("Must be implemented by subclasses")
 
-    def gas_used_by(self, computation: BaseComputation) -> int:
+    def gas_used_by(self, computation: 'BaseComputation') -> int:
         """
         Return the gas used by the given computation. In Frontier,
         for example, this is sum of the intrinsic cost and the gas used
@@ -140,13 +137,14 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
     def get_signed(self, private_key, chain_id) -> 'BaseTransaction':
         raise NotImplementedError("Must be implemented by subclasses")
 
-
+    def __eq__(self, other):
+        return self.hash == other.hash
 
 
 class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
     fields = [
-        ('sender_block_hash', big_endian_int),
-        ('transaction', big_endian_int),
+        ('sender_block_hash', hash32),
+        ('transaction', BaseTransaction),
         ('v', big_endian_int),
         ('r', big_endian_int),
         ('s', big_endian_int),
@@ -167,6 +165,7 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         """
         return self.transaction.get_sender()
     
+
     @property
     def receiver(self) -> Address:
         """
@@ -219,3 +218,5 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
     def get_signed(self, private_key, chain_id) -> 'BaseReceiveTransaction':
         raise NotImplementedError("Must be implemented by subclasses")
 
+    def __eq__(self, other):
+        return self.hash == other.hash

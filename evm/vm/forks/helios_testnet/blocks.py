@@ -19,6 +19,8 @@ from evm.rlp.blocks import (
 from evm.rlp.receipts import (
     Receipt,
 )
+from evm import constants
+import time
 
 class HeliosTestnetBlock(BaseBlock):
     transaction_class = HeliosTestnetTransaction
@@ -123,7 +125,27 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
             transactions=transactions,
             receive_transactions=receive_transactions,
         )
+    
+    @classmethod
+    def make_genesis_block(cls):
+        genesis_header = BlockHeader(
+            closing_balance=0,
+            extra_data=constants.GENESIS_EXTRA_DATA,
+            gas_limit=constants.GENESIS_GAS_LIMIT,
+            gas_used=0,
+            bloom=0,
+            block_number=0,
+            parent_hash=constants.GENESIS_PARENT_HASH,
+            receipt_root=constants.BLANK_ROOT_HASH,
+            timestamp=int(time.time()),
+            transaction_root=constants.BLANK_ROOT_HASH,
+            receive_transaction_root=constants.BLANK_ROOT_HASH,
+        )
+        return cls.from_header(genesis_header)
         
+
+
+
     def as_complete_block(self, private_key, chain_id):
         #first lets sign the header
         """
@@ -136,5 +158,5 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
         return HeliosTestnetBlock(signed_header, self.transactions, self.receive_transactions)
 
             
-            
+           
             

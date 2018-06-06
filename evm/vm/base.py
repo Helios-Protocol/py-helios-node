@@ -11,6 +11,8 @@ from typing import (  # noqa: F401
     Type,
 )
 
+import time
+
 import rlp
 
 from eth_bloom import (
@@ -27,6 +29,7 @@ from evm.constants import (
     GENESIS_PARENT_HASH,
     MAX_PREV_HEADER_DEPTH,
     MAX_UNCLES,
+    MIN_TIME_BETWEEN_BLOCKS,
 )
 from evm.db.trie import make_trie_root_and_nodes
 from evm.db.chain import BaseChainDB  # noqa: F401
@@ -292,10 +295,13 @@ class VM(BaseVM):
         :param header: header of the block before application
         :param transaction: to apply
         """
+
         self.validate_transaction_against_header(header, transaction)
         state_root, computation = self.state.apply_transaction(transaction)
         receipt = self.make_receipt(header, transaction, computation, self.state)
-
+        
+        
+        
         new_header = header.copy(
             bloom=int(BloomFilter(header.bloom) | receipt.bloom),
             gas_used=receipt.gas_used,
@@ -366,6 +372,7 @@ class VM(BaseVM):
         """
         Import the given block to the chain.
         """
+        #TODO:check to see if it is replacing a block, or being added to the top
         if not isinstance(block, self.get_queue_block_class()):
             if block.sender != self.wallet_address:
                 raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
@@ -386,9 +393,13 @@ class VM(BaseVM):
                 db=self.chaindb.db, 
                 execution_context=self.block.header.create_execution_context(self.previous_hashes)
                 )
-
+        
+        
+        
         #run all of the transactions.
         last_header, receipts = self._apply_all_transactions(block.transactions, self.block.header)
+        
+        
         
         #then run all receive transactions
         last_header, receive_receipts = self._apply_all_transactions(block.receive_transactions, last_header)
@@ -409,7 +420,8 @@ class VM(BaseVM):
             block.transactions
         )
         
-
+        
+        
         #TODO: find out if this packing is nessisary
         packed_block = self.pack_block(self.block, *args, **kwargs)
         
@@ -426,6 +438,8 @@ class VM(BaseVM):
         # Perform validation
         self.validate_block(packed_block)
         
+        
+        
         #save all send transactions in the state as receivable
         self.save_transactions_as_receivable(self.block.header, self.block.transactions)
         
@@ -440,22 +454,6 @@ class VM(BaseVM):
         for transaction in transactions:
             self.save_transaction_as_receivable(block_header, transaction)
         
-        
-#    def mine_block(self, *args, **kwargs):
-#        """
-#        Mine the current block. Proxies to self.pack_block method.
-#        """
-#        packed_block = self.pack_block(self.block, *args, **kwargs)
-#
-#        if packed_block.number == 0:
-#            final_block = packed_block
-#        else:
-#            final_block = self.finalize_block(packed_block)
-#
-#        # Perform validation
-#        self.validate_block(final_block)
-#
-#        return final_block
 
     def set_block_transactions(self, base_block, new_header, transactions, receipts):
        
@@ -562,8 +560,13 @@ class VM(BaseVM):
             raise AttributeError("No `queue_block_class` has been set for this VM")
         else:
             return cls.queue_block_class
-        
-        
+    
+    @classmethod    
+    def create_genesis_block(cls):
+        block = cls.get_queue_block_class()
+        genesis_block = block.make_genesis_block()
+        return genesis_block
+    
     @classmethod
     @functools.lru_cache(maxsize=32)
     @to_tuple
@@ -587,49 +590,6 @@ class VM(BaseVM):
         """
         return self.get_prev_hashes(self.block.header.parent_hash, self.chaindb)
     
-    
-    #
-    # Queueblocks
-    #
-        
-    def add_transaction_to_queue_block(self, block, transaction:BaseTransaction) -> BaseQueueBlock:
-        """
-        adds a transaction to the given queueblock. Does not apply to state, does not save to database
-        import_block will later calculate most things for the header
-        Simply adds the transaction to the given block
-        """
-        #TODO: check to make sure running import_block on this adds all required header fields
-        if not isinstance(block, self.get_queue_block_class()):
-            raise IncorrectBlockType("Tried to add transaction to queueblock, but given block is not a queueblock")
-            
-        transactions = block.transactions + (transaction, )
-        
-        return block.copy(
-            transactions=transactions,
-        )
-    
-    def add_receive_transaction_to_queue_block(self, block, transaction:BaseReceiveTransaction) -> BaseQueueBlock:
-        """
-        adds a transaction to the given queueblock. Does not apply to state, does not save to database
-        import_block will later calculate most things for the header
-        Simply adds the transaction to the given block
-        """
-        #TODO: check to make sure running import_block on this adds all required header fields
-        if not isinstance(block, self.get_queue_block_class()):
-            raise IncorrectBlockType("Tried to add transaction to queueblock, but given block is not a queueblock")
-            
-        transactions = block.receive_transactions + (transaction, )
-        
-        return block.copy(
-            receive_transactions=transactions,
-        )
-    
-    def get_complete_block(self, block, private_key) -> BaseBlock:
-        """
-        signs the header of the given block and changes it to a complete block
-        doesnt validate the header before doing so
-        """
-        return block.as_complete_block(private_key, self.network_id)
     
         
     #
@@ -666,6 +626,15 @@ class VM(BaseVM):
     #
     # Validate
     #
+    def check_time_since_parent_block(self, block):
+        parent_header = get_parent_header(block.header, self.chaindb)
+        parent_time = parent_header.timestamp
+        difference = int(time.time())-parent_time
+        if difference < MIN_TIME_BETWEEN_BLOCKS:
+            return False
+        else:
+            return True
+        
     def validate_block(self, block):
         """
         Validate the the given block.
@@ -730,30 +699,6 @@ class VM(BaseVM):
 
         return cls._state_class
     
-#    def get_state(self, header: BlockHeader=None) -> BaseState:
-#        """
-#        Return the state for the given blockHeader
-#        """
-#        if header == None:
-#            header = self.block.header
-#           
-#        canonical_header = self.chaindb.get_canonical_head()
-#        head_block_number = canonical_header.block_number
-#                
-#        if header.block_number == head_block_number +1:
-#            header = canonical_header
-#            
-#        return self.get_state_class()(
-#            db=self.chaindb.db,
-#            execution_context=self.block.header.create_execution_context(self.previous_hashes),
-#            state_root=self.get_state_root(header),
-#        )
-#        
-#    def get_state_root(self, header: BlockHeader=None) -> Hash32:
-#        """
-#        Return the state_root for the given blockHeader
-#        """
-#        return self.chaindb.get_state_root_from_block_hash(header.hash)
         
     @contextlib.contextmanager
     def state_in_temp_block(self):

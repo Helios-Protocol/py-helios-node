@@ -2,7 +2,7 @@ from typing import Tuple, Type  # noqa: F401
 from eth_utils import decode_hex
 
 from .constants import (
-    HELIOS_TESTNET_BLOCK,
+    HELIOS_TESTNET_TIMESTAMP,
 )
 from evm import constants
 
@@ -25,7 +25,7 @@ from eth_keys import keys
 #)
 
 MAINNET_VM_CONFIGURATION = (
-    (HELIOS_TESTNET_BLOCK, HeliosTestnetVM),
+    (HELIOS_TESTNET_TIMESTAMP, HeliosTestnetVM),
 )
 
 

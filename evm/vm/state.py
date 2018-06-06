@@ -226,10 +226,14 @@ class BaseState(Configurable, metaclass=ABCMeta):
         :param transaction: the transaction to apply
         :return: the new state root, and the computation
         """
+        
+        
         if self.state_root != BLANK_ROOT_HASH and not self.account_db.has_root(self.state_root):
             raise StateRootNotFound(self.state_root)
+            
         computation = self.execute_transaction(transaction)
         state_root = self.account_db.make_state_root()
+        
         return state_root, computation
 
     def get_transaction_executor(self):
@@ -259,6 +263,7 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
         message = self.build_evm_message(valid_transaction)
         computation = self.build_computation(message, valid_transaction)
         finalized_computation = self.finalize_computation(valid_transaction, computation)
+        
         return finalized_computation
 
     @abstractmethod

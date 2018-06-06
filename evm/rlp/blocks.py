@@ -16,30 +16,26 @@ from evm.utils.datatypes import (
     Configurable,
 )
 
-from evm.db.chain import BaseChainDB
-
-from .transactions import BaseTransaction
-from .headers import BlockHeader
 
 
 class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
     transaction_class = None  # type: Type[BaseTransaction]
 
     @classmethod
-    def get_transaction_class(cls) -> Type[BaseTransaction]:
+    def get_transaction_class(cls) -> Type['BaseTransaction']:
         if cls.transaction_class is None:
             raise AttributeError("Block subclasses must declare a transaction_class")
         return cls.transaction_class
     
     @classmethod
-    def get_receive_transaction_class(cls) -> Type[BaseTransaction]:
+    def get_receive_transaction_class(cls) -> Type['BaseTransaction']:
         if cls.receive_transaction_class is None:
             raise AttributeError("Block subclasses must declare a receive_transaction_class")
         return cls.receive_transaction_class
 
     @classmethod
     @abstractmethod
-    def from_header(cls, header: BlockHeader, chaindb: BaseChainDB) -> 'BaseBlock':
+    def from_header(cls, header: 'BlockHeader', chaindb: 'BaseChainDB') -> 'BaseBlock':
         """
         Returns the block denoted by the given block header.
         """
@@ -77,19 +73,41 @@ class BaseQueueBlock(BaseBlock):
     @abstractmethod
     def as_complete_block(self):
         raise NotImplementedError("Must be implemented by subclasses")
+    
+    @classmethod
+    @abstractmethod
+    def from_header(cls, header):
+        raise NotImplementedError("Must be implemented by subclasses")
+    
+    @classmethod
+    @abstractmethod
+    def make_genesis_block(cls):
+        raise NotImplementedError("Must be implemented by subclasses")
         
-
     def add_transaction(self, transaction):
         transactions = self.transactions + (transaction, )
         
         return self.copy(
             transactions=transactions,
         )
-        
+    
+    def add_transactions(self, transactions):
+        for tx in transactions:
+            self.add_transaction(tx)
+            
     def add_receive_transaction(self, receive_transaction):
         receive_transactions = self.receive_transactions + (receive_transaction, )
         
         return self.copy(
             receive_transactions=receive_transactions,
         )
-        
+    
+    def add_receive_transactions(self, transactions):
+        for tx in transactions:
+            self.add_receive_transaction(tx)
+    
+    def contains_transaction(self, transaction):
+        return transaction in self.transactions
+    
+    def contains_receive_transaction(self, transaction):
+        return transaction in self.receive_transactions

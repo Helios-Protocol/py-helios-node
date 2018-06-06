@@ -21,13 +21,20 @@ from evm.constants import (
 )
 from evm.exceptions import (
     ValidationError,
+    IncorrectBlockType,
 )
 from eth_keys.datatypes import(
         BaseKey,
         PublicKey,
         PrivateKey
 )
-
+from evm.rlp.blocks import (
+    BaseBlock,
+    BaseQueueBlock,        
+)
+from evm.rlp.transactions import (
+    BaseTransaction,        
+)
 
 def validate_is_bytes(value, title="Value"):
     if not isinstance(value, bytes):
@@ -169,6 +176,14 @@ def validate_uint256(value, title="Value"):
             )
         )
 
+def validate_is_queue_block(value, title='Value'):
+    if not isinstance(value, BaseQueueBlock):
+        raise IncorrectBlockType("{title} is not a queueblock")
+        
+def validate_is_send_transaction(value, title='Value'):
+    if not isinstance(value, BaseTransaction):
+        raise IncorrectBlockType("{title} is not a send transaction")
+        
 
 def validate_stack_item(value):
     if isinstance(value, bytes) and len(value) <= 32:

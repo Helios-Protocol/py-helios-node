@@ -50,6 +50,12 @@ class IncorrectBlockHeaderType(PyEVMError):
     """
     pass
 
+class NotEnoughTimeBetweenBlocks(PyEVMError):
+    """
+    Raised when there is not enough time between blocks. WHO WOULD HAVE GUESSED?
+    """
+    pass
+
 
 class TransactionNotFound(PyEVMError):
     """

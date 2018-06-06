@@ -67,7 +67,8 @@ from evm.validation import (
 from evm.rlp import sedes as evm_rlp_sedes
 from evm.rlp.sedes import(
     trie_root,
-    address
+    address,
+    hash32
 )
 if TYPE_CHECKING:
     from evm.rlp.blocks import (  # noqa: F401
@@ -81,8 +82,7 @@ if TYPE_CHECKING:
 
 class TransactionKey(rlp.Serializable):
     fields = [
-        ('wallet_address', address),
-        ('block_number', rlp.sedes.big_endian_int),
+        ('block_hash', hash32),
         ('index', rlp.sedes.big_endian_int),
         ('is_receive', rlp.sedes.boolean),
     ]
@@ -171,6 +171,23 @@ class BaseChainDB(metaclass=ABCMeta):
             transaction_index: int,
             transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
         raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_transaction_by_index_and_block_hash(
+            self,
+            block_hash: Hash32,
+            transaction_index: int,
+            transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
+        raise NotImplementedError("ChainDB classes must implement this method")
+        
+    @abstractmethod
+    def get_receive_transaction_by_index_and_block_hash(
+            self,
+            block_hash: Hash32,
+            transaction_index: int,
+            transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
+        raise NotImplementedError("ChainDB classes must implement this method")
+
 
     @abstractmethod
     def get_transaction_index(self, transaction_hash: Hash32) -> Tuple[BlockNumber, int]:
@@ -619,6 +636,54 @@ class ChainDB(BaseChainDB):
             raise TransactionNotFound(
                 "No transaction is at index {} of block {}".format(transaction_index, block_number))
             
+    def get_transaction_by_index_and_block_hash(
+            self,
+            block_hash: Hash32,
+            transaction_index: int,
+            transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
+        """
+        Returns the transaction at the specified `transaction_index` from the
+        block specified by `block_number` from the canonical chain.
+
+        Raises TransactionNotFound if no block
+        """
+        try:
+            block_header = self.get_block_header_by_hash(block_hash)
+        except HeaderNotFound:
+            raise TransactionNotFound("Block {} is not in the canonical chain".format(block_hash))
+        transaction_db = HexaryTrie(self.db, root_hash=block_header.transaction_root)
+        encoded_index = rlp.encode(transaction_index)
+        if encoded_index in transaction_db:
+            encoded_transaction = transaction_db[encoded_index]
+            return rlp.decode(encoded_transaction, sedes=transaction_class)
+        else:
+            raise TransactionNotFound(
+                "No transaction is at index {} of block {}".format(transaction_index, block_number))
+            
+    def get_receive_transaction_by_index_and_block_hash(
+            self,
+            block_hash: Hash32,
+            transaction_index: int,
+            transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
+        """
+        Returns the transaction at the specified `transaction_index` from the
+        block specified by `block_number` from the canonical chain.
+
+        Raises TransactionNotFound if no block
+        """
+        try:
+            block_header = self.get_block_header_by_hash(block_hash)
+        except HeaderNotFound:
+            raise TransactionNotFound("Block {} is not in the canonical chain".format(block_hash))
+        transaction_db = HexaryTrie(self.db, root_hash=block_header.receive_transaction_root)
+        encoded_index = rlp.encode(transaction_index)
+        if encoded_index in transaction_db:
+            encoded_transaction = transaction_db[encoded_index]
+            return rlp.decode(encoded_transaction, sedes=transaction_class)
+        else:
+            raise TransactionNotFound(
+                "No transaction is at index {} of block {}".format(transaction_index, block_number))
+            
     def get_receive_transaction_by_index(
             self,
             block_number: BlockNumber,
@@ -660,7 +725,7 @@ class ChainDB(BaseChainDB):
                 "Transaction {} not found in canonical chain".format(encode_hex(transaction_hash)))
 
         transaction_key = rlp.decode(encoded_key, sedes=TransactionKey)
-        return (transaction_key.wallet_address, transaction_key.block_number, transaction_key.index, transaction_key.is_receive)
+        return (transaction_key.block_hash, transaction_key.index, transaction_key.is_receive)
 
     def _get_block_transaction_data(self, transaction_root: Hash32) -> Iterable[Hash32]:
         '''
@@ -705,9 +770,10 @@ class ChainDB(BaseChainDB):
         - add lookup from transaction hash to the block number and index that the body is stored at
         - remove transaction hash to body lookup in the pending pool
         """
+        #TODO: allow this for contract addresses
         if block_header.sender != self.wallet_address:
             raise ValueError("Cannot add transaction to canonical chain because it is from a block on a different chain")
-        transaction_key = TransactionKey(self.wallet_address, block_header.block_number, index, False)
+        transaction_key = TransactionKey(block_header.hash, index, False)
         self.db.set(
             SchemaV1.make_transaction_hash_to_block_lookup_key(transaction_hash),
             rlp.encode(transaction_key),
@@ -725,9 +791,10 @@ class ChainDB(BaseChainDB):
         - add lookup from transaction hash to the block number and index that the body is stored at
         - remove transaction hash to body lookup in the pending pool
         """
+        #TODO: allow this for contract addresses
         if block_header.sender != self.wallet_address:
             raise ValueError("Cannot add transaction to canonical chain because it is from a block on a different chain")
-        transaction_key = TransactionKey(self.wallet_address, block_header.block_number, index, True)
+        transaction_key = TransactionKey(block_header.hash, index, True)
         self.db.set(
             SchemaV1.make_transaction_hash_to_block_lookup_key(transaction_hash),
             rlp.encode(transaction_key),

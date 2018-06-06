@@ -40,13 +40,20 @@ def make_helios_testnet_receipt(base_header, transaction, computation, state):
 
     gas_remaining = computation.get_gas_remaining()
     gas_refund = computation.get_gas_refund()
-    tx_gas_used = (
-        transaction.gas - gas_remaining
-    ) - min(
-        gas_refund,
-        (transaction.gas - gas_remaining) // 2,
-    )
-    
+    if isinstance(transaction, BaseTransaction):
+        tx_gas_used = (
+            transaction.gas - gas_remaining
+        ) - min(
+            gas_refund,
+            (transaction.gas - gas_remaining) // 2,
+        )
+    else:
+        tx_gas_used = (
+            transaction.transaction.gas - gas_remaining
+        ) - min(
+            gas_refund,
+            (transaction.transaction.gas - gas_remaining) // 2,
+        )
     #receive transactions dont use gas.
     if isinstance(transaction, BaseTransaction):
         gas_used = base_header.gas_used + tx_gas_used

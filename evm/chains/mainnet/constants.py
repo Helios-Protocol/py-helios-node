@@ -30,4 +30,4 @@
 #
 # Helios Testnet Block
 #
-HELIOS_TESTNET_BLOCK = 0
+HELIOS_TESTNET_TIMESTAMP = 0

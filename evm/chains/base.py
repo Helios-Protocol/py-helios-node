@@ -4,6 +4,7 @@ from abc import (
     ABCMeta,
     abstractmethod
 )
+import time
 import operator
 from typing import (  # noqa: F401
     Any,
@@ -45,6 +46,7 @@ from evm.db.chain import (
 from evm.constants import (
     BLANK_ROOT_HASH,
 )
+from evm import constants
 from evm.estimators import (
     get_gas_estimator,
 )
@@ -54,6 +56,8 @@ from evm.exceptions import (
     ValidationError,
     VMNotFound,
     BlockOnWrongChain,
+    CanonicalHeadNotFound,
+    NotEnoughTimeBetweenBlocks,
 )
 from eth_keys.exceptions import (
     BadSignature,
@@ -64,6 +68,7 @@ from evm.validation import (
     validate_word,
     validate_vm_configuration,
     validate_canonical_address,
+    validate_is_queue_block,
 )
 from evm.rlp.blocks import (
     BaseBlock,
@@ -157,19 +162,21 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
     @classmethod
-    def get_vm_class_for_block_number(cls, block_number: BlockNumber) -> Type['BaseVM']:
+    def get_vm_class_for_block_timestamp(cls, timestamp: int = None) -> Type['BaseVM']:
         """
         Returns the VM class for the given block number.
         """
+        if timestamp is None:
+            timestamp = int(time.time())
         if cls.vm_configuration is None:
             raise AttributeError("Chain classes must define the VMs in vm_configuration")
-
-        validate_block_number(block_number)
-        for start_block, vm_class in reversed(cls.vm_configuration):
-            if block_number >= start_block:
+        validate_uint256(timestamp)
+        
+        for start_timestamp, vm_class in reversed(cls.vm_configuration):
+            if timestamp >= start_timestamp:
                 return vm_class
         else:
-            raise VMNotFound("No vm available for block #{0}".format(block_number))
+            raise VMNotFound("No vm available for timestamp #{0}".format(timestamp))
 
     #
     # Header API
@@ -262,10 +269,11 @@ class Chain(BaseChain):
     header = None  # type: BlockHeader
     network_id = None  # type: int
     gas_estimator = None  # type: Callable
+    queue_block = None
 
     chaindb_class = ChainDB  # type: Type[BaseChainDB]
 
-    def __init__(self, base_db: BaseDB, wallet_address: Address, private_key: BaseKey=None, header: BlockHeader=None) -> None:
+    def __init__(self, base_db: BaseDB, wallet_address: Address, private_key: BaseKey=None) -> None:
         if not self.vm_configuration:
             raise ValueError(
                 "The Chain class cannot be instantiated with an empty `vm_configuration`"
@@ -275,25 +283,20 @@ class Chain(BaseChain):
             
         
         validate_canonical_address(wallet_address, "Wallet Address") 
-        if header is not None:
-            try:
-                if header.sender != wallet_address:
-                    raise BlockOnWrongChain("Block sender doesnt match chain wallet address")
-            except BadSignature:
-                #this means it is not signed or its an incorrectly signed block. It is only allowed to be 
-                #not signed if it is just above head.
-                #if this is the case, then the block number is canonical number +1
-#                canonical_head = self.get_canonical_head()
-#                if header.block_number != canonical_head.block_number + 1:
-#                    raise BadSignature("Block header has invalid signature")
-                pass
-            
+    
         self.private_key = private_key
         self.wallet_address = wallet_address
         self.chaindb = self.get_chaindb_class()(base_db, self.wallet_address)
-        self.header = header
-        if self.header is None:
+
+        try:
             self.header = self.create_header_from_parent(self.get_canonical_head())
+        except CanonicalHeadNotFound:
+            #this is a new block, lets make a genesis block
+            self.logger.debug("Creating new genesis block on chain {}".format(self.wallet_address))
+            self.header = self.get_vm_class_for_block_timestamp().create_genesis_block().header
+            
+        self.queue_block = self.get_block()
+        
         if self.gas_estimator is None:
             self.gas_estimator = get_gas_estimator()  # type: ignore
         
@@ -323,7 +326,7 @@ class Chain(BaseChain):
         Initializes the Chain from a genesis state.
         """
         
-        genesis_vm_class = cls.get_vm_class_for_block_number(BlockNumber(0))
+        genesis_vm_class = cls.get_vm_class_for_block_timestamp()
 
         account_db = genesis_vm_class.get_state_class().get_account_db_class()(
             base_db,
@@ -380,9 +383,9 @@ class Chain(BaseChain):
         """
         if header is None:
             header = self.header
-
+            
+        vm_class = self.get_vm_class_for_block_timestamp(header.timestamp)
         
-        vm_class = self.get_vm_class_for_block_number(header.block_number)
         return vm_class(header=header, chaindb=self.chaindb, private_key=self.private_key, network_id=self.network_id)
 
     #
@@ -393,9 +396,7 @@ class Chain(BaseChain):
         Passthrough helper to the VM class of the block descending from the
         given header.
         """
-        return self.get_vm_class_for_block_number(
-            block_number=parent_header.block_number + 1,
-        ).create_header_from_parent(parent_header, **header_params)
+        return self.get_vm_class_for_block_timestamp().create_header_from_parent(parent_header, **header_params)
 
     def get_block_header_by_hash(self, block_hash: Hash32) -> BlockHeader:
         """
@@ -472,12 +473,31 @@ class Chain(BaseChain):
     #
     # Queueblock API
     #
-    def add_transaction_to_queue_block(self, *args: Any, **kwargs: Any) -> BaseQueueBlock:
-        """
-        Passthrough helper to the current VM class.
-        """
-        return self.get_vm().add_transaction_to_queue_block(*args, **kwargs)
+    def add_transaction_to_queue_block(self, transaction) -> None:
+        if self.queue_block is None:
+            self.queue_block = self.get_block()
+            
+        validate_is_queue_block(self.queue_block, title='self.queue_block')
+        
+                
+        if isinstance(transaction, BaseTransaction):
+            if not self.queue_block.contains_transaction(transaction):
+                self.queue_block = self.queue_block.add_transaction(transaction)
+            else:
+                self.logger.debug("found transaction in queueblock already, not adding again")
+        else:
+            if not self.queue_block.contains_receive_transaction(transaction):
+                self.queue_block = self.queue_block.add_receive_transaction(transaction)
+            else:
+                self.logger.debug("found receive transaction in queueblock already, not adding again")
 
+    def add_transactions_to_queue_block(self, transactions) -> None:
+        if not isinstance(transactions, list):
+            self.add_transaction_to_queue_block(transactions)
+        else:
+            for tx in transactions:
+                self.add_transaction_to_queue_block(tx)
+    
     def sign_queue_block(self, *args: Any, **kwargs: Any) -> BaseQueueBlock:
         """
         Passthrough helper to the current VM class.
@@ -502,14 +522,24 @@ class Chain(BaseChain):
         Raises TransactionNotFound if no transaction with the specified hash is
         found in the main chain.
         """
-        (wallet_address, block_num, index, is_receive) = self.chaindb.get_transaction_index(transaction_hash)
-        VM = self.get_vm_class_for_block_number(block_num)
-
-        transaction = self.chaindb.get_transaction_by_index(
-            block_num,
-            index,
-            VM.get_transaction_class(),
-        )
+        (block_hash, index, is_receive) = self.chaindb.get_transaction_index(transaction_hash)
+        
+        block_header = self.get_block_header_by_hash(block_hash)
+        
+        VM = self.get_vm_class_for_block_timestamp(block_header.timestamp)
+        
+        if is_receive == False:
+            transaction = self.chaindb.get_transaction_by_index_and_block_hash(
+                block_hash,
+                index,
+                VM.get_transaction_class(),
+            )
+        else:
+            transaction = self.chaindb.get_receive_transaction_by_index_and_block_hash(
+                block_hash,
+                index,
+                VM.get_transaction_class(),
+            )
 
         if transaction.hash == transaction_hash:
             return transaction
@@ -517,7 +547,7 @@ class Chain(BaseChain):
             raise TransactionNotFound("Found transaction {} instead of {} in block {} at {}".format(
                 encode_hex(transaction.hash),
                 encode_hex(transaction_hash),
-                block_num,
+                block_hash,
                 index,
             ))
 
@@ -527,6 +557,16 @@ class Chain(BaseChain):
         """
         return self.get_vm().create_transaction(*args, **kwargs)
     
+    def create_and_sign_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
+        transaction = self.create_transaction(*args, **kwargs)
+        signed_transaction = transaction.get_signed(self.private_key, self.network_id)
+        return signed_transaction
+    
+    def create_and_sign_transaction_for_queue_block(self, *args: Any, **kwargs: Any) -> BaseTransaction:
+        transaction = self.create_and_sign_transaction(*args, **kwargs)
+        self.add_transactions_to_queue_block(transaction)
+        return transaction
+        
     def create_receive_transaction(self, *args: Any, **kwargs: Any) -> BaseReceiveTransaction:
         """
         Passthrough helper to the current VM class.
@@ -536,12 +576,36 @@ class Chain(BaseChain):
     def get_receivable_transactions(self, address):
         #from evm.rlp.accounts import TransactionKey
         tx_keys = self.get_vm().state.account_db.get_receivable_transactions(address)
+        if len(tx_keys) == 0:
+            return False, False
         transactions = []
         for tx_key in tx_keys:
             tx = self.get_canonical_transaction(tx_key.transaction_hash)
             transactions.append(tx)
-        return transactions
-
+        return transactions, tx_keys
+    
+    def create_receivable_signed_transactions(self):
+        transactions, tx_keys = self.get_receivable_transactions(self.wallet_address)
+        
+        if transactions == False:
+            return []
+        receive_transactions = []
+        for i, tx in enumerate(transactions):
+            re_tx = self.get_vm().create_receive_transaction(
+                    sender_block_hash = tx_keys[i].sender_block_hash, 
+                    transaction=tx, 
+                    v=0,
+                    r=0,
+                    s=0,
+                    )
+            re_tx = re_tx.get_signed(self.private_key, self.network_id)
+            receive_transactions.append(re_tx)
+        return receive_transactions
+    
+    def populate_queue_block_with_receive_tx(self):
+        receive_tx = self.create_receivable_signed_transactions()
+        self.add_transactions_to_queue_block(receive_tx)
+        return receive_tx
     #
     # Execution API
     #
@@ -583,17 +647,21 @@ class Chain(BaseChain):
         """
         Imports a complete block.
         """
-        if block.number > self.header.block_number:
+        if not block.is_genesis:
+            if not self.get_vm().check_time_since_parent_block(block):
+                raise NotEnoughTimeBetweenBlocks("not enough time between blocks. We require {} seconds.".format(constants.MIN_TIME_BETWEEN_BLOCKS))
+        
+        if block.number != self.header.block_number:
             raise ValidationError(
                 "Attempt to import block #{0}.  Cannot import block with number "
-                "greater than current block #{1}.".format(
+                "different from the queueblock #{1}.".format(
                     block.number,
                     self.header.block_number,
                 )
             )
+        
 
-        parent_chain = self.get_chain_at_block_parent(block)
-        imported_block = parent_chain.get_vm().import_block(block)
+        imported_block = self.get_vm(block.header).import_block(block)
         
         if isinstance(block, self.get_vm().get_queue_block_class()):
             # If it was a queueblock, then the header will have changed after importing
@@ -606,6 +674,7 @@ class Chain(BaseChain):
 
         self.chaindb.persist_block(imported_block)
         self.header = self.create_header_from_parent(self.get_canonical_head())
+        self.queue_block = None
         self.logger.debug(
             'IMPORTED_BLOCK: number %s | hash %s',
             imported_block.number,
@@ -613,6 +682,9 @@ class Chain(BaseChain):
         )
         return imported_block
 
+    def import_current_queue_block(self):
+        
+        self.import_block(self.queue_block)
     #
     # Validation API
     #

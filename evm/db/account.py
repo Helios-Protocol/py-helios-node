@@ -332,11 +332,16 @@ class AccountDB(BaseAccountDB):
     #
     def get_receivable_transactions(self, address):
         validate_canonical_address(address, title="Storage Address")
-
         account = self._get_account(address)
-
         return account.receivable_transactions
     
+    def has_receivable_transactions(self, address):
+        tx = self.get_receivable_transactions(address)
+        if len(tx) == 0:
+            return False
+        else:
+            return True
+        
     def get_receivable_transaction(self, address, transaction_hash):
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         all_tx = self.get_receivable_transactions(address)
@@ -360,12 +365,16 @@ class AccountDB(BaseAccountDB):
         
         new_receivable_transactions = receivable_transactions + (TransactionKey(transaction_hash, sender_block_hash), )
         
+        self.logger.debug("adding receivable transaction {}".format(transaction_hash))
+        #self.logger.debug(new_receivable_transactions)
+        
         self._set_account(address, account.copy(receivable_transactions=new_receivable_transactions)) 
         
     def delete_receivable_transaction(self, address, transaction_hash):
         validate_canonical_address(address, title="Storage Address")
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         
+        self.logger.debug("deleting receivable tx {}".format(transaction_hash))
         account = self._get_account(address)
         receivable_transactions = list(self.get_receivable_transactions(address))
         i = 0
@@ -381,9 +390,6 @@ class AccountDB(BaseAccountDB):
         else:
             raise ValueError("transaction hash {0} not found in receivable_transactions database for wallet {1}".format(transaction_hash, address))
         
-        final = tuple(receivable_transactions)
-        print("test")
-        print(final)
         self._set_account(address, account.copy(receivable_transactions=tuple(receivable_transactions)))
     
     
@@ -443,7 +449,7 @@ class AccountDB(BaseAccountDB):
         self._set_account(address, account)
 
     def account_is_empty(self, address):
-        return not self.account_has_code_or_nonce(address) and self.get_balance(address) == 0
+        return not self.account_has_code_or_nonce(address) and self.get_balance(address) == 0 and self.has_receivable_transactions(address) is False
 
     #
     # Internal

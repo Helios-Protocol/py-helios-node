@@ -82,6 +82,11 @@ class HeliosTestnetComputation(BaseComputation):
                 #this is a receive transaction
                 self.state.account_db.delete_receivable_transaction(self.msg.storage_address, self.transaction_context.send_tx_hash)
                 self.state.account_db.delta_balance(self.msg.storage_address, self.msg.value)
+                self.logger.debug(
+                    "TRANSFERRED: %s into %s",
+                    self.msg.value,
+                    encode_hex(self.msg.storage_address),
+                )
             else:
                 #this is a send transaction
                 sender_balance = self.state.account_db.get_balance(self.msg.sender)
