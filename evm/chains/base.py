@@ -563,9 +563,18 @@ class Chain(BaseChain):
         return signed_transaction
     
     def create_and_sign_transaction_for_queue_block(self, *args: Any, **kwargs: Any) -> BaseTransaction:
-        transaction = self.create_and_sign_transaction(*args, **kwargs)
+        tx_nonce = self.get_current_queue_block_nonce()
+        
+        transaction = self.create_and_sign_transaction(nonce = tx_nonce, *args, **kwargs)
         self.add_transactions_to_queue_block(transaction)
         return transaction
+    
+    def get_current_queue_block_nonce(self):
+        if self.queue_block is None or self.queue_block.current_tx_nonce is None:
+            tx_nonce = self.get_vm().state.account_db.get_nonce(self.wallet_address)
+        else:
+            tx_nonce =self.queue_block.current_tx_nonce
+        return tx_nonce
         
     def create_receive_transaction(self, *args: Any, **kwargs: Any) -> BaseReceiveTransaction:
         """
@@ -648,9 +657,11 @@ class Chain(BaseChain):
         Imports a complete block.
         """
         if not block.is_genesis:
-            if not self.get_vm().check_time_since_parent_block(block):
-                raise NotEnoughTimeBetweenBlocks("not enough time between blocks. We require {} seconds.".format(constants.MIN_TIME_BETWEEN_BLOCKS))
-        
+            time_wait = self.get_vm().check_wait_before_new_block(block)
+            if time_wait > 0:
+                self.logger.debug("not enough time between blocks. We require {0} seconds. waiting for {1} seconds.".format(constants.MIN_TIME_BETWEEN_BLOCKS, time_wait))
+                time.sleep(time_wait)
+                
         if block.number != self.header.block_number:
             raise ValidationError(
                 "Attempt to import block #{0}.  Cannot import block with number "

@@ -70,6 +70,9 @@ class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
 
 
 class BaseQueueBlock(BaseBlock):
+    #variables to avoid python loops
+    current_tx_nonce = None
+    
     @abstractmethod
     def as_complete_block(self):
         raise NotImplementedError("Must be implemented by subclasses")
@@ -86,7 +89,7 @@ class BaseQueueBlock(BaseBlock):
         
     def add_transaction(self, transaction):
         transactions = self.transactions + (transaction, )
-        
+        self.current_tx_nonce = transaction.nonce + 1
         return self.copy(
             transactions=transactions,
         )

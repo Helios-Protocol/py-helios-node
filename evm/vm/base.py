@@ -395,10 +395,8 @@ class VM(BaseVM):
                 )
         
         
-        
         #run all of the transactions.
         last_header, receipts = self._apply_all_transactions(block.transactions, self.block.header)
-        
         
         
         #then run all receive transactions
@@ -413,14 +411,16 @@ class VM(BaseVM):
             block.transactions,
             receipts,
         )
-        
+         
         self.block = self.set_block_receive_transactions(
             self.block,
             self.block.header,
-            block.transactions
+            block.receive_transactions
         )
         
         
+        #need to save the closing balance into the block.
+        self.block = self.save_closing_balance(self.block)
         
         #TODO: find out if this packing is nessisary
         packed_block = self.pack_block(self.block, *args, **kwargs)
@@ -430,6 +430,13 @@ class VM(BaseVM):
             If it is a queueblock, then it must be signed now.
             It cannot be signed earlier because the header fields were changing
             """
+            #update timestamp now.
+            self.logger.debug("setting timestamp of block to {}".format(int(time.time())))
+            packed_block = packed_block.copy(
+                header=packed_block.header.copy(
+                    timestamp=int(time.time())
+                ),
+            )
             if self.private_key is None:
                 raise ValueError("Cannot sign block because no private key given")
             self.logger.debug("signing block")
@@ -486,6 +493,15 @@ class VM(BaseVM):
     #
     # Finalization
     #
+    def save_closing_balance(self, block):
+        closing_balance = self.state.account_db.get_balance(self.wallet_address)
+        
+        return block.copy(
+            header=block.header.copy(
+                closing_balance = closing_balance
+            ),
+        )
+        
     def pack_block(self, block, *args, **kwargs):
         """
         Pack block for mining.
@@ -626,14 +642,12 @@ class VM(BaseVM):
     #
     # Validate
     #
-    def check_time_since_parent_block(self, block):
+    def check_wait_before_new_block(self, block):
         parent_header = get_parent_header(block.header, self.chaindb)
         parent_time = parent_header.timestamp
         difference = int(time.time())-parent_time
-        if difference < MIN_TIME_BETWEEN_BLOCKS:
-            return False
-        else:
-            return True
+        time_left = MIN_TIME_BETWEEN_BLOCKS - difference
+        return time_left
         
     def validate_block(self, block):
         """
@@ -654,7 +668,7 @@ class VM(BaseVM):
 
             validate_gas_limit(block.header.gas_limit, parent_header.gas_limit)
             validate_length_lte(block.header.extra_data, 32, title="BlockHeader.extra_data")
-
+            
             # timestamp
             if block.header.timestamp < parent_header.timestamp:
                 raise ValidationError(
@@ -669,9 +683,11 @@ class VM(BaseVM):
                 raise ValidationError(
                     "`timestamp` is equal to the parent block's timestamp\n"
                     "- block : {0}\n"
-                    "- parent: {1}. ".format(
+                    "- parent: {1}.\n"
+                    "- current timestamp : {2}".format(
                         block.header.timestamp,
                         parent_header.timestamp,
+                        time.time()
                     )
                 )
 

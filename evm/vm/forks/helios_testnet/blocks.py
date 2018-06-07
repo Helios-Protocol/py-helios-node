@@ -93,7 +93,8 @@ class HeliosTestnetBlock(BaseBlock):
 
         return cls(
             header=header,
-            transactions=transactions
+            transactions=transactions,
+            receive_transactions=receive_transactions
         )
 
 

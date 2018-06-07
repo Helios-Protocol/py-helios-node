@@ -748,6 +748,7 @@ class ChainDB(BaseChainDB):
         """
         Memoizable version of `get_block_transactions`
         """
+
         for encoded_transaction in self._get_block_transaction_data(transaction_root):
             yield rlp.decode(encoded_transaction, sedes=transaction_class)
 
