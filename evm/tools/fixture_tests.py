@@ -47,11 +47,7 @@ from evm.tools.test_builder.normalization import (
     normalize_transaction_group,
 )
 from evm.vm.forks import (
-    ByzantiumVM,
-    TangerineWhistleVM,
-    FrontierVM,
-    HomesteadVM as BaseHomesteadVM,
-    SpuriousDragonVM,
+    HeliosTestnetVM,
 )
 
 
@@ -526,53 +522,11 @@ def verify_account_db(expected_state, account_db):
 
 def chain_vm_configuration(fixture):
     network = fixture['network']
-
-    if network == 'Frontier':
+    if network == 'HeliosTestnet':
         return (
-            (0, FrontierVM),
+            (0, HeliosTestnetVM),
         )
-    elif network == 'Homestead':
-        HomesteadVM = BaseHomesteadVM.configure(support_dao_fork=False)
-        return (
-            (0, HomesteadVM),
-        )
-    elif network == 'EIP150':
-        return (
-            (0, TangerineWhistleVM),
-        )
-    elif network == 'EIP158':
-        return (
-            (0, SpuriousDragonVM),
-        )
-    elif network == 'Byzantium':
-        return (
-            (0, ByzantiumVM),
-        )
-    elif network == 'FrontierToHomesteadAt5':
-        HomesteadVM = BaseHomesteadVM.configure(support_dao_fork=False)
-        return (
-            (0, FrontierVM),
-            (5, HomesteadVM),
-        )
-    elif network == 'HomesteadToEIP150At5':
-        HomesteadVM = BaseHomesteadVM.configure(support_dao_fork=False)
-        return (
-            (0, HomesteadVM),
-            (5, TangerineWhistleVM),
-        )
-    elif network == 'HomesteadToDaoAt5':
-        HomesteadVM = BaseHomesteadVM.configure(
-            support_dao_fork=True,
-            dao_fork_block_number=5,
-        )
-        return (
-            (0, HomesteadVM),
-        )
-    elif network == 'EIP158ToByzantiumAt5':
-        return (
-            (0, SpuriousDragonVM),
-            (5, ByzantiumVM),
-        )
+    
     else:
         raise ValueError("Network {0} does not match any known VM rules".format(network))
 

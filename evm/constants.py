@@ -193,7 +193,8 @@ DEFAULT_SPOOF_S = 1
 GENESIS_WALLET_ADDRESS=b'\x00' * 20
 REWARD_TYPE_1_WALLET_ADDRESS=b'\x00' * 19 + b'\x01'
 REWARD_TYPE_2_WALLET_ADDRESS=b'\x00' * 19 + b'\x02'
+SLASH_WALLET_ADDRESS  =b'\x00' * 19 + b'\x03'
 MIN_TIME_BETWEEN_BLOCKS= 1 #1 for testing. change to 10 after
-    
+
     
     

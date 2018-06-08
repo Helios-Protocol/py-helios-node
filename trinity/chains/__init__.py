@@ -6,14 +6,10 @@ from multiprocessing.managers import (  # type: ignore
 )
 import os
 
-from evm import MainnetChain, RopstenChain
+from evm import MainnetChain
 from evm.chains.mainnet import (
     MAINNET_GENESIS_HEADER,
     MAINNET_NETWORK_ID,
-)
-from evm.chains.ropsten import (
-    ROPSTEN_GENESIS_HEADER,
-    ROPSTEN_NETWORK_ID,
 )
 from evm.db.backends.base import BaseDB
 from evm.db.chain import AsyncChainDB
@@ -21,6 +17,9 @@ from evm.exceptions import CanonicalHeadNotFound
 
 from p2p import ecies
 
+from trinity.exceptions import (
+    MissingPath,
+)
 from trinity.config import ChainConfig
 from trinity.db.base import DBProxy
 from trinity.db.chain import ChainDBProxy
@@ -54,6 +53,11 @@ def is_data_dir_initialized(chain_config: ChainConfig) -> bool:
     if not os.path.exists(chain_config.database_dir):
         return False
 
+    if not chain_config.logfile_path.parent.exists():
+        return False
+    elif not chain_config.logfile_path.exists():
+        return False
+
     if chain_config.nodekey_path is None:
         # has an explicitely defined nodekey
         pass
@@ -77,14 +81,30 @@ def is_database_initialized(chaindb: AsyncChainDB) -> bool:
 
 
 def initialize_data_dir(chain_config: ChainConfig) -> None:
-    if is_under_xdg_trinity_root(chain_config.data_dir):
-        os.makedirs(chain_config.data_dir, exist_ok=True)
-    elif not os.path.exists(chain_config.data_dir):
+    if not chain_config.data_dir.exists() and is_under_xdg_trinity_root(chain_config.data_dir):
+        chain_config.data_dir.mkdir(parents=True, exist_ok=True)
+    elif not chain_config.data_dir.exists():
         # we don't lazily create the base dir for non-default base directories.
-        raise ValueError(
+        raise MissingPath(
             "The base chain directory provided does not exist: `{0}`".format(
                 chain_config.data_dir,
-            )
+            ),
+            chain_config.data_dir
+        )
+
+    # Logfile
+    if (not chain_config.logfile_path.exists() and
+            is_under_xdg_trinity_root(chain_config.logfile_path)):
+
+        chain_config.logfile_path.parent.mkdir(parents=True, exist_ok=True)
+        chain_config.logfile_path.touch()
+    elif not chain_config.logfile_path.exists():
+        # we don't lazily create the base dir for non-default base directories.
+        raise MissingPath(
+            "The base logging directory provided does not exist: `{0}`".format(
+                chain_config.logfile_path,
+            ),
+            chain_config.logfile_path
         )
 
     # Chain data-dir
@@ -101,10 +121,7 @@ def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> Non
     try:
         chaindb.get_canonical_head()
     except CanonicalHeadNotFound:
-        if chain_config.network_id == ROPSTEN_NETWORK_ID:
-            # We're starting with a fresh DB.
-            chaindb.persist_header(ROPSTEN_GENESIS_HEADER)
-        elif chain_config.network_id == MAINNET_NETWORK_ID:
+        if chain_config.network_id == MAINNET_NETWORK_ID:
             chaindb.persist_header(MAINNET_GENESIS_HEADER)
         else:
             # TODO: add genesis data to ChainConfig and if it's present, use it
@@ -121,8 +138,6 @@ def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
         initialize_database(chain_config, chaindb)
     if chain_config.network_id == MAINNET_NETWORK_ID:
         chain_class = MainnetChain  # type: ignore
-    elif chain_config.network_id == ROPSTEN_NETWORK_ID:
-        chain_class = RopstenChain  # type: ignore
     else:
         raise NotImplementedError(
             "Only the mainnet and ropsten chains are currently supported"
@@ -157,7 +172,7 @@ def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
         proxytype=AsyncHeaderChainProxy,
     )
 
-    manager = DBManager(address=chain_config.database_ipc_path)  # type: ignore
+    manager = DBManager(address=str(chain_config.database_ipc_path))  # type: ignore
     server = manager.get_server()  # type: ignore
 
     server.serve_forever()  # type: ignore

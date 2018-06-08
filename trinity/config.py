@@ -11,13 +11,10 @@ from eth_keys.datatypes import PrivateKey
 from evm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
-from evm.chains.ropsten import (
-    ROPSTEN_NETWORK_ID,
-)
 from p2p.kademlia import Node as KademliaNode
 from p2p.constants import (
+    DEFAULT_MAX_PEERS,
     MAINNET_BOOTNODES,
-    ROPSTEN_BOOTNODES,
 )
 
 from trinity.constants import (
@@ -29,6 +26,7 @@ from trinity.utils.chains import (
     get_data_dir_for_network_id,
     get_database_socket_path,
     get_jsonrpc_socket_path,
+    get_logfile_path,
     get_nodekey_path,
     load_nodekey,
 )
@@ -43,6 +41,7 @@ DATABASE_DIR_NAME = 'chain'
 class ChainConfig:
     _data_dir: Path = None
     _nodekey_path: Path = None
+    _logfile_path: Path = None
     _nodekey = None
     _network_id: int = None
 
@@ -53,14 +52,17 @@ class ChainConfig:
 
     def __init__(self,
                  network_id: int,
+                 max_peers: int=DEFAULT_MAX_PEERS,
                  data_dir: str=None,
                  nodekey_path: str=None,
+                 logfile_path: str=None,
                  nodekey: PrivateKey=None,
                  sync_mode: str=SYNC_FULL,
                  port: int=30303,
                  preferred_nodes: Tuple[KademliaNode, ...]=None,
                  bootstrap_nodes: Tuple[KademliaNode, ...]=None) -> None:
         self.network_id = network_id
+        self.max_peers = max_peers
         self.sync_mode = sync_mode
         self.port = port
         self.preferred_nodes = preferred_nodes
@@ -69,10 +71,6 @@ class ChainConfig:
             if self.network_id == MAINNET_NETWORK_ID:
                 self.bootstrap_nodes = tuple(
                     KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
-                )
-            elif self.network_id == ROPSTEN_NETWORK_ID:
-                self.bootstrap_nodes = tuple(
-                    KademliaNode.from_uri(enode) for enode in ROPSTEN_BOOTNODES
                 )
         else:
             self.bootstrap_nodes = bootstrap_nodes
@@ -92,6 +90,22 @@ class ChainConfig:
         elif nodekey is not None:
             self.nodekey = nodekey
 
+        if logfile_path is not None:
+            self.logfile_path = logfile_path
+        else:
+            self.logfile_path = get_logfile_path(self.data_dir)
+
+    @property
+    def logfile_path(self) -> Path:
+        """
+        The logfile_path is the base directory where all log files are stored.
+        """
+        return self._logfile_path
+
+    @logfile_path.setter
+    def logfile_path(self, value: Path) -> None:
+        self._logfile_path = value
+
     @property
     def data_dir(self) -> Path:
         """
@@ -106,20 +120,20 @@ class ChainConfig:
         self._data_dir = Path(value).resolve()
 
     @property
-    def database_dir(self) -> str:
+    def database_dir(self) -> Path:
         if self.sync_mode == SYNC_FULL:
-            return str(self.data_dir / DATABASE_DIR_NAME / "full")
+            return self.data_dir / DATABASE_DIR_NAME / "full"
         elif self.sync_mode == SYNC_LIGHT:
-            return str(self.data_dir / DATABASE_DIR_NAME / "light")
+            return self.data_dir / DATABASE_DIR_NAME / "light"
         else:
             raise ValueError("Unknown sync mode: {}}".format(self.sync_mode))
 
     @property
-    def database_ipc_path(self) -> str:
+    def database_ipc_path(self) -> Path:
         return get_database_socket_path(self.data_dir)
 
     @property
-    def jsonrpc_ipc_path(self) -> str:
+    def jsonrpc_ipc_path(self) -> Path:
         return get_jsonrpc_socket_path(self.data_dir)
 
     @property
@@ -172,17 +186,12 @@ class ChainConfig:
     def node_class(self) -> Type['Node']:
         from trinity.nodes.mainnet import (
             MainnetFullNode,
-            MainnetLightNode,
-        )
-        from trinity.nodes.ropsten import (
-            RopstenFullNode,
-            RopstenLightNode,
+            #MainnetLightNode,
         )
         if self.sync_mode == SYNC_LIGHT:
             if self.network_id == MAINNET_NETWORK_ID:
-                return MainnetLightNode
-            elif self.network_id == ROPSTEN_NETWORK_ID:
-                return RopstenLightNode
+                #return MainnetLightNode
+                return False
             else:
                 raise NotImplementedError(
                     "Only the mainnet and ropsten chains are currently supported"
@@ -190,8 +199,6 @@ class ChainConfig:
         elif self.sync_mode == SYNC_FULL:
             if self.network_id == MAINNET_NETWORK_ID:
                 return MainnetFullNode
-            elif self.network_id == ROPSTEN_NETWORK_ID:
-                return RopstenFullNode
             else:
                 raise NotImplementedError(
                     "Only the mainnet and ropsten chains are currently supported"

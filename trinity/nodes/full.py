@@ -22,6 +22,7 @@ class FullNode(Node):
         self._network_id = chain_config.network_id
         self._node_key = chain_config.nodekey
         self._node_port = chain_config.port
+        self._max_peers = chain_config.max_peers
 
     def get_chain(self):
         if self._chain is None:
@@ -35,11 +36,12 @@ class FullNode(Node):
             self._p2p_server = Server(
                 self._node_key,
                 self._node_port,
-                manager.get_chain(),
-                manager.get_chaindb(),
+                manager.get_chain(),  # type: ignore
+                manager.get_chaindb(),  # type: ignore
                 self.headerdb,
-                manager.get_db(),
+                manager.get_db(),  # type: ignore
                 self._network_id,
+                max_peers=self._max_peers,
                 peer_pool_class=PreferredNodePeerPool,
                 bootstrap_nodes=self._bootstrap_nodes,
                 token=self.cancel_token,

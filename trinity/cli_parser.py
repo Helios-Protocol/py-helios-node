@@ -3,9 +3,6 @@ import argparse
 from evm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
-from evm.chains.ropsten import (
-    ROPSTEN_NETWORK_ID,
-)
 
 from p2p.kademlia import Node
 
@@ -51,6 +48,7 @@ logging_parser = parser.add_argument_group('logging')
 network_parser = parser.add_argument_group('network')
 syncing_parser = parser.add_argument_group('sync mode')
 chain_parser = parser.add_argument_group('chain')
+debug_parser = parser.add_argument_group('debug')
 
 
 #
@@ -96,16 +94,7 @@ networkid_parser.add_argument(
     help="Network identifier (1=Mainnet, 3=Ropsten)",
     default=MAINNET_NETWORK_ID,
 )
-networkid_parser.add_argument(
-    '--ropsten',
-    action='store_const',
-    const=ROPSTEN_NETWORK_ID,
-    dest='network_id',
-    help=(
-        "Ropsten network: pre configured proof-of-work test network.  Shortcut "
-        "for `--networkid=3`"
-    ),
-)
+
 
 network_parser.add_argument(
     '--preferred-node',
@@ -115,6 +104,14 @@ network_parser.add_argument(
         "An enode address which will be 'preferred' above nodes found using the "
         "discovery protocol"
     ),
+)
+
+network_parser.add_argument(
+    '--max-peers',
+    help=(
+        "Maximum number of network peers"
+    ),
+    type=int,
 )
 
 
@@ -156,6 +153,18 @@ chain_parser.add_argument(
     help=(
         "The filesystem path to the file which contains the nodekey"
     )
+)
+
+
+#
+# Debug configuration
+#
+debug_parser.add_argument(
+    '--profile',
+    action='store_true',
+    help=(
+        "Enables profiling via cProfile."
+    ),
 )
 
 

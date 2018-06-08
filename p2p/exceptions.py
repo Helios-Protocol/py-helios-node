@@ -26,6 +26,12 @@ class HandshakeFailure(BaseP2PError):
     pass
 
 
+class MalformedMessage(BaseP2PError):
+    """
+    Raised when a p2p command is received with a malformed message
+    """
+
+
 class UnknownProtocolCommand(BaseP2PError):
     """
     Raised when the received protocal command isn't known.
@@ -100,10 +106,25 @@ class EventLoopMismatch(BaseP2PError):
     """
     Raised when two different asyncio event loops are referenced, but must be equal
     """
+    pass
 
 
 class NoEligibleNodes(BaseP2PError):
     """
     Raised when there are no nodes which meet some filter criteria
+    """
+    pass
+
+
+class BadAckMessage(BaseP2PError):
+    """
+    Raised when the ack message during a peer handshake is malformed
+    """
+    pass
+
+
+class BadLESResponse(BaseP2PError):
+    """
+    Raised when the response to a LES request doesn't contain the data we asked for.
     """
     pass

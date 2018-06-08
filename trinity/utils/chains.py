@@ -12,9 +12,6 @@ from eth_keys.datatypes import PrivateKey
 from evm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
-from evm.chains.ropsten import (
-    ROPSTEN_NETWORK_ID,
-)
 
 from .xdg import (
     get_xdg_trinity_root,
@@ -22,7 +19,6 @@ from .xdg import (
 
 
 DEFAULT_DATA_DIRS = {
-    ROPSTEN_NETWORK_ID: 'ropsten',
     MAINNET_NETWORK_ID: 'mainnet',
 }
 
@@ -34,10 +30,10 @@ def get_local_data_dir(chain_name: str) -> Path:
     """
     Returns the base directory path where data for a given chain will be stored.
     """
-    return Path(os.environ.get(
-        'TRINITY_DATA_DIR',
-        os.path.join(get_xdg_trinity_root(), chain_name),
-    ))
+    try:
+        return Path(os.environ['TRINITY_DATA_DIR'])
+    except KeyError:
+        return Path(os.path.join(get_xdg_trinity_root(), chain_name))
 
 
 def get_data_dir_for_network_id(network_id: int) -> Path:
@@ -49,6 +45,17 @@ def get_data_dir_for_network_id(network_id: int) -> Path:
         return get_local_data_dir(DEFAULT_DATA_DIRS[network_id])
     except KeyError:
         raise KeyError("Unknown network id: `{0}`".format(network_id))
+
+
+LOG_DIRNAME = 'logs'
+LOG_FILENAME = 'trinity.log'
+
+
+def get_logfile_path(data_dir: Path) -> Path:
+    """
+    Returns the path to the log files.
+    """
+    return data_dir / LOG_DIRNAME / LOG_FILENAME
 
 
 NODEKEY_FILENAME = 'nodekey'
@@ -67,33 +74,33 @@ def get_nodekey_path(data_dir: Path) -> Path:
 DATABASE_SOCKET_FILENAME = 'db.ipc'
 
 
-def get_database_socket_path(data_dir: Path) -> str:
+def get_database_socket_path(data_dir: Path) -> Path:
     """
     Returns the path to the private key used for devp2p connections.
 
     We're still returning 'str' here on ipc-related path because an issue with
     multi-processing not being able to interpret 'Path' objects correctly.
     """
-    return os.environ.get(
+    return Path(os.environ.get(
         'TRINITY_DATABASE_IPC',
-        str(data_dir / DATABASE_SOCKET_FILENAME),
-    )
+        data_dir / DATABASE_SOCKET_FILENAME,
+    ))
 
 
 JSONRPC_SOCKET_FILENAME = 'jsonrpc.ipc'
 
 
-def get_jsonrpc_socket_path(data_dir: Path) -> str:
+def get_jsonrpc_socket_path(data_dir: Path) -> Path:
     """
     Returns the path to the ipc socket for the JSON-RPC server.
 
     We're still returning 'str' here on ipc-related path because an issue with
     multi-processing not being able to interpret 'Path' objects correctly.
     """
-    return os.environ.get(
+    return Path(os.environ.get(
         'TRINITY_JSONRPC_IPC',
-        str(data_dir / JSONRPC_SOCKET_FILENAME),
-    )
+        data_dir / JSONRPC_SOCKET_FILENAME,
+    ))
 
 
 #
@@ -125,6 +132,9 @@ def construct_chain_config_params(args):
 
     if args.sync_mode is not None:
         yield 'sync_mode', args.sync_mode
+
+    if args.max_peers is not None:
+        yield 'max_peers', args.max_peers
 
     if args.port is not None:
         yield 'port', args.port

@@ -9,7 +9,9 @@ from evm.exceptions import (
 from trinity.rpc.modules import (
     Eth,
     EVM,
+    Net,
     RPCModule,
+    Web3,
 )
 
 REQUIRED_REQUEST_KEYS = {
@@ -55,13 +57,15 @@ class RPCServer:
     module_classes = (
         Eth,
         EVM,
+        Net,
+        Web3,
     )
 
-    def __init__(self, chain):
+    def __init__(self, chain, p2p_server=None):
         self.modules: Dict[str, RPCModule] = {}
         self.chain = chain
         for M in self.module_classes:
-            self.modules[M.__name__.lower()] = M(chain)
+            self.modules[M.__name__.lower()] = M(chain, p2p_server)
         if len(self.modules) != len(self.module_classes):
             raise ValueError("apparent name conflict in RPC module_classes", self.module_classes)
 

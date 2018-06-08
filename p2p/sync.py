@@ -11,7 +11,6 @@ from p2p.peer import PeerPool
 from p2p.chain import FastChainSyncer, RegularChainSyncer
 from p2p.service import BaseService
 from p2p.state import StateDownloader
-from p2p.utils import unclean_close_exceptions
 
 
 # How old (in seconds) must our local head be to cause us to start with a fast-sync before we
@@ -40,13 +39,7 @@ class FullNodeSyncer(BaseService):
         self.peer_pool = peer_pool
 
     async def _run(self) -> None:
-        try:
-            await self._sync()
-        except unclean_close_exceptions:
-            self.logger.exception("Unclean exit from FullNodeSyncer")
-
-    async def _sync(self) -> None:
-        head = await self.chaindb.coro_get_canonical_head()
+        head = await self.wait(self.chaindb.coro_get_canonical_head())
         # We're still too slow at block processing, so if our local head is older than
         # FAST_SYNC_CUTOFF we first do a fast-sync run to catch up with the rest of the network.
         # See https://github.com/ethereum/py-evm/issues/654 for more details
@@ -57,7 +50,7 @@ class FullNodeSyncer(BaseService):
             await chain_syncer.run()
 
         # Ensure we have the state for our current head.
-        head = await self.chaindb.coro_get_canonical_head()
+        head = await self.wait(self.chaindb.coro_get_canonical_head())
         if head.state_root != BLANK_ROOT_HASH and head.state_root not in self.base_db:
             self.logger.info(
                 "Missing state for current head (#%d), downloading it", head.block_number)
@@ -106,7 +99,8 @@ def _test():
     else:
         discovery = None
         peer_pool = HardCodedNodesPeerPool(
-            ETHPeer, chaindb, RopstenChain.network_id, privkey, discovery, min_peers=5)
+            ETHPeer, chaindb, RopstenChain.network_id, privkey, discovery,
+        )
     asyncio.ensure_future(peer_pool.run())
 
     loop = asyncio.get_event_loop()

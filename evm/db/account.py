@@ -21,6 +21,7 @@ from eth_utils import encode_hex
 from evm.constants import (
     BLANK_ROOT_HASH,
     EMPTY_SHA3,
+    SLASH_WALLET_ADDRESS,
 )
 from evm.db.batch import (
     BatchDB,
@@ -355,6 +356,10 @@ class AccountDB(BaseAccountDB):
         validate_canonical_address(address, title="Storage Address")
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         validate_is_bytes(sender_block_hash, title="Sender Block Hash")
+        
+        #this is the wallet address people send money to when slashed. It is a sink
+        if address == SLASH_WALLET_ADDRESS:
+            return
         
         #first lets make sure we don't already have the transaction
         if self.get_receivable_transaction(address, transaction_hash) is not False:
