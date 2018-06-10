@@ -33,7 +33,9 @@ def get_local_data_dir(chain_name: str) -> Path:
     try:
         return Path(os.environ['TRINITY_DATA_DIR'])
     except KeyError:
-        return Path(os.path.join(get_xdg_trinity_root(), chain_name))
+        pass
+    
+    return Path(os.path.join(get_xdg_trinity_root(), chain_name))
 
 
 def get_data_dir_for_network_id(network_id: int) -> Path:
@@ -119,7 +121,7 @@ def construct_chain_config_params(args):
     Helper function for constructing the kwargs to initialize a ChainConfig object.
     """
     yield 'network_id', args.network_id
-
+        
     if args.data_dir is not None:
         yield 'data_dir', args.data_dir
 
@@ -143,3 +145,4 @@ def construct_chain_config_params(args):
         yield 'preferred_nodes', args.preferred_nodes
     else:
         yield 'preferred_nodes', tuple(args.preferred_nodes)
+    

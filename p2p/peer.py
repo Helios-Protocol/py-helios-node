@@ -6,6 +6,8 @@ import operator
 import random
 import struct
 import time
+import json
+
 from abc import (
     ABC,
     abstractmethod
@@ -92,6 +94,7 @@ from .constants import (
     DEFAULT_MAX_PEERS,
     HEADER_LEN,
     MAC_LEN,
+    LOCAL_PEER_POOL_PATH,
 )
 
 if TYPE_CHECKING:
@@ -776,15 +779,63 @@ DEFAULT_PREFERRED_NODES: Dict[int, Tuple[Node, ...]] = {
              Address("52.74.57.123", 30303, 30303)),
         Node(keys.PublicKey(decode_hex("78de8a0916848093c73790ead81d1928bec737d565119932b98c6b100d944b7a95e94f847f689fc723399d2e31129d182f7ef3863f2b4c820abbf3ab2722344d")),  # noqa: E501
              Address("191.235.84.50", 30303, 30303)),
-        Node(keys.PublicKey(decode_hex("ddd81193df80128880232fc1deb45f72746019839589eeb642d3d44efbb8b2dda2c1a46a348349964a6066f8afb016eb2a8c0f3c66f32fadf4370a236a4b5286")),  # noqa: E501
-             Address("52.231.202.145", 30303, 30303)),
-        Node(keys.PublicKey(decode_hex("3f1d12044546b76342d59d4a05532c14b85aa669704bfe1f864fe079415aa2c02d743e03218e57a33fb94523adb54032871a6c51b2cc5514cb7c7e35b3ed0a99")),  # noqa: E501
-             Address("13.93.211.84", 30303, 30303)),
     ),
 
 }
 
 
+        
+class LocalNodesPeerPool(PeerPool):
+    """
+    A PeerPool that uses a hard-coded list of remote nodes to connect to.
+
+    The node discovery v4 protocol is terrible at finding LES nodes, so for now
+    we hard-code some nodes that seem to have a good uptime.
+    """
+    _local_peer_pool = None
+        
+    def _get_random_bootnode(self) -> Generator[Node, None, None]:
+        # We don't have a DiscoveryProtocol with bootnodes, so just return one of our regular
+        # hardcoded nodes.
+        options = list(self.get_nodes_to_connect())
+        if options:
+            yield random.choice(options)
+        else:
+            self.logger.warning('No bootnodes available')
+
+    async def maybe_lookup_random_node(self) -> None:
+        # Do nothing as we don't have a DiscoveryProtocol
+        pass
+
+    def get_nodes_to_connect(self) -> Generator[Node, None, None]:
+        nodes = self.local_peer_pool
+        random.shuffle(nodes)
+        for node in nodes:
+            yield node      
+            
+    #save as [public_key,ip,udp_port,tcp_port]
+    @property
+    def local_peer_pool(self):
+        if self._local_peer_pool is None:
+            path = LOCAL_PEER_POOL_PATH
+        
+            #load existing pool
+            with open(path, 'r') as peer_file:
+                existing_peers_raw = peer_file.read()
+                existing_peers = json.loads(existing_peers_raw)
+            
+            self.logger.debug('loaded local peer nodes: {}'.format(existing_peers_raw))
+            #we have to change it into the expected form
+            peer_pool = []
+            for i, peer in enumerate(existing_peers):
+                if peer[0] != self.privkey.public_key.to_hex():
+                    peer_pool.append(Node(keys.PublicKey(decode_hex(peer[0])),Address(peer[1], peer[2], peer[3])))
+            self._local_peer_pool = peer_pool
+            
+        return self._local_peer_pool
+            
+        
+    
 class HardCodedNodesPeerPool(PeerPool):
     """
     A PeerPool that uses a hard-coded list of remote nodes to connect to.

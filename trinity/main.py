@@ -2,6 +2,7 @@ import asyncio
 import logging
 import signal
 import sys
+import os
 from typing import Type
 
 from evm.chains.mainnet import (
@@ -76,7 +77,7 @@ TRINITY_AMBIGIOUS_FILESYSTEM_INFO = (
 )
 
 
-def main() -> None:
+def main(instance_number = None) -> None:
     args = parser.parse_args()
 
     log_level = getattr(logging, args.log_level.upper())
@@ -89,10 +90,18 @@ def main() -> None:
 
     logger, formatter, handler_stream = setup_trinity_stdout_logging(log_level)
 
+    
+    if args.instance is not None:
+        os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(args.instance)
+    elif instance_number is not None:
+        os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(instance_number)
+        
+    #args.data_dir = '/d:/Google Drive/forex/blockchain coding/Helios/prototype desktop/py-evm/trinity/data/'
     try:
         chain_config = ChainConfig.from_parser_args(args)
     except AmbigiousFileSystem:
         exit_because_ambigious_filesystem(logger)
+        
 
     if not is_data_dir_initialized(chain_config):
         # TODO: this will only work as is for chains with known genesis
@@ -120,7 +129,7 @@ def main() -> None:
         chain_config,
         log_level
     )
-
+    
     # if console command, run the trinity CLI
     if args.subcommand == 'attach':
         console(chain_config.jsonrpc_ipc_path, use_ipython=not args.vanilla_shell)
@@ -136,15 +145,15 @@ def main() -> None:
         'profile': args.profile,
     }
 
-    # First initialize the database process.
-#    database_server_process = ctx.Process(
-#        target=run_database_process,
-#        args=(
-#            chain_config,
-#            LevelDB,
-#        ),
-#        kwargs=extra_kwargs,
-#    )
+    #First initialize the database process.
+    database_server_process = ctx.Process(
+        target=run_database_process,
+        args=(
+            chain_config,
+            LevelDB,
+        ),
+        kwargs=extra_kwargs,
+    )
 
     networking_process = ctx.Process(
         target=launch_node,
@@ -152,14 +161,14 @@ def main() -> None:
         kwargs=extra_kwargs,
     )
 
-    # start the processes
-#    database_server_process.start()
-#    logger.info("Started DB server process (pid=%d)", database_server_process.pid)
-#    wait_for_ipc(chain_config.database_ipc_path)
+    #start the processes
+    database_server_process.start()
+    logger.info("Started DB server process (pid=%d)", database_server_process.pid)
+    wait_for_ipc(chain_config.database_ipc_path)
 
     networking_process.start()
     logger.info("Started networking process (pid=%d)", networking_process.pid)
-
+    
     try:
         if args.subcommand == 'console':
             console(chain_config.jsonrpc_ipc_path, use_ipython=not args.vanilla_shell)
@@ -177,8 +186,8 @@ def main() -> None:
         # simply uses 'kill' to send a signal to the main process, but also because they will
         # perform a non-gracefull shutdown if the process takes too long to terminate.
         logger.info('Keyboard Interrupt: Stopping')
-#        kill_process_gracefully(database_server_process, logger)
-#        logger.info('DB server process (pid=%d) terminated', database_server_process.pid)
+        kill_process_gracefully(database_server_process, logger)
+        logger.info('DB server process (pid=%d) terminated', database_server_process.pid)
         kill_process_gracefully(networking_process, logger)
         logger.info('Networking process (pid=%d) terminated', networking_process.pid)
 
@@ -187,7 +196,6 @@ def main() -> None:
 @with_queued_logging
 def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> None:
     base_db = db_class(db_path=chain_config.database_dir)
-
     serve_chaindb(chain_config, base_db)
 
 
@@ -214,12 +222,10 @@ async def exit_on_signal(service_to_exit: BaseService) -> None:
 @with_queued_logging
 def launch_node(chain_config: ChainConfig) -> None:
     display_launch_logs(chain_config)
-
+    
     NodeClass = chain_config.node_class
-    print(NodeClass.__name__)
-    exit()
     node = NodeClass(chain_config)
-
+    
     run_service_until_quit(node)
 
 
@@ -238,4 +244,5 @@ def run_service_until_quit(service: BaseService) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    __spec__ = 'Nones'
+    main(1)

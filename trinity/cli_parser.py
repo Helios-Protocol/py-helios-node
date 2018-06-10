@@ -26,7 +26,8 @@ class ValidateAndStoreEnodes(argparse.Action):
         enode_list.append(enode)
 
 
-DEFAULT_LOG_LEVEL = 'info'
+#DEFAULT_LOG_LEVEL = 'info'
+DEFAULT_LOG_LEVEL = 'debug'
 LOG_LEVEL_CHOICES = (
     'debug',
     'info',
@@ -142,6 +143,14 @@ chain_parser.add_argument(
         "The directory where chain data is stored"
     ),
 )
+    
+chain_parser.add_argument(
+    '--instance',
+    help=(
+        "The node instance. used when running multiple nodes for local testing"
+    ),
+)
+
 chain_parser.add_argument(
     '--nodekey',
     help=(

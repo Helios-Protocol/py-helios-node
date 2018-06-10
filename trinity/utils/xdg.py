@@ -46,8 +46,14 @@ def get_xdg_trinity_root() -> str:
     try:
         return os.environ['XDG_TRINITY_ROOT']
     except KeyError:
-        return os.path.join(get_xdg_data_home(), 'trinity')
-
+        pass
+    
+    return_path = os.path.join(get_xdg_data_home(), 'trinity')
+    try: 
+        return return_path + "/" + os.environ['XDG_TRINITY_SUBDIRECTORY']
+    except KeyError:
+        return return_path
+    
 
 def is_under_xdg_trinity_root(path: Path) -> bool:
     return is_under_path(

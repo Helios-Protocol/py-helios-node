@@ -3,6 +3,7 @@ import ipaddress
 import logging
 import secrets
 import socket
+
 from typing import (
     cast,
     Tuple,
@@ -58,8 +59,6 @@ from p2p.peer import (
 from p2p.service import BaseService
 from p2p.sync import FullNodeSyncer
 
-if TYPE_CHECKING:
-    from trinity.db.header import BaseAsyncHeaderDB  # noqa: F401
 
 
 class Server(BaseService):
@@ -76,7 +75,6 @@ class Server(BaseService):
                  port: int,
                  chain: AsyncChain,
                  chaindb: AsyncChainDB,
-                 headerdb: 'BaseAsyncHeaderDB',
                  base_db: BaseDB,
                  network_id: int,
                  max_peers: int = DEFAULT_MAX_PEERS,
@@ -86,7 +84,6 @@ class Server(BaseService):
                  token: CancelToken = None,
                  ) -> None:
         super().__init__(token)
-        self.headerdb = headerdb
         self.chaindb = chaindb
         self.chain = chain
         self.base_db = base_db
@@ -237,14 +234,17 @@ class Server(BaseService):
         # This method exists only so that ShardSyncer can provide a different implementation.
         return self.peer_pool_class(
             self.peer_class,
-            self.headerdb,
+            self.chaindb,
             self.network_id,
             self.privkey,
             discovery,
             max_peers=self.max_peers,
         )
+    
 
-    async def _run(self) -> None:
+            
+        
+    async def _run(self) -> None:        
         self.logger.info("Running server...")
         upnp_dev = await self._discover_upnp_device()
         external_ip = '0.0.0.0'
@@ -268,7 +268,8 @@ class Server(BaseService):
         asyncio.ensure_future(self.discovery.bootstrap())
         asyncio.ensure_future(self.peer_pool.run())
         self.syncer = self._make_syncer(self.peer_pool)
-        await self.syncer.run()
+        
+        #await self.syncer.run()
 
     async def _cleanup(self) -> None:
         self.logger.info("Closing server...")
@@ -350,7 +351,7 @@ class Server(BaseService):
             mac_secret=mac_secret,
             egress_mac=egress_mac,
             ingress_mac=ingress_mac,
-            headerdb=self.headerdb,
+            headerdb=self.chaindb,
             network_id=self.network_id,
             inbound=True,
         )

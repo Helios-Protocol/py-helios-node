@@ -15,6 +15,7 @@ from p2p.kademlia import Node as KademliaNode
 from p2p.constants import (
     DEFAULT_MAX_PEERS,
     MAINNET_BOOTNODES,
+    LOCAL_PEER_POOL_PATH,
 )
 
 from trinity.constants import (
@@ -31,6 +32,8 @@ from trinity.utils.chains import (
     load_nodekey,
 )
 
+from trinity.utils.keybox import get_primary_node_private_helios_key
+
 if TYPE_CHECKING:
     # avoid circular import
     from trinity.nodes.base import Node  # noqa: F401
@@ -44,7 +47,9 @@ class ChainConfig:
     _logfile_path: Path = None
     _nodekey = None
     _network_id: int = None
-
+    _node_private_helios_key = None
+    _node_wallet_address = None
+    
     port: int = None
     preferred_nodes: Tuple[KademliaNode, ...] = None
 
@@ -60,7 +65,8 @@ class ChainConfig:
                  sync_mode: str=SYNC_FULL,
                  port: int=30303,
                  preferred_nodes: Tuple[KademliaNode, ...]=None,
-                 bootstrap_nodes: Tuple[KademliaNode, ...]=None) -> None:
+                 bootstrap_nodes: Tuple[KademliaNode, ...]=None,
+                 ) -> None:
         self.network_id = network_id
         self.max_peers = max_peers
         self.sync_mode = sync_mode
@@ -78,13 +84,15 @@ class ChainConfig:
         # validation
         if nodekey is not None and nodekey_path is not None:
             raise ValueError("It is invalid to provide both a `nodekey` and a `nodekey_path`")
-
+        
+        
         # set values
         if data_dir is not None:
             self.data_dir = data_dir
         else:
             self.data_dir = get_data_dir_for_network_id(self.network_id)
 
+        
         if nodekey_path is not None:
             self.nodekey_path = nodekey_path
         elif nodekey is not None:
@@ -94,7 +102,22 @@ class ChainConfig:
             self.logfile_path = logfile_path
         else:
             self.logfile_path = get_logfile_path(self.data_dir)
-
+        
+      
+    @property
+    def node_private_helios_key(self):
+        if self._node_private_helios_key is None:
+            self._node_private_helios_key = get_primary_node_private_helios_key()
+        return self._node_private_helios_key
+    
+    @property
+    def node_wallet_address(self):
+        if self._node_wallet_address is None:
+            self._node_wallet_address = self.node_private_helios_key.public_key.to_canonical_address()
+        return self._node_wallet_address
+        
+            
+        
     @property
     def logfile_path(self) -> Path:
         """
@@ -136,6 +159,11 @@ class ChainConfig:
     def jsonrpc_ipc_path(self) -> Path:
         return get_jsonrpc_socket_path(self.data_dir)
 
+    @property
+    def local_peer_pool_path(self):
+        return LOCAL_PEER_POOL_PATH
+    
+    
     @property
     def nodekey_path(self) -> Path:
         if self._nodekey_path is None:
@@ -181,7 +209,7 @@ class ChainConfig:
     def from_parser_args(cls, parser_args):
         constructor_kwargs = construct_chain_config_params(parser_args)
         return cls(**constructor_kwargs)
-
+    
     @property
     def node_class(self) -> Type['Node']:
         from trinity.nodes.mainnet import (
@@ -207,3 +235,4 @@ class ChainConfig:
             raise NotImplementedError(
                 "Only full and light sync modes are supported"
             )
+            

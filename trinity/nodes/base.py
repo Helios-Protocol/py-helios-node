@@ -49,10 +49,13 @@ class Node(BaseService):
 
     def __init__(self, chain_config: ChainConfig) -> None:
         super().__init__()
-
+        
+        self.chain_config = chain_config
+        self.private_helios_key = chain_config.node_private_helios_key
+        self.wallet_address = chain_config.node_wallet_address
         self._db_manager = create_db_manager(chain_config.database_ipc_path)
         self._db_manager.connect()  # type: ignore
-        self._headerdb = self._db_manager.get_headerdb()  # type: ignore
+        #self._headerdb = self._db_manager.get_headerdb()  # type: ignore
 
         self._jsonrpc_ipc_path: Path = chain_config.jsonrpc_ipc_path
         self._auxiliary_services = ServiceContext()
@@ -91,8 +94,9 @@ class Node(BaseService):
             return EmptyService()
 
     async def _run(self):
+        self.logger.debug("test")
         self._ipc_server = self.make_ipc_server()
-
+        
         # The RPC server needs its own thread, because it provides a synchcronous
         # API which might call into p2p async methods. These sync->async calls
         # deadlock if they are run in the same Thread and loop.

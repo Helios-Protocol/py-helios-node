@@ -46,3 +46,5 @@ MAINNET_BOOTNODES = (
 
 # Maximum peers number, we'll try to keep open connections up to this number of peers
 DEFAULT_MAX_PEERS = 25
+
+LOCAL_PEER_POOL_PATH = '/home/tommy/.local/share/trinity/local_peer_pool'

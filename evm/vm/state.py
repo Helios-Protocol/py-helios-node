@@ -20,12 +20,10 @@ from evm.db.account import (  # noqa: F401
 from evm.utils.datatypes import (
     Configurable,
 )
-
-import rlp
-from evm.db.schema import SchemaV1
-from evm.rlp.sedes import(
-    trie_root
+from evm.constants import (
+    BLANK_ROOT_HASH,
 )
+
 
 if TYPE_CHECKING:
     from evm.computation import (  # noqa: F401
@@ -135,7 +133,11 @@ class BaseState(Configurable, metaclass=ABCMeta):
         """
         Loads the last saved state root
         """
-        state_root = cls.get_account_db_class().get_saved_state_root(db) 
+        try:
+            state_root = cls.get_account_db_class().get_saved_state_root(db) 
+        except ValueError:
+            state_root = BLANK_ROOT_HASH
+        
         return cls(db, execution_context, state_root)
 
             

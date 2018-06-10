@@ -23,10 +23,10 @@ from trinity.exceptions import (
 from trinity.config import ChainConfig
 from trinity.db.base import DBProxy
 from trinity.db.chain import ChainDBProxy
-from trinity.db.header import (
-    AsyncHeaderDB,
-    AsyncHeaderDBProxy,
-)
+#from trinity.db.header import (
+#    AsyncHeaderDB,
+#    AsyncHeaderDBProxy,
+#)
 from trinity.utils.mp import (
     async_method,
 )
@@ -34,10 +34,10 @@ from trinity.utils.xdg import (
     is_under_xdg_trinity_root,
 )
 
-from .header import (
-    AsyncHeaderChain,
-    AsyncHeaderChainProxy,
-)
+#from .header import (
+#    AsyncHeaderChain,
+#    AsyncHeaderChainProxy,
+#)
 
 
 def is_data_dir_initialized(chain_config: ChainConfig) -> bool:
@@ -132,20 +132,20 @@ def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> Non
 
 
 def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
-    chaindb = AsyncChainDB(base_db)
-
-    if not is_database_initialized(chaindb):
-        initialize_database(chain_config, chaindb)
+    chaindb = AsyncChainDB(base_db, chain_config.node_wallet_address)
+    
+    #if not is_database_initialized(chaindb):
+    #    initialize_database(chain_config, chaindb)
     if chain_config.network_id == MAINNET_NETWORK_ID:
         chain_class = MainnetChain  # type: ignore
     else:
         raise NotImplementedError(
             "Only the mainnet and ropsten chains are currently supported"
         )
-    chain = chain_class(base_db)  # type: ignore
+    chain = chain_class(base_db, chain_config.node_wallet_address)  # type: ignore
 
-    headerdb = AsyncHeaderDB(base_db)
-    header_chain = AsyncHeaderChain(base_db)
+    #headerdb = AsyncHeaderDB(base_db)
+    #header_chain = AsyncHeaderChain(base_db)
 
     class DBManager(BaseManager):
         pass
@@ -161,16 +161,16 @@ def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
     )
     DBManager.register('get_chain', callable=lambda: chain, proxytype=ChainProxy)  # type: ignore
 
-    DBManager.register(  # type: ignore
-        'get_headerdb',
-        callable=lambda: headerdb,
-        proxytype=AsyncHeaderDBProxy,
-    )
-    DBManager.register(  # type: ignore
-        'get_header_chain',
-        callable=lambda: header_chain,
-        proxytype=AsyncHeaderChainProxy,
-    )
+#    DBManager.register(  # type: ignore
+#        'get_headerdb',
+#        callable=lambda: headerdb,
+#        proxytype=AsyncHeaderDBProxy,
+#    )
+#    DBManager.register(  # type: ignore
+#        'get_header_chain',
+#        callable=lambda: header_chain,
+#        proxytype=AsyncHeaderChainProxy,
+#    )
 
     manager = DBManager(address=str(chain_config.database_ipc_path))  # type: ignore
     server = manager.get_server()  # type: ignore
