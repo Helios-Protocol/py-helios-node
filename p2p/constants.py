@@ -48,3 +48,6 @@ MAINNET_BOOTNODES = (
 DEFAULT_MAX_PEERS = 25
 
 LOCAL_PEER_POOL_PATH = '/home/tommy/.local/share/trinity/local_peer_pool'
+
+#switch to turn off upnp for local communication only
+DO_UPNP = False

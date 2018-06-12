@@ -63,6 +63,11 @@ class TransactionNotFound(PyEVMError):
     """
     pass
 
+class InvalidHeadRootTimestamp(PyEVMError):
+    """
+    Raised when a timestamp based head hash is loaded or saved with invalid timestamp
+    """
+    pass
 
 class ParentNotFound(HeaderNotFound):
     """

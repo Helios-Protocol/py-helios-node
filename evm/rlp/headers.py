@@ -91,7 +91,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
         ('gas_used', big_endian_int),
         ('timestamp', big_endian_int),
         ('extra_data', binary),
-        ('closing_balance', big_endian_int),
+        ('account_hash', hash32),
         ('v', big_endian_int),
         ('r', big_endian_int),
         ('s', big_endian_int),
@@ -105,7 +105,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
     def __init__(self,
                  block_number: int,
                  gas_limit: int,
-                 closing_balance: int=0,
+                 account_hash: Hash32=ZERO_HASH32,
                  timestamp: int=None,
                  parent_hash: Hash32=ZERO_HASH32,
                  transaction_root: Hash32=BLANK_ROOT_HASH,
@@ -122,7 +122,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
     def __init__(self,  # noqa: F811
                  block_number,
                  gas_limit,
-                 closing_balance=0,
+                 account_hash = ZERO_HASH32,
                  timestamp=None,
                  parent_hash=ZERO_HASH32,
                  transaction_root=BLANK_ROOT_HASH,
@@ -147,7 +147,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
             gas_used=gas_used,
             timestamp=timestamp,
             extra_data=extra_data,
-            closing_balance=closing_balance,
+            account_hash=account_hash,
             v=v,
             r=r,
             s=s,
@@ -180,7 +180,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
                     transaction_root: bytes=None,
                     receive_transaction_root: bytes=None,
                     receipt_root: bytes=None,
-                    closing_balance: int=0) -> 'BaseBlockHeader':
+                    account_hash: bytes=ZERO_HASH32) -> 'BaseBlockHeader':
         """
         Initialize a new block header with the `parent` header as the block's
         parent hash.
@@ -193,8 +193,8 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
             'block_number': parent.block_number + 1,
             'timestamp': timestamp,
         }
-        if closing_balance is not 0:
-            header_kwargs['closing_balance'] = closing_balance
+        if account_hash is not None:
+            header_kwargs['account_hash'] = account_hash
         if extra_data is not None:
             header_kwargs['extra_data'] = extra_data
         if transaction_root is not None:

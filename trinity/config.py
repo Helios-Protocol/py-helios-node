@@ -116,7 +116,10 @@ class ChainConfig:
             self._node_wallet_address = self.node_private_helios_key.public_key.to_canonical_address()
         return self._node_wallet_address
         
-            
+    #0 is master, 1 is fullnode, 2 is micronode
+    @property
+    def node_type(self):
+        return 1
         
     @property
     def logfile_path(self) -> Path:

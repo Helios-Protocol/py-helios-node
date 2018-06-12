@@ -78,12 +78,15 @@ class FullNode(Node):
                 self._node_port,
                 manager.get_chain(),  # type: ignore
                 manager.get_chaindb(),  # type: ignore
+                manager.get_chain_head_db(),
                 manager.get_db(),  # type: ignore
                 self._network_id,
+                chain_config = self.chain_config,
                 max_peers=self._max_peers,
                 peer_pool_class=LocalNodesPeerPool,
                 bootstrap_nodes=self._bootstrap_nodes,
                 token=self.cancel_token,
+                
             )
 #            self._p2p_server = Server(
 #                self._node_key,

@@ -23,6 +23,10 @@ from trinity.exceptions import (
 from trinity.config import ChainConfig
 from trinity.db.base import DBProxy
 from trinity.db.chain import ChainDBProxy
+from trinity.db.chain_head import (
+    ChainHeadDBProxy,
+    AsyncChainHeadDB,
+)
 #from trinity.db.header import (
 #    AsyncHeaderDB,
 #    AsyncHeaderDBProxy,
@@ -133,6 +137,7 @@ def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> Non
 
 def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
     chaindb = AsyncChainDB(base_db, chain_config.node_wallet_address)
+    chain_head_db = AsyncChainHeadDB.load_from_saved_root_hash(base_db)
     
     #if not is_database_initialized(chaindb):
     #    initialize_database(chain_config, chaindb)
@@ -161,6 +166,11 @@ def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
     )
     DBManager.register('get_chain', callable=lambda: chain, proxytype=ChainProxy)  # type: ignore
 
+    DBManager.register(  # type: ignore
+        'get_chain_head_db',
+        callable=lambda: chain_head_db,
+        proxytype=ChainHeadDBProxy,
+    )
 #    DBManager.register(  # type: ignore
 #        'get_headerdb',
 #        callable=lambda: headerdb,

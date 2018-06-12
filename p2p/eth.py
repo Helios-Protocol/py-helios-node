@@ -27,9 +27,8 @@ class Status(Command):
     structure = [
         ('protocol_version', sedes.big_endian_int),
         ('network_id', sedes.big_endian_int),
-        ('td', sedes.big_endian_int),
-        ('best_hash', sedes.binary),
-        ('genesis_hash', sedes.binary),
+        ('node_type', sedes.big_endian_int),
+        ('node_wallet_address', sedes.binary),
     ]
 
 
@@ -107,14 +106,14 @@ class ETHProtocol(Protocol):
     cmd_length = 17
     logger = logging.getLogger("p2p.eth.ETHProtocol")
 
-    def send_handshake(self, head_info):
+    def send_handshake(self, chain_info):
         resp = {
             'protocol_version': self.version,
             'network_id': self.peer.network_id,
-            'td': head_info.total_difficulty,
-            'best_hash': head_info.block_hash,
-            'genesis_hash': head_info.genesis_hash,
+            'node_type': chain_info.node_type,
+            'node_wallet_address': chain_info.node_wallet_address,
         }
+        #self.logger.debug("sending handshake with {}{}{}{}".format(self.version, self.peer.network_id, chain_info.node_type, chain_info.node_wallet_address))
         cmd = Status(self.cmd_id_offset)
         self.logger.debug("Sending ETH/Status msg: %s", resp)
         self.send(*cmd.encode(resp))

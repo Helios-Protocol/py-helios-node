@@ -130,7 +130,7 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
     @classmethod
     def make_genesis_block(cls):
         genesis_header = BlockHeader(
-            closing_balance=0,
+            account_hash=constants.GENESIS_ACCOUNT_HASH,
             extra_data=constants.GENESIS_EXTRA_DATA,
             gas_limit=constants.GENESIS_GAS_LIMIT,
             gas_used=0,

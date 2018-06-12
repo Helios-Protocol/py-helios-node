@@ -25,9 +25,8 @@ from trinity.chains.header import (
 )
 from trinity.db.chain import ChainDBProxy
 from trinity.db.base import DBProxy
-from trinity.db.header import (
-    BaseAsyncHeaderDB,
-    AsyncHeaderDBProxy
+from trinity.db.chain_head import (
+    ChainHeadDBProxy,
 )
 from trinity.rpc.main import (
     RPCServer,
@@ -55,8 +54,9 @@ class Node(BaseService):
         self.wallet_address = chain_config.node_wallet_address
         self._db_manager = create_db_manager(chain_config.database_ipc_path)
         self._db_manager.connect()  # type: ignore
+        
         #self._headerdb = self._db_manager.get_headerdb()  # type: ignore
-
+        self._chain_head_db = self._db_manager.get_chain_head_db()  # type: ignore
         self._jsonrpc_ipc_path: Path = chain_config.jsonrpc_ipc_path
         self._auxiliary_services = ServiceContext()
 
@@ -76,9 +76,13 @@ class Node(BaseService):
     def db_manager(self) -> BaseManager:
         return self._db_manager
 
+#    @property
+#    def headerdb(self) -> BaseAsyncHeaderDB:
+#        return self._headerdb
+    
     @property
-    def headerdb(self) -> BaseAsyncHeaderDB:
-        return self._headerdb
+    def chain_head_db(self):
+        return self._chain_head_db
 
     def add_service(self, service: BaseService) -> None:
         if self.is_running:
@@ -139,7 +143,8 @@ def create_db_manager(ipc_path: Path) -> BaseManager:
     DBManager.register('get_db', proxytype=DBProxy)  # type: ignore
     DBManager.register('get_chaindb', proxytype=ChainDBProxy)  # type: ignore
     DBManager.register('get_chain', proxytype=ChainProxy)  # type: ignore
-    DBManager.register('get_headerdb', proxytype=AsyncHeaderDBProxy)  # type: ignore
+    DBManager.register('get_chain_head_db', proxytype=ChainHeadDBProxy)  # type: ignore
+    #DBManager.register('get_headerdb', proxytype=AsyncHeaderDBProxy)  # type: ignore
     DBManager.register('get_header_chain', proxytype=AsyncHeaderChainProxy)  # type: ignore
 
     manager = DBManager(address=str(ipc_path))  # type: ignore

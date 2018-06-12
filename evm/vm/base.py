@@ -420,7 +420,8 @@ class VM(BaseVM):
         
         
         #need to save the closing balance into the block.
-        self.block = self.save_closing_balance(self.block)
+        #self.block = self.save_closing_balance(self.block)
+        self.block = self.save_account_hash(self.block)
         
         #TODO: find out if this packing is nessisary
         packed_block = self.pack_block(self.block, *args, **kwargs)
@@ -499,6 +500,14 @@ class VM(BaseVM):
         return block.copy(
             header=block.header.copy(
                 closing_balance = closing_balance
+            ),
+        )
+            
+    def save_account_hash(self, block):
+        account_hash = self.state.account_db.get_account_hash(self.wallet_address)
+        return block.copy(
+            header=block.header.copy(
+                account_hash = account_hash
             ),
         )
         

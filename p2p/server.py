@@ -35,6 +35,7 @@ from p2p.constants import (
     DEFAULT_MAX_PEERS,
     HASH_LEN,
     REPLY_TIMEOUT,
+    DO_UPNP,
 )
 from p2p.discovery import DiscoveryProtocol
 from p2p.exceptions import (
@@ -75,17 +76,22 @@ class Server(BaseService):
                  port: int,
                  chain: AsyncChain,
                  chaindb: AsyncChainDB,
+                 chain_head_db,
                  base_db: BaseDB,
                  network_id: int,
+                 chain_config, 
                  max_peers: int = DEFAULT_MAX_PEERS,
                  peer_class: Type[BasePeer] = ETHPeer,
                  peer_pool_class: Type[PeerPool] = PreferredNodePeerPool,
                  bootstrap_nodes: Tuple[Node, ...] = None,
                  token: CancelToken = None,
+                 
                  ) -> None:
         super().__init__(token)
+        self.chain_config = chain_config
         self.chaindb = chaindb
         self.chain = chain
+        self.chain_head_db = chain_head_db
         self.base_db = base_db
         self.privkey = privkey
         self.port = port
@@ -239,6 +245,8 @@ class Server(BaseService):
             self.privkey,
             discovery,
             max_peers=self.max_peers,
+            chain_config = self.chain_config,
+            chain_head_db = self.chain_head_db,
         )
     
 
@@ -246,11 +254,18 @@ class Server(BaseService):
         
     async def _run(self) -> None:        
         self.logger.info("Running server...")
-        upnp_dev = await self._discover_upnp_device()
+#        print('testtest')
+#        print(self.chain_head_db.get_root_hash())
+#        print(self.chain_head_db.get_root_hash(1000))
+#        exit()
+        
         external_ip = '0.0.0.0'
-        if upnp_dev is not None:
-            external_ip = upnp_dev.WANIPConn1.GetExternalIPAddress()['NewExternalIPAddress']
-            await self._add_nat_portmap(upnp_dev)
+        if DO_UPNP:
+            upnp_dev = await self._discover_upnp_device()
+            if upnp_dev is not None:
+                external_ip = upnp_dev.WANIPConn1.GetExternalIPAddress()['NewExternalIPAddress']
+                await self._add_nat_portmap(upnp_dev)
+                
         await self._start_tcp_listener()
         self.logger.info(
             "enode://%s@%s:%s",
@@ -264,11 +279,12 @@ class Server(BaseService):
         self.discovery = DiscoveryProtocol(self.privkey, addr, bootstrap_nodes=self.bootstrap_nodes)
         await self._start_udp_listener(self.discovery)
         self.peer_pool = self._make_peer_pool(self.discovery)
-        asyncio.ensure_future(self.refresh_nat_portmap())
+        if DO_UPNP:
+            asyncio.ensure_future(self.refresh_nat_portmap())
         asyncio.ensure_future(self.discovery.bootstrap())
-        asyncio.ensure_future(self.peer_pool.run())
+        peer_pool_task = asyncio.ensure_future(self.peer_pool.run())
         self.syncer = self._make_syncer(self.peer_pool)
-        
+        await peer_pool_task
         #await self.syncer.run()
 
     async def _cleanup(self) -> None:
@@ -354,6 +370,8 @@ class Server(BaseService):
             headerdb=self.chaindb,
             network_id=self.network_id,
             inbound=True,
+            chain_config = self.chain_config,
+            chain_head_db = self.chain_head_db
         )
 
         if self.peer_pool.is_full:

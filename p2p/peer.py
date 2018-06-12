@@ -105,6 +105,8 @@ async def handshake(remote: Node,
                     privkey: datatypes.PrivateKey,
                     peer_class: 'Type[BasePeer]',
                     headerdb: 'BaseAsyncHeaderDB',
+                    chain_config, 
+                    chain_head_db,
                     network_id: int,
                     token: CancelToken,
                     ) -> 'BasePeer':
@@ -131,7 +133,8 @@ async def handshake(remote: Node,
     peer = peer_class(
         remote=remote, privkey=privkey, reader=reader, writer=writer,
         aes_secret=aes_secret, mac_secret=mac_secret, egress_mac=egress_mac,
-        ingress_mac=ingress_mac, headerdb=headerdb, network_id=network_id)
+        ingress_mac=ingress_mac, headerdb=headerdb, network_id=network_id,
+        chain_config = chain_config, chain_head_db = chain_head_db)
     await peer.do_p2p_handshake()
     await peer.do_sub_proto_handshake()
     return peer
@@ -159,9 +162,13 @@ class BasePeer(BaseService):
                  ingress_mac: sha3.keccak_256,
                  headerdb: 'BaseAsyncHeaderDB',
                  network_id: int,
+                 chain_config,
+                 chain_head_db,
                  inbound: bool = False,
                  ) -> None:
         super().__init__()
+        self.chain_config = chain_config
+        self.chain_head_db = chain_head_db
         self.remote = remote
         self.privkey = privkey
         self.reader = reader
@@ -238,15 +245,14 @@ class BasePeer(BaseService):
         return await self.wait(self.headerdb.coro_get_block_header_by_hash(genesis_hash))
 
     @property
-    async def _local_chain_info(self) -> 'ChainInfo':
-        genesis = await self.genesis
-        head = await self.wait(self.headerdb.coro_get_canonical_head())
-        total_difficulty = await self.headerdb.coro_get_score(head.hash)
+    def _local_chain_info(self) -> 'ChainInfo':
+        
+        node_type = self.chain_config.node_type
+        node_wallet_address = self.chain_config.node_wallet_address
+
         return ChainInfo(
-            block_number=head.block_number,
-            block_hash=head.hash,
-            total_difficulty=total_difficulty,
-            genesis_hash=genesis.hash,
+            node_type=node_type,
+            node_wallet_address=node_wallet_address
         )
 
     @property
@@ -502,7 +508,8 @@ class ETHPeer(BasePeer):
     head_hash: Hash32 = None
 
     async def send_sub_proto_handshake(self):
-        self.sub_proto.send_handshake(await self._local_chain_info)
+        chain_info = self._local_chain_info
+        self.sub_proto.send_handshake(chain_info)
 
     async def process_sub_proto_handshake(
             self, cmd: protocol.Command, msg: protocol._DecodedMsgType) -> None:
@@ -516,14 +523,14 @@ class ETHPeer(BasePeer):
             raise HandshakeFailure(
                 "{} network ({}) does not match ours ({}), disconnecting".format(
                     self, msg['network_id'], self.network_id))
-        genesis = await self.genesis
-        if msg['genesis_hash'] != genesis.hash:
-            self.disconnect(DisconnectReason.other)
-            raise HandshakeFailure(
-                "{} genesis ({}) does not match ours ({}), disconnecting".format(
-                    self, encode_hex(msg['genesis_hash']), genesis.hex_hash))
-        self.head_td = msg['td']
-        self.head_hash = msg['best_hash']
+#        genesis = await self.genesis
+#        if msg['genesis_hash'] != genesis.hash:
+#            self.disconnect(DisconnectReason.other)
+#            raise HandshakeFailure(
+#                "{} genesis ({}) does not match ours ({}), disconnecting".format(
+#                    self, encode_hex(msg['genesis_hash']), genesis.hex_hash))
+        #self.head_td = msg['td']
+        #self.head_hash = msg['best_hash']
 
 
 class PeerPoolSubscriber(ABC):
@@ -565,9 +572,14 @@ class PeerPool(BaseService):
                  network_id: int,
                  privkey: datatypes.PrivateKey,
                  discovery: DiscoveryProtocol,
-                 max_peers: int = DEFAULT_MAX_PEERS
+                 chain_config,
+                 chain_head_db,
+                 max_peers: int = DEFAULT_MAX_PEERS,
+                 
                  ) -> None:
         super().__init__()
+        self.chain_config = chain_config
+        self.chain_head_db = chain_head_db
         self.peer_class = peer_class
         self.headerdb = headerdb
         self.network_id = network_id
@@ -648,7 +660,7 @@ class PeerPool(BaseService):
             # for https://github.com/ethereum/py-evm/issues/670.
             peer = await self.wait(
                 handshake(
-                    remote, self.privkey, self.peer_class, self.headerdb, self.network_id,
+                    remote, self.privkey, self.peer_class, self.headerdb, self.chain_config, self.chain_head_db, self.network_id,
                     self.cancel_token))
 
             return peer
@@ -952,11 +964,9 @@ class PreferredNodePeerPool(PeerPool):
 
 
 class ChainInfo:
-    def __init__(self, block_number, block_hash, total_difficulty, genesis_hash):
-        self.block_number = block_number
-        self.block_hash = block_hash
-        self.total_difficulty = total_difficulty
-        self.genesis_hash = genesis_hash
+    def __init__(self, node_type, node_wallet_address):
+        self.node_type=node_type
+        self.node_wallet_address=node_wallet_address
 
 
 PEER_MSG_TYPE = Tuple[BasePeer, protocol.Command, protocol._DecodedMsgType]

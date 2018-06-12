@@ -146,6 +146,7 @@ chain_parser.add_argument(
     
 chain_parser.add_argument(
     '--instance',
+    type=int,
     help=(
         "The node instance. used when running multiple nodes for local testing"
     ),

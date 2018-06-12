@@ -455,7 +455,15 @@ class AccountDB(BaseAccountDB):
 
     def account_is_empty(self, address):
         return not self.account_has_code_or_nonce(address) and self.get_balance(address) == 0 and self.has_receivable_transactions(address) is False
-
+    
+    def get_account_hash(self, address):
+        account = self._get_account(address)
+        account_hashable = account.copy(
+            receivable_transactions = ()
+        )
+        account_hashable_encoded = rlp.encode(account_hashable)
+        return keccak(account_hashable_encoded)
+    
     #
     # Internal
     #

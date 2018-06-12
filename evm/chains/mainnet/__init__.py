@@ -61,7 +61,7 @@ RECEIVER = keys.PrivateKey(b'\x16\xc3\xb37\xb8\x8aG`\xdf\xad\xe3},\x9a\xb4~\xff7
 #)
     
 MAINNET_GENESIS_HEADER = BlockHeader(
-    closing_balance=0,
+    account_hash=constants.GENESIS_ACCOUNT_HASH,
     extra_data=decode_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa"),
     gas_limit=5000,
     gas_used=0,
@@ -75,7 +75,7 @@ MAINNET_GENESIS_HEADER = BlockHeader(
 )
 
 MAINNET_GENESIS_PARAMS = {
-    'closing_balance':0,
+    'account_hash':constants.GENESIS_ACCOUNT_HASH,
     'parent_hash': constants.GENESIS_PARENT_HASH,
     'transaction_root': constants.BLANK_ROOT_HASH,
     'receive_transaction_root': constants.BLANK_ROOT_HASH,

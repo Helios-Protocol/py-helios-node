@@ -296,7 +296,9 @@ class ChainDB(BaseChainDB):
             header.hash,
             rlp.encode(header),
         )
-
+        
+        #save the block to the chain wallet address lookup db
+        self.save_block_hash_to_chain_wallet_address(header.hash)
 
         try:
             head_block_number = self.get_canonical_head().block_number
@@ -393,106 +395,23 @@ class ChainDB(BaseChainDB):
             rlp.encode(header.hash, sedes=rlp.sedes.binary),
         )
 
-    #chronological head number is always 0   
-#    def set_chronological_head_number(self, ch_head_number: ChBlockNumber) -> None:
-#        """
-#        sets the given chronological block number as chronological head
-#        """
-#        try:
-#            self.get_block_hash_from_cronological_block_number(ch_head_number)
-#        except ChronologicalBlockNumberNotFound:
-#            raise ValueError("Cannot set chronological head for chronological block number that doesnt exist. chronological number: {}".format(ch_head_number))
-#            
-#            
-#        chronological_head_number_key = SchemaV1.make_chronological_head_number_lookup_key()
-#        self.db.set(
-#            chronological_head_number_key,
-#            rlp.encode(ch_head_number, sedes=rlp.sedes.big_endian_int),
-#        )
-        
-#    def get_chronological_head_number(self) -> int:
-#        """
-#        gets the chronological head number
-#        """
-#        chronological_head_number_key = SchemaV1.make_chronological_head_number_lookup_key()
-#        try:
-#            return rlp.decode(self.db[chronological_head_number_key], rlp.sedes.big_endian_int)
-#        except KeyError:
-#            raise ValueError("No chronological head number found")
-        
-#    def add_block_hash_to_chronological_journal(self, block_hash: Hash32, is_genesis = False) -> None:
-#        """
-#        adds the block hash to the chronological journal, and sets it as new chronological head.
-#        """
-#        #first make sure the block exists
-#        try:
-#            self.get_block_header_by_hash(block_hash)
-#        except HeaderNotFound:
-#            raise ValueError("Cannot use unknown block hash as chronological head: {}".format(
-#                block_hash))
-#        
-#        #get previous chronological head number
-#        try:
-#            chronological_head_number = self.get_chronological_head_number()
-#        except ValueError:
-#            new_chronological_head_number = 0
-#        else:
-#            #save this one as prev + 1
-#            new_chronological_head_number = chronological_head_number + 1
-#        
-#        chronological_block_number_key = SchemaV1.make_chronological_block_number_lookup_key(
-#            new_chronological_head_number
-#        )
-#        
-#        self.db.set(
-#            chronological_block_number_key,
-#            rlp.encode(block_hash, sedes=evm_rlp_sedes.Hash32),
-#        )
-#        #lets also save the reverse lookup
-#        block_hash_to_chronological_number_key = SchemaV1.make_block_hash_to_chronological_number_lookup_key(
-#            block_hash
-#        )
-#        
-#        self.db.set(
-#            block_hash_to_chronological_number_key,
-#            rlp.encode(new_chronological_head_number, sedes=rlp.sedes.big_endian_int),
-#        )
-#        
-#        #finally save this one as the new chronological head
-#        self.set_chronological_head_number(new_chronological_head_number)
-#        
-#    def get_chronological_block_number_from_block_hash(self, block_hash: Hash32) -> int:
-#        """
-#        gets the chronological block number for a given block hash
-#        """
-#        block_hash_to_chronological_number_key = SchemaV1.make_block_hash_to_chronological_number_lookup_key(
-#            block_hash
-#        )
-#        try:
-#            return rlp.decode(self.db[block_hash_to_chronological_number_key], sedes=rlp.sedes.big_endian_int)
-#        except KeyError:
-#            raise ValueError("Cannot find chronological block number for block hash: {}".format(
-#                block_hash))
-#        
-#    def get_block_hash_from_cronological_block_number(self, ch_number: ChBlockNumber) -> Hash32:
-#        """
-#        gets the block hash for a given chronological block number
-#        """
-#        chronological_block_number_key = SchemaV1.make_chronological_block_number_lookup_key(
-#            ch_number
-#        )
-#        try:
-#            return rlp.decode(self.db[chronological_block_number_key], sedes=evm_rlp_sedes.Hash32)
-#        except KeyError:
-#            raise ChronologicalBlockNumberNotFound(
-#                "Chronological block number {} not found".format(ch_number))
-#        
-#    
-
     
     #
     # Block API
     #
+    
+    @classmethod
+    def get_chain_wallet_address_for_block_hash(self, block_hash):
+        block_hash_save_key = SchemaV1.make_block_hash_to_chain_wallet_address_lookup_key(block_hash)
+        try:
+            return self.db[block_hash_save_key]
+        except KeyError:
+            raise ValueError("Block hash {} not found in database".format(block_hash))
+        
+    def save_block_hash_to_chain_wallet_address(self, block_hash):
+        block_hash_save_key = SchemaV1.make_block_hash_to_chain_wallet_address_lookup_key(block_hash)
+        self.db[block_hash_save_key] = self.wallet_address
+        
     def persist_block(self, block: 'BaseBlock') -> None:
         '''
         Persist the given block's header and uncles.

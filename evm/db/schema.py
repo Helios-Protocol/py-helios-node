@@ -1,10 +1,13 @@
 from abc import ABCMeta, abstractmethod
 
+from evm.constants import TIME_BETWEEN_HEAD_HASH_SAVE
 from eth_typing import (
     BlockNumber,
     Hash32,
     Address,
 )
+
+from evm.exceptions import InvalidHeadRootTimestamp
 
 
 class BaseSchema(metaclass=ABCMeta):
@@ -38,29 +41,24 @@ class SchemaV1(BaseSchema):
     def make_transaction_hash_to_block_lookup_key(transaction_hash: Hash32) -> bytes:
         return b'transaction-hash-to-block:%s' % transaction_hash
     
-#    @staticmethod
-#    def make_block_hash_to_state_root_lookup_key(block_hash: Hash32) -> bytes:
-#        return b'block-hash-to-state-root:%s' % block_hash
-#    
-#    @staticmethod
-#    def make_chronological_block_number_lookup_key(ch_block_number: ChBlockNumber) -> bytes:
-#        return b'chronological_block_number:%d' % ch_block_number
-#    
-#    @staticmethod
-#    def make_chronological_head_number_lookup_key() -> bytes:
-#        return b'chronological_head_number' 
-#    
-#    @staticmethod
-#    def make_block_hash_to_chronological_number_lookup_key(block_hash: Hash32) -> bytes:
-#        return b'hash-to-chronological-block-number:%d' % block_hash
-#    
-#    @staticmethod
-#    def make_last_imported_block_hash_lookup_key() -> bytes:
-#        return b'last-imported-block'
-    
     @staticmethod
     def make_current_state_root_lookup_key() -> bytes:
         return b'current-state-root'
+    
+    @staticmethod
+    def make_current_head_root_lookup_key() -> bytes:
+        return b'current-head-root'
+    
+    @staticmethod
+    def make_head_root_for_timestamp_lookup_key(timestamp: int) -> bytes:
+        #require that it is mod of 1000 seconds
+        if timestamp % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
+            raise InvalidHeadRootTimestamp("Can only save or load head root hashes for timestamps in increments of 1000 seconds.")
+        return b'head-root-at-time:%i' % timestamp
+    
+    @staticmethod
+    def make_block_hash_to_chain_wallet_address_lookup_key(block_hash: Hash32) -> bytes:
+        return b'block-hash-to-chain-wallet-address:%b' % block_hash
     
     
     

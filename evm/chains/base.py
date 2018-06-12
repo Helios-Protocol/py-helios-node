@@ -5,6 +5,7 @@ from abc import (
     abstractmethod
 )
 import time
+import math
 import operator
 from typing import (  # noqa: F401
     Any,
@@ -97,6 +98,8 @@ from evm.utils.hexadecimal import (
 from evm.utils.rlp import (
     ensure_imported_block_unchanged,
 )
+
+from evm.db.chain_head import ChainHeadDB
 
 from eth_keys import keys
 from eth_keys.datatypes import(
@@ -272,6 +275,7 @@ class Chain(BaseChain):
     queue_block = None
 
     chaindb_class = ChainDB  # type: Type[BaseChainDB]
+    chain_head_db_class = ChainHeadDB
 
     def __init__(self, base_db: BaseDB, wallet_address: Address, private_key: BaseKey=None) -> None:
         if not self.vm_configuration:
@@ -287,7 +291,8 @@ class Chain(BaseChain):
         self.private_key = private_key
         self.wallet_address = wallet_address
         self.chaindb = self.get_chaindb_class()(base_db, self.wallet_address)
-
+        self.chain_head_db = self.chain_head_db_class.load_from_saved_root_hash(base_db)
+        
         try:
             self.header = self.create_header_from_parent(self.get_canonical_head())
         except CanonicalHeadNotFound:
@@ -471,6 +476,23 @@ class Chain(BaseChain):
         return self.chaindb.get_canonical_block_hash(block_number)
     
     #
+    # Blockchain Database API
+    #
+    def save_chain_head_hash_to_trie_for_time_period(self,block_header):
+        timestamp = block_header.timestamp
+        currently_saving_window = int(time.time()/1000) * 1000
+        if timestamp <= currently_saving_window:
+            #we have to go back and put it into the correct window, and update all windows after that
+            #lets only keep the past NUMBER_OF_HEAD_HASH_TO_SAVE block_head_root_hash
+            window_for_this_block = math.ceil(time.time()/1000) * 1000
+            self.chain_head_db.add_block_hash_to_timestamp(self.wallet_address, block_header.hash, window_for_this_block)
+    
+    def try_to_save_finished_head_hash_trie_time_window(self):
+        currently_saving_window = int(time.time()/1000) * 1000
+        self.chain_head_db.persist(True) # just in case it hasnt already
+        self.chain_head_db.save_current_root_hash_for_timestamp_if_not_exist(currently_saving_window)
+        
+    #
     # Queueblock API
     #
     def add_transaction_to_queue_block(self, transaction) -> None:
@@ -618,29 +640,6 @@ class Chain(BaseChain):
     #
     # Execution API
     #
-#    def apply_transaction(self, transaction):
-#        """
-#        Applies the transaction to the current tip block.
-#
-#        WARNING: Receipt and Transaction trie generation is computationally
-#        heavy and incurs significant perferomance overhead.
-#        """
-#        vm = self.get_vm()
-#        block = vm.block
-#
-#        new_header, receipt, computation = vm.apply_transaction(block.header, transaction)
-#
-#        # since we are building the block locally, we have to persist all the incremental state
-#        vm.state.account_db.persist()
-#
-#        transactions = block.transactions + (transaction, )
-#        receipts = block.get_receipts(self.chaindb) + (receipt, )
-#
-#        new_block = vm.set_block_transactions(block, new_header, transactions, receipts)
-#
-#        self.header = new_block.header
-#
-#        return new_block, receipt, computation
 
     def estimate_gas(self, transaction: BaseTransaction, at_header: BlockHeader=None) -> int:
         """
@@ -656,6 +655,9 @@ class Chain(BaseChain):
         """
         Imports a complete block.
         """
+        #we save the current chain head trie every 1000 seconds. This does that.
+        self.try_to_save_finished_head_hash_trie_time_window()
+        
         if not block.is_genesis:
             time_wait = self.get_vm().check_wait_before_new_block(block)
             if time_wait > 0:
@@ -682,7 +684,10 @@ class Chain(BaseChain):
         if perform_validation:
             ensure_imported_block_unchanged(imported_block, block)
             self.validate_block(imported_block)
-
+        
+        self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
+        self.chain_head_db.persist(True)
+        self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
         self.chaindb.persist_block(imported_block)
         self.header = self.create_header_from_parent(self.get_canonical_head())
         self.queue_block = None

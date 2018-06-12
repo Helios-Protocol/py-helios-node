@@ -252,7 +252,7 @@ def validate_gas_limit(gas_limit, parent_gas_limit):
 
 
 ALLOWED_HEADER_FIELDS = {
-    'closing_balance',
+    'account_hash',
     'gas_limit',
     'timestamp',
     'extra_data',
