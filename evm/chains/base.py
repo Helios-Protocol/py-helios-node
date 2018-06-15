@@ -46,7 +46,11 @@ from evm.db.chain import (
 )
 from evm.constants import (
     BLANK_ROOT_HASH,
+    NUMBER_OF_HEAD_HASH_TO_SAVE,
+    TIME_BETWEEN_HEAD_HASH_SAVE,
 )
+
+
 from evm import constants
 from evm.estimators import (
     get_gas_estimator,
@@ -480,17 +484,14 @@ class Chain(BaseChain):
     #
     def save_chain_head_hash_to_trie_for_time_period(self,block_header):
         timestamp = block_header.timestamp
-        currently_saving_window = int(time.time()/1000) * 1000
+        currently_saving_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
         if timestamp <= currently_saving_window:
             #we have to go back and put it into the correct window, and update all windows after that
             #lets only keep the past NUMBER_OF_HEAD_HASH_TO_SAVE block_head_root_hash
-            window_for_this_block = math.ceil(time.time()/1000) * 1000
+            window_for_this_block = math.ceil(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
             self.chain_head_db.add_block_hash_to_timestamp(self.wallet_address, block_header.hash, window_for_this_block)
     
-    def try_to_save_finished_head_hash_trie_time_window(self):
-        currently_saving_window = int(time.time()/1000) * 1000
-        self.chain_head_db.persist(True) # just in case it hasnt already
-        self.chain_head_db.save_current_root_hash_for_timestamp_if_not_exist(currently_saving_window)
+
         
     #
     # Queueblock API
@@ -516,6 +517,7 @@ class Chain(BaseChain):
     def add_transactions_to_queue_block(self, transactions) -> None:
         if not isinstance(transactions, list):
             self.add_transaction_to_queue_block(transactions)
+            #self.logger.debug("tx_nonce after adding transaction = {}".format(self.queue_block.current_tx_nonce))
         else:
             for tx in transactions:
                 self.add_transaction_to_queue_block(tx)
@@ -587,6 +589,7 @@ class Chain(BaseChain):
     def create_and_sign_transaction_for_queue_block(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         tx_nonce = self.get_current_queue_block_nonce()
         
+        #self.logger.debug("creating transaction with nonce {}".format(tx_nonce))
         transaction = self.create_and_sign_transaction(nonce = tx_nonce, *args, **kwargs)
         self.add_transactions_to_queue_block(transaction)
         return transaction
@@ -651,12 +654,10 @@ class Chain(BaseChain):
         with self.get_vm(at_header).state_in_temp_block() as state:
             return self.gas_estimator(state, transaction)
 
-    def import_block(self, block: BaseBlock, perform_validation: bool=True) -> BaseBlock:
+    def import_block(self, block: BaseBlock, perform_validation: bool=True, save_block_head_hash_timestamp = True) -> BaseBlock:
         """
         Imports a complete block.
         """
-        #we save the current chain head trie every 1000 seconds. This does that.
-        self.try_to_save_finished_head_hash_trie_time_window()
         
         if not block.is_genesis:
             time_wait = self.get_vm().check_wait_before_new_block(block)
@@ -687,7 +688,9 @@ class Chain(BaseChain):
         
         self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
         self.chain_head_db.persist(True)
-        self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
+        if save_block_head_hash_timestamp:
+            self.chain_head_db.add_block_hash_to_chronological_window(imported_block.header.hash, imported_block.header.timestamp)
+            self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
         self.chaindb.persist_block(imported_block)
         self.header = self.create_header_from_parent(self.get_canonical_head())
         self.queue_block = None

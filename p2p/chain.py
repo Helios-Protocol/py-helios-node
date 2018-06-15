@@ -35,9 +35,10 @@ from evm.rlp.transactions import BaseTransaction
 
 from p2p import protocol
 from p2p import eth
+from p2p import hls
 from p2p.cancel_token import CancelToken
 from p2p.exceptions import NoEligiblePeers, OperationCancelled
-from p2p.peer import BasePeer, ETHPeer, PeerPool, PeerPoolSubscriber
+from p2p.peer import BasePeer, HLSPeer, PeerPool, PeerPoolSubscriber
 from p2p.rlp import BlockBody, P2PTransaction
 from p2p.service import BaseService
 from p2p.utils import (
@@ -68,17 +69,17 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         self.peer_pool = peer_pool
         self._syncing = False
         self._sync_complete = asyncio.Event()
-        self._sync_requests: asyncio.Queue[ETHPeer] = asyncio.Queue()
+        self._sync_requests: asyncio.Queue[HLSPeer] = asyncio.Queue()
         self._new_headers: asyncio.Queue[List[BlockHeader]] = asyncio.Queue()
         # Those are used by our msg handlers and _download_block_parts() in order to track missing
         # bodies/receipts for a given chain segment.
-        self._downloaded_receipts: asyncio.Queue[Tuple[ETHPeer, List[DownloadedBlockPart]]] = asyncio.Queue()  # noqa: E501
-        self._downloaded_bodies: asyncio.Queue[Tuple[ETHPeer, List[DownloadedBlockPart]]] = asyncio.Queue()  # noqa: E501
+        self._downloaded_receipts: asyncio.Queue[Tuple[HLSPeer, List[DownloadedBlockPart]]] = asyncio.Queue()  # noqa: E501
+        self._downloaded_bodies: asyncio.Queue[Tuple[HLSPeer, List[DownloadedBlockPart]]] = asyncio.Queue()  # noqa: E501
         self._executor = get_process_pool_executor()
 
     def register_peer(self, peer: BasePeer) -> None:
         highest_td_peer = max(
-            [cast(ETHPeer, peer) for peer in self.peer_pool.peers],
+            [cast(HLSPeer, peer) for peer in self.peer_pool.peers],
             key=operator.attrgetter('head_td'))
         self._sync_requests.put_nowait(highest_td_peer)
 
@@ -94,7 +95,7 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
             # awaiting for it to finish here.
             asyncio.ensure_future(self.handle_msg(peer, cmd, msg))
 
-    async def handle_msg(self, peer: ETHPeer, cmd: protocol.Command,
+    async def handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                          msg: protocol._DecodedMsgType) -> None:
         try:
             await self._handle_msg(peer, cmd, msg)
@@ -118,11 +119,11 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
                 if self._sync_complete.is_set():
                     return
 
-                # Since self._sync_complete is not set, peer_or_finished can only be a ETHPeer
+                # Since self._sync_complete is not set, peer_or_finished can only be a HLSPeer
                 # instance.
                 asyncio.ensure_future(self.sync(peer_or_finished))
 
-    async def sync(self, peer: ETHPeer) -> None:
+    async def sync(self, peer: HLSPeer) -> None:
         if self._syncing:
             self.logger.debug(
                 "Got a NewBlock or a new peer, but already syncing so doing nothing")
@@ -141,7 +142,7 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         finally:
             self._syncing = False
 
-    async def _sync(self, peer: ETHPeer) -> None:
+    async def _sync(self, peer: HLSPeer) -> None:
         head = await self.wait(self.chaindb.coro_get_canonical_head())
         head_td = await self.wait(self.chaindb.coro_get_score(head.hash))
         if peer.head_td <= head_td:
@@ -153,14 +154,14 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         self.logger.info("Starting sync with %s", peer)
         # FIXME: Fetch a batch of headers, in reverse order, starting from our current head, and
         # find the common ancestor between our chain and the peer's.
-        start_at = max(0, head.block_number - eth.MAX_HEADERS_FETCH)
+        start_at = max(0, head.block_number - hls.MAX_HEADERS_FETCH)
         while not self._sync_complete.is_set():
             if not peer.is_running:
                 self.logger.info("%s disconnected, aborting sync", peer)
                 break
 
             self.logger.debug("Fetching chain segment starting at #%d", start_at)
-            peer.sub_proto.send_get_block_headers(start_at, eth.MAX_HEADERS_FETCH, reverse=False)
+            peer.sub_proto.send_get_block_headers(start_at, hls.MAX_HEADERS_FETCH, reverse=False)
             try:
                 # Pass the peer's token to self.wait() because we want to abort if either we
                 # or the peer terminates.
@@ -198,7 +199,7 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
             td += header.difficulty
         return td
 
-    async def _process_headers(self, peer: ETHPeer, headers: List[BlockHeader]) -> int:
+    async def _process_headers(self, peer: HLSPeer, headers: List[BlockHeader]) -> int:
         start = time.time()
         target_td = await self._calculate_td(headers)
         await self._download_block_parts(
@@ -256,7 +257,7 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
             target_td: int,
             headers: List[BlockHeader],
             request_func: Callable[[int, List[BlockHeader]], int],
-            download_queue: 'asyncio.Queue[Tuple[ETHPeer, List[DownloadedBlockPart]]]',
+            download_queue: 'asyncio.Queue[Tuple[HLSPeer, List[DownloadedBlockPart]]]',
             key_func: Callable[[BlockHeader], Union[bytes, Tuple[bytes, bytes]]],
             part_name: str) -> 'List[DownloadedBlockPart]':
         """Download block parts for the given headers, using the given request_func.
@@ -309,22 +310,22 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
             self,
             target_td: int,
             headers: List[BlockHeader],
-            request_func: Callable[[ETHPeer, List[BlockHeader]], None]) -> int:
+            request_func: Callable[[HLSPeer, List[BlockHeader]], None]) -> int:
         eligible_peers = [
-            peer for peer in self.peer_pool.peers if cast(ETHPeer, peer).head_td >= target_td]
+            peer for peer in self.peer_pool.peers if cast(HLSPeer, peer).head_td >= target_td]
         if not eligible_peers:
             raise NoEligiblePeers()
         length = math.ceil(len(headers) / len(eligible_peers))
         batches = list(partition_all(length, headers))
         for peer, batch in zip(eligible_peers, batches):
-            request_func(cast(ETHPeer, peer), batch)
+            request_func(cast(HLSPeer, peer), batch)
         return len(batches)
 
-    def _send_get_block_bodies(self, peer: ETHPeer, headers: List[BlockHeader]) -> None:
+    def _send_get_block_bodies(self, peer: HLSPeer, headers: List[BlockHeader]) -> None:
         self.logger.debug("Requesting %d block bodies to %s", len(headers), peer)
         peer.sub_proto.send_get_block_bodies([header.hash for header in headers])
 
-    def _send_get_receipts(self, peer: ETHPeer, headers: List[BlockHeader]) -> None:
+    def _send_get_receipts(self, peer: HLSPeer, headers: List[BlockHeader]) -> None:
         self.logger.debug("Requesting %d block receipts to %s", len(headers), peer)
         peer.sub_proto.send_get_receipts([header.hash for header in headers])
 
@@ -353,17 +354,17 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         # run in the background notice the cancel token has been triggered and return.
         await asyncio.sleep(0)
 
-    async def _handle_msg(self, peer: ETHPeer, cmd: protocol.Command,
+    async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
-        if isinstance(cmd, eth.BlockHeaders):
+        if isinstance(cmd, hls.BlockHeaders):
             self._handle_block_headers(list(cast(Tuple[BlockHeader], msg)))
-        elif isinstance(cmd, eth.BlockBodies):
+        elif isinstance(cmd, hls.BlockBodies):
             await self._handle_block_bodies(peer, list(cast(Tuple[BlockBody], msg)))
-        elif isinstance(cmd, eth.Receipts):
+        elif isinstance(cmd, hls.Receipts):
             await self._handle_block_receipts(peer, cast(List[List[Receipt]], msg))
-        elif isinstance(cmd, eth.NewBlock):
+        elif isinstance(cmd, hls.NewBlock):
             await self._handle_new_block(peer, cast(Dict[str, Any], msg))
-        elif isinstance(cmd, eth.GetBlockHeaders):
+        elif isinstance(cmd, hls.GetBlockHeaders):
             await self._handle_get_block_headers(peer, cast(Dict[str, Any], msg))
         else:
             self.logger.debug("Ignoring %s message from %s: msg %r", cmd, peer, msg)
@@ -377,7 +378,7 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
             "Got BlockHeaders from %d to %d", headers[0].block_number, headers[-1].block_number)
         self._new_headers.put_nowait(headers)
 
-    async def _handle_new_block(self, peer: ETHPeer, msg: Dict[str, Any]) -> None:
+    async def _handle_new_block(self, peer: HLSPeer, msg: Dict[str, Any]) -> None:
         header = msg['block'][0]
         actual_head = header.parent_hash
         actual_td = msg['total_difficulty'] - header.difficulty
@@ -387,8 +388,8 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
             self._sync_requests.put_nowait(peer)
 
     async def _handle_block_receipts(self,
-                                     peer: ETHPeer,
-                                     receipts_by_block: List[List[eth.Receipt]]) -> None:
+                                     peer: HLSPeer,
+                                     receipts_by_block: List[List[hls.Receipt]]) -> None:
         self.logger.debug("Got Receipts for %d blocks from %s", len(receipts_by_block), peer)
         loop = asyncio.get_event_loop()
         iterator = map(make_trie_root_and_nodes, receipts_by_block)
@@ -402,8 +403,8 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         self._downloaded_receipts.put_nowait((peer, downloaded))
 
     async def _handle_block_bodies(self,
-                                   peer: ETHPeer,
-                                   bodies: List[eth.BlockBody]) -> None:
+                                   peer: HLSPeer,
+                                   bodies: List[hls.BlockBody]) -> None:
         self.logger.debug("Got Bodies for %d blocks from %s", len(bodies), peer)
         loop = asyncio.get_event_loop()
         iterator = map(make_trie_root_and_nodes, [body.transactions for body in bodies])
@@ -419,7 +420,7 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         self._downloaded_bodies.put_nowait((peer, downloaded))
 
     async def _handle_get_block_headers(self,
-                                        peer: ETHPeer,
+                                        peer: HLSPeer,
                                         header_request: Dict[str, Any]) -> None:
         self.logger.debug("Peer %s made header request: %s", peer, header_request)
         # TODO: We should *try* to return the requested headers as they *may*
@@ -442,26 +443,26 @@ class RegularChainSyncer(FastChainSyncer):
         super().__init__(chaindb, peer_pool, token)
         self.chain = chain
 
-    async def _handle_msg(self, peer: ETHPeer, cmd: protocol.Command,
+    async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
-        if isinstance(cmd, eth.BlockHeaders):
+        if isinstance(cmd, hls.BlockHeaders):
             self._handle_block_headers(list(cast(Tuple[BlockHeader], msg)))
-        elif isinstance(cmd, eth.BlockBodies):
-            await self._handle_block_bodies(peer, list(cast(Tuple[eth.BlockBody], msg)))
-        elif isinstance(cmd, eth.NewBlock):
+        elif isinstance(cmd, hls.BlockBodies):
+            await self._handle_block_bodies(peer, list(cast(Tuple[hls.BlockBody], msg)))
+        elif isinstance(cmd, hls.NewBlock):
             await self._handle_new_block(peer, cast(Dict[str, Any], msg))
-        elif isinstance(cmd, eth.GetBlockHeaders):
+        elif isinstance(cmd, hls.GetBlockHeaders):
             await self._handle_get_block_headers(peer, cast(Dict[str, Any], msg))
-        elif isinstance(cmd, eth.GetBlockBodies):
+        elif isinstance(cmd, hls.GetBlockBodies):
             await self._handle_get_block_bodies(peer, cast(List[Hash32], msg))
-        elif isinstance(cmd, eth.GetReceipts):
+        elif isinstance(cmd, hls.GetReceipts):
             await self._handle_get_receipts(peer, cast(List[Hash32], msg))
-        elif isinstance(cmd, eth.GetNodeData):
+        elif isinstance(cmd, hls.GetNodeData):
             self._handle_get_node_data(peer, cast(List[Hash32], msg))
         else:
             self.logger.debug("%s msg not handled yet, need to be implemented", cmd)
 
-    async def _handle_get_block_headers(self, peer: ETHPeer, msg: Dict[str, Any]) -> None:
+    async def _handle_get_block_headers(self, peer: HLSPeer, msg: Dict[str, Any]) -> None:
         block_number_or_hash = msg['block_number_or_hash']
         if isinstance(block_number_or_hash, bytes):
             header = await self.wait(
@@ -472,7 +473,7 @@ class RegularChainSyncer(FastChainSyncer):
         else:
             raise TypeError(
                 "Unexpected type for 'block_number_or_hash': %s", type(block_number_or_hash))
-        limit = max(msg['max_headers'], eth.MAX_HEADERS_FETCH)
+        limit = max(msg['max_headers'], hls.MAX_HEADERS_FETCH)
         if msg['reverse']:
             block_numbers = list(reversed(range(max(0, block_number - limit), block_number + 1)))
         else:
@@ -486,10 +487,10 @@ class RegularChainSyncer(FastChainSyncer):
         ]
         peer.sub_proto.send_block_headers(headers)
 
-    async def _handle_get_block_bodies(self, peer: ETHPeer, msg: List[Hash32]) -> None:
+    async def _handle_get_block_bodies(self, peer: HLSPeer, msg: List[Hash32]) -> None:
         bodies = []
-        # Only serve up to eth.MAX_BODIES_FETCH items in every request.
-        hashes = msg[:eth.MAX_BODIES_FETCH]
+        # Only serve up to hls.MAX_BODIES_FETCH items in every request.
+        hashes = msg[:hls.MAX_BODIES_FETCH]
         for block_hash in hashes:
             header = await self.wait(self.chaindb.coro_get_block_header_by_hash(block_hash))
             transactions = await self.wait(
@@ -498,16 +499,16 @@ class RegularChainSyncer(FastChainSyncer):
             bodies.append(BlockBody(transactions, uncles))
         peer.sub_proto.send_block_bodies(bodies)
 
-    async def _handle_get_receipts(self, peer: ETHPeer, msg: List[Hash32]) -> None:
+    async def _handle_get_receipts(self, peer: HLSPeer, msg: List[Hash32]) -> None:
         receipts = []
-        # Only serve up to eth.MAX_RECEIPTS_FETCH items in every request.
-        hashes = msg[:eth.MAX_RECEIPTS_FETCH]
+        # Only serve up to hls.MAX_RECEIPTS_FETCH items in every request.
+        hashes = msg[:hls.MAX_RECEIPTS_FETCH]
         for block_hash in hashes:
             header = await self.wait(self.chaindb.coro_get_block_header_by_hash(block_hash))
             receipts.append(await self.wait(self.chaindb.coro_get_receipts(header, Receipt)))
         peer.sub_proto.send_receipts(receipts)
 
-    def _handle_get_node_data(self, peer: ETHPeer, msg: List[Hash32]) -> None:
+    def _handle_get_node_data(self, peer: HLSPeer, msg: List[Hash32]) -> None:
         nodes = []
         for node_hash in msg:
             # FIXME: Need to use an async API here as well? chaindb.coro_get()?
@@ -515,7 +516,7 @@ class RegularChainSyncer(FastChainSyncer):
             nodes.append(node)
         peer.sub_proto.send_node_data(nodes)
 
-    async def _process_headers(self, peer: ETHPeer, headers: List[BlockHeader]) -> int:
+    async def _process_headers(self, peer: HLSPeer, headers: List[BlockHeader]) -> int:
         # This is needed to ensure after a state sync we only start importing blocks on top of our
         # current head, as that's the only one whose state root is present in our DB.
         for header in headers.copy():
@@ -548,7 +549,7 @@ class RegularChainSyncer(FastChainSyncer):
                 transactions: List[BaseTransaction] = []
                 uncles: List[BlockHeader] = []
             else:
-                body = cast(eth.BlockBody, parts_by_key[_body_key(header)])
+                body = cast(hls.BlockBody, parts_by_key[_body_key(header)])
                 tx_class = block_class.get_transaction_class()
                 transactions = [tx_class.from_base_transaction(tx)
                                 for tx in body.transactions]
@@ -569,7 +570,7 @@ class RegularChainSyncer(FastChainSyncer):
 
 
 class DownloadedBlockPart(NamedTuple):
-    part: Union[eth.BlockBody, List[Receipt]]
+    part: Union[hls.BlockBody, List[Receipt]]
     unique_key: Union[bytes, Tuple[bytes, bytes]]
 
 
@@ -604,7 +605,7 @@ def _test() -> None:
     from evm.chains.ropsten import RopstenChain, ROPSTEN_GENESIS_HEADER
     from evm.db.backends.level import LevelDB
     from tests.p2p.integration_test_helpers import (
-        FakeAsyncChainDB, FakeAsyncRopstenChain, LocalGethPeerPool, FakeAsyncHeaderDB)
+        FakeAsyncChainDB, FakeAsyncRopstenChain, LocalGHLSPeerPool, FakeAsyncHeaderDB)
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-db', type=str, required=True)
@@ -629,12 +630,12 @@ def _test() -> None:
 
     privkey = ecies.generate_privkey()
     if args.local_geth:
-        peer_pool = LocalGethPeerPool(ETHPeer, headerdb, RopstenChain.network_id, privkey)
+        peer_pool = LocalGHLSPeerPool(HLSPeer, headerdb, RopstenChain.network_id, privkey)
     else:
         from p2p.peer import HardCodedNodesPeerPool
         discovery = None
         peer_pool = HardCodedNodesPeerPool(
-            peer_class=ETHPeer,
+            peer_class=HLSPeer,
             headerdb=headerdb,
             network_id=RopstenChain.network_id,
             privkey=privkey,

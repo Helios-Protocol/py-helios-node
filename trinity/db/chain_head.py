@@ -22,6 +22,8 @@ class AsyncChainHeadDB(ChainHeadDB):
 class ChainHeadDBProxy(BaseProxy):
     coro_load_from_saved_root_hash_at_timestamp = async_method('load_from_saved_root_hash_at_timestamp')
     coro_get_root_hash = async_method('get_root_hash')
+    coro_get_latest_timestamp = async_method('get_latest_timestamp')
 
     load_from_saved_root_hash_at_timestamp = sync_method('load_from_saved_root_hash_at_timestamp')
     get_root_hash = sync_method('get_root_hash')
+    get_latest_timestamp = sync_method('get_latest_timestamp')

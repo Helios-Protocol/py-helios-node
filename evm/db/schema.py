@@ -49,16 +49,28 @@ class SchemaV1(BaseSchema):
     def make_current_head_root_lookup_key() -> bytes:
         return b'current-head-root'
     
+    
+    @staticmethod
+    def make_historical_head_root_lookup_key() -> bytes:
+        return b'historical-head-root-list'
+    
     @staticmethod
     def make_head_root_for_timestamp_lookup_key(timestamp: int) -> bytes:
         #require that it is mod of 1000 seconds
         if timestamp % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
-            raise InvalidHeadRootTimestamp("Can only save or load head root hashes for timestamps in increments of 1000 seconds.")
+            raise InvalidHeadRootTimestamp("Can only save or load head root hashes for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
         return b'head-root-at-time:%i' % timestamp
     
     @staticmethod
     def make_block_hash_to_chain_wallet_address_lookup_key(block_hash: Hash32) -> bytes:
         return b'block-hash-to-chain-wallet-address:%b' % block_hash
+    
+    @staticmethod
+    def make_chronological_window_lookup_key(timestamp: int) -> bytes:
+        #require that it is mod of 1000 seconds
+        if timestamp % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
+            raise InvalidHeadRootTimestamp("Can only save or load chronological block for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
+        return b'chronological-block-window:%i' % timestamp
     
     
     

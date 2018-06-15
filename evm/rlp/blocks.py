@@ -89,10 +89,11 @@ class BaseQueueBlock(BaseBlock):
         
     def add_transaction(self, transaction):
         transactions = self.transactions + (transaction, )
-        self.current_tx_nonce = transaction.nonce + 1
-        return self.copy(
+        new_block = self.copy(
             transactions=transactions,
         )
+        new_block.current_tx_nonce = transaction.nonce + 1
+        return new_block
     
     def add_transactions(self, transactions):
         for tx in transactions:

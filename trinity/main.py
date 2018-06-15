@@ -94,9 +94,11 @@ def main(instance_number = None) -> None:
     if args.instance is not None:
         args.port = args.port + args.instance
         os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(args.instance)
+        os.environ["INSTANCE_NUMBER"] = str(args.instance)
     elif instance_number is not None:
         args.port = args.port + instance_number
         os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(instance_number)
+        os.environ["INSTANCE_NUMBER"] = str(instance_number)
         
     #args.data_dir = '/d:/Google Drive/forex/blockchain coding/Helios/prototype desktop/py-evm/trinity/data/'
     try:

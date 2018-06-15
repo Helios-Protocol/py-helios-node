@@ -90,7 +90,7 @@ MAINNET_GENESIS_PARAMS = {
 
 MAINNET_GENESIS_STATE = {
     SENDER.public_key.to_canonical_address(): {
-        "balance": 100000000000000000,
+        "balance": 1000000000000000000000000,
         "code": b"",
         "nonce": 0,
         "storage": {}

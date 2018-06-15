@@ -79,6 +79,7 @@ from p2p.utils import (
     sxor,
 )
 from p2p import eth
+from p2p import hls
 from p2p import les
 from p2p.p2p_proto import (
     Disconnect,
@@ -531,6 +532,31 @@ class ETHPeer(BasePeer):
 #                    self, encode_hex(msg['genesis_hash']), genesis.hex_hash))
         #self.head_td = msg['td']
         #self.head_hash = msg['best_hash']
+        
+        
+class HLSPeer(BasePeer):
+    _supported_sub_protocols = [hls.HLSProtocol]
+    sub_proto: hls.HLSProtocol = None
+    head_td: int = None
+    head_hash: Hash32 = None
+
+    async def send_sub_proto_handshake(self):
+        chain_info = self._local_chain_info
+        self.sub_proto.send_handshake(chain_info)
+
+    async def process_sub_proto_handshake(
+            self, cmd: protocol.Command, msg: protocol._DecodedMsgType) -> None:
+        if not isinstance(cmd, hls.Status):
+            self.disconnect(DisconnectReason.other)
+            raise HandshakeFailure(
+                "Expected a HLS Status msg, got {}, disconnecting".format(cmd))
+        msg = cast(Dict[str, Any], msg)
+        if msg['network_id'] != self.network_id:
+            self.disconnect(DisconnectReason.other)
+            raise HandshakeFailure(
+                "{} network ({}) does not match ours ({}), disconnecting".format(
+                    self, msg['network_id'], self.network_id))
+
 
 
 class PeerPoolSubscriber(ABC):

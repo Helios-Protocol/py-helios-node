@@ -38,6 +38,19 @@ from trinity.utils.xdg import (
     is_under_xdg_trinity_root,
 )
 
+from dev_tools import (
+    create_dev_test_random_blockchain_database        
+)
+import logging
+
+from trinity.dev_tools import (
+    MAINNET_GENESIS_HEADER,
+    MAINNET_GENESIS_PARAMS,
+    MAINNET_GENESIS_STATE,
+    SENDER,
+    RECEIVER,
+)
+
 #from .header import (
 #    AsyncHeaderChain,
 #    AsyncHeaderChainProxy,
@@ -138,17 +151,23 @@ def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> Non
 def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
     chaindb = AsyncChainDB(base_db, chain_config.node_wallet_address)
     chain_head_db = AsyncChainHeadDB.load_from_saved_root_hash(base_db)
-    
-    #if not is_database_initialized(chaindb):
-    #    initialize_database(chain_config, chaindb)
+        
+    if not is_database_initialized(chaindb):
+        if int(os.environ["INSTANCE_NUMBER"]) == 0:
+            #this is for testing, we neeed to build an initial blockchain database
+            create_dev_test_random_blockchain_database(base_db)
+        
     if chain_config.network_id == MAINNET_NETWORK_ID:
         chain_class = MainnetChain  # type: ignore
     else:
         raise NotImplementedError(
             "Only the mainnet and ropsten chains are currently supported"
         )
-    chain = chain_class(base_db, chain_config.node_wallet_address)  # type: ignore
-
+    
+    
+    chain = chain_class(base_db, chain_config.node_wallet_address, chain_config.node_private_helios_key)  # type: ignore
+        
+    chain.chain_head_db.root_hash
     #headerdb = AsyncHeaderDB(base_db)
     #header_chain = AsyncHeaderChain(base_db)
 

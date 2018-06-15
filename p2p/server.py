@@ -54,6 +54,7 @@ from p2p.p2p_proto import (
 from p2p.peer import (
     BasePeer,
     ETHPeer,
+    HLSPeer,
     PeerPool,
     PreferredNodePeerPool,
 )
@@ -81,7 +82,7 @@ class Server(BaseService):
                  network_id: int,
                  chain_config, 
                  max_peers: int = DEFAULT_MAX_PEERS,
-                 peer_class: Type[BasePeer] = ETHPeer,
+                 peer_class: Type[BasePeer] = HLSPeer,
                  peer_pool_class: Type[PeerPool] = PreferredNodePeerPool,
                  bootstrap_nodes: Tuple[Node, ...] = None,
                  token: CancelToken = None,
@@ -234,7 +235,7 @@ class Server(BaseService):
     def _make_syncer(self, peer_pool: PeerPool) -> BaseService:
         # This method exists only so that ShardSyncer can provide a different implementation.
         return FullNodeSyncer(
-            self.chain, self.chaindb, self.base_db, peer_pool, self.cancel_token)
+            self.chain, self.chaindb, self.base_db, peer_pool = peer_pool, token = self.cancel_token, chain_head_db = self.chain_head_db)
 
     def _make_peer_pool(self, discovery: DiscoveryProtocol) -> PeerPool:
         # This method exists only so that ShardSyncer can provide a different implementation.
@@ -284,8 +285,8 @@ class Server(BaseService):
         asyncio.ensure_future(self.discovery.bootstrap())
         peer_pool_task = asyncio.ensure_future(self.peer_pool.run())
         self.syncer = self._make_syncer(self.peer_pool)
-        await peer_pool_task
-        #await self.syncer.run()
+        #await peer_pool_task
+        await self.syncer.run()
 
     async def _cleanup(self) -> None:
         self.logger.info("Closing server...")

@@ -688,7 +688,7 @@ class VM(BaseVM):
                         parent_header.timestamp,
                     )
                 )
-            elif block.header.timestamp == parent_header.timestamp:
+            elif (block.header.timestamp - parent_header.timestamp) < MIN_TIME_BETWEEN_BLOCKS:
                 raise ValidationError(
                     "`timestamp` is equal to the parent block's timestamp\n"
                     "- block : {0}\n"
