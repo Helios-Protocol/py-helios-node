@@ -60,10 +60,10 @@ class BaseState(Configurable, metaclass=ABCMeta):
     account_db_class = None  # type: Type[BaseAccountDB]
     transaction_executor = None  # type: Type[BaseTransactionExecutor]
 
-    def __init__(self, db, execution_context, state_root):
+    def __init__(self, db, execution_context):
         self._db = db
         self.execution_context = execution_context
-        self.account_db = self.get_account_db_class()(self._db, state_root)
+        self.account_db = self.get_account_db_class()(self._db)
 
     #
     # Logging
@@ -111,36 +111,7 @@ class BaseState(Configurable, metaclass=ABCMeta):
         if cls.account_db_class is None:
             raise AttributeError("No account_db_class set for {0}".format(cls.__name__))
         return cls.account_db_class
-
-    @property
-    def state_root(self):
-        """
-        Return the current ``state_root`` from the underlying database
-        """
-        return self.account_db.state_root
-
-
-    def save_current_state_root(self) -> None:
-        """
-        Saves the current state_root to the database to be loaded later
-        passes through to account db
-        """
-        self.account_db.save_current_state_root
-        
-    
-    @classmethod    
-    def from_saved_state_root(cls, db, execution_context) -> 'BaseState':
-        """
-        Loads the last saved state root
-        """
-        try:
-            state_root = cls.get_account_db_class().get_saved_state_root(db) 
-        except ValueError:
-            state_root = BLANK_ROOT_HASH
-        
-        return cls(db, execution_context, state_root)
-
-            
+       
     #   
     # Access self._chaindb
     #
@@ -151,16 +122,14 @@ class BaseState(Configurable, metaclass=ABCMeta):
         Snapshots are a combination of the :attr:`~state_root` at the time of the
         snapshot and the id of the changeset from the journaled DB.
         """
-        return (self.state_root, self.account_db.record())
+        return self.account_db.record()
 
     def revert(self, snapshot):
         """
         Revert the VM to the state at the snapshot
         """
-        state_root, changeset_id = snapshot
+        changeset_id = snapshot
 
-        # first revert the database state root.
-        self.account_db.state_root = state_root
         # now roll the underlying database back
         self.account_db.discard(changeset_id)
 
@@ -169,7 +138,7 @@ class BaseState(Configurable, metaclass=ABCMeta):
         Commit the journal to the point where the snapshot was taken.  This
         will merge in any changesets that were recorded *after* the snapshot changeset.
         """
-        _, checkpoint_id = snapshot
+        checkpoint_id = snapshot
         self.account_db.commit(checkpoint_id)
 
     #
@@ -221,22 +190,16 @@ class BaseState(Configurable, metaclass=ABCMeta):
     #
     # Execution
     #
-    def apply_transaction(self, transaction):
+    def apply_transaction(self, transaction, validate = True):
         """
         Apply transaction to the vm state
 
         :param transaction: the transaction to apply
         :return: the new state root, and the computation
         """
+        computation = self.execute_transaction(transaction, validate = validate)
         
-        
-        if self.state_root != BLANK_ROOT_HASH and not self.account_db.has_root(self.state_root):
-            raise StateRootNotFound(self.state_root)
-            
-        computation = self.execute_transaction(transaction)
-        state_root = self.account_db.make_state_root()
-        
-        return state_root, computation
+        return computation
 
     def get_transaction_executor(self):
         return self.transaction_executor(self)
@@ -245,11 +208,11 @@ class BaseState(Configurable, metaclass=ABCMeta):
 #    def execute_transaction(self):
 #        raise NotImplementedError()
         
-    def execute_transaction(self, transaction):
+    def execute_transaction(self, transaction, validate = True):
         executor = self.get_transaction_executor()
         if executor == None:
             raise ValueError("No transaction executor given")
-        return executor(transaction)
+        return executor(transaction, validate = validate)
 
 
 class BaseTransactionExecutor(metaclass=ABCMeta):
@@ -260,10 +223,13 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
     def get_transaction_context(self, transaction):
         raise NotImplementedError()
 
-    def __call__(self, transaction):
-        valid_transaction = self.validate_transaction(transaction)
+    def __call__(self, transaction, validate = True):
+        if validate:
+            valid_transaction = self.validate_transaction(transaction)
+        else:
+            valid_transaction = transaction
         message = self.build_evm_message(valid_transaction)
-        computation = self.build_computation(message, valid_transaction)
+        computation = self.build_computation(message, valid_transaction, validate)
         finalized_computation = self.finalize_computation(valid_transaction, computation)
         
         return finalized_computation

@@ -71,7 +71,7 @@ class HeliosTestnetComputation(BaseComputation):
     opcodes = HELIOS_TESTNET_OPCODES
     _precompiles = HELIOS_TESTNET_PRECOMPILES
     
-    def apply_message(self):
+    def apply_message(self, validate = True):
         snapshot = self.state.snapshot()
 
         if self.msg.depth > constants.STACK_DEPTH_LIMIT:
@@ -80,7 +80,12 @@ class HeliosTestnetComputation(BaseComputation):
         if self.msg.should_transfer_value and self.msg.value:
             if self.transaction_context.is_receive:
                 #this is a receive transaction
-                self.state.account_db.delete_receivable_transaction(self.msg.storage_address, self.transaction_context.send_tx_hash)
+                try:
+                    self.state.account_db.delete_receivable_transaction(self.msg.storage_address, self.transaction_context.send_tx_hash)
+                except ValueError as e:
+                    if validate:
+                        raise e
+                        
                 self.state.account_db.delta_balance(self.msg.storage_address, self.msg.value)
                 self.logger.debug(
                     "TRANSFERRED: %s into %s",
@@ -88,16 +93,17 @@ class HeliosTestnetComputation(BaseComputation):
                     encode_hex(self.msg.storage_address),
                 )
             else:
-                #this is a send transaction
-                sender_balance = self.state.account_db.get_balance(self.msg.sender)
-    
-                if sender_balance < self.msg.value:
-                    raise InsufficientFunds(
-                        "Insufficient funds: {0} < {1}".format(sender_balance, self.msg.value)
-                    )
+                if validate:
+                    #this is a send transaction
+                    sender_balance = self.state.account_db.get_balance(self.msg.sender)
+        
+                    if sender_balance < self.msg.value:
+                        raise InsufficientFunds(
+                            "Insufficient funds: {0} < {1}".format(sender_balance, self.msg.value)
+                        )
     
                 self.state.account_db.delta_balance(self.msg.sender, -1 * self.msg.value)
-                #TODO: save receivable transaction here after finalizing block
+                
                 self.logger.debug(
                     "TRANSFERRED: %s from %s to pending transactions",
                     self.msg.value,

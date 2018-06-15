@@ -338,8 +338,7 @@ class Chain(BaseChain):
         genesis_vm_class = cls.get_vm_class_for_block_timestamp()
 
         account_db = genesis_vm_class.get_state_class().get_account_db_class()(
-            base_db,
-            BLANK_ROOT_HASH,
+            base_db
         )
 
         if genesis_state is None:
@@ -347,7 +346,7 @@ class Chain(BaseChain):
 
         # mutation
         account_db = apply_state_dict(account_db, genesis_state)
-        account_db.persist(save_state_root=True)
+        account_db.persist()
         
 
         genesis_header = BlockHeader(**genesis_params)
@@ -700,7 +699,37 @@ class Chain(BaseChain):
             encode_hex(imported_block.hash),
         )
         return imported_block
+    
+    #used for fast sync
+    def import_block_no_verification(self, block: BaseBlock) -> None:
+        """
+        Imports a complete block. with no verification
+        """
+   
+        if block.number != self.header.block_number:
+            raise ValidationError(
+                "Attempt to import block #{0}.  Cannot import block with number "
+                "different from the queueblock #{1}.".format(
+                    block.number,
+                    self.header.block_number,
+                )
+            )
+        
+        imported_block = self.get_vm(block.header).import_block_no_verification(block)
+        
+        self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
+        self.chain_head_db.persist(True)
 
+        self.chaindb.persist_block(imported_block)
+        self.header = self.create_header_from_parent(imported_block.header)
+        self.queue_block = None
+        self.logger.debug(
+            'FAST_IMPORTED_BLOCK: number %s | hash %s',
+            imported_block.number,
+            encode_hex(imported_block.hash),
+        )
+
+        
     def import_current_queue_block(self):
         
         self.import_block(self.queue_block)

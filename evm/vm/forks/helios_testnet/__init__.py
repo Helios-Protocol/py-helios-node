@@ -31,7 +31,7 @@ from evm.rlp.receipts import (
 )
 
 
-def make_helios_testnet_receipt(base_header, transaction, computation, state):
+def make_helios_testnet_receipt(base_header, transaction, computation):
     logs = [
         Log(address, topics, data)
         for address, topics, data

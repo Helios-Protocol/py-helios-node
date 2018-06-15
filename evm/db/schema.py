@@ -31,6 +31,10 @@ class SchemaV1(BaseSchema):
     @staticmethod
     def make_canonical_head_hash_lookup_key(wallet_address:Address) -> bytes:
         return b'v1:canonical_head_hash:%s' % wallet_address
+    
+    @staticmethod
+    def make_account_lookup_key(wallet_address:Address) -> bytes:
+        return b'account:%s' % wallet_address
 
     @staticmethod
     def make_block_number_to_hash_lookup_key(wallet_address:Address, block_number: BlockNumber) -> bytes:
@@ -41,9 +45,6 @@ class SchemaV1(BaseSchema):
     def make_transaction_hash_to_block_lookup_key(transaction_hash: Hash32) -> bytes:
         return b'transaction-hash-to-block:%s' % transaction_hash
     
-    @staticmethod
-    def make_current_state_root_lookup_key() -> bytes:
-        return b'current-state-root'
     
     @staticmethod
     def make_current_head_root_lookup_key() -> bytes:

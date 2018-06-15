@@ -722,32 +722,6 @@ class ChainDB(BaseChainDB):
 
     
     #
-    # State
-    #
-#    def get_state_root_from_block_hash(self, block_hash: Hash32) -> Hash32:
-#        """
-#        Retrieves the state root for a given block hash
-#        """
-#        try:
-#            return rlp.decode(
-#                self.db[SchemaV1.make_block_hash_to_state_root_lookup_key(block_hash)],
-#                sedes=trie_root,
-#            )
-#        except KeyError:
-#            raise HeaderToStateRootMapNotFound(
-#                "No header->state_root map found"
-#            )
-#    
-#    def set_block_hash_to_state_root_map(self, block_hash: Hash32, state_root, Hash32) -> None:
-#        """
-#        Saves the block hash -> state root lookup to database
-#        """
-#        self.db.set(
-#            SchemaV1.make_block_hash_to_state_root_lookup_key(block_hash),
-#            rlp.encode(state_root, sedes=trie_root),
-#        )   
-#    
-    #
     # Raw Database API
     #
     

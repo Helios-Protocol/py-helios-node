@@ -59,9 +59,6 @@ from evm.utils.db import (
     get_parent_header,
     get_block_header_by_hash,
 )
-from evm.utils.headers import (
-    generate_header_from_parent_header,
-)
 from evm.validation import (
     validate_length_lte,
     validate_gas_limit,
@@ -181,10 +178,6 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     #
     # Blocks
     #
-    @classmethod
-    @abstractmethod
-    def generate_block_from_parent_header_and_coinbase(cls, parent_header, coinbase):
-        raise NotImplementedError("VM classes must implement this method")
 
     @classmethod
     @abstractmethod
@@ -236,10 +229,6 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     def get_state_class(cls):
         raise NotImplementedError("VM classes must implement this method")
 
-    @abstractmethod
-    @contextlib.contextmanager
-    def state_in_temp_block(self):
-        raise NotImplementedError("VM classes must implement this method")
 
 
 class VM(BaseVM):
@@ -275,7 +264,7 @@ class VM(BaseVM):
             self.logger.debug("Initializing VM with queue block")
         
 
-        self.state = self.get_state_class().from_saved_state_root(db=self.chaindb.db, execution_context=self.block.header.create_execution_context(self.previous_hashes))
+        self.state = self.get_state_class()(db=self.chaindb.db, execution_context=self.block.header.create_execution_context(self.previous_hashes))
         
     #
     # Logging
@@ -287,7 +276,7 @@ class VM(BaseVM):
     #
     # Execution
     #
-    def apply_transaction(self, header, transaction):
+    def apply_transaction(self, header, transaction, validate = True):
         """
         Apply the transaction to the current block. This is a wrapper around
         :func:`~evm.vm.state.State.apply_transaction` with some extra orchestration logic.
@@ -295,20 +284,22 @@ class VM(BaseVM):
         :param header: header of the block before application
         :param transaction: to apply
         """
-
-        self.validate_transaction_against_header(header, transaction)
-        state_root, computation = self.state.apply_transaction(transaction)
-        receipt = self.make_receipt(header, transaction, computation, self.state)
+        if validate:
+            self.validate_transaction_against_header(header, transaction)
+            
+        computation = self.state.apply_transaction(transaction, validate = validate)
+        if validate:
+            receipt = self.make_receipt(header, transaction, computation)
+            
+            new_header = header.copy(
+                bloom=int(BloomFilter(header.bloom) | receipt.bloom),
+                gas_used=receipt.gas_used,
+            )
+    
+            return new_header, receipt, computation
+        else:
+            return None, None, computation
         
-        
-        
-        new_header = header.copy(
-            bloom=int(BloomFilter(header.bloom) | receipt.bloom),
-            gas_used=receipt.gas_used,
-        )
-
-        return new_header, receipt, computation
-
     def execute_bytecode(self,
                          origin,
                          gas_price,
@@ -352,18 +343,26 @@ class VM(BaseVM):
             transaction_context,
         )
 
-    def _apply_all_transactions(self, transactions, base_header):
+    def _apply_all_transactions(self, transactions, base_header, validate = True):
         receipts = []
         previous_header = base_header
-        result_header = base_header
+        
+        if validate:
+            result_header = base_header
+    
+            for transaction in transactions:
+                result_header, receipt, _ = self.apply_transaction(previous_header, transaction, validate = validate)
+    
+                previous_header = result_header
+                receipts.append(receipt)
+    
+            return result_header, receipts
+        else:
+            for transaction in transactions:
+                self.apply_transaction(previous_header, transaction, validate = validate)
+            return 
+    
 
-        for transaction in transactions:
-            result_header, receipt, _ = self.apply_transaction(previous_header, transaction)
-
-            previous_header = result_header
-            receipts.append(receipt)
-
-        return result_header, receipts
 
     #
     # Mining
@@ -389,7 +388,7 @@ class VM(BaseVM):
             )
         )
         # we need to re-initialize the `state` to update the execution context.
-        self.state = self.get_state_class().from_saved_state_root(
+        self.state = self.get_state_class()(
                 db=self.chaindb.db, 
                 execution_context=self.block.header.create_execution_context(self.previous_hashes)
                 )
@@ -451,9 +450,41 @@ class VM(BaseVM):
         #save all send transactions in the state as receivable
         self.save_transactions_as_receivable(self.block.header, self.block.transactions)
         
-        self.state.account_db.persist(save_state_root=True)
+        self.state.account_db.persist()
         
         return packed_block
+    
+    #this can be used for fast sync
+    #dangerous. It assumes all blocks are correct.
+    def import_block_no_verification(self, block, *args, **kwargs):
+        """
+        Import the given block to the chain.
+        """
+        #TODO:check to see if it is replacing a block, or being added to the top
+        #TODO: allow this for contract addresses
+        if block.sender != self.wallet_address:
+            raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
+            
+
+        # we need to re-initialize the `state` to update the execution context.
+        self.state = self.get_state_class()(
+                db=self.chaindb.db, 
+                execution_context=block.header.create_execution_context(self.previous_hashes)
+                )
+        
+        
+        #run all of the transactions.
+        self._apply_all_transactions(block.transactions, block.header, validate = False)
+        
+        #then run all receive transactions
+        self._apply_all_transactions(block.receive_transactions, block.header, validate = False)
+
+        #save all send transactions in the state as receivable
+        self.save_transactions_as_receivable(block.header, block.transactions)
+        
+        self.state.account_db.persist()
+        
+        return block
 
     def save_transaction_as_receivable(self,block_header, transaction):
         self.state.account_db.add_receivable_transaction(transaction.to, transaction.hash, block_header.hash)
@@ -517,7 +548,6 @@ class VM(BaseVM):
 
         :param bytes coinbase: 20-byte public address to receive block reward
         :param bytes uncles_hash: 32 bytes
-        :param bytes state_root: 32 bytes
         :param bytes transaction_root: 32 bytes
         :param bytes receipt_root: 32 bytes
         :param int bloom:
@@ -548,23 +578,7 @@ class VM(BaseVM):
     #
     # Blocks
     #
-    @classmethod
-    def generate_block_from_parent_header_and_coinbase(cls, parent_header, coinbase):
-        """
-        Generate block from parent header and coinbase.
-        """
-        block_header = generate_header_from_parent_header(
-            cls.compute_difficulty,
-            parent_header,
-            coinbase,
-            timestamp=parent_header.timestamp + 1,
-        )
-        block = cls.get_block_class()(
-            block_header,
-            transactions=[],
-            uncles=[],
-        )
-        return block
+
 
     @classmethod
     def get_block_class(cls) -> Type['BaseBlock']:
@@ -725,18 +739,3 @@ class VM(BaseVM):
         return cls._state_class
     
         
-    @contextlib.contextmanager
-    def state_in_temp_block(self):
-        header = self.block.header
-        temp_block = self.generate_block_from_parent_header_and_coinbase(header, header.coinbase)
-        prev_hashes = (header.hash, ) + self.previous_hashes
-
-        state = self.get_state_class()(
-            db=self.chaindb.db,
-            execution_context=temp_block.header.create_execution_context(prev_hashes),
-            state_root=temp_block.header.state_root,
-        )
-
-        snapshot = state.snapshot()
-        yield state
-        state.revert(snapshot)

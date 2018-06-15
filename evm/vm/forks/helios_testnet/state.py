@@ -214,7 +214,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             )
             return message
 
-    def build_computation(self, message, transaction):
+    def build_computation(self, message, transaction, validate = True):
         #TODO: here to have to make sure that the smart contract only sends funds from itself...
         """Apply the message to the VM."""
         transaction_context = self.get_transaction_context(transaction)
@@ -244,7 +244,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
         else:
             computation = self.vm_state.get_computation(
                 message,
-                transaction_context).apply_message()
+                transaction_context).apply_message(validate=validate)
 
         return computation
 

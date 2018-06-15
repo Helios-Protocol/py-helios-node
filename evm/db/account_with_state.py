@@ -71,6 +71,16 @@ class BaseAccountDB(metaclass=ABCMeta):
             "Must be implemented by subclasses"
         )
 
+    # We need to ignore this until https://github.com/python/mypy/issues/4165 is resolved
+    @property  # tyoe: ignore
+    @abstractmethod
+    def state_root(self):
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def has_root(self, state_root: bytes) -> bool:
+        raise NotImplementedError("Must be implemented by subclasses")
+
     #
     # Storage
     #
@@ -137,6 +147,14 @@ class BaseAccountDB(metaclass=ABCMeta):
     def commit(self, changeset: Tuple[UUID, UUID]) -> None:
         raise NotImplementedError("Must be implemented by subclass")
 
+    @abstractmethod
+    def make_state_root(self) -> Hash32:
+        """
+        Generate the state root with all the current changes in AccountDB
+
+        :return: the new state root
+        """
+        raise NotImplementedError("Must be implemented by subclass")
 
     @abstractmethod
     def persist(self) -> None:
@@ -151,11 +169,23 @@ class AccountDB(BaseAccountDB):
 
     logger = logging.getLogger('evm.db.account.AccountDB')
 
-    def __init__(self, db):
+    def __init__(self, db, state_root=BLANK_ROOT_HASH):
         r"""
         Internal implementation details (subject to rapid change):
+        Database entries go through several pipes, like so...
+
+        .. code::
+
+                                                                    -> hash-trie -> storage lookups
+                                                                  /
+            db > _batchdb ---------------------------> _journaldb ----------------> code lookups
+             \
+              -> _batchtrie -> _trie -> _trie_cache -> _journaltrie --------------> account lookups
 
         Journaling sequesters writes at the _journal* attrs ^, until persist is called.
+
+        _batchtrie enables us to prune all trie changes while building
+        state,  without deleting old trie roots.
 
         _batchdb and _batchtrie together enable us to make the state root,
         without saving everything to the database.
@@ -163,19 +193,41 @@ class AccountDB(BaseAccountDB):
         _journaldb is a journaling of the keys and values used to store
         code and account storage.
 
-        TODO: add cache
+        _trie is a hash-trie, used to generate the state root
+
         _trie_cache is a cache tied to the state root of the trie. It
         is important that this cache is checked *after* looking for
         the key in _journaltrie, because the cache is only invalidated
         after a state root change.
 
-        AccountDB synchronizes the snapshot/revert/persist the
-        journal.
+        _journaltrie is a journaling of the accounts (an address->rlp mapping,
+        rather than the nodes stored by the trie). This enables
+        a squashing of all account changes before pushing them into the trie.
+
+        .. NOTE:: There is an opportunity to do something similar for storage
+
+        AccountDB synchronizes the snapshot/revert/persist of both of the
+        journals.
         """
         self.db = db
         self._batchdb = BatchDB(db)
+        self._batchtrie = BatchDB(db)
         self._journaldb = JournalDB(self._batchdb)
+        self._trie = HashTrie(HexaryTrie(self._batchtrie, state_root, prune=True))
+        self._trie_cache = CacheDB(self._trie)
+        self._journaltrie = JournalDB(self._trie_cache)
 
+    @property
+    def state_root(self):
+        return self._trie.root_hash
+
+    @state_root.setter
+    def state_root(self, value):
+        self._trie_cache.reset_cache()
+        self._trie.root_hash = value
+
+    def has_root(self, state_root: bytes) -> bool:
+        return state_root in self._batchtrie
 
     #
     # Storage
@@ -387,15 +439,13 @@ class AccountDB(BaseAccountDB):
 
     def delete_account(self, address):
         validate_canonical_address(address, title="Storage Address")
-        account_lookup_key = SchemaV1.make_account_lookup_key(address)
 
-        del self._journaldb[account_lookup_key]
+        del self._journaltrie[address]
 
     def account_exists(self, address):
         validate_canonical_address(address, title="Storage Address")
-        account_lookup_key = SchemaV1.make_account_lookup_key(address)
-        
-        return self._journaldb.get(account_lookup_key, b'') != b''
+
+        return self._journaltrie.get(address, b'') != b''
 
     def touch_account(self, address):
         validate_canonical_address(address, title="Storage Address")
@@ -418,8 +468,7 @@ class AccountDB(BaseAccountDB):
     # Internal
     #
     def _get_account(self, address):
-        account_lookup_key = SchemaV1.make_account_lookup_key(address)
-        rlp_account = self._journaldb.get(account_lookup_key, b'')
+        rlp_account = self._journaltrie.get(address, b'')
         if rlp_account:
             account = rlp.decode(rlp_account, sedes=Account)
         else:
@@ -428,24 +477,81 @@ class AccountDB(BaseAccountDB):
 
     def _set_account(self, address, account):
         rlp_account = rlp.encode(account, sedes=Account)
-        account_lookup_key = SchemaV1.make_account_lookup_key(address)
-        self._journaldb[account_lookup_key] = rlp_account
+        self._journaltrie[address] = rlp_account
 
     #
     # Record and discard API
     #
-    def record(self) -> UUID:
-        return (self._journaldb.record())
+    def record(self) -> Tuple[UUID, UUID]:
+        return (self._journaldb.record(), self._journaltrie.record())
 
-    def discard(self, changeset: UUID) -> None:
-        db_changeset = changeset
+    def discard(self, changeset: Tuple[UUID, UUID]) -> None:
+        db_changeset, trie_changeset = changeset
         self._journaldb.discard(db_changeset)
+        self._journaltrie.discard(trie_changeset)
 
-    def commit(self, changeset: UUID) -> None:
-        db_changeset = changeset
+    def commit(self, changeset: Tuple[UUID, UUID]) -> None:
+        db_changeset, trie_changeset = changeset
         self._journaldb.commit(db_changeset)
+        self._journaltrie.commit(trie_changeset)
 
-    def persist(self) -> None:
+    def make_state_root(self) -> Hash32:
+        self.logger.debug("Generating AccountDB trie")
         self._journaldb.persist()
-        self._batchdb.commit(apply_deletes=True)
+        self._journaltrie.persist()
+        return self.state_root
 
+    def persist(self, save_state_root = False) -> None:
+        self.make_state_root()
+        self._batchtrie.commit(apply_deletes=False)
+        self._batchdb.commit(apply_deletes=True)
+        if save_state_root:
+            self.save_current_state_root()
+
+    def _log_pending_accounts(self) -> None:
+        accounts_displayed = set()  # type: Set[bytes]
+        queued_changes = self._journaltrie.journal.journal_data.items()
+        # mypy bug for ordered dict reversibility: https://github.com/python/typeshed/issues/2078
+        for checkpoint, accounts in reversed(queued_changes):  # type: ignore
+            for address in accounts:
+                if address in accounts_displayed:
+                    continue
+                else:
+                    accounts_displayed.add(address)
+                    account = self._get_account(address)
+                    self.logger.debug(
+                        "Account %s: balance %d, nonce %d, storage root %s, code hash %s",
+                        encode_hex(address),
+                        account.balance,
+                        account.nonce,
+                        encode_hex(account.storage_root),
+                        encode_hex(account.code_hash),
+                    )
+    
+    def save_current_state_root(self) -> None:
+        """
+        Saves the current state_root to the database to be loaded later
+        """
+        self.logger.debug("Saving current state root")
+        #if self.state_root==BLANK_ROOT_HASH:
+        #    raise ValueError("cannot save state root because it is BLANK_ROOT_HASH")
+        current_state_root_lookup_key = SchemaV1.make_current_state_root_lookup_key()
+        
+        self.db.set(
+            current_state_root_lookup_key,
+            rlp.encode(self.state_root, sedes=trie_root),
+        )
+    
+    @classmethod    
+    def get_saved_state_root(cls, db) -> Hash32:
+        """
+        Loads the last saved state root
+        """
+
+        current_state_root_lookup_key = SchemaV1.make_current_state_root_lookup_key()
+        try:
+            loaded_state_root = rlp.decode(db[current_state_root_lookup_key], sedes=trie_root)
+        except KeyError:
+            raise ValueError("There is no saved state root to load")
+               
+        return loaded_state_root
