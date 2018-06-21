@@ -409,7 +409,8 @@ class AccountDB(BaseAccountDB):
     def get_account_hash(self, address):
         account = self._get_account(address)
         account_hashable = account.copy(
-            receivable_transactions = ()
+            receivable_transactions = (),
+            block_conflicts = (),
         )
         account_hashable_encoded = rlp.encode(account_hashable)
         return keccak(account_hashable_encoded)

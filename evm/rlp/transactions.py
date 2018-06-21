@@ -142,13 +142,6 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
 
 
 class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
-    fields = [
-        ('sender_block_hash', hash32),
-        ('transaction', BaseTransaction),
-        ('v', big_endian_int),
-        ('r', big_endian_int),
-        ('s', big_endian_int),
-    ]
 
     @classmethod
     def from_base_transaction(cls, transaction: 'BaseReceiveTransaction') -> 'BaseReceiveTransaction':

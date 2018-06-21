@@ -167,7 +167,7 @@ def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
     
     chain = chain_class(base_db, chain_config.node_wallet_address, chain_config.node_private_helios_key)  # type: ignore
         
-    chain.chain_head_db.root_hash
+    #chain.chain_head_db.root_hash
     #headerdb = AsyncHeaderDB(base_db)
     #header_chain = AsyncHeaderChain(base_db)
 

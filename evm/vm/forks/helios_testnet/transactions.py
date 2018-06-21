@@ -36,6 +36,15 @@ from evm.rlp.transactions import (
     BaseReceiveTransaction,
 )
 
+from rlp.sedes import (
+    big_endian_int,
+    binary,
+)
+from evm.rlp.sedes import (
+    address,
+    hash32,
+)
+
 
 
 
@@ -118,6 +127,14 @@ def _get_helios_testnet_intrinsic_gas(transaction):
     
 class HeliosTestnetReceiveTransaction(BaseReceiveTransaction):
 
+    fields = [
+        ('sender_block_hash', hash32),
+        ('transaction', HeliosTestnetTransaction),
+        ('v', big_endian_int),
+        ('r', big_endian_int),
+        ('s', big_endian_int),
+    ]
+    
     def check_signature_validity(self):
         validate_transaction_signature(self)
 

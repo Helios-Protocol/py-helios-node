@@ -75,3 +75,11 @@ ensure_imported_block_unchanged = ensure_rlp_objects_are_equal(
     obj_a_name="block",
     obj_b_name="imported block",
 )
+
+def make_mutable(value):
+    if isinstance(value, tuple):
+        return list(make_mutable(item) for item in value)
+    else:
+        return value
+    
+    

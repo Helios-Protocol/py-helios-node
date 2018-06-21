@@ -23,6 +23,12 @@ class TransactionKey(rlp.Serializable):
         ('transaction_hash', hash32),
         ('sender_block_hash', hash32),
     ]
+ 
+class BlockConflictKey(rlp.Serializable):
+    fields = [
+        ('slash_block_hash', hash32),
+        ('conflict_block_number', big_endian_int),
+    ]  
     
 class Account(rlp.Serializable):
     """
@@ -32,6 +38,7 @@ class Account(rlp.Serializable):
         ('nonce', big_endian_int),
         ('block_number', big_endian_int),
         ('receivable_transactions', CountableList(TransactionKey)),
+        ('block_conflicts', CountableList(BlockConflictKey)),
         ('balance', big_endian_int),
         ('storage_root', trie_root),
         ('code_hash', hash32)
@@ -41,8 +48,9 @@ class Account(rlp.Serializable):
                  nonce: int=0,
                  block_number: int=0,
                  receivable_transactions = (),
+                 block_conflicts = (),
                  balance: int=0,
                  storage_root: bytes=BLANK_ROOT_HASH,
                  code_hash: bytes=EMPTY_SHA3,
                  **kwargs: Any) -> None:
-        super(Account, self).__init__(nonce, block_number, receivable_transactions, balance, storage_root, code_hash, **kwargs)
+        super(Account, self).__init__(nonce, block_number, receivable_transactions, block_conflicts, balance, storage_root, code_hash, **kwargs)

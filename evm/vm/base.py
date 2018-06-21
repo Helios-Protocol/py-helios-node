@@ -80,6 +80,8 @@ from eth_keys.datatypes import(
 class BaseVM(Configurable, metaclass=ABCMeta):
     block = None  # type: BaseBlock
     block_class = None  # type: Type[BaseBlock]
+    queue_block_class = None
+    block_conflict_message_class = None
     fork = None  # type: str
     chaindb = None  # type: BaseChainDB
     _state_class = None  # type: Type[BaseState]
@@ -448,7 +450,7 @@ class VM(BaseVM):
         
         
         #save all send transactions in the state as receivable
-        self.save_transactions_as_receivable(self.block.header, self.block.transactions)
+        self.save_transactions_as_receivable(packed_block.header, self.block.transactions)
         
         self.state.account_db.persist()
         
@@ -599,6 +601,16 @@ class VM(BaseVM):
             raise AttributeError("No `queue_block_class` has been set for this VM")
         else:
             return cls.queue_block_class
+        
+    @classmethod
+    def get_block_conflict_message_class(cls) -> Type['BaseBlock']:
+        """
+        Return the :class:`~evm.rlp.blocks.Block` class that this VM uses for blocks.
+        """
+        if cls.block_conflict_message_class is None:
+            raise AttributeError("No `block_class` has been set for this VM")
+        else:
+            return cls.block_conflict_message_class
     
     @classmethod    
     def create_genesis_block(cls):

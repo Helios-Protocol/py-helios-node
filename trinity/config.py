@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 from typing import (
     TYPE_CHECKING,
     Tuple,
@@ -107,7 +108,10 @@ class ChainConfig:
     @property
     def node_private_helios_key(self):
         if self._node_private_helios_key is None:
-            self._node_private_helios_key = get_primary_node_private_helios_key()
+            if "INSTANCE_NUMBER" in os.environ:
+                self._node_private_helios_key = get_primary_node_private_helios_key(int(os.environ["INSTANCE_NUMBER"]))
+            else:
+                self._node_private_helios_key = get_primary_node_private_helios_key()
         return self._node_private_helios_key
     
     @property

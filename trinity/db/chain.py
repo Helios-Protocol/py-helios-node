@@ -23,6 +23,7 @@ class ChainDBProxy(BaseProxy):
     coro_get_block_transactions = async_method('get_block_transactions')
     coro_get_block_uncles = async_method('get_block_uncles')
     coro_get_receipts = async_method('get_receipts')
+    coro_get_chain_wallet_address_for_block_hash = async_method('get_chain_wallet_address_for_block_hash')
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')
     get_canonical_head = sync_method('get_canonical_head')
@@ -32,3 +33,4 @@ class ChainDBProxy(BaseProxy):
     persist_header = sync_method('persist_header')
     persist_uncles = sync_method('persist_uncles')
     persist_trie_data_dict = sync_method('persist_trie_data_dict')
+    get_chain_wallet_address_for_block_hash = sync_method('get_chain_wallet_address_for_block_hash')

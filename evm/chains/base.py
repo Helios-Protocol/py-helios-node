@@ -48,8 +48,8 @@ from evm.constants import (
     BLANK_ROOT_HASH,
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
+    COIN_MATURE_TIME_FOR_STAKING,
 )
-
 
 from evm import constants
 from evm.estimators import (
@@ -685,6 +685,10 @@ class Chain(BaseChain):
             ensure_imported_block_unchanged(imported_block, block)
             self.validate_block(imported_block)
         
+        for receive_transaction in imported_block.receive_transactions:
+            #make sure the sender_block_hash exists
+            sender_header = self.chaindb.get_block_header_by_hash(receive_transaction.sender_block_hash)
+            
         self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
         self.chain_head_db.persist(True)
         if save_block_head_hash_timestamp:
@@ -763,7 +767,73 @@ class Chain(BaseChain):
                     encode_hex(header.hash), header.gas_limit, high_bound))
 
 
-
+    #
+    # Stake API
+    #
+    #this doesnt count the stake of the origin chain
+    def get_block_stake_from_children(self, block_hash):
+        validate_word(block_hash, title="Block Hash")
+        
+        children_chain_wallet_addresses = self.chaindb.get_block_children_chains(block_hash)
+        self.logger.debug("get_block_stake_from_children. children wallet addresses: {}".format(children_chain_wallet_addresses))
+        
+        if children_chain_wallet_addresses is None:
+            return 0
+        else:
+            total_stake = 0
+            for wallet_address in children_chain_wallet_addresses:
+               total_stake += self.get_mature_stake(wallet_address)
+            return total_stake
+                
+                       
+    def get_mature_stake(self, wallet_address = None):
+        if wallet_address is None:
+            wallet_address = self.wallet_address
+            
+        validate_canonical_address(wallet_address, title="Wallet Address")
+        #get account balance
+        account_balance = self.get_vm().state.account_db.get_balance(wallet_address)
+        #subtract immature coins (look at receive only)
+        immature_coins = self.get_immature_receive_balance(wallet_address)
+        
+        mature_stake = account_balance-immature_coins
+        #this can be negative if they spent their received coins. Lets bottom it out at 0
+        if mature_stake < 0:
+            mature_stake = 0
+            
+        return mature_stake
+    
+    
+    def get_immature_receive_balance(self, wallet_address = None):
+        if wallet_address is None:
+            wallet_address = self.wallet_address
+        
+        validate_canonical_address(wallet_address, title="Wallet Address")
+        
+        canonical_head = self.chaindb.get_canonical_head(wallet_address = wallet_address)
+        
+        total = 0
+        transaction_class =  self.get_block().receive_transaction_class
+        if canonical_head.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:
+            return total
+        else:
+            block_receive_transactions = self.chaindb.get_block_receive_transactions(canonical_head,transaction_class)
+            for transaction in block_receive_transactions:
+                total += transaction.transaction.value
+        
+        previous_header = canonical_head
+        while True:
+            parent_header = self.chaindb.get_block_header_by_hash(previous_header.parent_hash)            
+            block_receive_transactions = self.chaindb.get_block_receive_transactions(parent_header,transaction_class)
+            for transaction in block_receive_transactions:
+                total += transaction.transaction.value
+            
+            if parent_header.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING or parent_header.parent_hash == constants.GENESIS_PARENT_HASH:
+                break
+            previous_header = parent_header
+        
+        return total
+    
 # This class is a work in progress; its main purpose is to define the API of an asyncio-compatible
 # Chain implementation.
 class AsyncChain(Chain):

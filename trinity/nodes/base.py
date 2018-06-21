@@ -145,7 +145,7 @@ def create_db_manager(ipc_path: Path) -> BaseManager:
     DBManager.register('get_chain', proxytype=ChainProxy)  # type: ignore
     DBManager.register('get_chain_head_db', proxytype=ChainHeadDBProxy)  # type: ignore
     #DBManager.register('get_headerdb', proxytype=AsyncHeaderDBProxy)  # type: ignore
-    DBManager.register('get_header_chain', proxytype=AsyncHeaderChainProxy)  # type: ignore
+    #DBManager.register('get_header_chain', proxytype=AsyncHeaderChainProxy)  # type: ignore
 
     manager = DBManager(address=str(ipc_path))  # type: ignore
     return manager

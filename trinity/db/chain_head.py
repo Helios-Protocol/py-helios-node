@@ -11,19 +11,12 @@ from trinity.utils.mp import (
 )
 
 class AsyncChainHeadDB(ChainHeadDB):
-    def get_root_hash(self, timestamp = None):
-        if timestamp is None:
-            return self.root_hash
-        else:
-            return self.get_root_hash_saved_at_timestamp(self.db, timestamp)
+    pass
     
     
 
 class ChainHeadDBProxy(BaseProxy):
-    coro_load_from_saved_root_hash_at_timestamp = async_method('load_from_saved_root_hash_at_timestamp')
-    coro_get_root_hash = async_method('get_root_hash')
-    coro_get_latest_timestamp = async_method('get_latest_timestamp')
 
-    load_from_saved_root_hash_at_timestamp = sync_method('load_from_saved_root_hash_at_timestamp')
-    get_root_hash = sync_method('get_root_hash')
-    get_latest_timestamp = sync_method('get_latest_timestamp')
+    coro_get_historical_root_hashes = async_method('get_historical_root_hashes')
+
+    get_historical_root_hashes = sync_method('get_historical_root_hashes')

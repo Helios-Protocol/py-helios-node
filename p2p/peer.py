@@ -246,14 +246,16 @@ class BasePeer(BaseService):
         return await self.wait(self.headerdb.coro_get_block_header_by_hash(genesis_hash))
 
     @property
-    def _local_chain_info(self) -> 'ChainInfo':
+    async def _local_chain_info(self) -> 'ChainInfo':
         
         node_type = self.chain_config.node_type
         node_wallet_address = self.chain_config.node_wallet_address
+        chain_head_root_hashes = await self.chain_head_db.coro_get_historical_root_hashes()
 
         return ChainInfo(
             node_type=node_type,
-            node_wallet_address=node_wallet_address
+            node_wallet_address=node_wallet_address,
+            chain_head_root_hashes = chain_head_root_hashes
         )
 
     @property
@@ -509,7 +511,7 @@ class ETHPeer(BasePeer):
     head_hash: Hash32 = None
 
     async def send_sub_proto_handshake(self):
-        chain_info = self._local_chain_info
+        chain_info = await self._local_chain_info
         self.sub_proto.send_handshake(chain_info)
 
     async def process_sub_proto_handshake(
@@ -537,11 +539,13 @@ class ETHPeer(BasePeer):
 class HLSPeer(BasePeer):
     _supported_sub_protocols = [hls.HLSProtocol]
     sub_proto: hls.HLSProtocol = None
-    head_td: int = None
+    #stake: int = None
+    stake: int = 1000 #testing
     head_hash: Hash32 = None
-
+    wallet_address = None
+    
     async def send_sub_proto_handshake(self):
-        chain_info = self._local_chain_info
+        chain_info = await self._local_chain_info
         self.sub_proto.send_handshake(chain_info)
 
     async def process_sub_proto_handshake(
@@ -556,6 +560,11 @@ class HLSPeer(BasePeer):
             raise HandshakeFailure(
                 "{} network ({}) does not match ours ({}), disconnecting".format(
                     self, msg['network_id'], self.network_id))
+        self.node_type = msg['node_type']
+        self.wallet_address = msg['wallet_address']
+        self.chain_head_root_hashes = msg['chain_head_root_hashes']
+        #TODO: need to lookup their stake
+        #TODO: send another handshake that gaurantees their wallet address. We shouldnt even ask for it here...
 
 
 
@@ -862,7 +871,7 @@ class LocalNodesPeerPool(PeerPool):
                 existing_peers_raw = peer_file.read()
                 existing_peers = json.loads(existing_peers_raw)
             
-            self.logger.debug('loaded local peer nodes: {}'.format(existing_peers_raw))
+            #self.logger.debug('loaded local peer nodes: {}'.format(existing_peers_raw))
             #we have to change it into the expected form
             peer_pool = []
             for i, peer in enumerate(existing_peers):
@@ -990,9 +999,10 @@ class PreferredNodePeerPool(PeerPool):
 
 
 class ChainInfo:
-    def __init__(self, node_type, node_wallet_address):
+    def __init__(self, node_type, node_wallet_address, chain_head_root_hashes):
         self.node_type=node_type
         self.node_wallet_address=node_wallet_address
+        self.chain_head_root_hashes = chain_head_root_hashes
 
 
 PEER_MSG_TYPE = Tuple[BasePeer, protocol.Command, protocol._DecodedMsgType]

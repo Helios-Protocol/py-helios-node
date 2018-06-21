@@ -81,3 +81,7 @@ def get_highest_bit_index(value):
         if not value:
             return bit_length
         value >>= 1
+
+def effecient_diff(list_1, list_2):
+    s = set(list_1)
+    return [x for x in list_2 if x not in s]

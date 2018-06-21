@@ -1,5 +1,6 @@
 import functools
 import itertools
+import logging
 
 from abc import (
     ABCMeta,
@@ -38,6 +39,7 @@ from eth_hash.auto import keccak
 
 from evm.constants import (
     GENESIS_PARENT_HASH,
+    COIN_MATURE_TIME_FOR_STAKING,
 )
 from evm.exceptions import (
     CanonicalHeadNotFound,
@@ -70,6 +72,8 @@ from evm.rlp.sedes import(
     address,
     hash32
 )
+
+from evm.utils.rlp import make_mutable
 if TYPE_CHECKING:
     from evm.rlp.blocks import (  # noqa: F401
         BaseBlock
@@ -206,6 +210,8 @@ class BaseChainDB(metaclass=ABCMeta):
 
 
 class ChainDB(BaseChainDB):
+    logger = logging.getLogger('evm.db.chain_head.ChainDB')
+    
     def __init__(self, db: BaseDB, wallet_address:Address) -> None:
         self.db = db
         validate_canonical_address(wallet_address, "Wallet Address") 
@@ -214,12 +220,14 @@ class ChainDB(BaseChainDB):
     #
     # Canonical Chain API
     #
-    def get_canonical_block_hash(self, block_number: BlockNumber) -> Hash32:
+    def get_canonical_block_hash(self, block_number: BlockNumber, wallet_address = None) -> Hash32:
         """
         Return the block hash for the given block number.
         """
+        if wallet_address is None:
+            wallet_address = self.wallet_address
         validate_uint256(block_number, title="Block Number")
-        number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(self.wallet_address, block_number)
+        number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(wallet_address, block_number)
         try:
             return rlp.decode(
                 self.db[number_to_hash_key],
@@ -240,14 +248,16 @@ class ChainDB(BaseChainDB):
         validate_uint256(block_number, title="Block Number")
         return self.get_block_header_by_hash(self.get_canonical_block_hash(block_number))
 
-    def get_canonical_head(self) -> BlockHeader:
+    def get_canonical_head(self, wallet_address = None) -> BlockHeader:
         """
         Returns the current block header at the head of the chain.
 
         Raises CanonicalHeadNotFound if no canonical head has been set.
         """
+        if wallet_address is None:
+            wallet_address = self.wallet_address
         try:
-            canonical_head_hash = self.db[SchemaV1.make_canonical_head_hash_lookup_key(self.wallet_address)]
+            canonical_head_hash = self.db[SchemaV1.make_canonical_head_hash_lookup_key(wallet_address)]
         except KeyError:
             raise CanonicalHeadNotFound("No canonical head set for this chain")
         return self.get_block_header_by_hash(
@@ -291,7 +301,7 @@ class ChainDB(BaseChainDB):
             raise ParentNotFound(
                 "Cannot persist block header ({}) with unknown parent ({})".format(
                     encode_hex(header.hash), encode_hex(header.parent_hash)))
-
+        
         self.db.set(
             header.hash,
             rlp.encode(header),
@@ -401,16 +411,18 @@ class ChainDB(BaseChainDB):
     #
     
     @classmethod
-    def get_chain_wallet_address_for_block_hash(self, block_hash):
+    def get_chain_wallet_address_for_block_hash(cls, db, block_hash):
         block_hash_save_key = SchemaV1.make_block_hash_to_chain_wallet_address_lookup_key(block_hash)
         try:
-            return self.db[block_hash_save_key]
+            return db[block_hash_save_key]
         except KeyError:
             raise ValueError("Block hash {} not found in database".format(block_hash))
         
-    def save_block_hash_to_chain_wallet_address(self, block_hash):
+    def save_block_hash_to_chain_wallet_address(self, block_hash, wallet_address = None):
+        if wallet_address is None:
+            wallet_address = self.wallet_address
         block_hash_save_key = SchemaV1.make_block_hash_to_chain_wallet_address_lookup_key(block_hash)
-        self.db[block_hash_save_key] = self.wallet_address
+        self.db[block_hash_save_key] = wallet_address
         
     def persist_block(self, block: 'BaseBlock') -> None:
         '''
@@ -419,13 +431,21 @@ class ChainDB(BaseChainDB):
         Assumes all block transactions have been persisted already.
         '''
         new_canonical_headers = self.persist_header(block.header)
+        
+        
 
         for header in new_canonical_headers:
             for index, transaction_hash in enumerate(self.get_block_transaction_hashes(header)):
                 self._add_transaction_to_canonical_chain(transaction_hash, header, index)
             for index, transaction_hash in enumerate(self.get_block_receive_transaction_hashes(header)):
                 self._add_receive_transaction_to_canonical_chain(transaction_hash, header, index)
-
+            
+            #add all receive transactions as children to the sender block
+            self.add_block_receive_transactions_to_parent_child_lookup(header, block.receive_transaction_class)
+        
+        #we also have to save this block as the child of the parent block in the same chain
+        if block.header.parent_hash != GENESIS_PARENT_HASH:
+            self.add_block_child(block.header.parent_hash, block.header.hash)
 
     #
     # Transaction API
@@ -720,7 +740,101 @@ class ChainDB(BaseChainDB):
             rlp.encode(transaction_key),
         )
 
+
+    #
+    # Block children and Stake API
+    #
+    def add_block_receive_transactions_to_parent_child_lookup(self, block_header, transaction_class):
+        block_receive_transactions = self.get_block_receive_transactions(block_header,
+                                                                        transaction_class)
+        
+        for receive_transaction in block_receive_transactions:
+            self.add_block_child(
+                       receive_transaction.sender_block_hash,
+                       block_header.hash)
+            
+        
+    def remove_block_child(self,
+                       parent_block_hash: Hash32,
+                       child_block_hash: Hash32):
+        
+        validate_word(parent_block_hash, title="Block_hash")
+        validate_word(child_block_hash, title="Block_hash")
+        
+        block_children = self.get_block_children(parent_block_hash)
+        
+        if block_children is None or child_block_hash not in block_children:
+            self.logger.debug("tried to remove a block child that doesnt exist")
+        else:
+            block_children = make_mutable(block_children)
+            block_children.remove(child_block_hash)
+            self.save_block_children(parent_block_hash, block_children)
+
     
+    def add_block_child(self,
+                       parent_block_hash: Hash32,
+                       child_block_hash: Hash32):
+        validate_word(parent_block_hash, title="Block_hash")
+        validate_word(child_block_hash, title="Block_hash")
+        
+        block_children = self.get_block_children(parent_block_hash)
+        
+        
+        if block_children is None:
+            self.save_block_children(parent_block_hash, [child_block_hash])
+        elif child_block_hash in block_children:
+            self.logger.debug("tried adding a child block that was already added")
+        else:
+            block_children = make_mutable(block_children)
+            block_children.append(child_block_hash)
+            self.save_block_children(parent_block_hash, block_children)
+    
+    def get_block_children(self, parent_block_hash: Hash32):
+        validate_word(parent_block_hash, title="Block_hash")
+        block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
+        try:
+            return rlp.decode(self.db[block_children_lookup_key], sedes=rlp.sedes.CountableList(hash32))
+        except KeyError:
+            return None
+        
+    def save_block_children(self, parent_block_hash: Hash32,
+                            block_children):
+        
+        validate_word(parent_block_hash, title="Block_hash")
+        block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
+        self.db[block_children_lookup_key] = rlp.encode(block_children, sedes=rlp.sedes.CountableList(hash32))
+        
+    #we don't want to count the stake from the origin wallet address. This could allow 51% attacks.The origin chain shouldn't count becuase it is the chain with the conflict.
+    def get_block_children_chains(self, block_hash):
+        origin_wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, block_hash)
+        child_chains = self._get_block_children_chains(block_hash)
+        try:
+            child_chains.remove(origin_wallet_address)
+        except KeyError:
+            pass
+        return list(child_chains)
+    
+    def _get_block_children_chains(self, block_hash):
+        validate_word(block_hash, title="Block_hash")
+        
+        #lookup children
+        children = self.get_block_children(block_hash)
+        
+        if children == None:
+            return None
+        else:
+            child_chains = set()
+            for child_block_hash in children:
+                chain_wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, child_block_hash)
+                child_chains.add(chain_wallet_address)
+                
+                sub_children_chain_wallet_addresses = self._get_block_children_chains(child_block_hash)
+                
+                if sub_children_chain_wallet_addresses is not None:
+                    child_chains.update(sub_children_chain_wallet_addresses)
+            return child_chains
+        
+        
     #
     # Raw Database API
     #

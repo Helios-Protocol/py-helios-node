@@ -3,6 +3,10 @@ from typing import List, Union
 
 from rlp import sedes
 
+from evm.rlp.sedes import (
+    address,
+    hash32,
+)
 from evm.rlp.headers import BlockHeader
 from evm.rlp.receipts import Receipt
 
@@ -10,8 +14,18 @@ from p2p.protocol import (
     Command,
     Protocol,
 )
-from p2p.rlp import BlockBody, P2PTransaction
-from p2p.sedes import HashOrNumber
+from p2p.rlp import (
+    BlockBody, 
+    P2PTransaction,
+    BlockNumberKey,
+    BlockHashKey,
+    TimestampRootHashKey
+)
+from p2p.sedes import (
+    HashOrNumber,
+    AddressOrNone,
+    HashOrNone,
+)
 
 
 # Max number of items we can ask for in HLS requests. These are the values used in geth and if we
@@ -28,7 +42,8 @@ class Status(Command):
         ('protocol_version', sedes.big_endian_int),
         ('network_id', sedes.big_endian_int),
         ('node_type', sedes.big_endian_int),
-        ('node_wallet_address', sedes.binary),
+        ('wallet_address', address),
+        ('chain_head_root_hashes', sedes.CountableList(sedes.List([sedes.big_endian_int, sedes.binary]))),
     ]
 
 
@@ -46,6 +61,7 @@ class GetBlockHeaders(Command):
     _cmd_id = 3
     structure = [
         ('block_number_or_hash', HashOrNumber()),
+        ('wallet_address', AddressOrNone()),
         ('max_headers', sedes.big_endian_int),
         ('skip', sedes.big_endian_int),
         ('reverse', sedes.boolean),
@@ -94,24 +110,62 @@ class GetReceipts(Command):
 class Receipts(Command):
     _cmd_id = 16
     structure = sedes.CountableList(sedes.CountableList(Receipt))
+    
+'''
+Consensus commands
+'''
+#if none, then send trie root hash
+class GetChainHeadTrieBranch(Command):
+    _cmd_id = 17
+    structure = HashOrNone()
+    
+class ChainHeadTrieBranch(Command):
+    _cmd_id = 18
+    structure = sedes.CountableList(hash32)
+
+class GetChainHeadRootHashTimestamps(Command):
+    _cmd_id = 19
+    structure = [('after_timestamp', sedes.big_endian_int)]
+    
+class ChainHeadRootHashTimestamps(Command):
+    _cmd_id = 20
+    #this way is actually almost twice as fast as using a key... structure is [timestamp, root_hash]
+    structure = sedes.CountableList(sedes.List([sedes.big_endian_int, sedes.binary]))
+    #these are the same thing. Its just cleaner to work with an object. If we need to be able to iterate over the list then we can go back to list format
+    #structure = sedes.CountableList(TimestampRootHashKey)
+    
+class GetUnorderedBlockHeaderHash(Command):
+    _cmd_id = 21
+    structure = sedes.CountableList(BlockNumberKey)
+
+class UnorderedBlockHeaderHash(Command):
+    _cmd_id = 22
+    structure = sedes.CountableList(BlockHashKey)
 
 
 class HLSProtocol(Protocol):
     name = 'HLS'
     version = 1
     _commands = [
-        Status, NewBlockHashes, Transactions, GetBlockHeaders, BlockHeaders, BlockHeaders,
-        GetBlockBodies, BlockBodies, NewBlock, GetNodeData, NodeData,
-        GetReceipts, Receipts]
-    cmd_length = 17
+        Status, NewBlockHashes, Transactions, GetBlockHeaders, BlockHeaders,
+        GetBlockBodies, BlockBodies, NewBlock, NewBlock, NewBlock, 
+        NewBlock, NewBlock, NewBlock, GetNodeData, NodeData,
+        GetReceipts, Receipts, GetChainHeadTrieBranch, ChainHeadTrieBranch, GetChainHeadRootHashTimestamps,
+        ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash]
+    cmd_length = 30
     logger = logging.getLogger("p2p.hls.HLSProtocol")
 
     def send_handshake(self, chain_info):
+        if chain_info.chain_head_root_hashes is None:
+            chain_head_root_hashes = []
+        else:
+            chain_head_root_hashes = chain_info.chain_head_root_hashes
         resp = {
             'protocol_version': self.version,
             'network_id': self.peer.network_id,
             'node_type': chain_info.node_type,
-            'node_wallet_address': chain_info.node_wallet_address,
+            'wallet_address': chain_info.node_wallet_address,
+            'chain_head_root_hashes': chain_head_root_hashes
         }
         #self.logger.debug("sending handshake with {}{}{}{}".format(self.version, self.peer.network_id, chain_info.node_type, chain_info.node_wallet_address))
         cmd = Status(self.cmd_id_offset)
@@ -128,8 +182,8 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(nodes)
         self.send(header, body)
 
-    def send_get_block_headers(self, block_number_or_hash: Union[int, bytes],
-                               max_headers: int, reverse: bool = True
+    def send_get_block_headers(self, block_number_or_hash: Union[int, bytes], 
+                               max_headers: int, reverse: bool = True, wallet_address = None
                                ) -> None:
         """Send a GetBlockHeaders msg to the remote.
 
@@ -146,6 +200,7 @@ class HLSProtocol(Protocol):
         skip = 0
         data = {
             'block_number_or_hash': block_number_or_hash,
+            'wallet_address': wallet_address,
             'max_headers': max_headers,
             'skip': skip,
             'reverse': reverse}
@@ -176,3 +231,36 @@ class HLSProtocol(Protocol):
         cmd = Receipts(self.cmd_id_offset)
         header, body = cmd.encode(receipts)
         self.send(header, body)
+        
+    def send_get_chain_head_trie_branch(self, node_hash = None) -> None:
+        cmd = GetChainHeadTrieBranch(self.cmd_id_offset)
+        header, body = cmd.encode(node_hash)
+        self.send(header, body)
+        
+    def send_chain_head_trie_branch(self, node_hashes: List[bytes]) -> None:
+        cmd = ChainHeadTrieBranch(self.cmd_id_offset)
+        header, body = cmd.encode(node_hashes)
+        self.send(header, body)
+              
+    def send_get_chain_head_root_hash_timestamps(self, after_timestamp) -> None:
+        cmd = GetChainHeadRootHashTimestamps(self.cmd_id_offset)
+        data = {'after_timestamp': after_timestamp}
+        header, body = cmd.encode(data)
+        self.send(header, body)
+        
+    def send_chain_head_root_hash_timestamps(self, root_hash_timestamps) -> None:
+        cmd = ChainHeadRootHashTimestamps(self.cmd_id_offset)
+        header, body = cmd.encode(root_hash_timestamps)
+        self.send(header, body)
+        
+    def send_get_unordered_block_header_hash(self, block_number_keys) -> None:
+        cmd = GetUnorderedBlockHeaderHash(self.cmd_id_offset)
+        header, body = cmd.encode(block_number_keys)
+        self.send(header, body)
+        
+    def send_unordered_block_header_hash(self, block_hash_keys) -> None:
+        cmd = UnorderedBlockHeaderHash(self.cmd_id_offset)
+        header, body = cmd.encode(block_hash_keys)
+        self.send(header, body)
+        
+

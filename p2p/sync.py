@@ -35,9 +35,12 @@ class FullNodeSyncer(BaseService):
                  base_db: BaseDB,
                  peer_pool: PeerPool,
                  chain_head_db,
+                 consensus,
                  token: CancelToken = None,
+                 
                  ) -> None:
         super().__init__(token)
+        self.consensus = consensus
         self.chain = chain
         self.chaindb = chaindb
         self.base_db = base_db
@@ -50,11 +53,13 @@ class FullNodeSyncer(BaseService):
         # We're still too slow at block processing, so if our local head is older than
         # FAST_SYNC_CUTOFF we first do a fast-sync run to catch up with the rest of the network.
         # See https://github.com/ethereum/py-evm/issues/654 for more details
-        if latest_chain_head_root_timestamp < time.time() - FAST_SYNC_CUTOFF:
-            # Fast-sync chain data.
-            self.logger.info("Starting fast-sync; current head: #%d", head.block_number)
-            chain_syncer = FastChainSyncer(self.chaindb, self.peer_pool, self.cancel_token)
-            await chain_syncer.run()
+        #if latest_chain_head_root_timestamp < time.time() - FAST_SYNC_CUTOFF:
+        
+        #TODO: create consensus class that saves each peer's chain head root hash to their object. It should also label who is in the majority
+        # Fast-sync chain data.
+        self.logger.info("Starting fast-sync")
+        chain_syncer = FastChainSyncer(self.chaindb, self.peer_pool, consensus = self.consensus, cancel_token = self.cancel_token)
+        await chain_syncer.run()
 
         # Ensure we have the state for our current head.
         #head = await self.wait(self.chaindb.coro_get_canonical_head())
@@ -66,13 +71,13 @@ class FullNodeSyncer(BaseService):
 #            await downloader.run()
 
         # Now, loop forever, fetching missing blocks and applying them.
-        self.logger.info("Starting regular sync")
-        # This is a bit of a hack, but self.chain is stuck in the past as during the fast-sync we
-        # did not use it to import the blocks, so we need this to get a Chain instance with our
-        # latest head so that we can start importing blocks.
-        new_chain = type(self.chain)(self.base_db)
-        chain_syncer = RegularChainSyncer(
-            new_chain, self.chaindb, self.peer_pool, self.cancel_token)
+#        self.logger.info("Starting regular sync")
+#        # This is a bit of a hack, but self.chain is stuck in the past as during the fast-sync we
+#        # did not use it to import the blocks, so we need this to get a Chain instance with our
+#        # latest head so that we can start importing blocks.
+#        new_chain = type(self.chain)(self.base_db)
+#        chain_syncer = RegularChainSyncer(
+#            new_chain, self.chaindb, self.peer_pool, self.cancel_token)
         await chain_syncer.run()
 
     async def _cleanup(self):

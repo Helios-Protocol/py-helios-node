@@ -63,8 +63,10 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
     def __init__(self,
                  chaindb: AsyncChainDB,
                  peer_pool: PeerPool,
+                 consensus,
                  token: CancelToken = None) -> None:
         super().__init__(token)
+        self.consensus = consensus
         self.chaindb = chaindb
         self.peer_pool = peer_pool
         self._syncing = False
@@ -81,6 +83,7 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         highest_td_peer = max(
             [cast(HLSPeer, peer) for peer in self.peer_pool.peers],
             key=operator.attrgetter('head_td'))
+        
         self._sync_requests.put_nowait(highest_td_peer)
 
     async def _handle_msg_loop(self) -> None:

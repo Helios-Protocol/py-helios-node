@@ -10,6 +10,8 @@ from .blocks import (
     HeliosTestnetBlock,
     HeliosTestnetQueueBlock,
 )
+from .consensus import HeliosTestnetBlockConflictMessage
+
 from evm.rlp.transactions import (
         BaseTransaction,
         BaseReceiveTransaction,
@@ -81,6 +83,7 @@ class HeliosTestnetVM(VM):
     # classes
     block_class = HeliosTestnetBlock  # type: Type[BaseBlock]
     queue_block_class = HeliosTestnetQueueBlock  # type: Type[BaseBlock]
+    block_conflict_message_class = HeliosTestnetBlockConflictMessage
     _state_class = HeliosTestnetState  # type: Type[BaseState]
 
     # Methods

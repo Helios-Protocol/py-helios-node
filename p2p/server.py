@@ -60,7 +60,7 @@ from p2p.peer import (
 )
 from p2p.service import BaseService
 from p2p.sync import FullNodeSyncer
-
+from p2p.consensus import Consensus
 
 
 class Server(BaseService):
@@ -232,9 +232,14 @@ class Server(BaseService):
         await asyncio.gather(
             self._close_tcp_listener(), self._close_udp_listener())
 
-    def _make_syncer(self, peer_pool: PeerPool) -> BaseService:
+    def _make_syncer(self, peer_pool: PeerPool, consensus) -> BaseService:
         # This method exists only so that ShardSyncer can provide a different implementation.
         return FullNodeSyncer(
+            self.chain, self.chaindb, self.base_db, peer_pool = peer_pool, token = self.cancel_token, chain_head_db = self.chain_head_db, consensus=consensus)
+        
+    def _make_consensus(self, peer_pool: PeerPool) -> BaseService:
+        # This method exists only so that ShardSyncer can provide a different implementation.
+        return Consensus(
             self.chain, self.chaindb, self.base_db, peer_pool = peer_pool, token = self.cancel_token, chain_head_db = self.chain_head_db)
 
     def _make_peer_pool(self, discovery: DiscoveryProtocol) -> PeerPool:
@@ -284,9 +289,12 @@ class Server(BaseService):
             asyncio.ensure_future(self.refresh_nat_portmap())
         asyncio.ensure_future(self.discovery.bootstrap())
         peer_pool_task = asyncio.ensure_future(self.peer_pool.run())
-        self.syncer = self._make_syncer(self.peer_pool)
-        #await peer_pool_task
-        await self.syncer.run()
+        self.consensus = self._make_consensus(self.peer_pool)
+        asyncio.ensure_future(self.consensus.run())
+        self.syncer = self._make_syncer(self.peer_pool,self.consensus)
+        
+        await peer_pool_task
+        #await self.syncer.run()
 
     async def _cleanup(self) -> None:
         self.logger.info("Closing server...")

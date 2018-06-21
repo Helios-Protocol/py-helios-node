@@ -69,6 +69,8 @@ from evm.rlp.sedes import(
 from rlp.sedes import (
     big_endian_int,
     CountableList,
+    binary,
+    List
 )
 from eth_utils import (
     int_to_big_endian,
@@ -79,6 +81,8 @@ import math
 from evm.exceptions import (
     InvalidHeadRootTimestamp,        
 )
+
+from evm.utils.rlp import make_mutable
 
 from sortedcontainers import SortedList
 
@@ -149,13 +153,13 @@ class ChainHeadDB():
         if historical_roots is None:
             return None
         
-        if timestamp < big_endian_to_int(historical_roots[0][0]):
+        if timestamp < historical_roots[0][0]:
             return None
         
         historical_roots_dict = dict(historical_roots)
         
         try:
-            historical_root = historical_roots_dict[int_to_big_endian(timestamp)]
+            historical_root = historical_roots_dict[timestamp]
         except KeyError:
             historical_root = historical_roots[-1][1]
         
@@ -186,8 +190,8 @@ class ChainHeadDB():
         #this also makes sure that we dont have to many historical entries
         start_timestamp = timestamp
         historical_roots = self.get_historical_root_hashes()
-        if start_timestamp < big_endian_to_int(historical_roots[0][0]):
-            start_timestamp = big_endian_to_int(historical_roots[0][0])
+        if start_timestamp < historical_roots[0][0]:
+            start_timestamp = historical_roots[0][0]
         
 
         last_finished_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
@@ -198,7 +202,7 @@ class ChainHeadDB():
         #only update up to current. do not update current. it is assumed that the current state is already updated
         
         #find starting index:
-        starting_index = (timestamp - big_endian_to_int(historical_roots[0][0]))/TIME_BETWEEN_HEAD_HASH_SAVE
+        starting_index = (timestamp - historical_roots[0][0])/TIME_BETWEEN_HEAD_HASH_SAVE
         
         for i in range(starting_index, num_increments):
             #load the hash, insert new head hash, persist with save as false
@@ -271,8 +275,8 @@ class ChainHeadDB():
             self.save_historical_root_hashes(historical_roots)
             return
         else:
-            initial_first_time = big_endian_to_int(historical_roots[0][0])
-            latest_time = big_endian_to_int(historical_roots[-1][0])
+            initial_first_time = historical_roots[0][0]
+            latest_time = historical_roots[-1][0]
             #now we have to build all of the blocks between the previous one till now.
             if latest_time > last_finished_window:
                 #we are on the current unfinished window already
@@ -286,44 +290,67 @@ class ChainHeadDB():
                 new_historical_roots = []
                 start_time = int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
                 for i in range(NUMBER_OF_HEAD_HASH_TO_SAVE):
-                    new_historical_roots.append([int_to_big_endian(start_time+TIME_BETWEEN_HEAD_HASH_SAVE*i),historical_roots[-1][1]])
+                    new_historical_roots.append([start_time+TIME_BETWEEN_HEAD_HASH_SAVE*i,historical_roots[-1][1]])
                 #dont forget to append the new one idiot
-                new_historical_roots.append([int_to_big_endian(current_window),self.root_hash])
+                new_historical_roots.append([current_window,self.root_hash])
                 self.save_historical_root_hashes(new_historical_roots)
-                final_first_time = big_endian_to_int(new_historical_roots[0][0])
+                final_first_time = new_historical_roots[0][0]
                 
             else:
                 num_increments_needed = int((last_finished_window - latest_time)/TIME_BETWEEN_HEAD_HASH_SAVE)
                 for i in range(num_increments_needed):
-                    historical_roots.append([int_to_big_endian(latest_time+TIME_BETWEEN_HEAD_HASH_SAVE*(i+1)), historical_roots[-1][1]])
-                historical_roots.append([int_to_big_endian(current_window),self.root_hash])
+                    historical_roots.append([latest_time+TIME_BETWEEN_HEAD_HASH_SAVE*(i+1), historical_roots[-1][1]])
+                historical_roots.append([current_window,self.root_hash])
                 
                 #now trim it to the correct length. trim from the top
                 del(historical_roots[:-1*NUMBER_OF_HEAD_HASH_TO_SAVE])
                 self.save_historical_root_hashes(historical_roots)
-                final_first_time = big_endian_to_int(historical_roots[0][0])
+                final_first_time = historical_roots[0][0]
             
             #need to delete chronological chain for any deleted things windows
             for i in range(initial_first_time, final_first_time, TIME_BETWEEN_HEAD_HASH_SAVE):
                 self.delete_chronological_block_window(i)
                 
+#    def test(self):
+#        data = [[1529097000, b'\xd7\x81\x12S\x06\xe7\xfd\xa3\xa9\xaf\x1aNR9\x16\xce\x82X\x95k6\x0b<\xed\xf7Ob\xbbya\x97\x17']]
+#        #data = [b'\xd7\x81\x12S\x06\xe7\xfd\xa3\xa9\xaf\x1aNR9\x16\xce\x82X\x95k6\x0b<\xed\xf7Ob\xbbya\x97\x17']
+#        #data = [1529097000]
+#        #test = rlp.encode(data)
+#        #print(test)
+#        #print(rlp.decode(data, sedes=CountableList(big_endian_int, hash32)))
+#        #print(rlp.encode(data, sedes=CountableList(big_endian_int)))
+#        #print(rlp.encode(data, sedes=CountableList(hash32)))
+#        encoded = rlp.encode(data, sedes=CountableList(List([big_endian_int, hash32])))
+#        decoded = rlp.decode(encoded, sedes=CountableList(List([big_endian_int, hash32])))
+#        print(make_mutable(decoded))
+#        #print(big_endian_to_int(decoded[0][0]))
+        
         
     #saved as [[timestamp, hash],[timestamp, hash]...]      
     def save_historical_root_hashes(self, root_hashes):
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
-        data = rlp.encode(root_hashes)
+        data = rlp.encode(root_hashes, sedes=CountableList(List([big_endian_int, hash32])))
         self.db.set(
             historical_head_root_lookup_key,
             data,
         )
         
-        
-    def get_historical_root_hashes(self):
+         
+    def get_historical_root_hashes(self, after_timestamp = None):
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
-        #return rlp.decode(self.db[historical_head_root_lookup_key], sedes = CountableList(HeadRootHashTimestampKey))
         try:
-            data = rlp.decode(self.db[historical_head_root_lookup_key])
-            return data
+            data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=CountableList(List([big_endian_int, hash32])))
+            if after_timestamp is None:
+                return make_mutable(data)
+            else:
+                mutable = make_mutable(data)
+                for i in range(len(mutable)):
+                    if mutable[i][0] < after_timestamp:
+                        del(mutable[i])
+                    else:
+                        break
+                return mutable
+                
         except KeyError:
             return None
         
@@ -331,7 +358,7 @@ class ChainHeadDB():
         historical = self.get_historical_root_hashes()
         if historical is None:
             return 0
-        latest_timestamp = big_endian_to_int(historical[-1][0])
+        latest_timestamp = historical[-1][0]
         return latest_timestamp
         
     
@@ -360,12 +387,12 @@ class ChainHeadDB():
                 inserted = False
                 for i in range(len(data)-1,-1,-1):
                     #self.logger.debug("debug {0}, {1}".format(big_endian_to_int(data[i][0]), timestamp))
-                    if big_endian_to_int(data[i][0]) <= timestamp:
-                        new_data.insert(i+1, [int_to_big_endian(timestamp),head_hash])
+                    if data[i][0] <= timestamp:
+                        new_data.insert(i+1, [timestamp,head_hash])
                         inserted = True
                         break
                 if not inserted:
-                    new_data.insert(0, [int_to_big_endian(timestamp),head_hash])
+                    new_data.insert(0, [timestamp,head_hash])
                     
             #self.logger.debug("Saving chronological block window with new data {}".format(new_data))    
             self.save_chronological_block_window(new_data, window_for_this_block)
@@ -377,7 +404,7 @@ class ChainHeadDB():
             raise InvalidHeadRootTimestamp("Can only save or load chronological block for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
         
         chronological_window_lookup_key = SchemaV1.make_chronological_window_lookup_key(timestamp)
-        encoded_data = rlp.encode(data)
+        encoded_data = rlp.encode(data,sedes=CountableList(List([big_endian_int, hash32])))
         self.db.set(
             chronological_window_lookup_key,
             encoded_data,
@@ -390,8 +417,8 @@ class ChainHeadDB():
         
         chronological_window_lookup_key = SchemaV1.make_chronological_window_lookup_key(timestamp)
         try:
-            data = rlp.decode(self.db[chronological_window_lookup_key])
-            return data
+            data = rlp.decode(self.db[chronological_window_lookup_key], sedes=CountableList(List([big_endian_int, hash32])))
+            return make_mutable(data)
         except KeyError:
             return None
         

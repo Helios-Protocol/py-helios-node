@@ -73,8 +73,7 @@ class SchemaV1(BaseSchema):
             raise InvalidHeadRootTimestamp("Can only save or load chronological block for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
         return b'chronological-block-window:%i' % timestamp
     
-    
-    
-    
-    
+    @staticmethod
+    def make_block_children_lookup_key(block_hash: Hash32) -> bytes:
+        return b'block-children:%b' % block_hash
     
