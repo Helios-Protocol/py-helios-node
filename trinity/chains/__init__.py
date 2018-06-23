@@ -23,6 +23,7 @@ from trinity.exceptions import (
 from trinity.config import ChainConfig
 from trinity.db.base import DBProxy
 from trinity.db.chain import ChainDBProxy
+from .base import ChainProxy
 from trinity.db.chain_head import (
     ChainHeadDBProxy,
     AsyncChainHeadDB,
@@ -43,13 +44,6 @@ from dev_tools import (
 )
 import logging
 
-from trinity.dev_tools import (
-    MAINNET_GENESIS_HEADER,
-    MAINNET_GENESIS_PARAMS,
-    MAINNET_GENESIS_STATE,
-    SENDER,
-    RECEIVER,
-)
 
 #from .header import (
 #    AsyncHeaderChain,
@@ -207,5 +201,4 @@ def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
     server.serve_forever()  # type: ignore
 
 
-class ChainProxy(BaseProxy):
-    coro_import_block = async_method('import_block')
+

@@ -823,13 +823,17 @@ class Chain(BaseChain):
         
         previous_header = canonical_head
         while True:
-            parent_header = self.chaindb.get_block_header_by_hash(previous_header.parent_hash)            
+            if previous_header.parent_hash == constants.GENESIS_PARENT_HASH:
+                break
+            
+            parent_header = self.chaindb.get_block_header_by_hash(previous_header.parent_hash)
+            
+            if parent_header.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:
+                break
             block_receive_transactions = self.chaindb.get_block_receive_transactions(parent_header,transaction_class)
             for transaction in block_receive_transactions:
                 total += transaction.transaction.value
             
-            if parent_header.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING or parent_header.parent_hash == constants.GENESIS_PARENT_HASH:
-                break
             previous_header = parent_header
         
         return total

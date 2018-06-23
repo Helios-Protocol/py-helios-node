@@ -7,8 +7,7 @@ from evm.chains.mainnet import (
     MAINNET_GENESIS_HEADER,
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
-    SENDER,
-    RECEIVER,
+    GENESIS_PRIVATE_KEY,
 )
 
 from evm.db.backends.level import LevelDB
@@ -42,13 +41,13 @@ def create_dev_test_random_blockchain_database(base_db):
     logger.debug("generating test blockchain db")
         
     #initialize db
-    sender_chain = MainnetChain.from_genesis(base_db, SENDER.public_key.to_canonical_address(), SENDER, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    sender_chain = MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
     
     #now lets add 100 send receive block combinations
     for i in range (10):
         random.shuffle(random_private_keys)
         if i == 0:
-            privkey = SENDER
+            privkey = GENESIS_PRIVATE_KEY
             receiver_privkey = keys.PrivateKey(random_private_keys[0])
         else:
             privkey = receiver_privkey

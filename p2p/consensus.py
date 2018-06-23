@@ -177,11 +177,41 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 
                 #here we shouldnt pause because if it returned early than thats because we got some data from peers. we want to process data asap.
 
-    def calculate_consensus(self):
-        #TODO: make sure we count our own data and our own stake
-        #first we calculate consensus
+    def determine_stake_winner(self, item_stakes_dict):
+        max_stake = 0
+        max_item = None
+        for item, stake in item_stakes_dict.items():
+            if stake > max_stake:
+                max_stake = stake
+                max_item = item
+            elif stake == max_stake:
+                if max_item == None:
+                    max_stake = stake
+                    max_item = item
+                else:
+                    if item > max_item:
+                        max_stake = stake
+                        max_item = item
+        assert(max_item is not None)
+        return (max_item, stake)
         
-        pass
+    def determine_peer_consensus(self):
+        #TODO: make sure we count our own data and our own stake
+        #first we calculate consensus on state root timestamps
+        self.root_hash_timestamps_consensus = {}
+        for timestamp, root_hash_stakes in self.root_hash_timestamps_statistics.items():
+            self.root_hash_timestamps_consensus[timestamp] = self.determine_stake_winner(root_hash_stakes)
+                    
+        
+        #now we calculate the same for conflict blocks
+        self.block_choice_consensus = {}
+        for chain_wallet_address, block_numbers in self.block_choice_statistics.items():
+            block_number_consensus = {}
+            for block_number, block_hash_stakes in block_numbers.items():
+                block_number_consensus[block_number] = self.determine_stake_winner(block_hash_stakes)
+            self.block_choice_consensus[chain_wallet_address] = block_number_consensus
+            
+            
         
     def send_sync_get_messages(self) -> None:
         if self._last_send_sync_message_time < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
