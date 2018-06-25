@@ -220,16 +220,16 @@ class ChainHeadDB():
     #
     # Record and discard API
     #
-    def persist(self, save_current_root_hash = False) -> None:
+    def persist(self, save_current_root_hash = False, save_root_hash_timestamps = True) -> None:
         self._batchtrie.commit(apply_deletes=False)
         if save_current_root_hash:
-            self.save_current_root_hash()
+            self.save_current_root_hash(save_root_hash_timestamps)
         
     
     #
     # Saving to database API
     #
-    def save_current_root_hash(self) -> None:
+    def save_current_root_hash(self, save_root_hash_timestamps = True) -> None:
         """
         Saves the current root_hash to the database to be loaded later
         """
@@ -241,7 +241,8 @@ class ChainHeadDB():
             self.root_hash,
         )
         
-        self.append_current_root_hash_to_historical()
+        if save_root_hash_timestamps:
+            self.append_current_root_hash_to_historical()
         
 
         

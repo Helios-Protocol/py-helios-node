@@ -40,12 +40,16 @@ REPLY_TIMEOUT = 3
 LES_ANNOUNCE_SIMPLE = 1
 LES_ANNOUNCE_SIGNED = 2
 
+#MAINNET_BOOTNODES = (
+#    'enode://b94bcd50daf3cc002b82da30220ac2349611eb75ea67def149c8190ace99389691d705049ec447f36cb819f6e5b6fcba341fe06cef2ca0819cc649c54fb2346e@127.0.0.1:30303',  # noqa: E501
+#)
 MAINNET_BOOTNODES = (
     'enode://a979fb575495b8d6db44f750317d0f4622bf4c2aa3365d6af7c284339968eef29b69ad0dce72a4d8db5ebb4968de0e3bec910127f134779fbcb0cb6d3331163c@127.0.0.1:30303',  # noqa: E501
 )
 
 # Maximum peers number, we'll try to keep open connections up to this number of peers
 DEFAULT_MAX_PEERS = 25
+MIN_SAFE_PEERS = 2
 
 LOCAL_PEER_POOL_PATH = '/home/tommy/.local/share/trinity/local_peer_pool'
 

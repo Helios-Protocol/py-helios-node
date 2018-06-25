@@ -37,7 +37,11 @@ from p2p.constants import (
     REPLY_TIMEOUT,
     DO_UPNP,
 )
-from p2p.discovery import DiscoveryProtocol
+from p2p.discovery import (
+    DiscoveryProtocol,
+    PreferredNodeDiscoveryProtocol,
+    DiscoveryService
+)
 from p2p.exceptions import (
     DecryptionError,
     HandshakeFailure,
@@ -56,7 +60,6 @@ from p2p.peer import (
     ETHPeer,
     HLSPeer,
     PeerPool,
-    PreferredNodePeerPool,
 )
 from p2p.service import BaseService
 from p2p.sync import FullNodeSyncer
@@ -83,8 +86,8 @@ class Server(BaseService):
                  chain_config, 
                  max_peers: int = DEFAULT_MAX_PEERS,
                  peer_class: Type[BasePeer] = HLSPeer,
-                 peer_pool_class: Type[PeerPool] = PreferredNodePeerPool,
                  bootstrap_nodes: Tuple[Node, ...] = None,
+                 preferred_nodes: Tuple[Node, ...] = None,
                  token: CancelToken = None,
                  
                  ) -> None:
@@ -98,10 +101,13 @@ class Server(BaseService):
         self.port = port
         self.network_id = network_id
         self.peer_class = peer_class
-        self.peer_pool_class = peer_pool_class
         self.max_peers = max_peers
         self.bootstrap_nodes = bootstrap_nodes
-
+        self.preferred_nodes = preferred_nodes
+        self.peer_pool = self._make_peer_pool()
+        self.consensus = self._make_consensus(self.peer_pool)
+        self.syncer = self._make_syncer(self.peer_pool,self.consensus)
+        
         if not bootstrap_nodes:
             self.logger.warn("Running with no bootstrap nodes")
 
@@ -240,16 +246,16 @@ class Server(BaseService):
     def _make_consensus(self, peer_pool: PeerPool) -> BaseService:
         # This method exists only so that ShardSyncer can provide a different implementation.
         return Consensus(
-            self.chain, self.chaindb, self.base_db, peer_pool = peer_pool, token = self.cancel_token, chain_head_db = self.chain_head_db)
+            self.chain, self.chaindb, self.base_db, peer_pool = peer_pool, chain_head_db = self.chain_head_db, token = self.cancel_token)
 
-    def _make_peer_pool(self, discovery: DiscoveryProtocol) -> PeerPool:
+    def _make_peer_pool(self) -> PeerPool:
         # This method exists only so that ShardSyncer can provide a different implementation.
-        return self.peer_pool_class(
+        return PeerPool(
             self.peer_class,
+            self.chain,
             self.chaindb,
             self.network_id,
             self.privkey,
-            discovery,
             max_peers=self.max_peers,
             chain_config = self.chain_config,
             chain_head_db = self.chain_head_db,
@@ -282,16 +288,20 @@ class Server(BaseService):
         self.logger.info('network: %s', self.network_id)
         self.logger.info('peers: max_peers=%s', self.max_peers)
         addr = Address(external_ip, self.port, self.port)
-        self.discovery = DiscoveryProtocol(self.privkey, addr, bootstrap_nodes=self.bootstrap_nodes)
-        await self._start_udp_listener(self.discovery)
-        self.peer_pool = self._make_peer_pool(self.discovery)
+        
+        discovery_proto = PreferredNodeDiscoveryProtocol(
+            self.privkey, addr, self.bootstrap_nodes, self.preferred_nodes)
+        
+        await self._start_udp_listener(discovery_proto)
+        self.discovery = DiscoveryService(discovery_proto, self.peer_pool)
+        
         if DO_UPNP:
             asyncio.ensure_future(self.refresh_nat_portmap())
-        asyncio.ensure_future(self.discovery.bootstrap())
+            
         peer_pool_task = asyncio.ensure_future(self.peer_pool.run())
-        self.consensus = self._make_consensus(self.peer_pool)
+        asyncio.ensure_future(self.discovery.run())
         asyncio.ensure_future(self.consensus.run())
-        self.syncer = self._make_syncer(self.peer_pool,self.consensus)
+        
         
         await peer_pool_task
         #await self.syncer.run()
@@ -376,7 +386,8 @@ class Server(BaseService):
             mac_secret=mac_secret,
             egress_mac=egress_mac,
             ingress_mac=ingress_mac,
-            headerdb=self.chaindb,
+            chain=self.chain,
+            chaindb=self.chaindb,
             network_id=self.network_id,
             inbound=True,
             chain_config = self.chain_config,

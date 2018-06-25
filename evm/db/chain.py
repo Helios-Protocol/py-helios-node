@@ -805,13 +805,19 @@ class ChainDB(BaseChainDB):
         self.db[block_children_lookup_key] = rlp.encode(block_children, sedes=rlp.sedes.CountableList(hash32))
         
     #we don't want to count the stake from the origin wallet address. This could allow 51% attacks.The origin chain shouldn't count becuase it is the chain with the conflict.
-    def get_block_children_chains(self, block_hash):
+    def get_block_children_chains(self, block_hash, exclude_chains = None):
         origin_wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, block_hash)
         child_chains = self._get_block_children_chains(block_hash)
         try:
             child_chains.remove(origin_wallet_address)
         except KeyError:
             pass
+        if exclude_chains is not None:
+            for wallet_address in exclude_chains:
+                try:
+                    child_chains.remove(wallet_address)
+                except KeyError:
+                    pass
         return list(child_chains)
     
     def _get_block_children_chains(self, block_hash):

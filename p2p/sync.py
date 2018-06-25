@@ -24,11 +24,13 @@ from p2p.state import StateDownloader
 class FullNodeSyncer(BaseService):
     logger = logging.getLogger("p2p.sync.FullNodeSyncer")
 
+    consensus = None
     chain: AsyncChain = None
     chaindb: AsyncChainDB = None
     base_db: BaseDB = None
     peer_pool: PeerPool = None
-
+    syncing_to_timestamp = None
+    
     def __init__(self,
                  chain: AsyncChain,
                  chaindb: AsyncChainDB,
@@ -46,6 +48,8 @@ class FullNodeSyncer(BaseService):
         self.base_db = base_db
         self.peer_pool = peer_pool
         self.chain_head_db = chain_head_db
+        
+        
 
     async def _run(self) -> None:
         latest_chain_head_root_timestamp = self.chain_head_db.get_latest_timestamp()

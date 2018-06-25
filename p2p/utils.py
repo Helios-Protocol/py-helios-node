@@ -2,9 +2,17 @@ from concurrent.futures import ProcessPoolExecutor
 import logging
 import os
 import rlp
+from eth_keys import keys
 
 from evm.utils.numeric import big_endian_to_int
 
+from eth_keys.exceptions import (
+    BadSignature,
+)
+
+from evm.exceptions import (
+    ValidationError,
+)
 
 def sxor(s1: bytes, s2: bytes) -> bytes:
     if len(s1) != len(s2):
@@ -47,3 +55,39 @@ def get_process_pool_executor():
     else:
         cpu_count = os_cpu_count - 1
     return ProcessPoolExecutor(cpu_count)
+
+def extract_wallet_verification_sender(salt, v, r, s) -> bytes:
+   
+    vrs = (v, r, s)
+    signature = keys.Signature(vrs=vrs)
+    
+    parts_for_sig = salt
+    message = rlp.encode(parts_for_sig)
+    
+    public_key = signature.recover_public_key_from_msg(message)
+    sender = public_key.to_canonical_address()
+    return sender
+
+def create_wallet_verification_signature(salt, private_key):
+    parts_for_sig = salt
+    message = rlp.encode(parts_for_sig)
+    signature = private_key.sign_msg(message)
+    v, r, s = signature.vrs
+    return v, r, s
+
+
+
+def validate_transaction_signature(salt, v, r, s) -> None:
+    vrs = (v, r, s)
+    signature = keys.Signature(vrs=vrs)
+    
+    parts_for_sig = salt
+    message = rlp.encode(parts_for_sig)
+    
+    try:
+        public_key = signature.recover_public_key_from_msg(message)
+    except BadSignature as e:
+        raise ValidationError("Bad Signature: {0}".format(str(e)))
+
+    if not signature.verify_msg(message, public_key):
+        raise ValidationError("Invalid Signature")

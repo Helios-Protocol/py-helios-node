@@ -153,6 +153,14 @@ chain_parser.add_argument(
 )
 
 chain_parser.add_argument(
+    '--rand_db',
+    type=int,
+    help=(
+        "generate a random blockchain database"
+    ),
+)
+
+chain_parser.add_argument(
     '--nodekey',
     help=(
         "Hexadecimal encoded private key to use for the nodekey"

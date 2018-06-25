@@ -722,7 +722,7 @@ class Chain(BaseChain):
         imported_block = self.get_vm(block.header).import_block_no_verification(block)
         
         self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
-        self.chain_head_db.persist(True)
+        self.chain_head_db.persist(save_current_root_hash = True, save_root_hash_timestamps = False)
 
         self.chaindb.persist_block(imported_block)
         self.header = self.create_header_from_parent(imported_block.header)
@@ -771,10 +771,10 @@ class Chain(BaseChain):
     # Stake API
     #
     #this doesnt count the stake of the origin chain
-    def get_block_stake_from_children(self, block_hash):
+    def get_block_stake_from_children(self, block_hash, exclude_chains = None):
         validate_word(block_hash, title="Block Hash")
         
-        children_chain_wallet_addresses = self.chaindb.get_block_children_chains(block_hash)
+        children_chain_wallet_addresses = self.chaindb.get_block_children_chains(block_hash, exclude_chains)
         self.logger.debug("get_block_stake_from_children. children wallet addresses: {}".format(children_chain_wallet_addresses))
         
         if children_chain_wallet_addresses is None:

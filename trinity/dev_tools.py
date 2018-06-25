@@ -1,6 +1,7 @@
 import time
 import random
 import logging
+import json
 
 from evm import MainnetChain
 from evm.chains.mainnet import (
@@ -18,6 +19,10 @@ from eth_utils import (
     encode_hex,
     decode_hex,        
 )
+
+from p2p.kademlia import Address, Node
+
+from p2p.constants import LOCAL_PEER_POOL_PATH
 
 from eth_hash.auto import keccak
 
@@ -96,4 +101,23 @@ def save_random_private_keys(limit):
     print(private_keys)
     
 #save_random_private_keys(10) 
+    
+    
+def load_peers_from_file():
+    path = LOCAL_PEER_POOL_PATH
+    #load existing pool
+    with open(path, 'r') as peer_file:
+        existing_peers_raw = peer_file.read()
+        existing_peers = json.loads(existing_peers_raw)
+    return existing_peers
+
+def load_local_nodes(local_private_key):
+    existing_peers = load_peers_from_file()
+    peer_pool = []
+    for i, peer in enumerate(existing_peers):
+        if peer[0] != local_private_key.public_key.to_hex():
+            peer_pool.append(Node(keys.PublicKey(decode_hex(peer[0])),Address(peer[1], peer[2], peer[3])))
+    return peer_pool
+        
+
     

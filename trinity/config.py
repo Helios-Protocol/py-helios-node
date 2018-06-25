@@ -7,11 +7,18 @@ from typing import (
     Union,
 )
 
+from eth_utils import (
+    decode_hex,
+    encode_hex,
+    to_tuple,
+)
+
 from eth_keys import keys
 from eth_keys.datatypes import PrivateKey
 from evm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
+from p2p.kademlia import Address
 from p2p.kademlia import Node as KademliaNode
 from p2p.constants import (
     DEFAULT_MAX_PEERS,
@@ -32,6 +39,7 @@ from trinity.utils.chains import (
     get_nodekey_path,
     load_nodekey,
 )
+from trinity.dev_tools import load_local_nodes
 
 from trinity.utils.keybox import get_primary_node_private_helios_key
 
@@ -52,9 +60,9 @@ class ChainConfig:
     _node_wallet_address = None
     
     port: int = None
-    preferred_nodes: Tuple[KademliaNode, ...] = None
+    _preferred_nodes: Tuple[KademliaNode, ...] = None
 
-    bootstrap_nodes: Tuple[KademliaNode, ...] = None
+    _bootstrap_nodes: Tuple[KademliaNode, ...] = None
 
     def __init__(self,
                  network_id: int,
@@ -72,15 +80,9 @@ class ChainConfig:
         self.max_peers = max_peers
         self.sync_mode = sync_mode
         self.port = port
-        self.preferred_nodes = preferred_nodes
-
-        if bootstrap_nodes is None:
-            if self.network_id == MAINNET_NETWORK_ID:
-                self.bootstrap_nodes = tuple(
-                    KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
-                )
-        else:
-            self.bootstrap_nodes = bootstrap_nodes
+        self._preferred_nodes = preferred_nodes
+        
+        self._bootstrap_nodes = bootstrap_nodes
 
         # validation
         if nodekey is not None and nodekey_path is not None:
@@ -103,7 +105,24 @@ class ChainConfig:
             self.logfile_path = logfile_path
         else:
             self.logfile_path = get_logfile_path(self.data_dir)
-        
+      
+    @property
+    def preferred_nodes(self):
+        if self._preferred_nodes is None:
+            self._preferred_nodes = tuple(load_local_nodes(self.nodekey))
+        return self._preferred_nodes
+    
+    @property
+    def bootstrap_nodes(self):
+        if self._bootstrap_nodes is None:
+            
+            self._bootstrap_nodes = (self.preferred_nodes[0],)
+            
+            if self.network_id == MAINNET_NETWORK_ID:
+                self._bootstrap_nodes = tuple(
+                    KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
+                )
+        return self._bootstrap_nodes
       
     @property
     def node_private_helios_key(self):

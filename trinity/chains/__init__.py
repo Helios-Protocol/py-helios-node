@@ -147,7 +147,7 @@ def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
     chain_head_db = AsyncChainHeadDB.load_from_saved_root_hash(base_db)
         
     if not is_database_initialized(chaindb):
-        if int(os.environ["INSTANCE_NUMBER"]) == 0:
+        if 'GENERATE_RANDOM_DATABASE' in os.environ:
             #this is for testing, we neeed to build an initial blockchain database
             create_dev_test_random_blockchain_database(base_db)
         

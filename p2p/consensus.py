@@ -42,6 +42,7 @@ from evm.rlp.headers import BlockHeader
 from evm.rlp.receipts import Receipt
 from evm.rlp.transactions import BaseTransaction
 
+from p2p.constants import MIN_SAFE_PEERS
 from p2p import protocol
 from p2p import eth
 from p2p import hls
@@ -69,11 +70,9 @@ from p2p.utils import (
 CONSENSUS_SYNC_TIME_PERIOD = 5
 
 class BlockConflictInfo():
-    def __init__(self, wallet_address, block_number, consensus_block_hash, conflict_block_hashes):
+    def __init__(self, wallet_address, block_number):
         self.wallet_address = wallet_address
         self.block_number = block_number
-        self.consensus_block_hash = consensus_block_hash
-        self.conflict_block_hashes = conflict_block_hashes
     
     
 class Consensus(BaseService, PeerPoolSubscriber):
@@ -103,11 +102,11 @@ class Consensus(BaseService, PeerPoolSubscriber):
         self.peer_pool = peer_pool
         self._executor = get_process_pool_executor()
         #[BlockConflictInfo, BlockConflictInfo, ...]
-        self.block_conflicts = []
+        self.block_conflicts = set()
         #dont forget to include children blocks into weight
         #{peer_wallet_address, [peer_stake, [hls.BlockHashKey]]}
         self.peer_block_choices = {}
-        #{chain_wallet_address, {block_number, block_hash}}
+        #{chain_wallet_address, {block_number, (block_hash, stake)}}
         self.block_choice_consensus = {}
         #TODO: this might become very slow if someone makes a huge number of conflict blocks. need to worry about that.
         #{chain_wallet_address, {block_number, {block_hash, total_stake}}
@@ -115,7 +114,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
         
         #{peer_wallet_address, [peer_stake, [[timestamp, root_hash],[timestamp, root_hash]...]]}
         self.peer_root_hash_timestamps = {}
-        #{timestamp, root_hash}
+        #{timestamp, (root_hash, stake)}
         self.root_hash_timestamps_consensus = {}
         #{timestamp, {root_hash, total_stake}}
         self.root_hash_timestamps_statistics = {}
@@ -129,11 +128,29 @@ class Consensus(BaseService, PeerPoolSubscriber):
         
         self._last_send_sync_message_time = 0
         
+        self.peer_stake_from_bootstrap_node = {}
+     
+        
+    #TODO. check to make sure the peers also have stake that is not equal to None
+    @property
+    def is_ready(self):
+        return len(self.peer_pool.connected_nodes) >= MIN_SAFE_PEERS
+    
+    @property
+    def is_syncing(self):
+        '''
+        This determines if our local blockchain database is still syncing. 
+        If this is the case, then we cannot trust the stake we have here, 
+        and we temporarily give all peers equal stake
+        '''
+        #1) if our newest root_hash timestamp is older than 1000*1000 seconds, we are syncing
+        #this can be the only requirement. Therefore, we must make sure that we don't ever save the 
+        #root hash timestamp unless sync is complete. So we cannot do a normal import until sync is complete
+        
+       
+        
     def register_peer(self, peer: BasePeer) -> None:
         pass
-
-    def add_block_conflict(self, block_conflict_info):
-        self.block_conflict.append(block_conflict_info)
         
     async def _handle_msg_loop(self) -> None:
         while self.is_running:
@@ -170,14 +187,84 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 #it will re-loop every time it gets a new response from a single peer. this ensures that the statistics are always as up to date as possible
                 await self.receive_sync_messages()
                 
-                self.logger.debug("done syncing consensus. These are the statistics for block_choices, root_hashes: {0}{1}".format(
+                self.logger.debug("done syncing consensus. These are the statistics for block_choices, root_hashes: {0}, {1}".format(
                                     self.block_choice_statistics, 
                                     self.root_hash_timestamps_statistics))
+                
+                self.logger.debug("done syncing consensus. These are the peer consensus for block_choices, root_hashes: {0}, {1}".format(
+                                    self.block_choice_consensus, 
+                                    self.root_hash_timestamps_consensus))
 
                 
                 #here we shouldnt pause because if it returned early than thats because we got some data from peers. we want to process data asap.
-
+                self.determine_peer_consensus()
+                #TODO. when a peer disconnects, make sure we delete their vote.
+      
+    def add_block_conflict(self, chain_wallet_address, block_number):
+        self.block_conflicts.add(BlockConflictInfo(chain_wallet_address, block_number))
+        
+    async def get_block_hash_consensus(self, chain_wallet_address, block_number):
+        #first lets double check which block hash we have:
+        #TODO: might want to streamlinethis by storing it in the local variable
+        try:
+            local_block_hash = await self.chaindb.coro_get_canonical_block_hash(block_number, chain_wallet_address)
+        except HeaderNotFound:
+            local_block_hash = None
+        
+        try:
+            peer_consensus_block_hash, peer_consensus_block_stake = self.block_choice_consensus[chain_wallet_address][block_number]
+        except KeyError:
+            peer_consensus_block_hash = None
+        
+        if peer_consensus_block_hash is None:
+            return local_block_hash
+        
+        else:
+            if local_block_hash is None:
+                return peer_consensus_block_hash
+            else:
+                if local_block_hash != peer_consensus_block_hash:
+                    #the peers have chosen something different than what we have here
+                    #At this point we calculate the stake of all children blocks that come after it
+                    #However, we don't want to count any nodes that have voted here incase their vote changed
+                    exclude_chains = list(self.peer_block_choices.keys())
+                    children_stake_for_local_block = self.chain.get_block_stake_from_children(local_block_hash, exclude_chains = exclude_chains)
+                    try:
+                        peer_stake_for_local_block = self.block_choice_statistics[chain_wallet_address][block_number][local_block_hash]
+                    except KeyError:
+                        peer_stake_for_local_block = 0
+                    total_stake_for_local_block =  peer_stake_for_local_block + children_stake_for_local_block
+                    
+                    if total_stake_for_local_block > peer_consensus_block_stake:
+                        return local_block_hash
+                    elif peer_consensus_block_stake > total_stake_for_local_block:
+                        return peer_consensus_block_hash
+                    else:
+                        #we have a tie, we return the greater block hash
+                        if peer_consensus_block_hash > local_block_hash:
+                            return peer_consensus_block_hash
+                        else:
+                            return local_block_hash
+    
+    def get_closest_root_hash_consensus_time(self, timestamp):
+        for available_timestamp in self.root_hash_timestamps_consensus.keys():
+            if available_timestamp == timestamp:
+                return timestamp
+            elif available_timestamp < timestamp:
+                return available_timestamp
+        return None
+        
+    def get_root_hash_consensus(self, timestamp):
+        try:
+            return self.root_hash_timestamps_consensus[timestamp][1]
+        except KeyError:
+            return None
+        
     def determine_stake_winner(self, item_stakes_dict):
+        '''
+        takes in a dictionary where the keys are the items which are voted on, and the values are the stake.
+        returns a tuple containing the highest stake item, and its stake
+        '''
         max_stake = 0
         max_item = None
         for item, stake in item_stakes_dict.items():
@@ -194,8 +281,15 @@ class Consensus(BaseService, PeerPoolSubscriber):
                         max_item = item
         assert(max_item is not None)
         return (max_item, stake)
-        
+     
     def determine_peer_consensus(self):
+        if self._last_send_sync_message_time < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
+            self._determine_peer_consensus()
+            
+    def _determine_peer_consensus(self):
+        '''
+        Calculates the root hash timestamps, and block choices that the peers have come to consensus on. Doesnt account for local chain data
+        '''
         #TODO: make sure we count our own data and our own stake
         #first we calculate consensus on state root timestamps
         self.root_hash_timestamps_consensus = {}
@@ -314,8 +408,8 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 #lets just find the difference this way. should be more effectient. hopefully.
                 stake_sub, stake_add = self.calc_stake_difference(previous_root_hash_timestamps, new_root_hash_timestamps)
                 
-                self.logger.debug("subtracting stake {} from timestamps {}".format(previous_peer_stake, [x[0] for x in stake_sub]))
-                self.logger.debug("adding stake {} from timestamps {}".format(new_peer_stake, [x[0] for x in stake_add]))
+                #self.logger.debug("subtracting stake {} from timestamps {}".format(previous_peer_stake, [x[0] for x in stake_sub]))
+                #self.logger.debug("adding stake {} from timestamps {}".format(new_peer_stake, [x[0] for x in stake_add]))
                 #first we subtract the previous stake
                 for previous_root_hash_timestamp in stake_sub:
                     self.delta_root_hash_timestamp_statistics(

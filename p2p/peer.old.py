@@ -44,8 +44,6 @@ from eth_utils import (
 
 from eth_typing import BlockNumber, Hash32
 
-from cytoolz import groupby
-
 from eth_keys import (
     datatypes,
     keys,
@@ -60,7 +58,7 @@ from evm.exceptions import (
 
 from p2p import auth
 from p2p import ecies
-#from p2p.discovery import DiscoveryProtocol
+from p2p.discovery import DiscoveryProtocol
 from p2p.kademlia import Address, Node
 from p2p import protocol
 from p2p.exceptions import (
@@ -76,7 +74,6 @@ from p2p.exceptions import (
     UnexpectedMessage,
     UnknownProtocolCommand,
     UnreachablePeer,
-    NoConnectedPeers,
 )
 from p2p.cancel_token import CancelToken
 from p2p.service import BaseService
@@ -620,7 +617,7 @@ class HLSPeer(BasePeer):
         try:
             self.stake = await self.chain.coro_get_mature_stake(self.wallet_address)
         except CanonicalHeadNotFound:
-            self.stake = 1 #give it the lowest possible stake
+            self.stake = None
         #self.logger.debug("Recieved valid wallet address verification for wallet address {}".format(self.wallet_address))
         
     #note, when we receive an address verification message, we have to verify that the salt they send back equals local salt
@@ -670,6 +667,7 @@ class PeerPool(BaseService):
                  chaindb,
                  network_id: int,
                  privkey: datatypes.PrivateKey,
+                 discovery: DiscoveryProtocol,
                  chain_config,
                  chain_head_db,
                  max_peers: int = DEFAULT_MAX_PEERS,
@@ -682,6 +680,7 @@ class PeerPool(BaseService):
         self.chaindb = chaindb
         self.network_id = network_id
         self.privkey = privkey
+        self.discovery = discovery
         self.max_peers = max_peers
         self.connected_nodes: Dict[Node, BasePeer] = {}
         self._subscribers: List[PeerPoolSubscriber] = []
@@ -693,14 +692,8 @@ class PeerPool(BaseService):
     def is_full(self) -> bool:
         return len(self) >= self.max_peers
 
-    def is_valid_connection_candidate(self, candidate: Node) -> bool:
-        # connect to no more then 2 nodes with the same IP
-        nodes_by_ip = groupby(
-            operator.attrgetter('remote.address.ip'),
-            self.connected_nodes.values(),
-        )
-        matching_ip_nodes = nodes_by_ip.get(candidate.address.ip, [])
-        return len(matching_ip_nodes) <= 2
+    def get_nodes_to_connect(self) -> Generator[Node, None, None]:
+        yield from self.discovery.get_random_nodes(self.max_peers)
 
     def subscribe(self, subscriber: PeerPoolSubscriber) -> None:
         self._subscribers.append(subscriber)
@@ -719,25 +712,25 @@ class PeerPool(BaseService):
         self.add_peer(peer)
 
     def add_peer(self, peer):
-        self.logger.info('Adding peer: %s', peer)
+        self.logger.debug('Adding peer (%s) ...', str(peer))
         self.connected_nodes[peer.remote] = peer
+        self.logger.debug('Number of peers: %d', len(self.connected_nodes))
         for subscriber in self._subscribers:
             subscriber.register_peer(peer)
             peer.add_subscriber(subscriber.msg_queue)
 
     async def _run(self) -> None:
-        # FIXME: PeerPool should probably no longer be a BaseService, but for now we're keeping it
-        # so in order to ensure we cancel all peers when we terminate.
-        await self.cancel_token.wait()
+        self.logger.info("Running PeerPool...")
+        asyncio.ensure_future(self._periodically_report_stats())
+        while not self.cancel_token.triggered:
+            await self.maybe_connect_to_more_peers()
+            # Wait self._connect_loop_sleep seconds, unless we're asked to stop.
+            await self.wait_first(asyncio.sleep(self._connect_loop_sleep))
 
     async def stop_all_peers(self) -> None:
         self.logger.info("Stopping all peers ...")
-
-        peers = self.connected_nodes.values()
-        for peer in peers:
-            peer.disconnect(DisconnectReason.client_quitting)
-
-        await asyncio.gather(*[peer.cancel() for peer in peers])
+        await asyncio.gather(
+            *[peer.cancel() for peer in self.connected_nodes.values()])
 
     async def _cleanup(self) -> None:
         await self.stop_all_peers()
@@ -755,6 +748,7 @@ class PeerPool(BaseService):
             PeerConnectionLost,
             TimeoutError,
             UnreachablePeer,
+            MalformedMessage,
         )
         try:
             self.logger.debug("Connecting to %s...", remote)
@@ -770,25 +764,77 @@ class PeerPool(BaseService):
             # Pass it on to instruct our main loop to stop.
             raise
         except BadAckMessage:
-            # This is kept separate from the `expected_exceptions` to be sure that we aren't
-            # silencing an error in our authentication code.
-            self.logger.info('Got bad auth ack from %r', remote)
+            # TODO: This is kept separate from the `expected_exceptions` to be
+            # sure that we aren't silencing an error in our authentication
+            # code.
+            self.logger.info('Got bad Ack during peer connection')
+            # We intentionally log this twice, once in INFO to be sure we don't
+            # forget about this and once in DEBUG which includes the stack
+            # trace.
+            self.logger.debug('Got bad Ack during peer connection', exc_info=True)
         except expected_exceptions as e:
-            self.logger.debug("Could not complete handshake with %r: %s", remote, repr(e))
+            self.logger.debug("Could not complete handshake with %s: %s", remote, repr(e))
         except Exception:
-            self.logger.exception("Unexpected error during auth/p2p handshake with %r", remote)
+            self.logger.exception("Unexpected error during auth/p2p handshake with %s", remote)
         return None
 
-    async def connect_to_nodes(self, nodes: Iterator[Node]) -> None:
-        for node in nodes:
-            if self.is_full:
-                return
+    async def maybe_lookup_random_node(self) -> None:
+        if self._discovery_last_lookup + self._discovery_lookup_interval > time.time():
+            return
+        elif self._discovery_lookup_running.locked():
+            self.logger.debug("Node discovery lookup already in progress, not running another")
+            return
+        async with self._discovery_lookup_running:
+            # This method runs in the background, so we must catch OperationCancelled here
+            # otherwise asyncio will warn that its exception was never retrieved.
+            try:
+                await self.discovery.lookup_random(self.cancel_token)
+            except OperationCancelled:
+                pass
+            finally:
+                self._discovery_last_lookup = time.time()
 
+    async def maybe_connect_to_more_peers(self) -> None:
+        """Connect to more peers if we're not yet maxed out to max_peers"""
+        num_connected_nodes = len(self.connected_nodes)
+        if self.is_full:
+            self.logger.debug(
+                "Already connected to %s peers: %s; sleeping",
+                num_connected_nodes,
+                [remote for remote in self.connected_nodes],
+            )
+            return
+
+        asyncio.ensure_future(self.maybe_lookup_random_node())
+
+        await self._connect_to_nodes(self.get_nodes_to_connect())
+
+        # In some cases (e.g ROPSTEN or private testnets), the discovery table might be full of
+        # bad peers so if we can't connect to any peers we try a random bootstrap node as well.
+        if not self.peers:
+            await self._connect_to_nodes(self._get_random_bootnode())
+
+    def _get_random_bootnode(self) -> Generator[Node, None, None]:
+        if self.discovery.bootstrap_nodes:
+            yield random.choice(self.discovery.bootstrap_nodes)
+        else:
+            self.logger.warning('No bootnodes available')
+
+    async def _connect_to_nodes(self, nodes: Generator[Node, None, None]) -> None:
+        for node in nodes:
             # TODO: Consider changing connect() to raise an exception instead of returning None,
             # as discussed in
             # https://github.com/ethereum/py-evm/pull/139#discussion_r152067425
             peer = await self.connect(node)
-            if peer is not None:
+
+            if peer is None:
+                continue
+            elif self.is_full:
+                self.logger.debug("Peer pool is full: disconnecting from %s", peer)
+                peer.disconnect(DisconnectReason.too_many_peers)
+                break
+            else:
+                self.logger.info("Successfully connected to %s", peer)
                 self.start_peer(peer)
 
     def _peer_finished(self, peer: BaseService) -> None:
@@ -801,18 +847,17 @@ class PeerPool(BaseService):
 
     @property
     def peers(self) -> List[BasePeer]:
-        return list(self.connected_nodes.values())
+        peers = list(self.connected_nodes.values())
+        # Shuffle the list of peers so that dumb callsites are less likely to send all requests to
+        # a single peer even if they always pick the first one from the list.
+        random.shuffle(peers)
+        return peers
 
-    @property
-    def highest_td_peer(self) -> BasePeer:
-        if not self.connected_nodes:
-            raise NoConnectedPeers()
-        peers_by_td = groupby(operator.attrgetter('head_td'), self.peers)
-        max_td = max(peers_by_td.keys())
-        return random.choice(peers_by_td[max_td])
-
-    def get_peers(self, min_td: int) -> List[BasePeer]:
-        return [peer for peer in self.peers if peer.head_td >= min_td]
+    async def get_random_peer(self) -> BasePeer:
+        while not self.peers:
+            self.logger.debug("No connected peers, sleeping a bit")
+            await asyncio.sleep(0.5)
+        return random.choice(self.peers)
 
     async def _periodically_report_stats(self):
         while self.is_running:
@@ -845,6 +890,178 @@ DEFAULT_PREFERRED_NODES: Dict[int, Tuple[Node, ...]] = {
     ),
 
 }
+
+
+        
+class LocalNodesPeerPool(PeerPool):
+    """
+    A PeerPool that uses a hard-coded list of remote nodes to connect to.
+
+    The node discovery v4 protocol is terrible at finding LES nodes, so for now
+    we hard-code some nodes that seem to have a good uptime.
+    """
+    _local_peer_pool = None
+        
+    def _get_random_bootnode(self) -> Generator[Node, None, None]:
+        # We don't have a DiscoveryProtocol with bootnodes, so just return one of our regular
+        # hardcoded nodes.
+        options = list(self.get_nodes_to_connect())
+        if options:
+            yield random.choice(options)
+        else:
+            self.logger.warning('No bootnodes available')
+
+    async def maybe_lookup_random_node(self) -> None:
+        # Do nothing as we don't have a DiscoveryProtocol
+        pass
+
+    def get_nodes_to_connect(self) -> Generator[Node, None, None]:
+        nodes = self.local_peer_pool
+        random.shuffle(nodes)
+        for node in nodes:
+            yield node      
+      
+    @classmethod
+    def load_peers_from_file(self):
+        path = LOCAL_PEER_POOL_PATH
+        #load existing pool
+        with open(path, 'r') as peer_file:
+            existing_peers_raw = peer_file.read()
+            existing_peers = json.loads(existing_peers_raw)
+        return existing_peers
+    
+    #save as [public_key,ip,udp_port,tcp_port]
+    @property
+    def local_peer_pool(self):
+        if self._local_peer_pool is None:
+            
+            existing_peers = self.load_peers_from_file()
+            
+            #self.logger.debug('loaded local peer nodes: {}'.format(existing_peers_raw))
+            #we have to change it into the expected form
+            peer_pool = []
+            for i, peer in enumerate(existing_peers):
+                if peer[0] != self.privkey.public_key.to_hex():
+                    peer_pool.append(Node(keys.PublicKey(decode_hex(peer[0])),Address(peer[1], peer[2], peer[3])))
+            self._local_peer_pool = peer_pool
+            
+        return self._local_peer_pool
+            
+        
+    
+class HardCodedNodesPeerPool(PeerPool):
+    """
+    A PeerPool that uses a hard-coded list of remote nodes to connect to.
+
+    The node discovery v4 protocol is terrible at finding LES nodes, so for now
+    we hard-code some nodes that seem to have a good uptime.
+    """
+
+    def _get_random_bootnode(self) -> Generator[Node, None, None]:
+        # We don't have a DiscoveryProtocol with bootnodes, so just return one of our regular
+        # hardcoded nodes.
+        options = list(self.get_nodes_to_connect())
+        if options:
+            yield random.choice(options)
+        else:
+            self.logger.warning('No bootnodes available')
+
+    async def maybe_lookup_random_node(self) -> None:
+        # Do nothing as we don't have a DiscoveryProtocol
+        pass
+
+    def get_nodes_to_connect(self) -> Generator[Node, None, None]:
+        if self.network_id in DEFAULT_PREFERRED_NODES:
+            nodes = list(DEFAULT_PREFERRED_NODES[self.network_id])
+        else:
+            raise ValueError("Unknown network_id: {}".format(self.network_id))
+
+        random.shuffle(nodes)
+        for node in nodes:
+            yield node
+
+
+class PreferredNodePeerPool(PeerPool):
+    """
+    A PeerPool which has a list of preferred nodes which it will prioritize
+    using before going to the discovery protocol to find nodes.  Each preferred
+    node can only be used once every preferred_node_recycle_time seconds.
+    """
+    preferred_nodes: Sequence[Node] = None
+    preferred_node_recycle_time: int = 300
+    _preferred_node_tracker: Dict[Node, float] = None
+
+    def __init__(self,
+                 peer_class: Type[BasePeer],
+                 headerdb: 'BaseAsyncHeaderDB',
+                 network_id: int,
+                 privkey: datatypes.PrivateKey,
+                 discovery: DiscoveryProtocol,
+                 max_peers: int = DEFAULT_MAX_PEERS,
+                 preferred_nodes: Sequence[Node] = None,
+                 ) -> None:
+        super().__init__(
+            peer_class,
+            headerdb,
+            network_id,
+            privkey,
+            discovery,
+            max_peers=max_peers,
+        )
+
+        if preferred_nodes is not None:
+            self.preferred_nodes = preferred_nodes
+        elif network_id in DEFAULT_PREFERRED_NODES:
+            self.preferred_nodes = DEFAULT_PREFERRED_NODES[network_id]
+        else:
+            self.logger.debug('PreferredNodePeerPool operating with no preferred nodes')
+            self.preferred_nodes = tuple()
+
+        self._preferred_node_tracker = collections.defaultdict(lambda: 0)
+
+    @to_tuple
+    def _get_eligible_preferred_nodes(self) -> Generator[Node, None, None]:
+        """
+        Return nodes from the preferred_nodes which have not been used within
+        the last preferred_node_recycle_time
+        """
+        for node in self.preferred_nodes:
+            last_used = self._preferred_node_tracker[node]
+            if time.time() - last_used > self.preferred_node_recycle_time:
+                yield node
+
+    def _get_random_preferred_node(self) -> Node:
+        """
+        Return a random node from the preferred list.
+        """
+        eligible_nodes = self._get_eligible_preferred_nodes()
+        if not eligible_nodes:
+            raise NoEligibleNodes("No eligible preferred nodes available")
+        node = random.choice(eligible_nodes)
+        return node
+
+    def _get_random_bootnode(self) -> Generator[Node, None, None]:
+        """
+        Return a single node to bootstrap, preferring nodes from the preferred list.
+        """
+        try:
+            node = self._get_random_preferred_node()
+            self._preferred_node_tracker[node] = time.time()
+            yield node
+        except NoEligibleNodes:
+            yield from super()._get_random_bootnode()
+
+    def get_nodes_to_connect(self) -> Generator[Node, None, None]:
+        """
+        Return up to `max_peers` nodes, preferring nodes from the preferred list.
+        """
+        preferred_nodes = self._get_eligible_preferred_nodes()[:self.max_peers]
+        for node in preferred_nodes:
+            self._preferred_node_tracker[node] = time.time()
+            yield node
+
+        num_nodes_needed = max(0, self.max_peers - len(preferred_nodes))
+        yield from self.discovery.get_random_nodes(num_nodes_needed)
 
 
 class ChainInfo:

@@ -128,3 +128,10 @@ class BadLESResponse(BaseP2PError):
     Raised when the response to a LES request doesn't contain the data we asked for.
     """
     pass
+
+
+class NoConnectedPeers(BaseP2PError):
+    """
+    Raised when we are not connected to any peers.
+    """
+    pass

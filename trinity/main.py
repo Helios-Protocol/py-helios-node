@@ -51,6 +51,8 @@ from trinity.utils.version import (
     construct_trinity_client_identifier,
 )
 
+#from trinity.dev_tools import load_local_nodes
+
 
 PRECONFIGURED_NETWORKS = {MAINNET_NETWORK_ID}
 
@@ -90,7 +92,8 @@ def main(instance_number = None) -> None:
 
     logger, formatter, handler_stream = setup_trinity_stdout_logging(log_level)
 
-    
+    if args.rand_db == 1:
+        os.environ["GENERATE_RANDOM_DATABASE"] = 'true'
     if args.instance is not None:
         args.port = args.port + args.instance
         os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(args.instance)

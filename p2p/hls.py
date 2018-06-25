@@ -1,4 +1,5 @@
 import logging
+#import secrets
 from typing import List, Union
 
 from rlp import sedes
@@ -42,8 +43,8 @@ class Status(Command):
         ('protocol_version', sedes.big_endian_int),
         ('network_id', sedes.big_endian_int),
         ('node_type', sedes.big_endian_int),
-        ('wallet_address', address),
         ('chain_head_root_hashes', sedes.CountableList(sedes.List([sedes.big_endian_int, sedes.binary]))),
+        ('salt', sedes.binary),
     ]
 
 
@@ -141,6 +142,22 @@ class GetUnorderedBlockHeaderHash(Command):
 class UnorderedBlockHeaderHash(Command):
     _cmd_id = 22
     structure = sedes.CountableList(BlockHashKey)
+   
+#send the primary salt
+class GetWalletAddressVerification(Command):
+    _cmd_id = 23
+    structure = [
+        ('salt', sedes.binary)
+    ]
+    
+class WalletAddressVerification(Command):
+    _cmd_id = 24
+    structure = [
+        ('salt', sedes.binary),
+        ('v', sedes.big_endian_int),
+        ('r', sedes.big_endian_int),
+        ('s', sedes.big_endian_int),
+    ]
 
 
 class HLSProtocol(Protocol):
@@ -151,21 +168,23 @@ class HLSProtocol(Protocol):
         GetBlockBodies, BlockBodies, NewBlock, NewBlock, NewBlock, 
         NewBlock, NewBlock, NewBlock, GetNodeData, NodeData,
         GetReceipts, Receipts, GetChainHeadTrieBranch, ChainHeadTrieBranch, GetChainHeadRootHashTimestamps,
-        ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash]
+        ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification]
     cmd_length = 30
     logger = logging.getLogger("p2p.hls.HLSProtocol")
 
-    def send_handshake(self, chain_info):
+    def send_handshake(self, chain_info, salt):
         if chain_info.chain_head_root_hashes is None:
             chain_head_root_hashes = []
         else:
             chain_head_root_hashes = chain_info.chain_head_root_hashes
+        
+        #create salt for them to sign and send back
         resp = {
             'protocol_version': self.version,
             'network_id': self.peer.network_id,
             'node_type': chain_info.node_type,
-            'wallet_address': chain_info.node_wallet_address,
-            'chain_head_root_hashes': chain_head_root_hashes
+            'chain_head_root_hashes': chain_head_root_hashes,
+            'salt': salt,
         }
         #self.logger.debug("sending handshake with {}{}{}{}".format(self.version, self.peer.network_id, chain_info.node_type, chain_info.node_wallet_address))
         cmd = Status(self.cmd_id_offset)
@@ -261,6 +280,23 @@ class HLSProtocol(Protocol):
     def send_unordered_block_header_hash(self, block_hash_keys) -> None:
         cmd = UnorderedBlockHeaderHash(self.cmd_id_offset)
         header, body = cmd.encode(block_hash_keys)
+        self.send(header, body)
+        
+    def send_get_wallet_address_verification(self, salt) -> None:
+        cmd = GetWalletAddressVerification(self.cmd_id_offset)
+        data = {
+            'salt': salt}
+        header, body = cmd.encode(data)
+        self.send(header, body)
+        
+    def send_wallet_address_verification(self, salt, v, r, s) -> None:
+        data = {
+            'salt': salt,
+            'v': v,
+            'r': r,
+            's': s}
+        cmd = WalletAddressVerification(self.cmd_id_offset)
+        header, body = cmd.encode(data)
         self.send(header, body)
         
 
