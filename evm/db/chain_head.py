@@ -13,16 +13,21 @@ from eth_typing import Hash32
 import rlp
 
 from trie import (
-    BinaryTrie,
     HexaryTrie,
 )
-
+from evm.db.trie import BinaryTrie
+from trie.binary import parse_node
+from trie.constants import (
+    BLANK_HASH,
+    KV_TYPE,
+    BRANCH_TYPE,
+    LEAF_TYPE,
+    BYTE_0,
+    BYTE_1,
+)
 from eth_hash.auto import keccak
 from eth_utils import encode_hex
 
-from trie.constants import (
-    BLANK_HASH,
-)
 
 from evm.constants import (
     BLANK_ROOT_HASH,
@@ -30,6 +35,7 @@ from evm.constants import (
     SLASH_WALLET_ADDRESS,
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
+    ZERO_HASH32,
 )
 from evm.db.batch import (
     BatchDB,
@@ -48,6 +54,7 @@ from evm.validation import (
     validate_is_bytes,
     validate_uint256,
     validate_canonical_address,
+    validate_is_bytes_or_none,
 )
 
 from evm.utils.numeric import (
@@ -81,7 +88,7 @@ import math
 from evm.exceptions import (
     InvalidHeadRootTimestamp,        
 )
-
+from p2p.sedes import HashOrNone
 from evm.utils.rlp import make_mutable
 
 from sortedcontainers import SortedList
@@ -91,10 +98,11 @@ from sortedcontainers import SortedList
 # expensive.
 account_cache = LRU(2048)
 
-class HeadRootHashTimestampKey(rlp.Serializable):
+class CurrentSyncingInfo(rlp.Serializable):
     fields = [
-        ('head_root_hash', hash32),
         ('timestamp', big_endian_int),
+        ('head_root_hash', hash32),
+        ('head_hash_of_last_chain', hash32),
     ]
     
     
@@ -108,7 +116,8 @@ class ChainHeadDB():
         """
         self.db = db
         self._batchtrie = BatchDB(db)
-        self._trie = HashTrie(BinaryTrie(self._batchtrie, root_hash))
+        #self._trie = HashTrie(BinaryTrie(self._batchtrie, root_hash))
+        self._trie = BinaryTrie(self._batchtrie, root_hash)
         self._trie_cache = CacheDB(self._trie)
 
     @property
@@ -123,10 +132,111 @@ class ChainHeadDB():
     def has_root(self, root_hash: bytes) -> bool:
         return root_hash in self._batchtrie
 
-    
+    #
+    # Trie Traversing
+    #
+#    def test(self):
+#        
+#        self._trie[b'1'] = b'adsfas'
+#        self._trie[b'2'] = b'adsfasf'
+#        self._trie[b'3'] = b'asdfasdf'
+#        self._trie[b'4'] = b'sdfsfasdf'
+#        self._trie[b'5'] = b'adsfasdfa'
+#        self._trie[b'6'] = b'asdfasdf'
+#        self.persist()
+#        
+#        
+#        #root_node = self.db[self.root_hash]
+#        leaf_nodes = self.get_head_block_hashes(self.root_hash)
+##        next = False
+##        for leaf in leaf_nodes:
+##            if next == True:
+##                print(leaf)
+##                break
+##            if leaf == b'asdfasdf':
+##                next = True
+##          
+##        exit()
+#        print(list(leaf_nodes))
+#        
+#        print(self.get_next_head_block_hash(self.root_hash, b'sdfsfasdf', reverse = False))
+#        print(self.get_next_head_block_hash(self.root_hash, b'sdfsfasdf', reverse = True))
+       
+    def get_next_n_head_block_hashes(self, prev_head_hash = ZERO_HASH32, window_start = 0, window_length = 1, root_hash = None, reverse = False):
+        """
+        Gets the next head root hash in the leaves of the binary trie
+        """
+        if root_hash is None:
+            root_hash = self.root_hash
+        output_list = []
+        next = False
+        i = 0
+        j = 0
+        for head_hash in self.get_head_block_hashes(root_hash, reverse = reverse):
+              
+            if next == True or (prev_head_hash == ZERO_HASH32 and window_start == 0):
+                output_list.append(head_hash)
+                i += 1
+                if i >= window_length:
+                    return output_list
+                
+            if head_hash == prev_head_hash or prev_head_hash == ZERO_HASH32:
+                if prev_head_hash == ZERO_HASH32:
+                    j += 1
+                if j >= window_start:
+                    next = True
+                j += 1
+            
+                
+                
+    def get_next_head_block_hash(self, prev_head_hash = ZERO_HASH32, root_hash = None, reverse = False):
+        """
+        Gets the next head root hash in the leaves of the binary trie
+        """
+        if root_hash is None:
+            root_hash = self.root_hash
+        next = False
+        for head_hash in self.get_head_block_hashes(root_hash, reverse = reverse):
+            if prev_head_hash == ZERO_HASH32 or next == True:
+                return head_hash
+
+            if head_hash == prev_head_hash:
+                next = True
+                
+                  
+    def get_head_block_hashes(self, root_hash = None, reverse = False):
+        """
+        Gets all of the head root hash leafs of the binary trie
+        """
+        if root_hash is None:
+            root_hash = self.root_hash
+        yield from self._trie.get_leaf_nodes(root_hash, reverse)
+     
+     
     #
     # Block hash API
     #
+    def set_current_syncing_info(self, timestamp, head_root_hash, head_hash_of_last_chain = ZERO_HASH32):
+        validate_is_bytes(head_root_hash, title='Head Root Hash')
+        validate_is_bytes(head_hash_of_last_chain, title='Head Hash of last chain')
+        validate_uint256(timestamp, title='timestamp')
+        encoded = rlp.encode([timestamp, head_root_hash, head_hash_of_last_chain], sedes=CurrentSyncingInfo)
+        self.db[SchemaV1.make_current_syncing_info_lookup_key()] = encoded
+        
+    def get_current_syncing_info(self):
+        try:
+            encoded = self.db[SchemaV1.make_current_syncing_info_lookup_key()]
+            return rlp.decode(encoded, sedes=CurrentSyncingInfo)
+        except KeyError:
+            return None
+        
+    def set_current_syncing_last_chain(self, head_hash_of_last_chain):
+        validate_is_bytes(head_hash_of_last_chain, title='Head Hash of last chain')
+        syncing_info = self.get_current_syncing_info()
+        new_syncing_info = syncing_info.copy(head_hash_of_last_chain = head_hash_of_last_chain)
+        encoded = rlp.encode(new_syncing_info, sedes=CurrentSyncingInfo)
+        self.db[SchemaV1.make_current_syncing_info_lookup_key()] = encoded
+        
     def set_chain_head_hash(self, address, head_hash):
         validate_canonical_address(address, title="Wallet Address")
         validate_is_bytes(head_hash, title='Head Hash')
@@ -350,6 +460,8 @@ class ChainHeadDB():
                         del(mutable[i])
                     else:
                         break
+                if mutable == []:
+                    return None
                 return mutable
                 
         except KeyError:
@@ -438,8 +550,7 @@ class ChainHeadDB():
     
     
     
-    
-    
+
     
     
     

@@ -5,9 +5,19 @@ import rlp
 from trie import (
     HexaryTrie,
 )
+from trie import BinaryTrie as ParentBinaryTrie
 
 from evm.constants import (
     BLANK_ROOT_HASH,
+)
+from trie.binary import parse_node
+from trie.constants import (
+    BLANK_HASH,
+    KV_TYPE,
+    BRANCH_TYPE,
+    LEAF_TYPE,
+    BYTE_0,
+    BYTE_1,
 )
 from evm.rlp.receipts import Receipt
 from evm.rlp.transactions import BaseTransaction
@@ -31,3 +41,25 @@ def _make_trie_root_and_nodes(items: Tuple[bytes, ...]) -> Tuple[bytes, Dict[byt
             index_key = rlp.encode(index, sedes=rlp.sedes.big_endian_int)
             memory_trie[index_key] = item
     return trie.root_hash, kv_store
+
+class BinaryTrie(ParentBinaryTrie):
+    def get_leaf_nodes(self, node, reverse = False):
+        """
+        This gets the leaf nodes from left to right
+        """
+        node_type, left, right = parse_node(self.db[node])
+        #print('node_type {}'.format(node_type))
+        if node_type == KV_TYPE:
+            #print("BRANCH KEY:{}".format(decode_from_bin(left)))
+            yield from self.get_leaf_nodes(right, reverse)
+        elif node_type == BRANCH_TYPE:
+            if reverse:
+                yield from self.get_leaf_nodes(right, reverse)
+                yield from self.get_leaf_nodes(left, reverse)
+            else:
+                yield from self.get_leaf_nodes(left, reverse)
+                yield from self.get_leaf_nodes(right, reverse)
+        else:
+            yield right
+
+

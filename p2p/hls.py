@@ -17,10 +17,12 @@ from p2p.protocol import (
 )
 from p2p.rlp import (
     BlockBody, 
-    P2PTransaction,
+    P2PSendTransaction,
+    P2PReceiveTransaction,
     BlockNumberKey,
     BlockHashKey,
-    TimestampRootHashKey
+    TimestampRootHashKey,
+    P2PBlock
 )
 from p2p.sedes import (
     HashOrNumber,
@@ -53,9 +55,10 @@ class NewBlockHashes(Command):
     structure = sedes.CountableList(sedes.List([sedes.binary, sedes.big_endian_int]))
 
 
+#TODO. fix
 class Transactions(Command):
     _cmd_id = 2
-    structure = sedes.CountableList(P2PTransaction)
+    structure = sedes.CountableList(P2PSendTransaction)
 
 
 class GetBlockHeaders(Command):
@@ -88,9 +91,9 @@ class NewBlock(Command):
     _cmd_id = 7
     structure = [
         ('block', sedes.List([BlockHeader,
-                              sedes.CountableList(P2PTransaction),
-                              sedes.CountableList(BlockHeader)])),
-        ('total_difficulty', sedes.big_endian_int)]
+                              sedes.CountableList(P2PSendTransaction),
+                              sedes.CountableList(P2PReceiveTransaction)]))
+    ]
 
 
 class GetNodeData(Command):
@@ -158,6 +161,32 @@ class WalletAddressVerification(Command):
         ('r', sedes.big_endian_int),
         ('s', sedes.big_endian_int),
     ]
+    
+class GetStakeForAddresses(Command):
+    _cmd_id = 25
+    structure = [
+        ('addresses', sedes.CountableList(address))
+    ]
+    
+class StakeForAddresses(Command):
+    _cmd_id = 26
+    structure = [
+        ('stakes', sedes.CountableList(sedes.List([address, sedes.big_endian_int])))
+    ]
+    
+class GetChainsSyncing(Command):
+    _cmd_id = 27
+    structure = [
+        ('head_root_hash', hash32),
+        ('head_hash_of_last_chain', hash32),
+        ('window_start', sedes.big_endian_int),
+        ('window_length', sedes.big_endian_int),
+    ]
+    
+class Chain(Command):
+    _cmd_id = 28
+    structure = [
+        ('blocks', sedes.CountableList(P2PBlock))]
 
 
 class HLSProtocol(Protocol):
@@ -168,8 +197,9 @@ class HLSProtocol(Protocol):
         GetBlockBodies, BlockBodies, NewBlock, NewBlock, NewBlock, 
         NewBlock, NewBlock, NewBlock, GetNodeData, NodeData,
         GetReceipts, Receipts, GetChainHeadTrieBranch, ChainHeadTrieBranch, GetChainHeadRootHashTimestamps,
-        ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification]
-    cmd_length = 30
+        ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification,
+        GetStakeForAddresses, StakeForAddresses, GetChainsSyncing]
+    cmd_length = 40
     logger = logging.getLogger("p2p.hls.HLSProtocol")
 
     def send_handshake(self, chain_info, salt):
@@ -300,3 +330,64 @@ class HLSProtocol(Protocol):
         self.send(header, body)
         
 
+    def send_get_stake_for_addresses(self, addresses) -> None:
+        cmd = GetStakeForAddresses(self.cmd_id_offset)
+        data = {
+            'addresses': addresses}
+        header, body = cmd.encode(data)
+        self.send(header, body)
+        
+    def send_stake_for_addresses(self, address_stake_list) -> None:
+        data = {
+            'stakes': address_stake_list
+            }
+        cmd = StakeForAddresses(self.cmd_id_offset)
+        header, body = cmd.encode(data)
+        self.send(header, body)
+        
+    def send_get_chains_syncing(self, chain_request_info) -> None:
+        cmd = GetChainsSyncing(self.cmd_id_offset)
+        data = {
+            'head_root_hash': chain_request_info.head_root_hash,
+            'head_hash_of_last_chain': chain_request_info.head_hash_of_last_chain,
+            'window_start': chain_request_info.window_start,
+            'window_length': chain_request_info.window_length}
+        header, body = cmd.encode(data)
+        self.send(header, body)
+    
+    def send_chain(self, list_of_blocks) -> None:
+        cmd = Chain(self.cmd_id_offset)
+        data = {
+            'blocks': list_of_blocks}
+        header, body = cmd.encode(data)
+        self.send(header, body)
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        

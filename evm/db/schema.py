@@ -77,3 +77,7 @@ class SchemaV1(BaseSchema):
     def make_block_children_lookup_key(block_hash: Hash32) -> bytes:
         return b'block-children:%b' % block_hash
     
+    @staticmethod
+    def make_current_syncing_info_lookup_key() -> bytes:
+        return b'current-syncing-info'
+    

@@ -56,6 +56,12 @@ class NotEnoughTimeBetweenBlocks(PyEVMError):
     """
     pass
 
+class CannotCalculateStake(PyEVMError):
+    """
+    Raised when a function tries to calculate the stake for an address where we are missing information. for example, if we dont have their chain.
+    """
+    pass
+
 
 class TransactionNotFound(PyEVMError):
     """

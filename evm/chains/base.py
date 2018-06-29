@@ -62,6 +62,7 @@ from evm.exceptions import (
     VMNotFound,
     BlockOnWrongChain,
     CanonicalHeadNotFound,
+    CannotCalculateStake,
     NotEnoughTimeBetweenBlocks,
 )
 from eth_keys.exceptions import (
@@ -736,7 +737,7 @@ class Chain(BaseChain):
         
     def import_current_queue_block(self):
         
-        self.import_block(self.queue_block)
+        return self.import_block(self.queue_block)
     #
     # Validation API
     #
@@ -794,7 +795,11 @@ class Chain(BaseChain):
         #get account balance
         account_balance = self.get_vm().state.account_db.get_balance(wallet_address)
         #subtract immature coins (look at receive only)
-        immature_coins = self.get_immature_receive_balance(wallet_address)
+        
+        try:
+            immature_coins = self.get_immature_receive_balance(wallet_address)
+        except CanonicalHeadNotFound:
+            return 0
         
         mature_stake = account_balance-immature_coins
         #this can be negative if they spent their received coins. Lets bottom it out at 0
@@ -809,9 +814,9 @@ class Chain(BaseChain):
             wallet_address = self.wallet_address
         
         validate_canonical_address(wallet_address, title="Wallet Address")
-        
+   
         canonical_head = self.chaindb.get_canonical_head(wallet_address = wallet_address)
-        
+
         total = 0
         transaction_class =  self.get_block().receive_transaction_class
         if canonical_head.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:

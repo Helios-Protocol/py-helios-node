@@ -238,15 +238,18 @@ class ChainDB(BaseChainDB):
                 "No header found on the canonical chain with number {0}".format(block_number)
             )
 
-    def get_canonical_block_header_by_number(self, block_number: BlockNumber) -> BlockHeader:
+    def get_canonical_block_header_by_number(self, block_number: BlockNumber, wallet_address = None) -> BlockHeader:
         """
         Returns the block header with the given number in the canonical chain.
 
         Raises HeaderNotFound if there's no block header with the given number in the
         canonical chain.
         """
+        if wallet_address is None:
+            wallet_address = self.wallet_address
+            
         validate_uint256(block_number, title="Block Number")
-        return self.get_block_header_by_hash(self.get_canonical_block_hash(block_number))
+        return self.get_block_header_by_hash(self.get_canonical_block_hash(block_number, wallet_address))
 
     def get_canonical_head(self, wallet_address = None) -> BlockHeader:
         """
@@ -264,6 +267,34 @@ class ChainDB(BaseChainDB):
             cast(Hash32, canonical_head_hash),
         )
     
+    def get_block_by_number(self, block_number, block_class, wallet_address = None):
+        if wallet_address is None:
+            wallet_address = self.wallet_address
+        
+        block_header = self.get_canonical_block_header_by_number(block_number, wallet_address)
+        
+        send_transactions = self.get_block_transactions(block_header, block_class.transaction_class)
+        
+        receive_transactions = self.get_block_receive_transactions(block_header, block_class.receive_transaction_class)
+        
+        output_block = block_class(block_header, send_transactions, receive_transactions)
+        
+        return output_block
+        
+        
+    def get_all_blocks_on_chain(self, block_class, wallet_address = None):
+        if wallet_address is None:
+            wallet_address = self.wallet_address
+            
+        canonical_head_header = self.get_canonical_head(wallet_address = wallet_address)
+        chain_length = canonical_head_header.block_number + 1
+        
+        blocks = []
+        for block_number in range(chain_length):
+            blocks.append(self.get_block_by_number(block_number, block_class, wallet_address))
+        
+        return blocks
+        
         
     #
     # Header API

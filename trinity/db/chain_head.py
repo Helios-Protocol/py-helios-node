@@ -18,5 +18,21 @@ class AsyncChainHeadDB(ChainHeadDB):
 class ChainHeadDBProxy(BaseProxy):
 
     coro_get_historical_root_hashes = async_method('get_historical_root_hashes')
+    coro_set_current_syncing_info = async_method('set_current_syncing_info')
+    coro_get_current_syncing_info = async_method('get_current_syncing_info')
+    coro_get_next_head_block_hash = async_method('get_next_head_block_hash')
+    coro_get_head_block_hashes = async_method('get_head_block_hashes')
+    coro_set_current_syncing_last_chain = async_method('set_current_syncing_last_chain')
+    coro_get_latest_timestamp = async_method('get_latest_timestamp')
+    coro_get_next_n_head_block_hashes = async_method('get_next_n_head_block_hashes')
+    
+    
 
     get_historical_root_hashes = sync_method('get_historical_root_hashes')
+    set_current_syncing_info = sync_method('set_current_syncing_info')
+    get_current_syncing_info = sync_method('get_current_syncing_info')
+    get_next_head_block_hash = sync_method('get_next_head_block_hash')
+    get_head_block_hashes = sync_method('get_head_block_hashes')
+    set_current_syncing_last_chain = sync_method('set_current_syncing_last_chain')
+    get_latest_timestamp = sync_method('get_latest_timestamp')
+    get_next_n_head_block_hashes = sync_method('get_next_n_head_block_hashes')

@@ -568,10 +568,12 @@ class HLSPeer(BasePeer):
     _supported_sub_protocols = [hls.HLSProtocol]
     sub_proto: hls.HLSProtocol = None
     #stake: int = None
-    stake: int = 1000 #testing
+    stake: int = 0 #testing
     wallet_address = None
     local_salt = None
     peer_salt = None
+    chain_head_root_hashes = None
+    node_type = None
     
     async def send_sub_proto_handshake(self):
         local_salt = secrets.token_bytes(32)
@@ -598,10 +600,10 @@ class HLSPeer(BasePeer):
         #TODO: send another handshake that gaurantees their wallet address. We shouldnt even ask for it here...
         self.send_wallet_address_verification(msg['salt'])
         
-    def send_sub_proto_wallet_address_verification(self):
-        salt = secrets.token_bytes(32)
-        self.sub_proto.send_get_wallet_address_verification(salt)
-        self.primary_salt = salt
+#    def send_sub_proto_wallet_address_verification(self):
+#        salt = secrets.token_bytes(32)
+#        self.sub_proto.send_get_wallet_address_verification(salt)
+#        self.primary_salt = salt
     
     async def process_sub_proto_wallet_address_verification(
             self, cmd: protocol.Command, msg: protocol._DecodedMsgType) -> None:
@@ -620,7 +622,7 @@ class HLSPeer(BasePeer):
         try:
             self.stake = await self.chain.coro_get_mature_stake(self.wallet_address)
         except CanonicalHeadNotFound:
-            self.stake = 1 #give it the lowest possible stake
+            self.stake = 0 #give it the lowest possible stake
         #self.logger.debug("Recieved valid wallet address verification for wallet address {}".format(self.wallet_address))
         
     #note, when we receive an address verification message, we have to verify that the salt they send back equals local salt

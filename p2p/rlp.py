@@ -14,12 +14,32 @@ from evm.rlp.transactions import BaseTransaction
 # instantiated.
 class P2PTransaction(rlp.Serializable):
     fields = BaseTransaction._meta.fields
+    
+class P2PSendTransaction(rlp.Serializable):
+    fields = BaseTransaction._meta.fields
+
+#TODO. link this to the definition in the vm somehow.
+class P2PReceiveTransaction(rlp.Serializable):
+    fields =[
+        ('sender_block_hash', hash32),
+        ('transaction', P2PSendTransaction),
+        ('v', sedes.big_endian_int),
+        ('r', sedes.big_endian_int),
+        ('s', sedes.big_endian_int),
+    ]
+
+class P2PBlock(rlp.Serializable):
+    fields =[
+        ('header', BlockHeader),
+        ('transactions', sedes.CountableList(P2PSendTransaction)),
+        ('receive_transactions', sedes.CountableList(P2PReceiveTransaction))
+    ]
 
 
 class BlockBody(rlp.Serializable):
     fields = [
-        ('transactions', sedes.CountableList(P2PTransaction)),
-        ('uncles', sedes.CountableList(BlockHeader))
+        ('send_transactions', sedes.CountableList(P2PSendTransaction)),
+        ('receive_transactions', sedes.CountableList(P2PReceiveTransaction)),
     ]
 
 class BlockNumberKey(rlp.Serializable):
@@ -40,5 +60,4 @@ class TimestampRootHashKey(rlp.Serializable):
         ('timestamp', sedes.big_endian_int),
         ('root_hash', trie_root),
     ]
-    
     

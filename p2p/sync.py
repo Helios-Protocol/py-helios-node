@@ -62,7 +62,7 @@ class FullNodeSyncer(BaseService):
         #TODO: create consensus class that saves each peer's chain head root hash to their object. It should also label who is in the majority
         # Fast-sync chain data.
         self.logger.info("Starting fast-sync")
-        chain_syncer = FastChainSyncer(self.chaindb, self.peer_pool, consensus = self.consensus, cancel_token = self.cancel_token)
+        chain_syncer = FastChainSyncer(self.chain, self.chaindb, self.chain_head_db, self.peer_pool, consensus = self.consensus, token = self.cancel_token)
         await chain_syncer.run()
 
         # Ensure we have the state for our current head.

@@ -139,6 +139,9 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
 
     def __eq__(self, other):
         return self.hash == other.hash
+    
+    def __hash__(self):
+        return hash(self.hash)
 
 
 class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
@@ -213,3 +216,6 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
 
     def __eq__(self, other):
         return self.hash == other.hash
+    
+    def __hash__(self):
+        return hash(self.hash)

@@ -17,3 +17,5 @@ class ChainProxy(BaseProxy):
     import_block = sync_method('import_block')
     get_block_stake_from_children = sync_method('get_block_stake_from_children')
     get_get_mature_stake = sync_method('get_mature_stake')
+    get_vm = sync_method('get_vm')
+    

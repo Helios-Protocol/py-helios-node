@@ -23,7 +23,7 @@ class FullNode(Node):
         self._node_port = chain_config.port
         self._max_peers = chain_config.max_peers
         
-        self.save_node_address_to_local_peer_pool_file()
+        #self.save_node_address_to_local_peer_pool_file()
 
     def get_chain(self):
         if self._chain is None:

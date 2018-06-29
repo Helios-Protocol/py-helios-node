@@ -105,7 +105,7 @@ class Server(BaseService):
         self.bootstrap_nodes = bootstrap_nodes
         self.preferred_nodes = preferred_nodes
         self.peer_pool = self._make_peer_pool()
-        self.consensus = self._make_consensus(self.peer_pool)
+        self.consensus = self._make_consensus(self.peer_pool, self.bootstrap_nodes)
         self.syncer = self._make_syncer(self.peer_pool,self.consensus)
         
         if not bootstrap_nodes:
@@ -243,10 +243,10 @@ class Server(BaseService):
         return FullNodeSyncer(
             self.chain, self.chaindb, self.base_db, peer_pool = peer_pool, token = self.cancel_token, chain_head_db = self.chain_head_db, consensus=consensus)
         
-    def _make_consensus(self, peer_pool: PeerPool) -> BaseService:
+    def _make_consensus(self, peer_pool: PeerPool, bootstrap_nodes) -> BaseService:
         # This method exists only so that ShardSyncer can provide a different implementation.
         return Consensus(
-            self.chain, self.chaindb, self.base_db, peer_pool = peer_pool, chain_head_db = self.chain_head_db, token = self.cancel_token)
+            self.chain, self.chaindb, self.base_db, peer_pool = peer_pool, chain_head_db = self.chain_head_db, bootstrap_nodes = bootstrap_nodes, chain_config = self.chain_config, token = self.cancel_token)
 
     def _make_peer_pool(self) -> PeerPool:
         # This method exists only so that ShardSyncer can provide a different implementation.
@@ -301,14 +301,14 @@ class Server(BaseService):
         peer_pool_task = asyncio.ensure_future(self.peer_pool.run())
         asyncio.ensure_future(self.discovery.run())
         asyncio.ensure_future(self.consensus.run())
-        
+        asyncio.ensure_future(self.syncer.run())
         
         await peer_pool_task
-        #await self.syncer.run()
+        
 
     async def _cleanup(self) -> None:
         self.logger.info("Closing server...")
-        await asyncio.gather(self.peer_pool.cancel(), self.discovery.stop())
+        await asyncio.gather(self.peer_pool.cancel(), self.discovery.cancel())
         await self._close()
 
     async def receive_handshake(

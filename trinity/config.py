@@ -1,5 +1,7 @@
 from pathlib import Path
 import os
+import json
+
 from typing import (
     TYPE_CHECKING,
     Tuple,
@@ -50,6 +52,9 @@ if TYPE_CHECKING:
 DATABASE_DIR_NAME = 'chain'
 
 
+
+        
+            
 class ChainConfig:
     _data_dir: Path = None
     _nodekey_path: Path = None
@@ -115,13 +120,21 @@ class ChainConfig:
     @property
     def bootstrap_nodes(self):
         if self._bootstrap_nodes is None:
-            
-            self._bootstrap_nodes = (self.preferred_nodes[0],)
-            
-            if self.network_id == MAINNET_NETWORK_ID:
+            #make sure we save our node to the file before loading it. This will create the file if it doesnt exist.
+            self.save_node_address_to_local_peer_pool_file()
+            #bootstrap_nodes = tuple(load_local_nodes(self.nodekey))
+            if len(self.preferred_nodes) == 0:
                 self._bootstrap_nodes = tuple(
                     KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
                 )
+            else:
+                self._bootstrap_nodes = (self.preferred_nodes[0],)
+            
+#             if self.network_id == MAINNET_NETWORK_ID:
+#                    self._bootstrap_nodes = tuple(
+#                        KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
+#                    )
+
         return self._bootstrap_nodes
       
     @property
@@ -188,6 +201,39 @@ class ChainConfig:
     @property
     def local_peer_pool_path(self):
         return LOCAL_PEER_POOL_PATH
+    
+    #save as [public_key,ip,udp_port,tcp_port]
+    def save_node_address_to_local_peer_pool_file(self):
+        #path, node_key, ip, udp_port, tcp_port
+        path = self.local_peer_pool_path
+        node_key = self.nodekey
+        
+        ip = '127.0.0.1'
+        udp_port = self.port
+        tcp_port = self.port
+        
+        public_key_hex = node_key.public_key.to_hex()
+        
+        new_peer = [public_key_hex, ip, udp_port, tcp_port]
+        
+        #load existing pool
+        try:
+            with open(path, 'r') as peer_file:
+                existing_peers_raw = peer_file.read()
+                existing_peers = json.loads(existing_peers_raw)
+            #append the new one
+            if not new_peer in existing_peers:
+                existing_peers.append(new_peer)
+                
+        except FileNotFoundError:
+            #No local peers exist yet. lets start a new list.
+            existing_peers = []
+            existing_peers.append(new_peer)
+        
+            
+        #then save
+        with open(path, 'w') as peer_file:
+            peer_file.write(json.dumps(existing_peers))
     
     
     @property

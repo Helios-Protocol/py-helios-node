@@ -41,6 +41,12 @@ def validate_is_bytes(value, title="Value"):
         raise ValidationError(
             "{title} must be a byte string.  Got: {0}".format(type(value), title=title)
         )
+        
+def validate_is_bytes_or_none(value, title="Value"):
+    if not isinstance(value, bytes) and value is not None:
+        raise ValidationError(
+            "{title} must be a byte string.  Got: {0}".format(type(value), title=title)
+        )
 
 
 def validate_is_integer(value, title="Value"):
