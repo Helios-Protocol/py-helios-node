@@ -172,6 +172,7 @@ class ChainHeadDB():
         next = False
         i = 0
         j = 0
+        last = None
         for head_hash in self.get_head_block_hashes(root_hash, reverse = reverse):
               
             if next == True or (prev_head_hash == ZERO_HASH32 and window_start == 0):
@@ -187,6 +188,14 @@ class ChainHeadDB():
                     next = True
                 j += 1
             
+            last = head_hash
+            
+        #if it gets here then we got to the last chain
+        if len(output_list) < 1:
+            output_list.append(last)
+        return output_list
+    
+        #if this function returns less than window_length, then it is the end.
                 
                 
     def get_next_head_block_hash(self, prev_head_hash = ZERO_HASH32, root_hash = None, reverse = False):
@@ -455,14 +464,16 @@ class ChainHeadDB():
                 return make_mutable(data)
             else:
                 mutable = make_mutable(data)
+                mutable_old_removed = list(mutable)
+                num_deleted = 0
                 for i in range(len(mutable)):
                     if mutable[i][0] < after_timestamp:
-                        del(mutable[i])
-                    else:
-                        break
-                if mutable == []:
+                        del(mutable_old_removed[i-num_deleted])
+                        num_deleted += 1
+                        
+                if mutable_old_removed == []:
                     return None
-                return mutable
+                return mutable_old_removed
                 
         except KeyError:
             return None

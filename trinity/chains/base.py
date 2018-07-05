@@ -11,10 +11,12 @@ from trinity.utils.mp import (
 
 class ChainProxy(BaseProxy):
     coro_import_block = async_method('import_block')
+    coro_import_chain = async_method('import_chain')
     coro_get_block_stake_from_children = async_method('get_block_stake_from_children')
     coro_get_mature_stake = async_method('get_mature_stake')
     
     import_block = sync_method('import_block')
+    import_chain = sync_method('import_chain')
     get_block_stake_from_children = sync_method('get_block_stake_from_children')
     get_get_mature_stake = sync_method('get_mature_stake')
     get_vm = sync_method('get_vm')

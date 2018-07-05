@@ -82,4 +82,15 @@ def make_mutable(value):
     else:
         return value
     
+def convert_rlp_to_correct_class(wanted_class, given_object):
+
+    parameter_names = list(dict(given_object._meta.fields).keys())
+    parameters = []
+    for parameter_name in parameter_names:
+        parameters.append(getattr(given_object, parameter_name))
+    
+    new_object = wanted_class(*parameters)
+    return new_object
+
+    
     

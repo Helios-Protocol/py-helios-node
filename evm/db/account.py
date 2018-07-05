@@ -15,6 +15,7 @@ from trie import (
     HexaryTrie,
 )
 
+from evm.exceptions import ReceivableTransactionNotFound
 from eth_hash.auto import keccak
 from eth_utils import encode_hex
 
@@ -341,7 +342,7 @@ class AccountDB(BaseAccountDB):
         if found == True:
             del receivable_transactions[i]
         else:
-            raise ValueError("transaction hash {0} not found in receivable_transactions database for wallet {1}".format(transaction_hash, address))
+            raise ReceivableTransactionNotFound("transaction hash {0} not found in receivable_transactions database for wallet {1}".format(transaction_hash, address))
         
         self._set_account(address, account.copy(receivable_transactions=tuple(receivable_transactions)))
     

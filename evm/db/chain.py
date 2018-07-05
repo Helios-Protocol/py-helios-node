@@ -266,6 +266,18 @@ class ChainDB(BaseChainDB):
         return self.get_block_header_by_hash(
             cast(Hash32, canonical_head_hash),
         )
+        
+    def get_block_by_hash(self, block_hash, block_class):
+        
+        block_header = self.get_block_header_by_hash(block_hash)
+        
+        send_transactions = self.get_block_transactions(block_header, block_class.transaction_class)
+        
+        receive_transactions = self.get_block_receive_transactions(block_header, block_class.receive_transaction_class)
+        
+        output_block = block_class(block_header, send_transactions, receive_transactions)
+        
+        return output_block
     
     def get_block_by_number(self, block_number, block_class, wallet_address = None):
         if wallet_address is None:
@@ -478,6 +490,89 @@ class ChainDB(BaseChainDB):
         if block.header.parent_hash != GENESIS_PARENT_HASH:
             self.add_block_child(block.header.parent_hash, block.header.hash)
 
+    
+    #
+    # Unprocessed Block API
+    #
+    def save_block_as_unprocessed(self, block):
+        '''
+        This saves the block as unprocessed, and saves to any unprocessed parents, including the one on this own chain and from receive transactions
+        '''
+        self.save_unprocessed_block_lookup(block.hash)
+        if not self.is_block_processed(block.header.parent_hash):
+            self.save_unprocessed_children_block_lookup(block.header.parent_hash)
+        self.save_unprocessed_children_block_lookup_to_transaction_parents(block.header, block.receive_transaction_class)
+        
+    
+    def save_block_as_processed(self, block):
+        '''
+        This removes any unprocessed lookups for this block.
+        '''
+        self.delete_unprocessed_block_lookup(block.hash)
+        self.delete_unprocessed_children_blocks_lookup(block.hash)
+        
+        
+    def save_unprocessed_block_lookup(self, block_hash):
+        lookup_key = SchemaV1.make_unprocessed_block_lookup_key(block_hash)
+        self.db[lookup_key] = b'1'
+    
+    def save_unprocessed_children_block_lookup(self, block_hash):
+        lookup_key = SchemaV1.make_has_unprocessed_block_children_lookup_key(block_hash)
+        self.db[lookup_key] = b'1'
+        
+        #need to also save for all receive transaction parents
+        
+    def save_unprocessed_children_block_lookup_to_transaction_parents(self, block_header, transaction_class):
+        block_receive_transactions = self.get_block_receive_transactions(block_header,
+                                                                        transaction_class)
+        
+        for receive_transaction in block_receive_transactions:
+            if not self.is_block_processed(receive_transaction.sender_block_hash):
+                self.save_unprocessed_children_block_lookup(receive_transaction.sender_block_hash)
+            
+
+        
+    def has_unprocessed_children(self, block_hash):
+        '''
+        Returns True if the block has unprocessed children
+        '''
+        lookup_key = SchemaV1.make_has_unprocessed_block_children_lookup_key(block_hash)
+        try:
+            self.db[lookup_key]
+            return True
+        except KeyError:
+            return False
+    
+    def is_block_processed(self, block_hash):
+        '''
+        Returns True if the block is processed
+        '''
+        lookup_key = SchemaV1.make_unprocessed_block_lookup_key(block_hash)
+        try:
+            self.db[lookup_key]
+            return False
+        except KeyError:
+            return True
+        
+    
+        
+    def delete_unprocessed_block_lookup(self, block_hash):
+        lookup_key = SchemaV1.make_unprocessed_block_lookup_key(block_hash)
+        try:
+            del(self.db[lookup_key])
+        except KeyError:
+            pass
+        
+    def delete_unprocessed_children_blocks_lookup(self, block_hash):
+        lookup_key = SchemaV1.make_has_unprocessed_block_children_lookup_key(block_hash)
+        try:
+            del(self.db[lookup_key])
+        except KeyError:
+            pass
+        
+        
+        
+        
     #
     # Transaction API
     #

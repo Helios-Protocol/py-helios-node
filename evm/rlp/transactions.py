@@ -182,6 +182,8 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         parameters pass validation rules.
         """
         self.check_signature_validity()
+        #make sure the send transaction is valid too.
+        self.transaction.validate()
 
     #
     # Signature and Sender

@@ -62,6 +62,12 @@ class CannotCalculateStake(PyEVMError):
     """
     pass
 
+class ReceivableTransactionNotFound(PyEVMError):
+    """
+    Raised when a A receive transaction tries to receive a transaction that wasnt sent
+    """
+    pass
+
 
 class TransactionNotFound(PyEVMError):
     """

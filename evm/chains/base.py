@@ -64,6 +64,7 @@ from evm.exceptions import (
     CanonicalHeadNotFound,
     CannotCalculateStake,
     NotEnoughTimeBetweenBlocks,
+    ReceivableTransactionNotFound,
 )
 from eth_keys.exceptions import (
     BadSignature,
@@ -293,6 +294,7 @@ class Chain(BaseChain):
         
         validate_canonical_address(wallet_address, "Wallet Address") 
     
+        self.base_db = base_db
         self.private_key = private_key
         self.wallet_address = wallet_address
         self.chaindb = self.get_chaindb_class()(base_db, self.wallet_address)
@@ -309,6 +311,9 @@ class Chain(BaseChain):
         
         if self.gas_estimator is None:
             self.gas_estimator = get_gas_estimator()  # type: ignore
+      
+    def set_new_wallet_address(self, wallet_address: Address, private_key: BaseKey=None):
+        self.__init__(self.base_db, wallet_address, private_key)
         
     #
     # Helpers
@@ -319,7 +324,7 @@ class Chain(BaseChain):
             raise AttributeError("`chaindb_class` not set")
         return cls.chaindb_class
     
-        
+    
         
     #
     # Chain API
@@ -654,86 +659,204 @@ class Chain(BaseChain):
         with self.get_vm(at_header).state_in_temp_block() as state:
             return self.gas_estimator(state, transaction)
 
-    def import_block(self, block: BaseBlock, perform_validation: bool=True, save_block_head_hash_timestamp = True) -> BaseBlock:
+    def import_chain(self, block_list, perform_validation: bool=True, save_block_head_hash_timestamp = True, wallet_address = None):
+        for block in block_list:
+            self.import_block(block, 
+                              perform_validation = perform_validation, 
+                              save_block_head_hash_timestamp = save_block_head_hash_timestamp, 
+                              wallet_address = wallet_address)
+            
+    def import_block(self, block: BaseBlock, perform_validation: bool=True, save_block_head_hash_timestamp = True, wallet_address = None) -> BaseBlock:
         """
         Imports a complete block.
         """
+        block = self.get_vm().convert_block_to_correct_class(block)
+        if not isinstance(block, self.get_vm().get_block_class()):
+            self.logger.debug("converting block to correct class")
+            block = self.get_vm().convert_block_to_correct_class(block)
+            
+        if wallet_address is not None:
+            #we need to re-initialize the chainfor the new wallet address.
+            if wallet_address != self.wallet_address:
+                self.logger.debug("setting new wallet address for chain")
+                self.set_new_wallet_address(wallet_address = wallet_address)
+            
+        if block.number > self.header.block_number:
+            raise ValidationError(
+                "Attempt to import block #{0}.  Cannot import block with number "
+                "greater than queueblock #{1}.".format(
+                    block.number,
+                    self.header.block_number,
+                )
+            )
+        
+        if block.number < self.header.block_number:
+            #TODO: load chain at that block, check if the hash matches. if it does, then do nothing.
+            #if the hash doesnt match, then reverse transactions of block and all children, and replace the block with this one.
+            pass
         
         if not block.is_genesis:
             time_wait = self.get_vm().check_wait_before_new_block(block)
             if time_wait > 0:
-                self.logger.debug("not enough time between blocks. We require {0} seconds. waiting for {1} seconds.".format(constants.MIN_TIME_BETWEEN_BLOCKS, time_wait))
-                time.sleep(time_wait)
-                
-        if block.number != self.header.block_number:
-            raise ValidationError(
-                "Attempt to import block #{0}.  Cannot import block with number "
-                "different from the queueblock #{1}.".format(
-                    block.number,
-                    self.header.block_number,
-                )
-            )
+                if isinstance(block, self.get_vm().get_queue_block_class()):
+                    self.logger.debug("not enough time between blocks. We require {0} seconds. Since it is a queueblock, we will wait for {1} seconds and then import.".format(constants.MIN_TIME_BETWEEN_BLOCKS, time_wait))
+                    time.sleep(time_wait)
+                else:
+                    raise NotEnoughTimeBetweenBlocks()
         
-
-        imported_block = self.get_vm(block.header).import_block(block)
-        
+        #TODO: we can remove this because they are saved in the state. leave it in for debugging
+        for receive_transaction in block.receive_transactions:
+            #make sure the sender_block_hash exists
+            self.chaindb.get_block_header_by_hash(receive_transaction.sender_block_hash)
+            
         if isinstance(block, self.get_vm().get_queue_block_class()):
             # If it was a queueblock, then the header will have changed after importing
             perform_validation = False
             
-        # Validate the imported block.
-        if perform_validation:
-            ensure_imported_block_unchanged(imported_block, block)
-            self.validate_block(imported_block)
+        if self.chaindb.is_block_processed(block.header.parent_hash):
+            #this part checks to make sure the parent exists
+            try:
+                imported_block = self.get_vm(block.header).import_block(block)
+                # Validate the imported block.
+                if perform_validation:
+                    ensure_imported_block_unchanged(imported_block, block)
+                    self.validate_block(imported_block)
+                
         
-        for receive_transaction in imported_block.receive_transactions:
-            #make sure the sender_block_hash exists
-            sender_header = self.chaindb.get_block_header_by_hash(receive_transaction.sender_block_hash)
-            
-        self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
-        self.chain_head_db.persist(True)
-        if save_block_head_hash_timestamp:
-            self.chain_head_db.add_block_hash_to_chronological_window(imported_block.header.hash, imported_block.header.timestamp)
-            self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
-        self.chaindb.persist_block(imported_block)
-        self.header = self.create_header_from_parent(self.get_canonical_head())
-        self.queue_block = None
-        self.logger.debug(
-            'IMPORTED_BLOCK: number %s | hash %s',
-            imported_block.number,
-            encode_hex(imported_block.hash),
-        )
-        return imported_block
-    
+                    
+                self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
+                self.chain_head_db.persist(True)
+                if save_block_head_hash_timestamp:
+                    self.chain_head_db.add_block_hash_to_chronological_window(imported_block.header.hash, imported_block.header.timestamp)
+                    self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
+                self.chaindb.persist_block(imported_block)
+                self.header = self.create_header_from_parent(self.get_canonical_head())
+                self.queue_block = None
+                self.logger.debug(
+                    'IMPORTED_BLOCK: number %s | hash %s',
+                    imported_block.number,
+                    encode_hex(imported_block.hash),
+                )
+                
+                if self.chaindb.has_unprocessed_children(imported_block.hash):
+                    #try to import all children
+                    children_block_hashes = self.chaindb.get_block_children(imported_block.hash)
+                    if children_block_hashes != None:
+                        for child_block_hash in children_block_hashes:
+                            #this includes the child in this actual chain as well as children from send transactions.
+                            if not self.chaindb.is_block_processed(child_block_hash):
+                                self.logger.debug("importing child block")
+                                #we want to catch errors here so that we process all children blocks. If one block has an error it will just go to the next
+                                try:
+                                    #attempt to import.
+                                    #get chain for wallet address
+                                    child_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(self.chaindb.db, child_block_hash)
+                                    child_chain = Chain(self.base_db, child_wallet_address)
+                                    #get block
+                                    child_block = self.chaindb.get_block_by_hash(child_block_hash, self.get_vm().get_block_class())
+                                    child_chain.import_block(child_block)
+                                except Exception as e:
+                                    self.logger.error("Tried to import an unprocessed child block and got this error {}".format(e))
+                                    pass
+                
+                #finally, remove unprocessed database lookups for this block
+                self.chaindb.save_block_as_processed(imported_block)
+                    
+                return imported_block
+                
+            except ReceivableTransactionNotFound:
+                return self.save_block_as_unprocessed(block)
+        else:
+            return self.save_block_as_unprocessed(block)
+        
+        
     #used for fast sync
-    def import_block_no_verification(self, block: BaseBlock) -> None:
+    def import_block_no_verification(self, block: BaseBlock, wallet_address = None) -> None:
         """
         Imports a complete block. with no verification
         """
    
-        if block.number != self.header.block_number:
+        if wallet_address is not None:
+            #we need to re-initialize the chainfor the new wallet address.
+            if wallet_address != self.wallet_address:
+                self.logger.debug("setting new wallet address for chain")
+                self.set_new_wallet_address(wallet_address = wallet_address)
+        if block.number > self.header.block_number:
             raise ValidationError(
                 "Attempt to import block #{0}.  Cannot import block with number "
-                "different from the queueblock #{1}.".format(
+                "greater than queueblock #{1}.".format(
                     block.number,
                     self.header.block_number,
                 )
             )
         
-        imported_block = self.get_vm(block.header).import_block_no_verification(block)
+        if block.number < self.header.block_number:
+            #TODO: load chain at that block, check if the hash matches. if it does, then do nothing.
+            #if the hash doesnt match, then reverse transactions of block and all children, and replace the block with this one.
+            pass
         
-        self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
-        self.chain_head_db.persist(save_current_root_hash = True, save_root_hash_timestamps = False)
-
-        self.chaindb.persist_block(imported_block)
-        self.header = self.create_header_from_parent(imported_block.header)
+        try:
+            imported_block = self.get_vm(block.header).import_block_no_verification(block)
+            self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
+            self.chain_head_db.persist(save_current_root_hash = True, save_root_hash_timestamps = False)
+    
+            self.chaindb.persist_block(imported_block)
+            self.header = self.create_header_from_parent(self.get_canonical_head())
+            self.queue_block = None
+            self.logger.debug(
+                'FAST_IMPORTED_BLOCK: number %s | hash %s',
+                imported_block.number,
+                encode_hex(imported_block.hash),
+            )
+            #TODO:process all children
+            if self.chaindb.has_unprocessed_children(imported_block.hash):
+                #try to import all children
+                children_block_hashes = self.chaindb.get_block_children(imported_block.hash)
+                if children_block_hashes != None:
+                    for child_block_hash in children_block_hashes:
+                        #this includes the child in this actual chain as well as children from send transactions.
+                        if not self.chaindb.is_block_processed(child_block_hash):
+                            self.logger.debug("importing child block")
+                            #we want to catch errors here so that we process all children blocks. If one block has an error it will just go to the next
+                            try:
+                                #attempt to import.
+                                #get chain for wallet address
+                                child_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(self.chaindb.db, child_block_hash)
+                                child_chain = Chain(self.base_db, child_wallet_address)
+                                #get block
+                                child_block = self.chaindb.get_block_by_hash(child_block_hash, self.get_vm().get_block_class())
+                                child_chain.import_block(child_block)
+                            except Exception as e:
+                                self.logger.error("Tried to import an unprocessed child block and got this error {}".format(e))
+                                pass
+            
+            #finally, remove unprocessed database lookups for this block
+            self.chaindb.save_block_as_processed(imported_block)
+            
+            
+        except ReceivableTransactionNotFound:
+            self.save_block_as_unprocessed(block)
+        
+        
+    def save_block_as_unprocessed(self, block):
+        #before adding to unprocessed blocks, make sure the receive transactions are valid
+        for receive_transaction in block.receive_transactions:
+            #there must be at least 1 to get this far
+            receive_transaction.validate()
+            
+        #now we add it to unprocessed blocks
+        self.chaindb.save_block_as_unprocessed(block)
+    
+        self.chaindb.persist_block(block)
+        self.header = self.create_header_from_parent(self.get_canonical_head())
         self.queue_block = None
+        
         self.logger.debug(
-            'FAST_IMPORTED_BLOCK: number %s | hash %s',
-            imported_block.number,
-            encode_hex(imported_block.hash),
+            'SAVED_BLOCK_AS_UNPROCESSED: number %s | hash %s',
+            block.number,
+            encode_hex(block.hash),
         )
-
+        return block
         
     def import_current_queue_block(self):
         

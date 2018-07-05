@@ -39,6 +39,7 @@ from evm.exceptions import (
     IncorrectBlockType,
     IncorrectBlockHeaderType,
     BlockOnWrongChain,
+    ParentNotFound,
 )
 from evm.rlp.blocks import (  # noqa: F401
     BaseBlock,
@@ -76,6 +77,7 @@ from eth_keys.datatypes import(
         PublicKey,
         PrivateKey
 )
+from evm.utils.rlp import convert_rlp_to_correct_class
 
 class BaseVM(Configurable, metaclass=ABCMeta):
     block = None  # type: BaseBlock
@@ -262,8 +264,16 @@ class VM(BaseVM):
                 raise BlockOnWrongChain("Block sender doesnt match chain wallet address")
             self.logger.debug("Initializing VM with completed block")
         else:
-            self.block = self.get_queue_block_class().from_header(header=header)
-            self.logger.debug("Initializing VM with queue block")
+            #this will also find unprocessed headers
+            if chaindb.header_exists(header.parent_hash):
+                self.block = self.get_queue_block_class().from_header(header=header)
+                self.logger.debug("Initializing VM with queue block")
+            elif header.parent_hash == GENESIS_PARENT_HASH:
+                self.block = self.get_queue_block_class().from_header(header=header)
+                self.logger.debug("Initializing VM with queue block")
+            else:
+                raise ParentNotFound()
+            
         
 
         self.state = self.get_state_class()(db=self.chaindb.db, execution_context=self.block.header.create_execution_context(self.previous_hashes))
@@ -364,7 +374,11 @@ class VM(BaseVM):
                 self.apply_transaction(previous_header, transaction, validate = validate)
             return 
     
-
+    def refresh_state(self):
+        self.state = self.get_state_class()(
+                db=self.chaindb.db, 
+                execution_context=self.block.header.create_execution_context(self.previous_hashes)
+                )
 
     #
     # Mining
@@ -390,11 +404,8 @@ class VM(BaseVM):
             )
         )
         # we need to re-initialize the `state` to update the execution context.
-        self.state = self.get_state_class()(
-                db=self.chaindb.db, 
-                execution_context=self.block.header.create_execution_context(self.previous_hashes)
-                )
-        
+        #this also removes and unpersisted state changes.
+        self.refresh_state()
         
         #run all of the transactions.
         last_header, receipts = self._apply_all_transactions(block.transactions, self.block.header)
@@ -469,17 +480,18 @@ class VM(BaseVM):
             
 
         # we need to re-initialize the `state` to update the execution context.
-        self.state = self.get_state_class()(
-                db=self.chaindb.db, 
-                execution_context=block.header.create_execution_context(self.previous_hashes)
-                )
+        self.refresh_state()
         
-        
+        #if we don't validate here, then we are opening ourselves up to someone having invalid receive transactions.
+        #We would also not check to see if the send transaction exists. So lets validate for now. We can only 
+        #set validate to False if we 100% trust the source
         #run all of the transactions.
-        self._apply_all_transactions(block.transactions, block.header, validate = False)
+        #self._apply_all_transactions(block.transactions, block.header, validate = False)
+        self._apply_all_transactions(block.transactions, block.header, validate = True)
         
         #then run all receive transactions
-        self._apply_all_transactions(block.receive_transactions, block.header, validate = False)
+        #self._apply_all_transactions(block.receive_transactions, block.header, validate = False)
+        self._apply_all_transactions(block.receive_transactions, block.header, validate = True)
 
         #save all send transactions in the state as receivable
         self.save_transactions_as_receivable(block.header, block.transactions)
@@ -592,6 +604,30 @@ class VM(BaseVM):
         else:
             return cls.block_class
 
+    def convert_block_to_correct_class(self, block):
+        """
+        Returns a block that is an instance of the correct block class for this vm
+        """
+        #parameters = list(dict(sender_block_1_imported._meta.fields).values())
+        correct_transactions = []
+        for transaction in block.transactions:
+            new_transaction = convert_rlp_to_correct_class(self.block.transaction_class, transaction)
+            correct_transactions.append(new_transaction)
+            
+        correct_receive_transactions = []
+        for transaction in block.receive_transactions:
+            new_transaction = convert_rlp_to_correct_class(self.block.receive_transaction_class, transaction)
+            correct_receive_transactions.append(new_transaction)
+        
+        self.block = self.block.copy(
+            header=block.header,
+            transactions = correct_transactions,
+            receive_transactions = correct_receive_transactions
+        )
+        
+        return self.block
+        
+        
     @classmethod
     def get_queue_block_class(cls) -> Type['BaseQueueBlock']:
         """

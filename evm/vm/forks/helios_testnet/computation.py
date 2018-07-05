@@ -33,6 +33,7 @@ from evm.exceptions import (
     OutOfGas,
     InsufficientFunds,
     StackDepthLimit,
+    ReceivableTransactionNotFound,
 )
 
 
@@ -82,7 +83,7 @@ class HeliosTestnetComputation(BaseComputation):
                 #this is a receive transaction
                 try:
                     self.state.account_db.delete_receivable_transaction(self.msg.storage_address, self.transaction_context.send_tx_hash)
-                except ValueError as e:
+                except ReceivableTransactionNotFound as e:
                     if validate:
                         raise e
                         

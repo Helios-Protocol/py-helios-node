@@ -54,7 +54,8 @@ from p2p.constants import (
     LOCAL_ROOT_HASH_CHECK_MIN_TIME_PERIOD,
     BLOCK_CONFLICT_RESOLUTION_PERIOD,
     CONSENUS_PEER_DISCONNECT_CHECK_PERIOD,
-    CONSENSUS_CHECK_READY_TIME_PERIOD
+    CONSENSUS_CHECK_READY_TIME_PERIOD,
+    ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD
 )
 
 from p2p import protocol
@@ -154,9 +155,12 @@ class Consensus(BaseService, PeerPoolSubscriber):
         self._last_check_to_remove_disconnected_peer_data = 0
         self._last_check_to_see_if_consensus_ready = 0
         self._last_check_local_root_hash_timestamps = 0
+        self._last_check_to_remove_old_local_root_hash_timestamps_from_peer_statistics = 0
         
         #{wallet_address:stake...}
         self.peer_stake_from_bootstrap_node = {}
+        
+        self.num_peers_contributing_to_consensus = 0
      
         self._is_syncing = True
         
@@ -170,7 +174,21 @@ class Consensus(BaseService, PeerPoolSubscriber):
     #TODO. check to make sure the peers also have stake that is not equal to None
     @property
     def has_enough_peers(self):
+        if len(self.peer_pool.connected_nodes) >= MIN_SAFE_PEERS:
+            self.logger.debug("Has enough peers. connected peers: {}".format(self.peer_pool.connected_nodes.keys()))
+        else:
+            #self.logger.debug("doesnt have enough peers. connected peers: {}".format(self.peer_pool.connected_nodes.keys()))
+            pass
         return len(self.peer_pool.connected_nodes) >= MIN_SAFE_PEERS
+    
+    @property
+    def has_enough_consensus_participants(self):
+        if len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS:
+            self.logger.debug("has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
+        else:
+            #self.logger.debug("doesnt has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
+            pass
+        return len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS
     
     @property
     async def is_syncing(self):
@@ -183,11 +201,13 @@ class Consensus(BaseService, PeerPoolSubscriber):
         #this can be the only requirement. Therefore, we must make sure that we don't ever save the 
         #root hash timestamp unless sync is complete. So we cannot do a normal import until sync is complete
         if self._last_check_if_syncing_time < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
-            local_root_hash_timestamps = await self.chain_head_db.coro_get_historical_root_hashes()
+            local_root_hash_timestamps = await self.chain_head_db.coro_get_historical_root_hashes(after_timestamp=(int(time.time())-ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD))
             if local_root_hash_timestamps == None:
                 self._is_syncing = True
-            self._is_syncing = False
+            else:
+                self._is_syncing = False
         
+            #self.logger.debug("IS_SYNCING: {}, local_root_hash_timestamps: {}".format(self._is_syncing, local_root_hash_timestamps))
         return self._is_syncing
        
     async def get_accurate_stake(self, wallet_address, local_stake):
@@ -280,6 +300,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
     Standard service functions
     '''
     def register_peer(self, peer: BasePeer) -> None:
+        #self.peer_root_hash_timestamps[peer.wallet_address] = [new_peer_stake, new_root_hash_timestamps]
         pass
         
     async def _handle_msg_loop(self) -> None:
@@ -324,16 +345,15 @@ class Consensus(BaseService, PeerPoolSubscriber):
                                     self.block_choice_statistics, 
                                     self.root_hash_timestamps_statistics))
                 
-                self.logger.debug("done syncing consensus. These are the peer consensus for block_choices, root_hashes: {0}, {1}".format(
-                                    self.block_choice_consensus, 
-                                    self.root_hash_timestamps_consensus))
 
-                
                 #here we shouldnt pause because if it returned early than thats because we got some data from peers. we want to process data asap.
-                self.populate_peer_consensus()
+                #self.populate_peer_consensus()
                 #TODO. when a peer disconnects, make sure we delete their vote.
+                
+                self.remove_data_for_old_root_hash_timestamps()
                 self.remove_data_for_disconnected_peers()
                 self.remove_data_for_blocks_that_achieved_consensus()
+                #this is run after populate consensus. so if there are enough peers who we have root hashes for, then they will be included in consensus.
                 self.check_if_ready()
                 
                 
@@ -344,7 +364,9 @@ class Consensus(BaseService, PeerPoolSubscriber):
         
     def check_if_ready(self):
         if self._last_check_to_see_if_consensus_ready < (int(time.time()) - CONSENSUS_CHECK_READY_TIME_PERIOD):
-            if len(self.root_hash_timestamps_consensus) > 0 and self.has_enough_peers:
+            if self.has_enough_consensus_participants and self.has_enough_peers:
+                #await asyncio.sleep()
+                
                 self.coro_is_ready.set()
             else:
                 self.coro_is_ready.clear()
@@ -532,24 +554,36 @@ class Consensus(BaseService, PeerPoolSubscriber):
         Populates local consensus variables with the given consensus of the particular type. Doesnt account for local chain data
         '''
         #first we calculate consensus on state root timestamps
-        self.root_hash_timestamps_consensus = {}
+#        self.root_hash_timestamps_consensus = {}
+#        oldest_allowed_time = int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE*2
+#        for timestamp, root_hash_stakes in self.root_hash_timestamps_statistics.copy().items():
+#            if timestamp < oldest_allowed_time:
+#                del(self.root_hash_timestamps_statistics[timestamp])
+#            else:
+#                self.root_hash_timestamps_consensus[timestamp] = self.determine_stake_winner(root_hash_stakes)
+#                    
+        
+#        #now we calculate the same for conflict blocks
+#        self.block_choice_consensus = {}
+#        for chain_wallet_address, block_numbers in self.block_choice_statistics.items():
+#            block_number_consensus = {}
+#            for block_number, block_hash_stakes in block_numbers.items():
+#                block_number_consensus[block_number] = self.determine_stake_winner(block_hash_stakes)
+#            self.block_choice_consensus[chain_wallet_address] = block_number_consensus
+#            
+#   
+    def remove_data_for_old_root_hash_timestamps(self):
+        if self._last_check_to_remove_old_local_root_hash_timestamps_from_peer_statistics < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
+            self._remove_data_for_old_root_hash_timestamps()
+            self._last_check_to_remove_old_local_root_hash_timestamps_from_peer_statistics = int(time.time())
+            
+    def _remove_data_for_old_root_hash_timestamps(self):
         oldest_allowed_time = int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE*2
         for timestamp, root_hash_stakes in self.root_hash_timestamps_statistics.copy().items():
             if timestamp < oldest_allowed_time:
                 del(self.root_hash_timestamps_statistics[timestamp])
-            else:
-                self.root_hash_timestamps_consensus[timestamp] = self.determine_stake_winner(root_hash_stakes)
-                    
-        
-        #now we calculate the same for conflict blocks
-        self.block_choice_consensus = {}
-        for chain_wallet_address, block_numbers in self.block_choice_statistics.items():
-            block_number_consensus = {}
-            for block_number, block_hash_stakes in block_numbers.items():
-                block_number_consensus[block_number] = self.determine_stake_winner(block_hash_stakes)
-            self.block_choice_consensus[chain_wallet_address] = block_number_consensus
-            
-    
+
+
     def remove_data_for_blocks_that_achieved_consensus(self):
         if self._last_check_to_remove_blocks_that_acheived_consensus < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
             self._remove_data_for_blocks_that_achieved_consensus()
@@ -578,11 +612,13 @@ class Consensus(BaseService, PeerPoolSubscriber):
             
         for wallet_address in self.peer_root_hash_timestamps.copy().keys():
             if wallet_address not in connected_peer_wallet_addresses:
+                self.logger.debug("removing root_hash_timestamps for peer {} because they have disconnected".format(wallet_address))
                 del self.peer_root_hash_timestamps[wallet_address]
                 
 
         for wallet_address in self.peer_block_choices.copy().keys():
             if wallet_address not in connected_peer_wallet_addresses:
+                self.logger.debug("removing block_choices for peer {} because they have disconnected".format(wallet_address))
                 del(self.peer_block_choices[wallet_address])
         
              
@@ -600,7 +636,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
         '''
         Returns the closest timestamp that we have a saved root hash for
         '''
-        for available_timestamp in self.root_hash_timestamps_consensus.keys():
+        for available_timestamp in self.root_hash_timestamps_statistics.keys():
             if available_timestamp <= timestamp:
                 to_return =  available_timestamp, await self.get_root_hash_consensus(available_timestamp)
                 return to_return
@@ -622,6 +658,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
         '''
         Returns the consensus root hash for a given timestamp
         '''
+        
         local_root_hash_timestamps = await self.local_root_hash_timestamps
         if local_root_hash_timestamps is not None:
             try:
@@ -630,9 +667,11 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 local_root_hash = None
         else:
             local_root_hash = None
-            
+           
+        
         try:
-            peer_root_hash, peer_stake_for_peer_root_hash = self.root_hash_timestamps_consensus[timestamp]
+            root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
+            peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
         except KeyError:
             peer_root_hash = None
             
@@ -670,8 +709,19 @@ class Consensus(BaseService, PeerPoolSubscriber):
         except HeaderNotFound:
             local_block_hash = None
         
+#        self.block_choice_consensus = {}
+#        for chain_wallet_address, block_numbers in self.block_choice_statistics.items():
+#            block_number_consensus = {}
+#            for block_number, block_hash_stakes in block_numbers.items():
+#                block_number_consensus[block_number] = self.determine_stake_winner(block_hash_stakes)
+#            self.block_choice_consensus[chain_wallet_address] = block_number_consensus
+#            
+            
+        
         try:
-            peer_consensus_block_hash, peer_consensus_block_stake = self.block_choice_consensus[chain_wallet_address][block_number]
+            block_hash_stakes = self.block_choice_statistics[chain_wallet_address][block_number]
+            peer_consensus_block_hash, peer_consensus_block_stake = self.determine_stake_winner(block_hash_stakes)
+            #peer_consensus_block_hash, peer_consensus_block_stake = self.block_choice_consensus[chain_wallet_address][block_number]
         except KeyError:
             peer_consensus_block_hash = None
         

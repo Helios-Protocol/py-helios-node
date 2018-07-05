@@ -186,6 +186,7 @@ class GetChainsSyncing(Command):
 class Chain(Command):
     _cmd_id = 28
     structure = [
+        ('is_last', sedes.boolean),
         ('blocks', sedes.CountableList(P2PBlock))]
 
 
@@ -198,7 +199,7 @@ class HLSProtocol(Protocol):
         NewBlock, NewBlock, NewBlock, GetNodeData, NodeData,
         GetReceipts, Receipts, GetChainHeadTrieBranch, ChainHeadTrieBranch, GetChainHeadRootHashTimestamps,
         ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification,
-        GetStakeForAddresses, StakeForAddresses, GetChainsSyncing]
+        GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain]
     cmd_length = 40
     logger = logging.getLogger("p2p.hls.HLSProtocol")
 
@@ -355,9 +356,10 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(data)
         self.send(header, body)
     
-    def send_chain(self, list_of_blocks) -> None:
+    def send_chain(self, list_of_blocks, is_last) -> None:
         cmd = Chain(self.cmd_id_offset)
         data = {
+            'is_last': is_last,
             'blocks': list_of_blocks}
         header, body = cmd.encode(data)
         self.send(header, body)

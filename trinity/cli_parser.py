@@ -159,6 +159,16 @@ chain_parser.add_argument(
         "generate a random blockchain database"
     ),
 )
+    
+chain_parser.add_argument(
+    '--filter_log',
+    default=None,
+    help=(
+        "Only allow logging for this module"
+    ),
+)
+
+
 
 chain_parser.add_argument(
     '--nodekey',

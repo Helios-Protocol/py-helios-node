@@ -78,11 +78,12 @@ TRINITY_AMBIGIOUS_FILESYSTEM_INFO = (
     "   to create directories outside of the trinity root directory\n"
 )
 
-
+#python main.py --instance 1 --filter_log p2p.chain.ChainSyncer --rand_db 1
 def main(instance_number = None) -> None:
     args = parser.parse_args()
 
     log_level = getattr(logging, args.log_level.upper())
+    #log_level = getattr(logging, 'INFO')
 
     if args.network_id not in PRECONFIGURED_NETWORKS:
         raise NotImplementedError(
@@ -92,6 +93,13 @@ def main(instance_number = None) -> None:
 
     logger, formatter, handler_stream = setup_trinity_stdout_logging(log_level)
 
+    #print this to see all of the loggers to choose from. have to call it after they are initialized
+    #print(logging.Logger.manager.loggerDict)
+    
+    if args.filter_log != None:
+        #handler_stream.addFilter(logging.Filter('p2p.chain.ChainSyncer'))
+        handler_stream.addFilter(logging.Filter(args.filter_log))
+        
     if args.rand_db == 1:
         os.environ["GENERATE_RANDOM_DATABASE"] = 'true'
     if args.instance is not None:
@@ -136,6 +144,12 @@ def main(instance_number = None) -> None:
         chain_config,
         log_level
     )
+    
+#    print('testtest')
+#    for handler in logging.root.handlers:
+#        logger.info('test')
+#        logger.info(handler)
+        
     
     # if console command, run the trinity CLI
     if args.subcommand == 'attach':
@@ -230,6 +244,7 @@ async def exit_on_signal(service_to_exit: BaseService) -> None:
 def launch_node(chain_config: ChainConfig) -> None:
     display_launch_logs(chain_config)
     
+    
     NodeClass = chain_config.node_class
     node = NodeClass(chain_config)
     
@@ -240,6 +255,7 @@ def display_launch_logs(chain_config: ChainConfig) -> None:
     logger = logging.getLogger('trinity')
     logger.info(HELIOS_HEADER)
     logger.info(construct_trinity_client_identifier())
+    
 
 
 def run_service_until_quit(service: BaseService) -> None:
@@ -251,5 +267,5 @@ def run_service_until_quit(service: BaseService) -> None:
 
 
 if __name__ == "__main__":
-    __spec__ = 'Nones'
+    __spec__ = 'None'
     main(1)

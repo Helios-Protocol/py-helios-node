@@ -29,6 +29,8 @@ class P2PReceiveTransaction(rlp.Serializable):
     ]
 
 class P2PBlock(rlp.Serializable):
+    transaction_class = P2PSendTransaction
+    receive_transaction_class = P2PReceiveTransaction
     fields =[
         ('header', BlockHeader),
         ('transactions', sedes.CountableList(P2PSendTransaction)),
