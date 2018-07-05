@@ -3,7 +3,7 @@
 from setuptools import setup, find_packages
 
 
-deps = {
+deps = { 
     'evm': [
         "aiohttp>=2.3.1,<3.0.0",
         "async_lru>=0.1.0,<1.0.0",
