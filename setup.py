@@ -85,14 +85,14 @@ deps['dev'] = (
 install_requires = deps['evm'] + deps['p2p'] + deps['trinity']
 
 setup(
-    name='py-evm',
+    name='py-heliosvm',
     # *IMPORTANT*: Don't manually change the version here. Use the 'bumpversion' utility.
     version='0.2.0-alpha.18',
-    description='Python implementation of the Ethereum Virtual Machine',
+    description='Python implementation of the Helios Virtual Machine',
     long_description_markdown_filename='README.md',
-    author='Piper Merriam',
-    author_email='piper@pipermerriam.com',
-    url='https://github.com/ethereum/py-evm',
+    author='Tommy Mckinnon',
+    author_email='tommy@heliosprotocol.io',
+    url='https://github.com/Helios-Protocol/helios-vm',
     include_package_data=True,
     py_modules=['evm', 'trinity', 'p2p'],
     install_requires=install_requires,
@@ -100,7 +100,7 @@ setup(
     setup_requires=['setuptools-markdown'],
     license='MIT',
     zip_safe=False,
-    keywords='ethereum blockchain evm',
+    keywords='helios protocol blockchain vm',
     packages=find_packages(exclude=["tests", "tests.*"]),
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
