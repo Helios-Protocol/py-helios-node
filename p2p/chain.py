@@ -305,7 +305,7 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
                 else:
                     if self.received_final_chain.is_set():
                         #only send new chain requests if we havent gotten to the final one, or if we are re-requesting a failed request.
-                        return
+                        break
                     self.last_window_start = self.last_window_start + self.last_window_length
                     window_start = self.last_window_start
                     
@@ -660,7 +660,9 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
 #        structure = [
 #            ('is_last', sedes.boolean),
 #            ('blocks', sedes.CountableList(P2PBlock))]
-        chain_address = msg['blocks'][0].header.sender
+
+        for block in msg['blocks']:
+            self.logger.debug(block.header.block_number)
         
         with await self.writing_chain_request_vars:
             try:
@@ -682,7 +684,7 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
             
             #now lets save it to database overwriting any chain that we have
             self.logger.debug("importing chain now")
-            await self.chain.coro_import_chain(block_list = msg['blocks'], wallet_address = chain_address)
+            await self.chain.coro_import_chain(block_list = msg['blocks'])
             
             try:
                 self.num_chains_returned_in_incomplete_requests[peer.wallet_address] += 1

@@ -112,6 +112,26 @@ class BaseState(Configurable, metaclass=ABCMeta):
             raise AttributeError("No account_db_class set for {0}".format(cls.__name__))
         return cls.account_db_class
        
+    def load_account_from_hash(self, account_hash, wallet_address):
+        self.account_db.revert_to_account_from_hash(account_hash, wallet_address)
+    
+    def revert_account_to_hash_and_persist(self, account_hash, wallet_address):
+        self.account_db.revert_to_account_from_hash(account_hash, wallet_address)
+        self.account_db.persist()
+        
+    def revert_account_to_hash_keep_receivable_transactions_and_persist(self, account_hash, wallet_address):
+        receivable_transactions = self.account_db.get_receivable_transactions(wallet_address)
+        self.account_db.revert_to_account_from_hash(account_hash, wallet_address)
+        self.account_db.add_receivable_transactions(wallet_address, receivable_transactions)
+        self.account_db.persist()
+        
+    def clear_account_keep_receivable_transactions_and_persist(self, wallet_address):
+        receivable_transactions = self.account_db.get_receivable_transactions(wallet_address)
+        self.account_db.delete_account(wallet_address)
+        self.account_db.add_receivable_transactions(wallet_address, receivable_transactions)
+        self.account_db.persist()
+        
+        
     #   
     # Access self._chaindb
     #

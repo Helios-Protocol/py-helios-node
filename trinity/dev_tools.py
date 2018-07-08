@@ -49,7 +49,7 @@ def create_dev_test_random_blockchain_database(base_db):
     sender_chain = MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
     
     #now lets add 100 send receive block combinations
-    for i in range (10):
+    for i in range (5):
         random.shuffle(random_private_keys)
         if i == 0:
             privkey = GENESIS_PRIVATE_KEY
@@ -66,22 +66,28 @@ def create_dev_test_random_blockchain_database(base_db):
                     gas_price=0x01,
                     gas=0x0c3500,
                     to=receiver_privkey.public_key.to_canonical_address(),
-                    value=10000000000000000-i*800000,
+                    value=10000000000000000-i*800000-random.randint(0,1000),
                     data=b"",
                     v=0,
                     r=0,
                     s=0
                     )
         
-        sender_chain.import_current_queue_block()
+        imported_block = sender_chain.import_current_queue_block()
+#        print("imported_block_hash = {}".format(encode_hex(imported_block.hash)))
+#        receivable_tx = sender_chain.get_vm().state.account_db.get_receivable_transactions(receiver_privkey.public_key.to_canonical_address())
+#        print('receivable_tx from account = {}'.format([encode_hex(x.sender_block_hash) for x in receivable_tx]))
+#        exit()
         
         logger.debug("Receiving ")
         
         #then receive the transactions
         receiver_chain = MainnetChain(base_db, receiver_privkey.public_key.to_canonical_address(), receiver_privkey)
         receiver_chain.populate_queue_block_with_receive_tx()
-        receiver_chain.import_current_queue_block()
+        imported_block = receiver_chain.import_current_queue_block()
         
+        imported_block_from_db = receiver_chain.chaindb.get_block_by_number(imported_block.header.block_number, receiver_chain.get_vm().get_block_class(),receiver_privkey.public_key.to_canonical_address())
+
         logger.debug("finished creating block group {}".format(i))
     
     

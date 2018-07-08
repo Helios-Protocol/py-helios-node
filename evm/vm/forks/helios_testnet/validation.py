@@ -1,7 +1,7 @@
 from evm.exceptions import (
     ValidationError,
     ReceiveTransactionIncorrectSenderBlockHash,
-    ReceiveTransactionNotInDb,
+    ReceivableTransactionNotFound,
     ReceivingTransactionForWrongWallet,
 )
 from evm.constants import (
@@ -29,7 +29,7 @@ def validate_helios_testnet_transaction(account_db, transaction):
         receivable_tx_key = account_db.get_receivable_transaction(receiver, transaction.transaction.hash)
         
         if receivable_tx_key is False:
-            raise ReceiveTransactionNotInDb("The receive transaction is not in our db")
+            raise ReceivableTransactionNotFound("The receive transaction is not in our db")
         if transaction.sender_block_hash != receivable_tx_key.sender_block_hash:
             raise ReceiveTransactionIncorrectSenderBlockHash("The receive transaction sender block hash doesn't match the one in our db")
     

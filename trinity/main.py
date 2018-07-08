@@ -77,7 +77,13 @@ TRINITY_AMBIGIOUS_FILESYSTEM_INFO = (
     "   Make sure all paths are pre-initialized as Trinity won't attempt\n"
     "   to create directories outside of the trinity root directory\n"
 )
-
+class Whitelist(logging.Filter):
+    def __init__(self, *whitelist):
+        self.whitelist = [logging.Filter(name) for name in whitelist]
+    
+    def filter(self, record):
+        return any(f.filter(record) for f in self.whitelist)
+    
 #python main.py --instance 1 --filter_log p2p.chain.ChainSyncer --rand_db 1
 def main(instance_number = None) -> None:
     args = parser.parse_args()
@@ -98,7 +104,8 @@ def main(instance_number = None) -> None:
     
     if args.filter_log != None:
         #handler_stream.addFilter(logging.Filter('p2p.chain.ChainSyncer'))
-        handler_stream.addFilter(logging.Filter(args.filter_log))
+        #handler_stream.addFilter(logging.Filter(args.filter_log), logging.Filter('evm.chain.chain.Chain'))
+        handler_stream.addFilter(Whitelist(args.filter_log, 'evm.chain.chain.Chain'))
         
     if args.rand_db == 1:
         os.environ["GENERATE_RANDOM_DATABASE"] = 'true'

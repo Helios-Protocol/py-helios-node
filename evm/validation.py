@@ -18,6 +18,7 @@ from evm.constants import (
     GAS_LIMIT_MINIMUM,
     SECPK1_N,
     UINT_256_MAX,
+    BLOCK_GAS_LIMIT,
 )
 from evm.exceptions import (
     ValidationError,
@@ -243,23 +244,30 @@ def validate_vm_configuration(vm_configuration):
     ))
 
 
+#def validate_gas_limit(gas_limit, parent_gas_limit):
+#    if gas_limit < GAS_LIMIT_MINIMUM:
+#        raise ValidationError("Gas limit {0} is below minimum {1}".format(
+#            gas_limit, GAS_LIMIT_MINIMUM))
+#    if gas_limit > GAS_LIMIT_MAXIMUM:
+#        raise ValidationError("Gas limit {0} is above maximum {1}".format(
+#            gas_limit, GAS_LIMIT_MAXIMUM))
+#    diff = gas_limit - parent_gas_limit
+#    if diff > (parent_gas_limit // GAS_LIMIT_ADJUSTMENT_FACTOR):
+#        raise ValidationError(
+#            "Gas limit {0} difference to parent {1} is too big {2}".format(
+#                gas_limit, parent_gas_limit, diff))
+    
 def validate_gas_limit(gas_limit, parent_gas_limit):
-    if gas_limit < GAS_LIMIT_MINIMUM:
-        raise ValidationError("Gas limit {0} is below minimum {1}".format(
-            gas_limit, GAS_LIMIT_MINIMUM))
-    if gas_limit > GAS_LIMIT_MAXIMUM:
+    if gas_limit > BLOCK_GAS_LIMIT:
         raise ValidationError("Gas limit {0} is above maximum {1}".format(
-            gas_limit, GAS_LIMIT_MAXIMUM))
-    diff = gas_limit - parent_gas_limit
-    if diff > (parent_gas_limit // GAS_LIMIT_ADJUSTMENT_FACTOR):
-        raise ValidationError(
-            "Gas limit {0} difference to parent {1} is too big {2}".format(
-                gas_limit, parent_gas_limit, diff))
+            gas_limit, BLOCK_GAS_LIMIT))
+    
 
 
 ALLOWED_HEADER_FIELDS = {
     'account_hash',
     'gas_limit',
+    'gas_used',
     'timestamp',
     'extra_data',
     'transaction_root',

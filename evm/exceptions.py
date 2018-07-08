@@ -94,6 +94,12 @@ class CanonicalHeadNotFound(PyEVMError):
     """
     pass
 
+class TriedImportingGenesisBlock(PyEVMError):
+    """
+    Raised when the genesis block on the genesis chain is attempted to be overwritten
+    """
+    pass
+
 
 class CollationHeaderNotFound(PyEVMError):
     """
@@ -119,6 +125,12 @@ class CanonicalCollationNotFound(PyEVMError):
 class ValidationError(PyEVMError):
     """
     Raised when something does not pass a validation check.
+    """
+    pass
+
+class JournalDbNotActivated(PyEVMError):
+    """
+    Raised when someone tries to discard, save, persist a db, when it is not actually a journaldb
     """
     pass
 
@@ -187,11 +199,6 @@ class ReceiveTransactionIncorrectSenderBlockHash(VMError):
     """
     pass
 
-class ReceiveTransactionNotInDb(VMError):
-    """
-    Raised when a receive transaction is not found in our db
-    """
-    pass
 
 class ReceivingTransactionForWrongWallet(VMError):
     """

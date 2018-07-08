@@ -40,6 +40,7 @@ from evm.exceptions import (
     IncorrectBlockHeaderType,
     BlockOnWrongChain,
     ParentNotFound,
+    ReceivableTransactionNotFound,
 )
 from evm.rlp.blocks import (  # noqa: F401
     BaseBlock,
@@ -247,9 +248,9 @@ class VM(BaseVM):
         - ``block_class``: The :class:`~evm.rlp.blocks.Block` class for blocks in this VM ruleset.
         - ``_state_class``: The :class:`~evm.vm.state.State` class used by this VM for execution.
     """
-    def __init__(self, header, chaindb, private_key: BaseKey, network_id):
+    def __init__(self, header, chaindb, wallet_address, private_key: BaseKey, network_id):
         self.chaindb = chaindb
-        self.wallet_address = chaindb.wallet_address
+        self.wallet_address = wallet_address
         self.private_key = private_key
         self.network_id = network_id
         
@@ -268,7 +269,7 @@ class VM(BaseVM):
             if chaindb.header_exists(header.parent_hash):
                 self.block = self.get_queue_block_class().from_header(header=header)
                 self.logger.debug("Initializing VM with queue block")
-            elif header.parent_hash == GENESIS_PARENT_HASH:
+            elif header.parent_hash == GENESIS_PARENT_HASH and header.block_number == 0:
                 self.block = self.get_queue_block_class().from_header(header=header)
                 self.logger.debug("Initializing VM with queue block")
             else:
@@ -380,6 +381,24 @@ class VM(BaseVM):
                 execution_context=self.block.header.create_execution_context(self.previous_hashes)
                 )
 
+    def reverse_pending_transactions(self, block_header):
+        """
+        Doesnt actually reverse transactions. It just re-adds the received transactions as receivable, 
+        and removes all send transactions as receivable from the receiver state
+        """
+        send_transactions = self.chaindb.get_block_transactions(block_header, self.get_block_class().transaction_class)
+        self.delete_transactions_as_receivable(block_header.hash, send_transactions)
+        
+        receive_transactions = self.chaindb.get_block_receive_transactions(block_header, self.get_block_class().receive_transaction_class)
+        for receive_transaction in receive_transactions:
+            #only add this back if the sender block has still been processed
+            if not self.chaindb.is_block_unprocessed(receive_transaction.sender_block_hash) and self.chaindb.exists(receive_transaction.sender_block_hash):
+                try:
+                    self.save_transaction_as_receivable(receive_transaction.sender_block_hash, receive_transaction.transaction)
+                except ValueError:
+                    pass
+                
+                
     #
     # Mining
     #
@@ -393,9 +412,10 @@ class VM(BaseVM):
                 raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
             
         #TODO: if importing queueblock, verify it here first before trying to import.
-        self.block = self.block.copy(
+        self.block = block.copy(
             header=self.configure_header(
                 gas_limit=block.header.gas_limit,
+                gas_used=0,
                 timestamp=block.header.timestamp,
                 extra_data=block.header.extra_data,
                 v=block.header.v,
@@ -403,6 +423,8 @@ class VM(BaseVM):
                 s=block.header.s,
             )
         )
+        
+        
         # we need to re-initialize the `state` to update the execution context.
         #this also removes and unpersisted state changes.
         self.refresh_state()
@@ -431,12 +453,13 @@ class VM(BaseVM):
         )
         
         
-        #need to save the closing balance into the block.
-        #self.block = self.save_closing_balance(self.block)
-        self.block = self.save_account_hash(self.block)
+
+        
         
         #TODO: find out if this packing is nessisary
         packed_block = self.pack_block(self.block, *args, **kwargs)
+        
+        packed_block = self.save_account_hash(packed_block)
         
         if isinstance(packed_block, self.get_queue_block_class()):
             """
@@ -455,15 +478,16 @@ class VM(BaseVM):
             self.logger.debug("signing block")
             packed_block = packed_block.as_complete_block(self.private_key, self.network_id)
             
-        # Perform validation
-        self.validate_block(packed_block)
-        
         
         
         #save all send transactions in the state as receivable
-        self.save_transactions_as_receivable(packed_block.header, self.block.transactions)
+        self.save_transactions_as_receivable(packed_block.header.hash, self.block.transactions)
         
-        self.state.account_db.persist()
+        
+        # Perform validation
+        self.validate_block(packed_block)
+        
+        self.state.account_db.persist(save_account_hash = True, wallet_address = self.wallet_address)
         
         return packed_block
     
@@ -494,27 +518,46 @@ class VM(BaseVM):
         self._apply_all_transactions(block.receive_transactions, block.header, validate = True)
 
         #save all send transactions in the state as receivable
-        self.save_transactions_as_receivable(block.header, block.transactions)
+        self.save_transactions_as_receivable(block.header.hash, block.transactions)
         
         self.state.account_db.persist()
         
         return block
 
-    def save_transaction_as_receivable(self,block_header, transaction):
-        self.state.account_db.add_receivable_transaction(transaction.to, transaction.hash, block_header.hash)
+    def save_transaction_as_receivable(self,block_header_hash, transaction):
+        self.state.account_db.add_receivable_transaction(transaction.to, transaction.hash, block_header_hash)
         
-    def save_transactions_as_receivable(self,block_header, transactions):
+    def save_transactions_as_receivable(self,block_header_hash, transactions):
         for transaction in transactions:
-            self.save_transaction_as_receivable(block_header, transaction)
+            self.save_transaction_as_receivable(block_header_hash, transaction)
+            
+    def delete_transaction_as_receivable(self,block_header_hash, transaction):
+        try:
+            self.state.account_db.delete_receivable_transaction(transaction.to, transaction.hash)
+        except ReceivableTransactionNotFound:
+            pass
         
-
+    def delete_transactions_as_receivable(self,block_header_hash, transactions):
+        for transaction in transactions:
+            self.delete_transaction_as_receivable(block_header_hash, transaction)
+        
+    def save_items_to_db_as_trie(self, items, root_hash_to_verify = None):
+        root_hash, kv_nodes = make_trie_root_and_nodes(items)
+        if root_hash_to_verify is not None:
+            if root_hash != root_hash_to_verify:
+                raise ValidationError("root hash is not what it is expected to be.")
+                
+        self.chaindb.persist_trie_data_dict(kv_nodes)
+        return root_hash, kv_nodes
+    
     def set_block_transactions(self, base_block, new_header, transactions, receipts):
-       
-        tx_root_hash, tx_kv_nodes = make_trie_root_and_nodes(transactions)
-        self.chaindb.persist_trie_data_dict(tx_kv_nodes)
-
-        receipt_root_hash, receipt_kv_nodes = make_trie_root_and_nodes(receipts)
-        self.chaindb.persist_trie_data_dict(receipt_kv_nodes)
+        tx_root_hash, tx_kv_nodes = self.save_items_to_db_as_trie(transactions)
+        receipt_root_hash, receipt_kv_nodes = self.save_items_to_db_as_trie(receipts)
+#        tx_root_hash, tx_kv_nodes = make_trie_root_and_nodes(transactions)
+#        self.chaindb.persist_trie_data_dict(tx_kv_nodes)
+#
+#        receipt_root_hash, receipt_kv_nodes = make_trie_root_and_nodes(receipts)
+#        self.chaindb.persist_trie_data_dict(receipt_kv_nodes)
         
         return base_block.copy(
             transactions=transactions,
@@ -524,10 +567,12 @@ class VM(BaseVM):
             ),
         )
             
+    
+            
     def set_block_receive_transactions(self, base_block, new_header, transactions):
-
-        tx_root_hash, tx_kv_nodes = make_trie_root_and_nodes(transactions)
-        self.chaindb.persist_trie_data_dict(tx_kv_nodes)
+        tx_root_hash, tx_kv_nodes = self.save_items_to_db_as_trie(transactions)
+#        tx_root_hash, tx_kv_nodes = make_trie_root_and_nodes(transactions)
+#        self.chaindb.persist_trie_data_dict(tx_kv_nodes)
 
         return base_block.copy(
             receive_transactions=transactions,
@@ -604,6 +649,17 @@ class VM(BaseVM):
         else:
             return cls.block_class
 
+    
+    @classmethod
+    def get_queue_block_class(cls) -> Type['BaseQueueBlock']:
+        """
+        Return the :class:`~evm.rlp.blocks.Block` class that this VM uses for queue blocks.
+        """
+        if cls.queue_block_class is None:
+            raise AttributeError("No `queue_block_class` has been set for this VM")
+        else:
+            return cls.queue_block_class
+        
     def convert_block_to_correct_class(self, block):
         """
         Returns a block that is an instance of the correct block class for this vm
@@ -619,24 +675,19 @@ class VM(BaseVM):
             new_transaction = convert_rlp_to_correct_class(self.block.receive_transaction_class, transaction)
             correct_receive_transactions.append(new_transaction)
         
-        self.block = self.block.copy(
+        self.block = self.get_block_class()(
             header=block.header,
             transactions = correct_transactions,
             receive_transactions = correct_receive_transactions
         )
+#        self.block = correct_block.copy(
+#            header=block.header,
+#            transactions = correct_transactions,
+#            receive_transactions = correct_receive_transactions
+#        )
         
         return self.block
-        
-        
-    @classmethod
-    def get_queue_block_class(cls) -> Type['BaseQueueBlock']:
-        """
-        Return the :class:`~evm.rlp.blocks.Block` class that this VM uses for queue blocks.
-        """
-        if cls.queue_block_class is None:
-            raise AttributeError("No `queue_block_class` has been set for this VM")
-        else:
-            return cls.queue_block_class
+    
         
     @classmethod
     def get_block_conflict_message_class(cls) -> Type['BaseBlock']:

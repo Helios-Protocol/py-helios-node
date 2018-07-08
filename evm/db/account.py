@@ -3,6 +3,7 @@ from abc import (
     abstractmethod
 )
 from uuid import UUID
+import traceback
 import logging
 from lru import LRU
 from typing import Set, Tuple  # noqa: F401
@@ -15,7 +16,7 @@ from trie import (
     HexaryTrie,
 )
 
-from evm.exceptions import ReceivableTransactionNotFound
+from evm.exceptions import ReceivableTransactionNotFound,StateRootNotFound
 from eth_hash.auto import keccak
 from eth_utils import encode_hex
 
@@ -300,9 +301,14 @@ class AccountDB(BaseAccountDB):
                 return tx_key
         return False
         
-        
+     
+    def add_receivable_transactions(self, address, transaction_keys):
+        validate_canonical_address(address, title="Wallet Address")
+        for tx_key in transaction_keys:
+            self.add_receivable_transaction(address, tx_key.transaction_hash, tx_key.sender_block_hash)
+            
     def add_receivable_transaction(self, address, transaction_hash, sender_block_hash):
-        validate_canonical_address(address, title="Storage Address")
+        validate_canonical_address(address, title="Wallet Address")
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         validate_is_bytes(sender_block_hash, title="Sender Block Hash")
         
@@ -310,16 +316,20 @@ class AccountDB(BaseAccountDB):
         if address == SLASH_WALLET_ADDRESS:
             return
         
+        #self.logger.debug("adding receivable transaction {}".format(encode_hex(transaction_hash)))
+        #if encode_hex(transaction_hash) == '0x81ecfdd5c983a324928612ce103d0bfb49adaf804b72a124cfcf83de48578075':
+        #    traceback.print_stack()
         #first lets make sure we don't already have the transaction
         if self.get_receivable_transaction(address, transaction_hash) is not False:
             raise ValueError("Tried to save a receivable transaction that was already saved")
+            
 
         account = self._get_account(address)
         receivable_transactions = account.receivable_transactions
         
         new_receivable_transactions = receivable_transactions + (TransactionKey(transaction_hash, sender_block_hash), )
         
-        self.logger.debug("adding receivable transaction {}".format(transaction_hash))
+        
         #self.logger.debug(new_receivable_transactions)
         
         self._set_account(address, account.copy(receivable_transactions=new_receivable_transactions)) 
@@ -328,7 +338,7 @@ class AccountDB(BaseAccountDB):
         validate_canonical_address(address, title="Storage Address")
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         
-        self.logger.debug("deleting receivable tx {}".format(transaction_hash))
+        self.logger.debug("deleting receivable tx {}".format(encode_hex(transaction_hash)))
         account = self._get_account(address)
         receivable_transactions = list(self.get_receivable_transactions(address))
         i = 0
@@ -428,10 +438,12 @@ class AccountDB(BaseAccountDB):
             account = Account()
         return account
 
+
     def _set_account(self, address, account):
         rlp_account = rlp.encode(account, sedes=Account)
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
         self._journaldb[account_lookup_key] = rlp_account
+        
 
     #
     # Record and discard API
@@ -447,7 +459,39 @@ class AccountDB(BaseAccountDB):
         db_changeset = changeset
         self._journaldb.commit(db_changeset)
 
-    def persist(self) -> None:
+    def persist(self, save_account_hash = False, wallet_address = None) -> None:
         self._journaldb.persist()
         self._batchdb.commit(apply_deletes=True)
+        
+        if save_account_hash:
+            validate_canonical_address(wallet_address, title="Address")
+            self.save_current_account_with_hash_lookup(wallet_address)
+      
+    #
+    # Saving account state at particular account hash
+    #
+    
+    def save_current_account_with_hash_lookup(self, wallet_address):
+        validate_canonical_address(wallet_address, title="Address")
+        account_hash = self.get_account_hash(wallet_address)
+        account = self._get_account(wallet_address)
+        rlp_account = rlp.encode(account, sedes=Account)
+        
+        lookup_key = SchemaV1.make_account_by_hash_lookup_key(account_hash)
+        self.db[lookup_key] = rlp_account
+        
+    
+    def revert_to_account_from_hash(self, account_hash, wallet_address):
+        validate_canonical_address(wallet_address, title="Address")
+        validate_is_bytes(account_hash, title="account_hash")
+        lookup_key = SchemaV1.make_account_by_hash_lookup_key(account_hash)
+        try:
+            rlp_encoded = self.db[lookup_key]
+            account = rlp.decode(rlp_encoded, sedes=Account)
+            self._set_account(wallet_address, account)
+        except KeyError:
+            raise StateRootNotFound()
+            
+        
+        
 

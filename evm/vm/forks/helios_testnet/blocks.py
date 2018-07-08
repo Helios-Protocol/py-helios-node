@@ -122,7 +122,12 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
         receive_transactions = []
 
         return cls(
-            header=header,
+            header=header.copy(
+                    gas_used = 0,
+                    v = 0,
+                    r = 0,
+                    s = 0
+                    ),
             transactions=transactions,
             receive_transactions=receive_transactions,
         )

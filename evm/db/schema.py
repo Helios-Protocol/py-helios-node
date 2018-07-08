@@ -86,6 +86,10 @@ class SchemaV1(BaseSchema):
         return b'has-unprocessed-block-children:%b' % block_hash
     
     @staticmethod
+    def make_account_by_hash_lookup_key(account_hash: Hash32) -> bytes:
+        return b'account-hash-lookup:%b' % account_hash
+    
+    @staticmethod
     def make_current_syncing_info_lookup_key() -> bytes:
         return b'current-syncing-info'
     

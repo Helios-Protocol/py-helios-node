@@ -86,7 +86,8 @@ from eth_utils import (
 import itertools
 import math
 from evm.exceptions import (
-    InvalidHeadRootTimestamp,        
+    InvalidHeadRootTimestamp,    
+    JournalDbNotActivated,    
 )
 from p2p.sedes import HashOrNone
 from evm.utils.rlp import make_mutable
@@ -109,7 +110,9 @@ class CurrentSyncingInfo(rlp.Serializable):
 class ChainHeadDB():
 
     logger = logging.getLogger('evm.db.chain_head.ChainHeadDB')
-
+    
+    _journaldb = None
+    
     def __init__(self, db, root_hash=BLANK_HASH):
         """
         Binary trie database for storing the hash of the head block of each wallet address.
@@ -166,8 +169,16 @@ class ChainHeadDB():
         """
         Gets the next head root hash in the leaves of the binary trie
         """
+        
+        validate_is_bytes(prev_head_hash, title='prev_head_hash')
+        validate_uint256(window_start, title='window_start')
+        validate_uint256(window_length, title='window_length')
+         
         if root_hash is None:
             root_hash = self.root_hash
+            
+        validate_is_bytes(root_hash, title='Root Hash')
+        
         output_list = []
         next = False
         i = 0
@@ -202,8 +213,14 @@ class ChainHeadDB():
         """
         Gets the next head root hash in the leaves of the binary trie
         """
+        
+        validate_is_bytes(prev_head_hash, title='prev_head_hash')
+        
         if root_hash is None:
             root_hash = self.root_hash
+        
+        validate_is_bytes(root_hash, title='Root Hash')
+        
         next = False
         for head_hash in self.get_head_block_hashes(root_hash, reverse = reverse):
             if prev_head_hash == ZERO_HASH32 or next == True:
@@ -217,11 +234,19 @@ class ChainHeadDB():
         """
         Gets all of the head root hash leafs of the binary trie
         """
+        
+        
         if root_hash is None:
             root_hash = self.root_hash
+        
+        validate_is_bytes(root_hash, title='Root Hash')
+        
         yield from self._trie.get_leaf_nodes(root_hash, reverse)
      
-     
+    
+    
+        
+    
     #
     # Block hash API
     #
@@ -250,6 +275,13 @@ class ChainHeadDB():
         validate_canonical_address(address, title="Wallet Address")
         validate_is_bytes(head_hash, title='Head Hash')
         self._trie_cache[address] = head_hash
+        
+    def delete_chain_head_hash(self, address):
+        validate_canonical_address(address, title="Wallet Address")
+        try:
+            del(self._trie_cache[address])
+        except:
+            pass
         
         
     def get_chain_head_hash(self, address):
@@ -286,6 +318,10 @@ class ChainHeadDB():
         head_hash = new_chain_head_db._trie_cache.get(address)
         return head_hash
     
+    def delete_chain(self, address):
+        validate_canonical_address(address, title="Wallet Address")
+        self.delete_chain_head_hash(address)
+        self.add_block_hash_to_timestamp(address, BLANK_HASH, 0)
    
     #it is assumed that this is the head for a particular chain. because blocks can only be imported from the top.
     #this is going to be quite slow for older timestamps.
@@ -317,17 +353,24 @@ class ChainHeadDB():
         
         num_increments = int((last_finished_window - start_timestamp)/TIME_BETWEEN_HEAD_HASH_SAVE + 1)
         
-        self.logger.debug("num_increments {}".format(num_increments))
+        #self.logger.debug("num_increments {}".format(num_increments))
         #only update up to current. do not update current. it is assumed that the current state is already updated
         
         #find starting index:
-        starting_index = (timestamp - historical_roots[0][0])/TIME_BETWEEN_HEAD_HASH_SAVE
-        
+        starting_index = int((timestamp - historical_roots[0][0])/TIME_BETWEEN_HEAD_HASH_SAVE)
+
+        if starting_index < 0:
+            starting_index = 0
+            
+        #self.logger.debug("first:{} second:{}".format(starting_index, num_increments))
         for i in range(starting_index, num_increments):
             #load the hash, insert new head hash, persist with save as false
             root_hash_to_load = historical_roots[i][1]
             new_blockchain_head_db = ChainHeadDB(self.db, root_hash_to_load)
-            new_blockchain_head_db.set_chain_head_hash(address, head_hash)
+            if head_hash == BLANK_HASH:
+                new_blockchain_head_db.delete_chain_head_hash(address)
+            else:
+                new_blockchain_head_db.set_chain_head_hash(address, head_hash)
             new_blockchain_head_db.persist()
             new_root_hash = new_blockchain_head_db.root_hash
             historical_roots[i][1] = new_root_hash
@@ -339,12 +382,14 @@ class ChainHeadDB():
     #
     # Record and discard API
     #
+
+        
     def persist(self, save_current_root_hash = False, save_root_hash_timestamps = True) -> None:
         self._batchtrie.commit(apply_deletes=False)
+        
         if save_current_root_hash:
             self.save_current_root_hash(save_root_hash_timestamps)
-        
-    
+           
     #
     # Saving to database API
     #
@@ -387,6 +432,10 @@ class ChainHeadDB():
  
     #this has loops which are slow. but this should be rare to loop far. it will only happen if the node was offline for a long time. and it will only happen once
     def append_current_root_hash_to_historical(self):
+        """
+        Appends the current root hash to the list of historical root hashes that are in increments of TIME_BETWEEN_HEAD_HASH_SAVE
+        it will also fill the gaps between times with whichever head root hash was previously.
+        """
         historical_roots = self.get_historical_root_hashes()
         last_finished_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
         current_window = last_finished_window + TIME_BETWEEN_HEAD_HASH_SAVE
@@ -431,19 +480,7 @@ class ChainHeadDB():
             for i in range(initial_first_time, final_first_time, TIME_BETWEEN_HEAD_HASH_SAVE):
                 self.delete_chronological_block_window(i)
                 
-#    def test(self):
-#        data = [[1529097000, b'\xd7\x81\x12S\x06\xe7\xfd\xa3\xa9\xaf\x1aNR9\x16\xce\x82X\x95k6\x0b<\xed\xf7Ob\xbbya\x97\x17']]
-#        #data = [b'\xd7\x81\x12S\x06\xe7\xfd\xa3\xa9\xaf\x1aNR9\x16\xce\x82X\x95k6\x0b<\xed\xf7Ob\xbbya\x97\x17']
-#        #data = [1529097000]
-#        #test = rlp.encode(data)
-#        #print(test)
-#        #print(rlp.decode(data, sedes=CountableList(big_endian_int, hash32)))
-#        #print(rlp.encode(data, sedes=CountableList(big_endian_int)))
-#        #print(rlp.encode(data, sedes=CountableList(hash32)))
-#        encoded = rlp.encode(data, sedes=CountableList(List([big_endian_int, hash32])))
-#        decoded = rlp.decode(encoded, sedes=CountableList(List([big_endian_int, hash32])))
-#        print(make_mutable(decoded))
-#        #print(big_endian_to_int(decoded[0][0]))
+
         
         
     #saved as [[timestamp, hash],[timestamp, hash]...]      
@@ -521,7 +558,29 @@ class ChainHeadDB():
             #self.logger.debug("Saving chronological block window with new data {}".format(new_data))    
             self.save_chronological_block_window(new_data, window_for_this_block)
     
-    
+    def delete_block_hash_from_chronological_window(self, head_hash, timestamp):
+        validate_is_bytes(head_hash, title='Head Hash')
+        validate_uint256(timestamp, title='timestamp')
+        
+        #only add blocks for the proper time period        
+        if timestamp > int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
+            #onlike the root hashes, this window is for the blocks added after the time
+            window_for_this_block = int(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+            
+            data = self.load_chronological_block_window(window_for_this_block)
+            #self.logger.debug("Saving chronological block window with old data {}".format(data)) 
+            #now we simply add it.
+            if data is not None:
+                #most of the time we will be adding the timestamp near the end. so lets iterate backwards
+                try:
+                    data.remove([timestamp,head_hash])
+                except ValueError:
+                    pass
+                
+            #self.logger.debug("Saving chronological block window with new data {}".format(new_data))    
+            self.save_chronological_block_window(data, window_for_this_block)
+            
+            
     def save_chronological_block_window(self, data, timestamp):
         validate_uint256(timestamp, title='timestamp')
         if timestamp % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
@@ -546,6 +605,7 @@ class ChainHeadDB():
         except KeyError:
             return None
         
+    
     
     def delete_chronological_block_window(self, timestamp):
         validate_uint256(timestamp, title='timestamp')
