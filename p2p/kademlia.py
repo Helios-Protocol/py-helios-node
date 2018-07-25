@@ -550,6 +550,8 @@ class KademliaProtocol:
         elif node == self.this_node:
             return False
 
+        self.logger.debug("found node to bootstrap with")
+        
         token = self.ping(node)
 
         try:

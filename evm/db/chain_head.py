@@ -55,6 +55,7 @@ from evm.validation import (
     validate_uint256,
     validate_canonical_address,
     validate_is_bytes_or_none,
+    validate_historical_timestamp
 )
 
 from evm.utils.numeric import (
@@ -93,6 +94,7 @@ from p2p.sedes import HashOrNone
 from evm.utils.rlp import make_mutable
 
 from sortedcontainers import SortedList
+from sortedcontainers import SortedDict
 
 # Use lru-dict instead of functools.lru_cache because the latter doesn't let us invalidate a single
 # entry, so we'd have to invalidate the whole cache in _set_account() and that turns out to be too
@@ -135,6 +137,8 @@ class ChainHeadDB():
     def has_root(self, root_hash: bytes) -> bool:
         return root_hash in self._batchtrie
 
+    def get_root_hash(self):
+        return self.root_hash
     #
     # Trie Traversing
     #
@@ -406,10 +410,19 @@ class ChainHeadDB():
         )
         
         if save_root_hash_timestamps:
+            self.logger.debug("appending to historical {}".format(self.root_hash))
             self.append_current_root_hash_to_historical()
         
 
-        
+    def load_saved_root_hash(self):
+        current_head_root_lookup_key = SchemaV1.make_current_head_root_lookup_key()
+        try:
+            loaded_root_hash = self.db[current_head_root_lookup_key]
+            self.root_hash = loaded_root_hash
+        except KeyError:
+            #there is none. this must be a fresh genesis block type thing
+            pass
+            
     @classmethod    
     def load_from_saved_root_hash(cls, db) -> Hash32:
         """
@@ -457,7 +470,7 @@ class ChainHeadDB():
             elif latest_time < int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
                 #it is older than the ones we save. Just create the last NUMBER_OF_HEAD_HASH_TO_SAVE and set them all to the last saved one.
                 new_historical_roots = []
-                start_time = int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+                start_time = last_finished_window - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
                 for i in range(NUMBER_OF_HEAD_HASH_TO_SAVE):
                     new_historical_roots.append([start_time+TIME_BETWEEN_HEAD_HASH_SAVE*i,historical_roots[-1][1]])
                 #dont forget to append the new one idiot
@@ -477,12 +490,64 @@ class ChainHeadDB():
                 final_first_time = historical_roots[0][0]
             
             #need to delete chronological chain for any deleted things windows
-            for i in range(initial_first_time, final_first_time, TIME_BETWEEN_HEAD_HASH_SAVE):
+            if latest_time < final_first_time:
+                delete_end = latest_time
+            else:
+                delete_end = final_first_time
+                
+            for i in range(initial_first_time, delete_end, TIME_BETWEEN_HEAD_HASH_SAVE):
                 self.delete_chronological_block_window(i)
                 
 
         
+    def initialize_historical_root_hashes(self, root_hash, timestamp):
+        validate_is_bytes(root_hash, title='Head Hash')
+        validate_historical_timestamp(timestamp, title="timestamp")
+        first_root_hash_timestamp = [[timestamp, root_hash]]
+        self.save_historical_root_hashes(first_root_hash_timestamp)
+    
+    def save_single_historical_root_hash(self, root_hash, timestamp):
+        validate_is_bytes(root_hash, title='Head Hash')
+        validate_historical_timestamp(timestamp, title="timestamp")
         
+        historical = self.get_historical_root_hashes()
+        if historical is not None:
+            historical = SortedList(historical)
+            historical.add([timestamp, root_hash])
+            historical = list(historical)
+        else:
+            historical = [[timestamp, root_hash]]
+            
+        self.save_historical_root_hashes(historical)
+            
+            
+        
+        
+        
+    def get_last_complete_historical_root_hash(self):
+        last_finished_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+        historical = self.get_historical_root_hashes()
+        if historical is None:
+            return (None, None)
+        
+        historical_sorted = SortedDict(lambda x: int(x)*-1, historical)
+            
+        #this will iterate from largest time to smallest time
+        for timestamp, root_hash in historical_sorted.items():
+            if timestamp <= last_finished_window:
+                return (timestamp, root_hash)
+            
+    def get_latest_historical_root_hash(self):
+        historical = self.get_historical_root_hashes()
+        if historical is None:
+            return (None, None)
+        historical_sorted = SortedDict(historical)
+        return (historical_sorted.keys()[-1], historical_sorted.values()[-1])
+            
+#        for i in range(len(historical)-1, -1, -1):
+#            if historical[i][0] <= last_finished_window:
+#                return historical[i]
+            
     #saved as [[timestamp, hash],[timestamp, hash]...]      
     def save_historical_root_hashes(self, root_hashes):
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
@@ -492,7 +557,29 @@ class ChainHeadDB():
             data,
         )
         
-         
+    def get_historical_root_hash(self, timestamp):
+        validate_uint256(timestamp, title='timestamp')
+        if timestamp % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
+            timestamp = int(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+        historical = self.get_historical_root_hashes()
+        if historical is None:
+            return None
+        historical_sorted_dict = SortedDict(historical)
+        if list(historical_sorted_dict.keys())[-1] < timestamp:
+            #the last one is earlier than this timestamp, lets just return it
+            return historical_sorted_dict[list(historical_sorted_dict.keys())[-1]]
+            
+        if list(historical_sorted_dict.keys())[0] > timestamp:
+            #we have none that are earlier than this timestamp
+            return None
+        
+        for i in range(timestamp, int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE, -TIME_BETWEEN_HEAD_HASH_SAVE):
+            try:
+                return historical_sorted_dict[i]
+            except KeyError:
+                pass
+        return None
+        
     def get_historical_root_hashes(self, after_timestamp = None):
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
         try:

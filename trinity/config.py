@@ -60,6 +60,7 @@ class ChainConfig:
     _nodekey_path: Path = None
     _logfile_path: Path = None
     _nodekey = None
+    _nodekey_public = None
     _network_id: int = None
     _node_private_helios_key = None
     _node_wallet_address = None
@@ -122,13 +123,17 @@ class ChainConfig:
         if self._bootstrap_nodes is None:
             #make sure we save our node to the file before loading it. This will create the file if it doesnt exist.
             self.save_node_address_to_local_peer_pool_file()
-            #bootstrap_nodes = tuple(load_local_nodes(self.nodekey))
+            
             if len(self.preferred_nodes) == 0:
                 self._bootstrap_nodes = tuple(
                     KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
                 )
             else:
-                self._bootstrap_nodes = (self.preferred_nodes[0],)
+                bootstrap_nodes = tuple(load_local_nodes())
+                if bootstrap_nodes[0].pubkey != self.nodekey_public:
+                    self._bootstrap_nodes = (bootstrap_nodes[0],)
+                else:
+                    self._bootstrap_nodes = ()
             
 #             if self.network_id == MAINNET_NETWORK_ID:
 #                    self._bootstrap_nodes = tuple(
@@ -250,6 +255,13 @@ class ChainConfig:
     def nodekey_path(self, value: str) -> None:
         self._nodekey_path = Path(value).resolve()
 
+    @property 
+    def nodekey_public(self):
+        if self._nodekey_public is None:
+            private_key = self.nodekey
+            self._nodekey_public = private_key.public_key
+            
+        return self._nodekey_public
     @property
     def nodekey(self) -> PrivateKey:
         if self._nodekey is None:
@@ -276,6 +288,7 @@ class ChainConfig:
                 "Nodekey must either be a raw byte-string or an eth_keys "
                 "`PrivateKey` instance"
             )
+    
 
     @classmethod
     def from_parser_args(cls, parser_args):

@@ -216,7 +216,7 @@ class BaseChainDB(metaclass=ABCMeta):
 
 
 class ChainDB(BaseChainDB):
-    logger = logging.getLogger('evm.db.chain_head.ChainDB')
+    logger = logging.getLogger('evm.db.chain_db.ChainDB')
     _journaldb = None
     
     def __init__(self, db: BaseDB, wallet_address:Address) -> None:
@@ -516,6 +516,13 @@ class ChainDB(BaseChainDB):
             return db[block_hash_save_key]
         except KeyError:
             raise ValueError("Block hash {} not found in database".format(block_hash))
+            
+    def get_chain_wallet_address_for_block(self, block):
+        if block.header.block_number == 0:
+            return block.header.sender
+        else:
+            return self.get_chain_wallet_address_for_block_hash(self.db, block.header.parent_hash)
+        
         
     def save_block_hash_to_chain_wallet_address(self, block_hash, wallet_address = None):
         if wallet_address is None:

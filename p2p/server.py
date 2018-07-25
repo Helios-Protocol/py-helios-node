@@ -78,6 +78,7 @@ class Server(BaseService):
     def __init__(self,
                  privkey: datatypes.PrivateKey,
                  port: int,
+                 node,
                  chain: AsyncChain,
                  chaindb: AsyncChainDB,
                  chain_head_db,
@@ -92,6 +93,7 @@ class Server(BaseService):
                  
                  ) -> None:
         super().__init__(token)
+        self.node = node
         self.chain_config = chain_config
         self.chaindb = chaindb
         self.chain = chain
@@ -106,7 +108,7 @@ class Server(BaseService):
         self.preferred_nodes = preferred_nodes
         self.peer_pool = self._make_peer_pool()
         self.consensus = self._make_consensus(self.peer_pool, self.bootstrap_nodes)
-        self.syncer = self._make_syncer(self.peer_pool,self.consensus)
+        self.syncer = self._make_syncer(self.peer_pool,self.consensus, self.node)
         
         if not bootstrap_nodes:
             self.logger.warn("Running with no bootstrap nodes")
@@ -238,10 +240,10 @@ class Server(BaseService):
         await asyncio.gather(
             self._close_tcp_listener(), self._close_udp_listener())
 
-    def _make_syncer(self, peer_pool: PeerPool, consensus) -> BaseService:
+    def _make_syncer(self, peer_pool: PeerPool, consensus, node) -> BaseService:
         # This method exists only so that ShardSyncer can provide a different implementation.
         return FullNodeSyncer(
-            self.chain, self.chaindb, self.base_db, peer_pool = peer_pool, token = self.cancel_token, chain_head_db = self.chain_head_db, consensus=consensus)
+            self.chain, self.chaindb, self.base_db, peer_pool = peer_pool, token = self.cancel_token, chain_head_db = self.chain_head_db, consensus=consensus, node = node)
         
     def _make_consensus(self, peer_pool: PeerPool, bootstrap_nodes) -> BaseService:
         # This method exists only so that ShardSyncer can provide a different implementation.

@@ -4,6 +4,7 @@ from abc import (
     ABCMeta,
     abstractmethod
 )
+import rlp
 import time
 import math
 import operator
@@ -40,6 +41,7 @@ from eth_utils import (
     to_set,
 )
 
+
 from evm.db.backends.base import BaseDB
 from evm.db.chain import (
     BaseChainDB,
@@ -73,6 +75,8 @@ from evm.exceptions import (
     ReceivableTransactionNotFound,
     TriedImportingGenesisBlock,
     JournalDbNotActivated,
+    ReplacingBlocksNotAllowed,
+    UnprocessedBlockNotAllowed,
 )
 from eth_keys.exceptions import (
     BadSignature,
@@ -310,7 +314,7 @@ class Chain(BaseChain):
         self.private_key = private_key
         self.wallet_address = wallet_address
         self.chaindb = self.get_chaindb_class()(self.db, self.wallet_address)
-        self.chain_head_db = self.chain_head_db_class.load_from_saved_root_hash(self.db)
+        self.chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(self.db)
         
         try:
             self.header = self.create_header_from_parent(self.get_canonical_head())
@@ -389,19 +393,59 @@ class Chain(BaseChain):
         if cls.chaindb_class is None:
             raise AttributeError("`chaindb_class` not set")
         return cls.chaindb_class
+
+    @classmethod
+    def get_chain_head_db_class(cls) -> Type[BaseChainDB]:
+        if cls.chain_head_db_class is None:
+            raise AttributeError("`chaindb_class` not set")
+        return cls.chain_head_db_class
     
+    @classmethod
+    def get_genesus_wallet_address(cls) -> Type[BaseChainDB]:
+        if cls.genesis_wallet_address is None:
+            raise AttributeError("`genesis_wallet_address` not set")
+        return cls.genesis_wallet_address
     
         
     #
     # Chain API
     #
+    
+    
     @classmethod
-    def from_genesis(cls,
+    def create_genesis_header(cls,
                      base_db: BaseDB,
                      wallet_address: Address,
                      private_key: BaseKey,
                      genesis_params: Dict[str, HeaderParams],
                      genesis_state: AccountState=None,
+                     ) -> 'BaseChain':
+        
+        genesis_vm_class = cls.get_vm_class_for_block_timestamp()
+
+        account_db = genesis_vm_class.get_state_class().get_account_db_class()(base_db)
+
+        if genesis_state is None:
+            genesis_state = {}
+
+        # mutation
+        account_db = apply_state_dict(account_db, genesis_state)
+        account_db.persist(save_account_hash = True, wallet_address = wallet_address)
+        genesis_params['account_hash'] = account_db.get_account_hash(wallet_address)
+        genesis_header = BlockHeader(**genesis_params)
+        
+        signed_genesis_header = genesis_header.get_signed(private_key, cls.network_id)
+        chaindb = cls.get_chaindb_class()(base_db, wallet_address = wallet_address)
+        chaindb.persist_header(signed_genesis_header)
+        return signed_genesis_header
+        
+    @classmethod
+    def from_genesis(cls,
+                     base_db: BaseDB,
+                     wallet_address: Address,
+                     genesis_params: Dict[str, HeaderParams],
+                     genesis_state: AccountState,
+                     private_key: BaseKey = None
                      ) -> 'BaseChain':
         """
         Initializes the Chain from a genesis state.
@@ -419,12 +463,11 @@ class Chain(BaseChain):
         # mutation
         account_db = apply_state_dict(account_db, genesis_state)
         account_db.persist(save_account_hash = True, wallet_address = cls.genesis_wallet_address)
-        genesis_params['account_hash'] = account_db.get_account_hash(cls.genesis_wallet_address)
         
-
         genesis_header = BlockHeader(**genesis_params)
         return cls.from_genesis_header(base_db, wallet_address = wallet_address, private_key = private_key, genesis_header = genesis_header)
 
+        
     @classmethod
     def from_genesis_header(cls,
                             base_db: BaseDB,
@@ -435,9 +478,18 @@ class Chain(BaseChain):
         """
         Initializes the chain from the genesis header.
         """
-        signed_genesis_header = genesis_header.get_signed(private_key, cls.network_id)
-        chaindb = cls.get_chaindb_class()(base_db, wallet_address = wallet_address)
-        chaindb.persist_header(signed_genesis_header)
+        
+        chaindb = cls.get_chaindb_class()(base_db, wallet_address = cls.genesis_wallet_address)
+        chaindb.persist_header(genesis_header)
+        
+        chain_head_db = cls.get_chain_head_db_class()(base_db)
+        
+        window_for_this_block = math.ceil(genesis_header.timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+        chain_head_db.set_chain_head_hash(cls.genesis_wallet_address, genesis_header.hash)
+        chain_head_db.initialize_historical_root_hashes(chain_head_db.root_hash, window_for_this_block)
+        chain_head_db.persist(save_current_root_hash = True, save_root_hash_timestamps = False)
+        #chain_head_db.add_block_hash_to_chronological_window(genesis_header.hash, genesis_header.timestamp)
+        
         return cls(base_db, wallet_address = wallet_address, private_key=private_key)
 
     def get_chain_at_block_parent(self, block: BaseBlock) -> BaseChain:
@@ -668,6 +720,14 @@ class Chain(BaseChain):
         
         #self.logger.debug("creating transaction with nonce {}".format(tx_nonce))
         transaction = self.create_and_sign_transaction(nonce = tx_nonce, *args, **kwargs)
+        
+#        from evm.utils.rlp import convert_rlp_to_correct_class
+#        
+#        from evm.rlp.transactions import BaseTransaction
+#        class P2PSendTransaction(rlp.Serializable):
+#            fields = BaseTransaction._meta.fields
+#        transaction = convert_rlp_to_correct_class(P2PSendTransaction, transaction)
+        
         self.add_transactions_to_queue_block(transaction)
         return transaction
     
@@ -733,6 +793,16 @@ class Chain(BaseChain):
 
     def import_chain(self, block_list, perform_validation: bool=True, save_block_head_hash_timestamp = True):
         self.logger.debug("importing chain")
+        
+        #if we are given a block that is not one of the two allowed classes, try converting it.
+        if not isinstance(block_list[0], self.get_vm().get_block_class()):
+            self.logger.debug("converting chain to correct class")
+            corrected_block_list = []
+            for block in block_list:
+                corrected_block = self.get_vm().convert_block_to_correct_class(block)
+                corrected_block_list.append(corrected_block)
+            block_list = corrected_block_list
+            
         #the wallet address is always the sender of the genesis block. Even for smart contracts
         wallet_address = block_list[0].header.sender
         for block in block_list:
@@ -783,7 +853,7 @@ class Chain(BaseChain):
         self.chaindb.save_unprocessed_block_lookup(descendant_block_hash)
         
         
-    def import_block(self, block: BaseBlock, perform_validation: bool=True, save_block_head_hash_timestamp = True, wallet_address = None) -> BaseBlock:
+    def import_block(self, block: BaseBlock, perform_validation: bool=True, save_block_head_hash_timestamp = True, wallet_address = None, allow_unprocessed = True, allow_replacement = True) -> BaseBlock:
         """
         Imports a complete block.
         """
@@ -795,7 +865,7 @@ class Chain(BaseChain):
                 self.set_new_wallet_address(wallet_address = wallet_address)
                 
         #if we are given a block that is not one of the two allowed classes, try converting it.
-        if not isinstance(block, self.get_vm(refresh=False).get_block_class()) and not isinstance(block, self.get_vm(refresh=False).get_queue_block_class()):
+        if not isinstance(block, self.get_vm(refresh=False).get_block_class()):
             self.logger.debug("converting block to correct class")
             block = self.get_vm(refresh=False).convert_block_to_correct_class(block)
             
@@ -806,6 +876,8 @@ class Chain(BaseChain):
         
             
         if block.number > self.header.block_number:
+            if not allow_unprocessed:
+                raise UnprocessedBlockNotAllowed()
             #we can allow this for unprocessed blocks as long as we have the parent in our database
             if self.chaindb.exists(block.header.parent_hash):
                 #save as unprocessed
@@ -822,6 +894,8 @@ class Chain(BaseChain):
         
         journal_enabled = False
         if block.number < self.header.block_number:
+            if not allow_replacement:
+                raise ReplacingBlocksNotAllowed()
             self.logger.debug("went into block replacing mode")
             self.logger.debug("block.number = {}, self.header.block_number = {}".format(block.number,self.header.block_number))
             self.logger.debug("this chains wallet address = {}, this block's sender = {}".format(self.wallet_address, block.sender))
@@ -905,7 +979,7 @@ class Chain(BaseChain):
             
                         
                     self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
-                    self.chain_head_db.persist(True)
+                    self.chain_head_db.persist(True, save_root_hash_timestamps = save_block_head_hash_timestamp)
                     if save_block_head_hash_timestamp:
                         self.chain_head_db.add_block_hash_to_chronological_window(imported_block.header.hash, imported_block.header.timestamp)
                         self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
@@ -931,8 +1005,12 @@ class Chain(BaseChain):
                     return_block = imported_block
                     
                 except ReceivableTransactionNotFound:
+                    if not allow_unprocessed:
+                        raise UnprocessedBlockNotAllowed()
                     return_block = self.save_block_as_unprocessed(block)
             else:
+                if not allow_unprocessed:
+                    raise UnprocessedBlockNotAllowed()
                 return_block = self.save_block_as_unprocessed(block)
                 
         except Exception as e:
@@ -1084,6 +1162,21 @@ class Chain(BaseChain):
     def import_current_queue_block(self):
         
         return self.import_block(self.queue_block)
+    
+    def get_all_chronological_blocks_for_window(self, window_timestamp):
+        validate_uint256(window_timestamp, title='timestamp')
+        chronological_blocks = self.chain_head_db.load_chronological_block_window(window_timestamp)
+        if chronological_blocks is None:
+            return None
+        else:
+            list_of_blocks = []
+            for chronological_block in chronological_blocks:
+                block_hash = chronological_block[1]
+                new_block = self.chaindb.get_block_by_hash(block_hash, self.get_vm().get_block_class())
+                list_of_blocks.append(new_block)
+                
+            return list_of_blocks
+        
     #
     # Validation API
     #

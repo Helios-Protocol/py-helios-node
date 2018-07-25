@@ -51,7 +51,7 @@ MAINNET_BOOTNODES = (
 DEFAULT_MAX_PEERS = 25
 MIN_SAFE_PEERS = 1
 #the minimum amount of time to wait between loading historical root hash from database
-LOCAL_ROOT_HASH_CHECK_MIN_TIME_PERIOD = 5
+LOCAL_ROOT_HASH_CHECK_MIN_TIME_PERIOD = 2
 #if this amount of time passes, and none of the peers have a different block than ours, we delete the conflicblock
 BLOCK_CONFLICT_RESOLUTION_PERIOD = 60
 #the amount of time to wait between removing data from disconnected peers
@@ -63,6 +63,7 @@ FAST_SYNC_CUTOFF_PERIOD = 0 #testing
 NUM_CHAINS_TO_REQUEST = 5
 ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD = 60*24 #testing
 
+CONSENSUS_SYNC_TIME_PERIOD = 5 #the amount of time between checking that we are in sync with peers
 
 
 LOCAL_PEER_POOL_PATH = '/home/tommy/.local/share/trinity/local_peer_pool'

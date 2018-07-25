@@ -28,6 +28,8 @@ class ChainDBProxy(BaseProxy):
     coro_get_block_by_number = async_method('get_block_by_number')
 
 
+
+
     get_block_header_by_hash = sync_method('get_block_header_by_hash')
     get_canonical_head = sync_method('get_canonical_head')
     get_score = sync_method('get_score')
@@ -39,3 +41,4 @@ class ChainDBProxy(BaseProxy):
     get_chain_wallet_address_for_block_hash = sync_method('get_chain_wallet_address_for_block_hash')
     get_block_by_number = sync_method('get_block_by_number')
     get_all_blocks_on_chain = sync_method('get_all_blocks_on_chain')
+    get_chain_wallet_address_for_block = sync_method('get_chain_wallet_address_for_block')

@@ -8,8 +8,10 @@ import os
 
 from evm import MainnetChain
 from evm.chains.mainnet import (
-    MAINNET_GENESIS_HEADER,
+    MAINNET_GENESIS_PARAMS,
+    MAINNET_GENESIS_STATE,
     MAINNET_NETWORK_ID,
+    GENESIS_WALLET_ADDRESS,
 )
 from evm.db.backends.base import BaseDB
 from evm.db.chain import AsyncChainDB
@@ -40,7 +42,8 @@ from trinity.utils.xdg import (
 )
 
 from dev_tools import (
-    create_dev_test_random_blockchain_database        
+    create_dev_test_random_blockchain_database,
+    import_genesis_block,
 )
 import logging
 
@@ -83,7 +86,7 @@ def is_data_dir_initialized(chain_config: ChainConfig) -> bool:
 
 def is_database_initialized(chaindb: AsyncChainDB) -> bool:
     try:
-        chaindb.get_canonical_head()
+        chaindb.get_canonical_head(wallet_address = GENESIS_WALLET_ADDRESS)
     except CanonicalHeadNotFound:
         # empty chain database
         return False
@@ -130,10 +133,10 @@ def initialize_data_dir(chain_config: ChainConfig) -> None:
 
 def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> None:
     try:
-        chaindb.get_canonical_head()
+        chaindb.get_canonical_head(wallet_address = GENESIS_WALLET_ADDRESS)
     except CanonicalHeadNotFound:
         if chain_config.network_id == MAINNET_NETWORK_ID:
-            chaindb.persist_header(MAINNET_GENESIS_HEADER)
+            MainnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
         else:
             # TODO: add genesis data to ChainConfig and if it's present, use it
             # here to initialize the chain.
@@ -150,7 +153,10 @@ def serve_chaindb(chain_config: ChainConfig, base_db: BaseDB) -> None:
         if 'GENERATE_RANDOM_DATABASE' in os.environ:
             #this is for testing, we neeed to build an initial blockchain database
             create_dev_test_random_blockchain_database(base_db)
-        
+        else:
+            initialize_database(chain_config = chain_config, chaindb = chaindb)
+                
+            
     if chain_config.network_id == MAINNET_NETWORK_ID:
         chain_class = MainnetChain  # type: ignore
     else:

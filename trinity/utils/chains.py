@@ -131,9 +131,9 @@ def construct_chain_config_params(args):
         yield 'nodekey_path', args.nodekey_path
     elif args.nodekey is not None:
         yield 'nodekey', decode_hex(args.nodekey)
-
-    if args.sync_mode is not None:
-        yield 'sync_mode', args.sync_mode
+        
+    elif args.nodekey is not None:
+        yield 'nodekey', decode_hex(args.nodekey)
 
     if args.max_peers is not None:
         yield 'max_peers', args.max_peers

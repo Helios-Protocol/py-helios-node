@@ -671,9 +671,11 @@ class VM(BaseVM):
             correct_transactions.append(new_transaction)
             
         correct_receive_transactions = []
-        for transaction in block.receive_transactions:
-            new_transaction = convert_rlp_to_correct_class(self.block.receive_transaction_class, transaction)
-            correct_receive_transactions.append(new_transaction)
+        for receive_transaction in block.receive_transactions:
+            send_transaction = convert_rlp_to_correct_class(self.block.transaction_class, receive_transaction.transaction)
+            new_receive_transaction = convert_rlp_to_correct_class(self.block.receive_transaction_class, receive_transaction)
+            new_receive_transaction = new_receive_transaction.copy(transaction = send_transaction)
+            correct_receive_transactions.append(new_receive_transaction)
         
         self.block = self.get_block_class()(
             header=block.header,
@@ -737,7 +739,12 @@ class VM(BaseVM):
         """
         Proxy for instantiating a signed transaction for this VM.
         """
+#        from evm.rlp.transactions import BaseTransaction
+#        class P2PSendTransaction(rlp.Serializable):
+#            fields = BaseTransaction._meta.fields
+            
         return self.get_transaction_class()(*args, **kwargs)
+        #return P2PSendTransaction(*args, **kwargs)
     
     def create_receive_transaction(self, *args, **kwargs):
         """

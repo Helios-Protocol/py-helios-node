@@ -188,6 +188,18 @@ class Chain(Command):
     structure = [
         ('is_last', sedes.boolean),
         ('blocks', sedes.CountableList(P2PBlock))]
+    
+class GetChronologicalBlockWindow(Command):
+    _cmd_id = 29
+    structure = [
+        ('start_timestamp', sedes.big_endian_int),
+    ]
+    
+class ChronologicalBlockWindow(Command):
+    _cmd_id = 30
+    structure = [
+        ('blocks', sedes.CountableList(P2PBlock)),
+        ('final_root_hash', hash32)]
 
 
 class HLSProtocol(Protocol):
@@ -199,7 +211,7 @@ class HLSProtocol(Protocol):
         NewBlock, NewBlock, NewBlock, GetNodeData, NodeData,
         GetReceipts, Receipts, GetChainHeadTrieBranch, ChainHeadTrieBranch, GetChainHeadRootHashTimestamps,
         ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification,
-        GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain]
+        GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain, GetChronologicalBlockWindow, ChronologicalBlockWindow]
     cmd_length = 40
     logger = logging.getLogger("p2p.hls.HLSProtocol")
 
@@ -364,6 +376,20 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(data)
         self.send(header, body)
         
+    def send_get_chronological_block_window(self, start_timestamp) -> None:
+        cmd = GetChronologicalBlockWindow(self.cmd_id_offset)
+        data = {
+            'start_timestamp': start_timestamp}
+        header, body = cmd.encode(data)
+        self.send(header, body)
+        
+    def send_chronological_block_window(self, list_of_blocks, final_root_hash) -> None:
+        cmd = ChronologicalBlockWindow(self.cmd_id_offset)
+        data = {
+            'blocks': list_of_blocks,
+            'final_root_hash': final_root_hash}
+        header, body = cmd.encode(data)
+        self.send(header, body)
         
         
         

@@ -19,6 +19,8 @@ from evm.constants import (
     SECPK1_N,
     UINT_256_MAX,
     BLOCK_GAS_LIMIT,
+    NUMBER_OF_HEAD_HASH_TO_SAVE,
+    TIME_BETWEEN_HEAD_HASH_SAVE,
 )
 from evm.exceptions import (
     ValidationError,
@@ -178,6 +180,17 @@ def validate_uint256(value, title="Value"):
     if value > UINT_256_MAX:
         raise ValidationError(
             "{title} exeeds maximum UINT256 size.  Got: {0}".format(
+                value,
+                title=title,
+            )
+        )
+
+def validate_historical_timestamp(value, title="Value"):
+    validate_uint256(value, title=title)
+    if value % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
+        raise ValidationError(
+            "{title} must be a multiple of {0}: Got: {1}".format(
+                TIME_BETWEEN_HEAD_HASH_SAVE,
                 value,
                 title=title,
             )

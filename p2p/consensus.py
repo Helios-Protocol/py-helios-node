@@ -44,7 +44,12 @@ from evm.constants import (
 from evm.chains import AsyncChain
 from evm.db.chain import AsyncChainDB
 from evm.db.trie import make_trie_root_and_nodes
-from evm.exceptions import HeaderNotFound
+from evm.exceptions import (
+    HeaderNotFound, 
+    NoLocalRootHashTimestamps, 
+    LocalRootHashNotInConsensus
+)
+
 from evm.rlp.headers import BlockHeader
 from evm.rlp.receipts import Receipt
 from evm.rlp.transactions import BaseTransaction
@@ -55,7 +60,8 @@ from p2p.constants import (
     BLOCK_CONFLICT_RESOLUTION_PERIOD,
     CONSENUS_PEER_DISCONNECT_CHECK_PERIOD,
     CONSENSUS_CHECK_READY_TIME_PERIOD,
-    ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD
+    ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD,
+    CONSENSUS_SYNC_TIME_PERIOD
 )
 
 from p2p import protocol
@@ -69,6 +75,8 @@ from p2p.service import BaseService
 from p2p.utils import (
     get_process_pool_executor,
 )
+from sortedcontainers import SortedDict
+from sortedcontainers import SortedList
 
 #this class can just loop through this each n seconds:
     
@@ -84,7 +92,7 @@ from p2p.utils import (
     
 #Todo. remove any conflic blocks that achieve 100% consensus
 
-CONSENSUS_SYNC_TIME_PERIOD = 5
+
 
 class BlockConflictInfo():
     def __init__(self, wallet_address, block_number, time_found):
@@ -104,6 +112,8 @@ class Consensus(BaseService, PeerPoolSubscriber):
     # TODO: Instead of a fixed timeout, we should use a variable one that gets adjusted based on
     # the round-trip times from our download requests.
     _reply_timeout = 60
+    _is_bootnode = None
+    _local_root_hash_timestamps = None
     
     def __init__(self,
                  chain: AsyncChain,
@@ -164,7 +174,6 @@ class Consensus(BaseService, PeerPoolSubscriber):
      
         self._is_syncing = True
         
-        self._local_root_hash_timestamps = None
         
         self.coro_is_ready = asyncio.Event()
      
@@ -182,13 +191,18 @@ class Consensus(BaseService, PeerPoolSubscriber):
         return len(self.peer_pool.connected_nodes) >= MIN_SAFE_PEERS
     
     @property
+    def is_bootnode(self):
+        if self._is_bootnode is None:
+            self._is_bootnode = self.chain_config.nodekey_public in [x.pubkey for x in self.chain_config.bootstrap_nodes]
+        return self._is_bootnode
+    @property
     def has_enough_consensus_participants(self):
-        if len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS:
+        if len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_bootnode:
             self.logger.debug("has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
         else:
             #self.logger.debug("doesnt has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
             pass
-        return len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS
+        return len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_bootnode
     
     @property
     async def is_syncing(self):
@@ -333,12 +347,19 @@ class Consensus(BaseService, PeerPoolSubscriber):
         #first lets make sure we add our own root_hash_timestamps
         with self.subscribe(self.peer_pool):
             while True:
+                if self.coro_is_ready.is_set():
+                    ready = 'true'
+                else:
+                    ready = 'false'
+                self.logger.debug("self.coro_is_ready = {}".format(ready))
                 #first lets ask the bootnode for the stake of any peers that we dont have the blockchain for
                 #this takes care of determining stake of our peers while we are still syncing our blockchain database
+                self.logger.debug("waiting for get missing stake from bootnode")
                 await self.get_missing_stake_from_bootnode()
                 #send sync messages, doesnt need to be async
                 self.send_sync_get_messages()
                 #it will re-loop every time it gets a new response from a single peer. this ensures that the statistics are always as up to date as possible
+                self.logger.debug("waiting for receive_sync_messages")
                 await self.receive_sync_messages()
                 
                 self.logger.debug("done syncing consensus. These are the statistics for block_choices, root_hashes: {0}, {1}".format(
@@ -355,6 +376,9 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 self.remove_data_for_blocks_that_achieved_consensus()
                 #this is run after populate consensus. so if there are enough peers who we have root hashes for, then they will be included in consensus.
                 self.check_if_ready()
+                
+                #yeild control to other coroutines after each loop
+                #await asyncio.sleep(0)
                 
                 
     async def _cleanup(self) -> None:
@@ -636,30 +660,71 @@ class Consensus(BaseService, PeerPoolSubscriber):
         '''
         Returns the closest timestamp that we have a saved root hash for
         '''
-        for available_timestamp in self.root_hash_timestamps_statistics.keys():
+        sorted_root_hash_timestamps = reversed(SortedDict(self.root_hash_timestamps_statistics))
+        #goes from greatest to smallest
+        for available_timestamp in sorted_root_hash_timestamps.keys():
             if available_timestamp <= timestamp:
-                to_return =  available_timestamp, await self.get_root_hash_consensus(available_timestamp)
+                to_return =  available_timestamp, await self.coro_get_root_hash_consensus(available_timestamp)
                 return to_return
+        
+        if self.is_bootnode:
+            self.logger.debug("using local root hash timestamps for get_closest_root_hash_consensus because am bootnode")
+            local_root_hash_timestamps = self.local_root_hash_timestamps
+            sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x)*-1, local_root_hash_timestamps)
+            for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
+                if available_timestamp <= timestamp:
+                    to_return =  available_timestamp, root_hash
+                    return to_return
+            
+            
         return None, None
     
+    def get_next_consensus_root_hash_after_timestamp(self, timestamp):
+        '''
+        Returns the closest timestamp that we have a saved root hash for
+        '''
+        sorted_root_hash_timestamps = SortedDict(self.root_hash_timestamps_statistics)
+        #goes from smallest to greatest
+        for available_timestamp in sorted_root_hash_timestamps.keys():
+            if available_timestamp > timestamp:
+                to_return =  available_timestamp, self.get_root_hash_consensus(available_timestamp)
+                return to_return
+        
+        if self.is_bootnode:
+            self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
+            local_root_hash_timestamps = self.local_root_hash_timestamps
+            sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
+            for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
+                if available_timestamp > timestamp:
+                    to_return =  available_timestamp, root_hash
+                    return to_return
+
+            
+            
+        return None, None
+    
+    def get_newest_peer_root_hash_timestamp(self):
+        return list(SortedDict(self.root_hash_timestamps_statistics).keys())[-1]
+        
+    
     @property
-    async def local_root_hash_timestamps(self):
-        if self._last_check_local_root_hash_timestamps < (int(time.time()) - LOCAL_ROOT_HASH_CHECK_MIN_TIME_PERIOD):
-            local_root_hash_timestamps = await self.chain_head_db.coro_get_historical_root_hashes()
+    def local_root_hash_timestamps(self):
+        if self._last_check_local_root_hash_timestamps < (int(time.time()) - LOCAL_ROOT_HASH_CHECK_MIN_TIME_PERIOD) or self._local_root_hash_timestamps is None:
+            local_root_hash_timestamps = self.chain_head_db.get_historical_root_hashes()
             
             if local_root_hash_timestamps is not None:
                 self._local_root_hash_timestamps = dict(local_root_hash_timestamps)
             else:
-                self._local_root_hash_timestamps = local_root_hash_timestamps
+                self._local_root_hash_timestamps = None
             self._last_check_local_root_hash_timestamps  = int(time.time())
         return self._local_root_hash_timestamps
     
-    async def get_root_hash_consensus(self, timestamp):
+    async def coro_get_root_hash_consensus(self, timestamp):
         '''
         Returns the consensus root hash for a given timestamp
         '''
         
-        local_root_hash_timestamps = await self.local_root_hash_timestamps
+        local_root_hash_timestamps = self.local_root_hash_timestamps
         if local_root_hash_timestamps is not None:
             try:
                 local_root_hash = local_root_hash_timestamps[timestamp]
@@ -692,9 +757,88 @@ class Consensus(BaseService, PeerPoolSubscriber):
                                                         peer_stake_for_peer_root_hash, 
                                                         local_root_hash, 
                                                         total_stake_for_local_hash)
+            
+    def get_root_hash_consensus(self, timestamp):
+        '''
+        Returns the consensus root hash for a given timestamp
+        '''
+        
+        local_root_hash_timestamps = self.local_root_hash_timestamps
+        if local_root_hash_timestamps is not None:
+            try:
+                local_root_hash = local_root_hash_timestamps[timestamp]
+            except KeyError:
+                local_root_hash = None
+        else:
+            local_root_hash = None
+           
+        
+        try:
+            root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
+            peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
+        except KeyError:
+            peer_root_hash = None
+            
+        if peer_root_hash is None:
+            return local_root_hash
+        
+        elif peer_root_hash == local_root_hash or local_root_hash is None:
+            return peer_root_hash
+        else:
+            our_stake_for_local_hash = self.chain.get_mature_stake(self.chain_config.node_wallet_address)
+            try:
+                peer_stake_for_local_hash = self.root_hash_timestamps_statistics[timestamp][local_root_hash]
+            except KeyError:
+                peer_stake_for_local_hash = 0
+            total_stake_for_local_hash = our_stake_for_local_hash + peer_stake_for_local_hash
+            
+            return self.get_winner_stake_binary_compare(peer_root_hash, 
+                                                        peer_stake_for_peer_root_hash, 
+                                                        local_root_hash, 
+                                                        total_stake_for_local_hash)
         
         
+               
+    async def get_latest_root_hash_before_conflict(self):
+        '''
+        If one of our root hash timestamps is in conflict with consensus, then this returns the root hash and timestamp for the 
+        latest one before that where we were still in consensus
+        '''
+        local_root_hash_timestamps = self.local_root_hash_timestamps
+        if local_root_hash_timestamps is None:
+            raise NoLocalRootHashTimestamps()
+           
+        sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
+        
+        last_good_root_hash = None
+        last_good_timestamp = None
+            
+        for timestamp, local_root_hash in sorted_local_root_hash_timestamps.items():
+            peer_root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
+            peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(peer_root_hash_stakes)
+            if local_root_hash != peer_root_hash:
+                #we have a different root hash, but lets include local stake to calculate true consensus
+                our_stake_for_local_hash = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
+                try:
+                    peer_stake_for_local_hash = self.root_hash_timestamps_statistics[timestamp][local_root_hash]
+                except KeyError:
+                    peer_stake_for_local_hash = 0
+                total_stake_for_local_hash = our_stake_for_local_hash + peer_stake_for_local_hash
                 
+                consensus_root_hash = self.get_winner_stake_binary_compare(peer_root_hash, 
+                                                        peer_stake_for_peer_root_hash, 
+                                                        local_root_hash, 
+                                                        total_stake_for_local_hash)
+                if consensus_root_hash != local_root_hash:
+                    if last_good_root_hash == None:
+                        raise LocalRootHashNotInConsensus()
+                    return last_good_root_hash, last_good_timestamp
+            
+            last_good_root_hash = local_root_hash
+            last_good_timestamp = timestamp
+                
+        return None, None
+            
         
         
     #TODO. make sure we remove conflict blocks that reach consensus   

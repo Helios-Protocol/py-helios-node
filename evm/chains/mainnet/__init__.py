@@ -32,11 +32,12 @@ MAINNET_VM_CONFIGURATION = (
 MAINNET_NETWORK_ID = 1
 
 GENESIS_PRIVATE_KEY = keys.PrivateKey(b'p.Oids\xedb\xa3\x93\xc5\xad\xb9\x8d\x92\x94\x00\x06\xb9\x82\xde\xb9\xbdBg\\\x82\xd4\x90W\xd0\xd5')
+GENESIS_WALLET_ADDRESS = b"\xdbL\xa4&\xd5;Y\xf6\x03p'O\xfb\x19\xf2&\x8d\xc3=\xdf"
 
 class BaseMainnetChain:
     vm_configuration = MAINNET_VM_CONFIGURATION  # type: Tuple[Tuple[int, Type[BaseVM]], ...]  # noqa: E501
     network_id = MAINNET_NETWORK_ID  # type: int
-    genesis_wallet_address = GENESIS_PRIVATE_KEY.public_key.to_canonical_address()
+    genesis_wallet_address = GENESIS_WALLET_ADDRESS
 
 
 class MainnetChain(BaseMainnetChain, Chain):
@@ -63,34 +64,36 @@ class MainnetChain(BaseMainnetChain, Chain):
 #    transaction_root=constants.BLANK_ROOT_HASH,
 #)
     
-MAINNET_GENESIS_HEADER = BlockHeader(
-    account_hash=constants.GENESIS_ACCOUNT_HASH,
-    extra_data=decode_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa"),
-    gas_limit=5000,
-    gas_used=0,
-    bloom=0,
-    block_number=0,
-    parent_hash=constants.ZERO_HASH32,
-    receipt_root=constants.BLANK_ROOT_HASH,
-    timestamp=0,
-    transaction_root=constants.BLANK_ROOT_HASH,
-    receive_transaction_root=constants.BLANK_ROOT_HASH,
-)
+#MAINNET_GENESIS_HEADER = BlockHeader(
+#    account_hash=constants.GENESIS_ACCOUNT_HASH,
+#    extra_data=decode_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa"),
+#    gas_limit=5000,
+#    gas_used=0,
+#    bloom=0,
+#    block_number=0,
+#    parent_hash=constants.ZERO_HASH32,
+#    receipt_root=constants.BLANK_ROOT_HASH,
+#    timestamp=0,
+#    transaction_root=constants.BLANK_ROOT_HASH,
+#    receive_transaction_root=constants.BLANK_ROOT_HASH,
+#)
 
-MAINNET_GENESIS_PARAMS = {
-    'account_hash':constants.GENESIS_ACCOUNT_HASH,
-    'parent_hash': constants.GENESIS_PARENT_HASH,
-    'transaction_root': constants.BLANK_ROOT_HASH,
-    'receive_transaction_root': constants.BLANK_ROOT_HASH,
-    'receipt_root': constants.BLANK_ROOT_HASH,
-    'bloom': 0,
-    'block_number': constants.GENESIS_BLOCK_NUMBER,
-    'gas_limit': constants.GENESIS_GAS_LIMIT,
-    'gas_used': 0,
-    'timestamp': 1514764800,
-    'extra_data': constants.GENESIS_EXTRA_DATA
-}
+#MAINNET_GENESIS_PARAMS = {
+#    'account_hash':constants.GENESIS_ACCOUNT_HASH,
+#    'parent_hash': constants.GENESIS_PARENT_HASH,
+#    'transaction_root': constants.BLANK_ROOT_HASH,
+#    'receive_transaction_root': constants.BLANK_ROOT_HASH,
+#    'receipt_root': constants.BLANK_ROOT_HASH,
+#    'bloom': 0,
+#    'block_number': constants.GENESIS_BLOCK_NUMBER,
+#    'gas_limit': constants.GENESIS_GAS_LIMIT,
+#    'gas_used': 0,
+#    'timestamp': 1514764800,
+#    'extra_data': constants.GENESIS_EXTRA_DATA
+#}
 
+
+#this state and header must go together to be valid.
 MAINNET_GENESIS_STATE = {
     GENESIS_PRIVATE_KEY.public_key.to_canonical_address(): {
         "balance": 1000000000000000000000000,
@@ -99,3 +102,18 @@ MAINNET_GENESIS_STATE = {
         "storage": {}
     }
 }
+
+MAINNET_GENESIS_PARAMS =    {'parent_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 
+                             'transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 
+                             'receive_transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 
+                             'receipt_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 
+                             'bloom': 0, 
+                             'block_number': 0, 
+                             'gas_limit': 3141592, 
+                             'gas_used': 0, 
+                             'timestamp': 1532470000, 
+                             'extra_data': b'', 
+                             'account_hash': b'\xcf`o\x0f\x18V\xc1=\x12\xb03S!D\xc13\xf8\xa7\xb6\xa6\xd5\x97\xd8\xc0\x0e\xc2r\x16\xc1\xd2\xa2\xdf', 
+                             'v': 37, 
+                             'r': 27003253526022851361797746803314279807537188107766227981548245111422237778762, 
+                             's': 19879697156142810027206173065379415356577523422925107713843487402274342088642}

@@ -14,10 +14,13 @@ class ChainProxy(BaseProxy):
     coro_import_chain = async_method('import_chain')
     coro_get_block_stake_from_children = async_method('get_block_stake_from_children')
     coro_get_mature_stake = async_method('get_mature_stake')
+    coro_get_all_chronological_blocks_for_window = async_method('get_all_chronological_blocks_for_window')
+    
     
     import_block = sync_method('import_block')
     import_chain = sync_method('import_chain')
     get_block_stake_from_children = sync_method('get_block_stake_from_children')
     get_get_mature_stake = sync_method('get_mature_stake')
     get_vm = sync_method('get_vm')
+    get_all_chronological_blocks_for_window = sync_method('get_all_chronological_blocks_for_window')
     

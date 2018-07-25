@@ -101,11 +101,25 @@ def main(instance_number = None) -> None:
 
     #print this to see all of the loggers to choose from. have to call it after they are initialized
     #print(logging.Logger.manager.loggerDict)
+    filter_list = []
+    filter_list.append('p2p.chain.ChainSyncer')
+    filter_list.append('evm.chain.chain.Chain')
+    filter_list.append('evm.db.chain_head.ChainHeadDB')
+    filter_list.append('evm.db.chain_db.ChainDB')
+    #filter_list.append('p2p.consensus.Consensus')
+    filter_list.append('p2p.kademlia.KademliaProtocol')
+    filter_list.append('p2p.discovery.DiscoveryProtocol')
+   
     
+    
+    #filter_list.append('p2p.consensus.Consensus')
     if args.filter_log != None:
         #handler_stream.addFilter(logging.Filter('p2p.chain.ChainSyncer'))
         #handler_stream.addFilter(logging.Filter(args.filter_log), logging.Filter('evm.chain.chain.Chain'))
-        handler_stream.addFilter(Whitelist(args.filter_log, 'evm.chain.chain.Chain'))
+        #handler_stream.addFilter(Whitelist(args.filter_log, 'p2p.chain.ChainSyncer', 'evm.chain.chain.Chain'))
+        filter_list.append(args.filter_log)
+    
+    handler_stream.addFilter(Whitelist(*filter_list))
         
     if args.rand_db == 1:
         os.environ["GENERATE_RANDOM_DATABASE"] = 'true'

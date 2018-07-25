@@ -37,6 +37,24 @@ class BlockOnWrongChain(PyEVMError):
     """
     pass
 
+class NoLocalRootHashTimestamps(PyEVMError):
+    """
+    Raised when there are no local root hash timestamps
+    """
+    pass
+
+class LocalRootHashNotInConsensus(PyEVMError):
+    """
+    Raised when there are no local root hash timestamps
+    """
+    pass
+
+class LocalRootHashNotAsExpected(PyEVMError):
+    """
+    Raised after importing blocks and our root hash doesnt match what it should be
+    """
+    pass
+
 
 class IncorrectBlockType(PyEVMError):
     """
@@ -87,6 +105,17 @@ class ParentNotFound(HeaderNotFound):
     """
     pass
 
+class UnprocessedBlockNotAllowed(PyEVMError):
+    """
+    Raised when an unprocessed block is imported when it is not allowed
+    """
+    pass
+
+class ReplacingBlocksNotAllowed(PyEVMError):
+    """
+    Raised when a block tries to replace another block when it is not allowed
+    """
+    pass
 
 class CanonicalHeadNotFound(PyEVMError):
     """
@@ -104,6 +133,13 @@ class TriedImportingGenesisBlock(PyEVMError):
 class CollationHeaderNotFound(PyEVMError):
     """
     Raised when the collation header for the given shard and period does not exist in the database.
+    """
+    pass
+
+
+class SyncerOutOfOrder(PyEVMError):
+    """
+    Syncer process has hit a snag and is out of order. For example, regular chain syncer went before it should.
     """
     pass
 

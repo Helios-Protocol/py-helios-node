@@ -38,10 +38,12 @@ class FullNodeSyncer(BaseService):
                  peer_pool: PeerPool,
                  chain_head_db,
                  consensus,
+                 node,
                  token: CancelToken = None,
                  
                  ) -> None:
         super().__init__(token)
+        self.node = node
         self.consensus = consensus
         self.chain = chain
         self.chaindb = chaindb
@@ -62,7 +64,8 @@ class FullNodeSyncer(BaseService):
         #TODO: create consensus class that saves each peer's chain head root hash to their object. It should also label who is in the majority
         # Fast-sync chain data.
         self.logger.info("Starting fast-sync")
-        chain_syncer = FastChainSyncer(self.chain, self.chaindb, self.chain_head_db, self.base_db, self.peer_pool, consensus = self.consensus, token = self.cancel_token)
+        #chain_syncer = FastChainSyncer(self.chain, self.chaindb, self.chain_head_db, self.base_db, self.peer_pool, consensus = self.consensus, token = self.cancel_token)
+        chain_syncer = RegularChainSyncer(self.chain, self.chaindb, self.chain_head_db, self.base_db, self.peer_pool, consensus = self.consensus, token = self.cancel_token)
         await chain_syncer.run()
 
         # Ensure we have the state for our current head.
@@ -82,7 +85,7 @@ class FullNodeSyncer(BaseService):
 #        new_chain = type(self.chain)(self.base_db)
 #        chain_syncer = RegularChainSyncer(
 #            new_chain, self.chaindb, self.peer_pool, self.cancel_token)
-        await chain_syncer.run()
+        #await chain_syncer.run()
 
     async def _cleanup(self):
         # We don't run anything in the background, so nothing to do here.

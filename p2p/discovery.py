@@ -265,7 +265,7 @@ class PreferredNodeDiscoveryProtocol(DiscoveryProtocol):
         super().__init__(privkey, address, bootstrap_nodes)
 
         if preferred_nodes is not None:
-            self.preferred_nodes = preferred_nodes
+            self.preferred_nodes = [preferred_node for preferred_node in preferred_nodes if preferred_node != self.this_node]
         else:
             self.preferred_nodes = tuple()
         self.logger.info('Preferred peers: %s', self.preferred_nodes)
