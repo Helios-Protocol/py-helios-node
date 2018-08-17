@@ -86,6 +86,18 @@ class ReceivableTransactionNotFound(PyEVMError):
     """
     pass
 
+class HistoricalNetworkTPCMissing(PyEVMError):
+    """
+    Raised when a historical network tpc is missing for a certain timestamp
+    """
+    pass
+
+class HistoricalMinGasPriceError(PyEVMError):
+    """
+    Raised when a historical network tpc is missing for a certain timestamp
+    """
+    pass
+
 
 class TransactionNotFound(PyEVMError):
     """
@@ -154,6 +166,12 @@ class CollationBodyNotFound(PyEVMError):
 class CanonicalCollationNotFound(PyEVMError):
     """
     Raised when no collation for the given shard and period has been marked as canonical.
+    """
+    pass
+
+class AppendHistoricalRootHashTooOld(PyEVMError):
+    """
+    Raised when you try to append a historical root hash that is older than the oldest one in our database. can only append newer historical root hashes
     """
     pass
 

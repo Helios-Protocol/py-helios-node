@@ -4,7 +4,11 @@ import math
 import operator
 import time
 
-from evm.utils.numeric import effecient_diff
+from evm.utils.numeric import (
+    effecient_diff,
+    stake_weighted_average,
+)
+
 from typing import (
     Any,
     Callable,
@@ -61,14 +65,22 @@ from p2p.constants import (
     CONSENUS_PEER_DISCONNECT_CHECK_PERIOD,
     CONSENSUS_CHECK_READY_TIME_PERIOD,
     ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD,
-    CONSENSUS_SYNC_TIME_PERIOD
+    CONSENSUS_SYNC_TIME_PERIOD,
+    CONSENSUS_CHECK_MIN_GAS_SYSTEM_READY_TIME_PERIOD,
+    CONSENSUS_CHECK_LOCAL_TPC_CAP_PERIOD,
+    MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD,
+    MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG,
 )
 
 from p2p import protocol
 from p2p import eth
 from p2p import hls
 from p2p.cancel_token import CancelToken
-from p2p.exceptions import NoEligiblePeers, OperationCancelled
+from p2p.exceptions import (
+    NoEligiblePeers, 
+    OperationCancelled,
+    DatabaseResyncRequired,
+)
 from p2p.peer import BasePeer, HLSPeer, PeerPool, PeerPoolSubscriber
 from p2p.rlp import BlockBody, P2PTransaction, TimestampRootHashKey
 from p2p.service import BaseService
@@ -114,6 +126,12 @@ class Consensus(BaseService, PeerPoolSubscriber):
     _reply_timeout = 60
     _is_bootnode = None
     _local_root_hash_timestamps = None
+    _min_gas_system_ready = False
+    #this is {peer_wallet_address: [timestamp_received, network_tpc_cap, stake]}
+    _network_tpc_cap_statistics = {}
+    _last_check_local_tpc_cap_time = 0
+    _local_tpc_cap = 0
+    _last_check_if_min_gas_system_ready_time = 0
     
     def __init__(self,
                  chain: AsyncChain,
@@ -223,7 +241,32 @@ class Consensus(BaseService, PeerPoolSubscriber):
         
             #self.logger.debug("IS_SYNCING: {}, local_root_hash_timestamps: {}".format(self._is_syncing, local_root_hash_timestamps))
         return self._is_syncing
-       
+    
+    @property 
+    def min_gas_system_ready(self):
+        '''
+        checks to see if the throttling system that controls minimum required gas is ready. 
+        if it is not ready we cannot accept new blocks unless from another node.
+        '''
+        if self._min_gas_system_ready is False or self._last_check_if_min_gas_system_ready_time < (int(time.time()) - CONSENSUS_CHECK_MIN_GAS_SYSTEM_READY_TIME_PERIOD):
+            self._min_gas_system_ready = not self.chaindb.min_gas_system_initialization_required()
+            self._last_check_if_min_gas_system_ready_time = int(time.time())
+        
+        return self._min_gas_system_ready
+        
+    @property
+    async def local_tpc_cap(self):
+        '''
+        the maximum number of blocks that can be imported with a single transaction in 1 centisecond.
+        not exactly the tpc, but something consistent to base throttling off of.
+        '''
+        if self._local_tpc_cap == 0 or self._last_check_local_tpc_cap_time < (int(time.time()) - CONSENSUS_CHECK_LOCAL_TPC_CAP_PERIOD):
+            self._local_tpc_cap = await self.chain.coro_get_local_tpc_cap()
+            self._last_check_local_tpc_cap_time = int(time.time())
+        
+        return self._local_tpc_cap
+    
+        
     async def get_accurate_stake(self, wallet_address, local_stake):
         if local_stake == 0 or await self.is_syncing:
             try:
@@ -233,27 +276,47 @@ class Consensus(BaseService, PeerPoolSubscriber):
         return local_stake  
 
  
-    def determine_stake_winner(self, item_stakes_dict):
+    def determine_stake_winner(self, item_stakes_dict_or_list):
         '''
         takes in a dictionary where the keys are the items which are voted on, and the values are the stake.
         returns a tuple containing the highest stake item, and its stake
         '''
-        max_stake = 0
-        max_item = None
-        for item, stake in item_stakes_dict.items():
-            if stake > max_stake:
-                max_stake = stake
-                max_item = item
-            elif stake == max_stake:
-                if max_item == None:
+        if isinstance(item_stakes_dict_or_list, dict):
+            max_stake = 0
+            max_item = None
+            for item, stake in item_stakes_dict_or_list.items():
+                if stake > max_stake:
                     max_stake = stake
                     max_item = item
-                else:
-                    if item > max_item:
+                elif stake == max_stake:
+                    if max_item == None:
                         max_stake = stake
                         max_item = item
-        assert(max_item is not None)
-        return (max_item, stake)      
+                    else:
+                        if item > max_item:
+                            max_stake = stake
+                            max_item = item
+            assert(max_item is not None)
+            return (max_item, stake)      
+        elif isinstance(item_stakes_dict_or_list, list):
+            max_stake = 0
+            max_item = None
+            for item_stake in item_stakes_dict_or_list:
+                item = item_stake[0]
+                stake = item_stake[1]
+                if stake > max_stake:
+                    max_stake = stake
+                    max_item = item
+                elif stake == max_stake:
+                    if max_item == None:
+                        max_stake = stake
+                        max_item = item
+                    else:
+                        if item > max_item:
+                            max_stake = stake
+                            max_item = item
+            assert(max_item is not None)
+            return (max_item, stake)   
     
     def calc_stake_difference(self, prev_block_hash_keys, new_block_hash_keys):
         '''
@@ -344,9 +407,11 @@ class Consensus(BaseService, PeerPoolSubscriber):
 
     async def _run(self) -> None:
         asyncio.ensure_future(self._handle_msg_loop())
+        test = asyncio.ensure_future(self.sync_min_gas_price_system())
         #first lets make sure we add our own root_hash_timestamps
         with self.subscribe(self.peer_pool):
             while True:
+                
                 if self.coro_is_ready.is_set():
                     ready = 'true'
                 else:
@@ -362,11 +427,17 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 self.logger.debug("waiting for receive_sync_messages")
                 await self.receive_sync_messages()
                 
-                self.logger.debug("done syncing consensus. These are the statistics for block_choices, root_hashes: {0}, {1}".format(
-                                    self.block_choice_statistics, 
-                                    self.root_hash_timestamps_statistics))
+                #self.logger.debug("done syncing consensus. These are the statistics for block_choices, root_hashes: {0}, {1}".format(
+                #                    self.block_choice_statistics, 
+                #                    self.root_hash_timestamps_statistics))
                 
-
+                
+                
+                test_1 = self.chaindb.load_historical_network_tpc_capability()
+                test_2 = self.chaindb.load_historical_minimum_gas_price()
+                test_3 = self.chaindb.load_historical_tx_per_centisecond()
+                self.logger.debug("net_tpc_cap, min_gas_price, tpc = {}, {}, {}".format(test_1, test_2, test_3))
+                
                 #here we shouldnt pause because if it returned early than thats because we got some data from peers. we want to process data asap.
                 #self.populate_peer_consensus()
                 #TODO. when a peer disconnects, make sure we delete their vote.
@@ -379,7 +450,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 
                 #yeild control to other coroutines after each loop
                 #await asyncio.sleep(0)
-                
+            
                 
     async def _cleanup(self) -> None:
         # We don't need to cancel() anything, but we yield control just so that the coroutines we
@@ -525,8 +596,62 @@ class Consensus(BaseService, PeerPoolSubscriber):
             self.peer_root_hash_timestamps[peer_wallet_address] = [new_peer_stake, new_root_hash_timestamps]   
                 
             
+    async def calculate_average_network_tpc_cap(self):
+        num_candidates = 0
+        if len(self._network_tpc_cap_statistics) >= MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG:
+            all_candidate_item_stake = []
             
-           
+            for wallet_address, timestamp_max_tpc_cap_stake in self._network_tpc_cap_statistics.copy().items():
+                if timestamp_max_tpc_cap_stake[0] >= int(time.time())-5*60:
+                    all_candidate_item_stake.append([timestamp_max_tpc_cap_stake[1], timestamp_max_tpc_cap_stake[2]])
+                    num_candidates +=1
+                else:
+                    del(self._network_tpc_cap_statistics[wallet_address])
+        if num_candidates >= MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG:
+            #add in our local tpc and stake
+            local_tpc_cap = await self.local_tpc_cap
+            local_stake = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
+            
+            all_candidate_item_stake.append([local_tpc_cap, local_stake])
+            
+            average_network_tpc_cap = int(stake_weighted_average(all_candidate_item_stake))
+            return average_network_tpc_cap
+        else:
+            return None
+            
+    async def sync_min_gas_price_system(self):
+        '''
+        Makes sure our system for keeping track of minimum allowed gas price is in sync with the network
+        This is used to throttle the transaction rate when it reaches the limit that the network can handle.
+        '''
+        while True:
+            if self.min_gas_system_ready:
+                self.logger.debug("sync_min_gas_price_system, min_gas_system_ready = True")
+                average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
+                if average_network_tpc_cap is not None:
+                    self.chain.update_current_network_tpc_capability(average_network_tpc_cap, update_min_gas_price = True)
+                
+                #TODO. here we just ask for the last centisecond.
+                for peer in self.peer_pool.peers:
+                    peer.sub_proto.send_get_min_gas_parameters(num_centiseconds_from_now=0)
+                
+            else:
+                self.logger.debug("sync_min_gas_price_system, min_gas_system_ready = False")
+                #here we just ask for the last 50 centiseconds.
+                await self.initialize_min_gas_price_from_bootnode_if_required()
+            await asyncio.sleep(MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD)
+        
+    async def initialize_min_gas_price_from_bootnode_if_required(self):
+        if not self.min_gas_system_ready:
+            for boot_node in self.bootstrap_nodes:
+                try: 
+                    boot_node_peer = self.peer_pool.connected_nodes[boot_node]
+                    #lets just ask the first bootnode we find that we are connected to.
+                    boot_node_peer.sub_proto.send_get_min_gas_parameters(num_centiseconds_from_now=50)
+                    return
+                except KeyError:
+                    pass
+            
         
     async def get_missing_stake_from_bootnode(self):
         if self._last_get_stake_from_bootnode_time < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
@@ -679,10 +804,41 @@ class Consensus(BaseService, PeerPoolSubscriber):
             
         return None, None
     
+    
+    def get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(self, timestamp):
+        '''
+        Returns the next consensus root hash that differs from our local root hash at the given timestamp
+        '''
+        initial_local_root_hash_at_timestamp = self.local_root_hash_timestamps[timestamp]
+        #self.logger.debug("initial root hash = {}".format(initial_local_root_hash_at_timestamp))
+        #self.logger.debug("consensus root hash at initial timestamp = {}".format(self.get_root_hash_consensus(timestamp)))
+        sorted_root_hash_timestamps = SortedDict(self.root_hash_timestamps_statistics)
+        #goes from smallest to greatest
+        for available_timestamp in sorted_root_hash_timestamps.keys():
+            if available_timestamp > timestamp:
+                to_return =  available_timestamp, self.get_root_hash_consensus(available_timestamp)
+                if to_return[1] != initial_local_root_hash_at_timestamp:
+                    return to_return
+        
+        if self.is_bootnode:
+            self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
+            local_root_hash_timestamps = self.local_root_hash_timestamps
+            sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
+            for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
+                if available_timestamp > timestamp:
+                    to_return =  available_timestamp, root_hash
+                    if to_return[1] != initial_local_root_hash_at_timestamp:
+                        return to_return
+                    
+        return None, None
+    
     def get_next_consensus_root_hash_after_timestamp(self, timestamp):
         '''
-        Returns the closest timestamp that we have a saved root hash for
+        Returns the next consensus root hash that differs from our local root hash at the given timestamp
         '''
+        #initial_local_root_hash_at_timestamp = self.local_root_hash_timestamps[timestamp]
+        #self.logger.debug("initial root hash = {}".format(initial_local_root_hash_at_timestamp))
+        #self.logger.debug("consensus root hash at initial timestamp = {}".format(self.get_root_hash_consensus(timestamp)))
         sorted_root_hash_timestamps = SortedDict(self.root_hash_timestamps_statistics)
         #goes from smallest to greatest
         for available_timestamp in sorted_root_hash_timestamps.keys():
@@ -698,10 +854,11 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 if available_timestamp > timestamp:
                     to_return =  available_timestamp, root_hash
                     return to_return
-
-            
-            
+                    
         return None, None
+        
+        
+        
     
     def get_newest_peer_root_hash_timestamp(self):
         return list(SortedDict(self.root_hash_timestamps_statistics).keys())[-1]
@@ -709,22 +866,23 @@ class Consensus(BaseService, PeerPoolSubscriber):
     
     @property
     def local_root_hash_timestamps(self):
-        if self._last_check_local_root_hash_timestamps < (int(time.time()) - LOCAL_ROOT_HASH_CHECK_MIN_TIME_PERIOD) or self._local_root_hash_timestamps is None:
-            local_root_hash_timestamps = self.chain_head_db.get_historical_root_hashes()
-            
-            if local_root_hash_timestamps is not None:
-                self._local_root_hash_timestamps = dict(local_root_hash_timestamps)
-            else:
-                self._local_root_hash_timestamps = None
-            self._last_check_local_root_hash_timestamps  = int(time.time())
+        local_root_hash_timestamps = self.chain_head_db.get_historical_root_hashes()
+        
+        if local_root_hash_timestamps is not None:
+            self._local_root_hash_timestamps = dict(local_root_hash_timestamps)
+        else:
+            self._local_root_hash_timestamps = None
+        
         return self._local_root_hash_timestamps
     
-    async def coro_get_root_hash_consensus(self, timestamp):
+    async def coro_get_root_hash_consensus(self, timestamp, local_root_hash_timestamps = None):
         '''
         Returns the consensus root hash for a given timestamp
         '''
         
-        local_root_hash_timestamps = self.local_root_hash_timestamps
+        if local_root_hash_timestamps is None:
+            local_root_hash_timestamps = self.local_root_hash_timestamps
+            
         if local_root_hash_timestamps is not None:
             try:
                 local_root_hash = local_root_hash_timestamps[timestamp]
@@ -758,12 +916,12 @@ class Consensus(BaseService, PeerPoolSubscriber):
                                                         local_root_hash, 
                                                         total_stake_for_local_hash)
             
-    def get_root_hash_consensus(self, timestamp):
+    def get_root_hash_consensus(self, timestamp, local_root_hash_timestamps = None):
         '''
         Returns the consensus root hash for a given timestamp
         '''
-        
-        local_root_hash_timestamps = self.local_root_hash_timestamps
+        if local_root_hash_timestamps is None:
+            local_root_hash_timestamps = self.local_root_hash_timestamps
         if local_root_hash_timestamps is not None:
             try:
                 local_root_hash = local_root_hash_timestamps[timestamp]
@@ -799,48 +957,47 @@ class Consensus(BaseService, PeerPoolSubscriber):
         
         
                
-    async def get_latest_root_hash_before_conflict(self):
+    async def get_latest_root_hash_before_conflict(self, before_timestamp = None):
         '''
         If one of our root hash timestamps is in conflict with consensus, then this returns the root hash and timestamp for the 
         latest one before that where we were still in consensus
+        
+        if before_timestamp is set, it only looks at root hashes with timestamp earlier than before_timestamp
         '''
         local_root_hash_timestamps = self.local_root_hash_timestamps
         if local_root_hash_timestamps is None:
             raise NoLocalRootHashTimestamps()
            
-        sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
-        
-        last_good_root_hash = None
-        last_good_timestamp = None
-            
+        sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x)*-1, local_root_hash_timestamps)
+        #sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
+         
+        disagreement_found = False
+        #it now goes from newest to oldest
         for timestamp, local_root_hash in sorted_local_root_hash_timestamps.items():
-            peer_root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
-            peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(peer_root_hash_stakes)
-            if local_root_hash != peer_root_hash:
-                #we have a different root hash, but lets include local stake to calculate true consensus
-                our_stake_for_local_hash = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
-                try:
-                    peer_stake_for_local_hash = self.root_hash_timestamps_statistics[timestamp][local_root_hash]
-                except KeyError:
-                    peer_stake_for_local_hash = 0
-                total_stake_for_local_hash = our_stake_for_local_hash + peer_stake_for_local_hash
-                
-                consensus_root_hash = self.get_winner_stake_binary_compare(peer_root_hash, 
-                                                        peer_stake_for_peer_root_hash, 
-                                                        local_root_hash, 
-                                                        total_stake_for_local_hash)
-                if consensus_root_hash != local_root_hash:
-                    if last_good_root_hash == None:
-                        raise LocalRootHashNotInConsensus()
-                    return last_good_root_hash, last_good_timestamp
+            if before_timestamp is not None:
+                if timestamp > before_timestamp:
+                    continue
+            consensus_root_hash = await self.coro_get_root_hash_consensus(timestamp, local_root_hash_timestamps = local_root_hash_timestamps)
             
-            last_good_root_hash = local_root_hash
-            last_good_timestamp = timestamp
-                
-        return None, None
+            if local_root_hash == consensus_root_hash:
+                if disagreement_found:
+                    #this is the first agreeing one after some disagreeing ones. This is what we return
+                    return local_root_hash, timestamp
+                else:
+                    #we are in agreemenet from the newest roothash without any disagreements, we break and return none
+                    break
+            else:
+                disagreement_found = True
+                #if we get to the end, and disagreements were found, that means the entire database is in disagreement. 
+                #Will throw an error below.
+            
+        if disagreement_found:
+            raise DatabaseResyncRequired()
+        else:
+            return None, None
             
         
-        
+    
     #TODO. make sure we remove conflict blocks that reach consensus   
     async def get_block_conflict_consensus(self, chain_wallet_address, block_number):
         '''
@@ -921,6 +1078,12 @@ class Consensus(BaseService, PeerPoolSubscriber):
             
         if isinstance(cmd, hls.GetStakeForAddresses):
             await self._handle_get_stake_for_addresses(peer, cast(Dict[str, Any], msg))
+            
+        if isinstance(cmd, hls.GetMinGasParameters):
+            await self._handle_get_min_gas_parameters(peer, cast(Dict[str, Any], msg))
+            
+        if isinstance(cmd, hls.MinGasParameters):
+            await self._handle_min_gas_parameters(peer, cast(Dict[str, Any], msg))
         
         
 
@@ -966,10 +1129,12 @@ class Consensus(BaseService, PeerPoolSubscriber):
             peer.sub_proto.send_chain_head_root_hash_timestamps(return_data)
             
     async def _handle_stake_for_addresses(self, peer: HLSPeer, msg) -> None:
-        for address_stake in msg['stakes']:
-            address = address_stake[0]
-            stake = address_stake[1]
-            self.peer_stake_from_bootstrap_node[address] = stake
+        #make sure it is a bootstrap node
+        if peer.remote in self.bootstrap_nodes:
+            for address_stake in msg['stakes']:
+                address = address_stake[0]
+                stake = address_stake[1]
+                self.peer_stake_from_bootstrap_node[address] = stake
             
     async def _handle_get_stake_for_addresses(self, peer: HLSPeer, msg) -> None:
         address_stakes = []
@@ -977,8 +1142,42 @@ class Consensus(BaseService, PeerPoolSubscriber):
             stake = await self.chain.coro_get_mature_stake(address)
             address_stakes.append([address,stake])
         peer.sub_proto.send_stake_for_addresses(address_stakes)
+        
+    async def _handle_get_min_gas_parameters(self, peer: HLSPeer, msg) -> None:
+        hist_min_allowed_gas_price = await self.chaindb.coro_load_historical_minimum_gas_price(make_mutable = False, sort=True)
+        
+        if msg['num_centiseconds_from_now'] == 0:
+            average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
+            if average_network_tpc_cap is not None:
+                hist_net_tpc_capability = [[0, average_network_tpc_cap]]
+                hist_min_allowed_gas_price_new = [[0,hist_min_allowed_gas_price[-1][1]]]
+                peer.sub_proto.send_min_gas_initialization(hist_net_tpc_capability, hist_min_allowed_gas_price_new)
+        else:
+            hist_net_tpc_capability = await self.chaindb.coro_load_historical_network_tpc_capability(make_mutable = False, sort=True)
             
+            num_centiseconds_to_send = min([len(hist_net_tpc_capability), len(hist_min_allowed_gas_price), msg['num_centiseconds_from_now']])
+        
+            peer.sub_proto.send_min_gas_initialization(hist_net_tpc_capability[-num_centiseconds_to_send:], hist_min_allowed_gas_price[-num_centiseconds_to_send:])
             
+    async def _handle_min_gas_parameters(self, peer: HLSPeer, msg) -> None:
+        
+        hist_net_tpc_capability = msg['hist_net_tpc_capability']
+        hist_min_allowed_gas_price = msg['hist_min_allowed_gas_price']
+        
+        if len(hist_net_tpc_capability) == 1:
+            #require that the timestamp is set to 0 for the most recent average. Otherwise we shouldn't be receiving just 1.
+            if hist_net_tpc_capability[0][0] == 0:
+                #We are just receiving the last minute. this can be from any node. Lets keep track of it and average it.
+                peer_wallet_address = peer.wallet_address
+                stake = await self.get_accurate_stake(peer_wallet_address, peer.stake)
+                self._network_tpc_cap_statistics[peer_wallet_address] = [time.time(),hist_net_tpc_capability[0][1], stake]
+            
+        #make sure they are a bootnode
+        if peer.remote in self.bootstrap_nodes:
+            if await self.chaindb.coro_min_gas_system_initialization_required():
+                self.chaindb.coro_save_historical_minimum_gas_price(hist_min_allowed_gas_price)
+                self.chaindb.coro_save_historical_network_tpc_capability(hist_net_tpc_capability)
+                
             
             
             

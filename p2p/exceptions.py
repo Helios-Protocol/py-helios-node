@@ -59,6 +59,12 @@ class EmptyGetBlockHeadersReply(BaseP2PError):
     """
     pass
 
+class DatabaseResyncRequired(BaseP2PError):
+    """
+    Raised when the received block headers were empty.
+    """
+    pass
+
 
 class LESAnnouncementProcessingError(BaseP2PError):
     """

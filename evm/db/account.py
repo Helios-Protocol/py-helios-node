@@ -399,8 +399,10 @@ class AccountDB(BaseAccountDB):
     def delete_account(self, address):
         validate_canonical_address(address, title="Storage Address")
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
-
+        #try:
         del self._journaldb[account_lookup_key]
+        #except KeyError:
+        #    self.logger.debug("tried to delete an account that doesnt exist")
 
     def account_exists(self, address):
         validate_canonical_address(address, title="Storage Address")

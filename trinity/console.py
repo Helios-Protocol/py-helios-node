@@ -10,6 +10,7 @@ from cytoolz import merge
 
 import web3
 
+from trinity.hls_web3_module import Hls
 
 DEFAULT_BANNER: str = (
     "Trinity Console\n"
@@ -60,7 +61,8 @@ def console(ipc_path: Path,
         env = {}
 
     # cast needed until https://github.com/ethereum/web3.py/issues/867 is fixed
-    w3 = web3.Web3(web3.IPCProvider(str(ipc_path)))
+    #w3 = web3.Web3(web3.IPCProvider(str(ipc_path)))
+    w3 = web3.Web3(web3.IPCProvider(str(ipc_path)), modules={'hls': Hls})
 
     namespace = merge({'w3': w3}, env)
 

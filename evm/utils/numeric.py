@@ -83,5 +83,32 @@ def get_highest_bit_index(value):
         value >>= 1
 
 def effecient_diff(list_1, list_2):
-    s = set(list_1)
+    '''
+    returns a list that contains the elements in list_2 that are not in list_1
+    '''
+    if isinstance(list_1, set):
+        s = list_1
+    else:   
+        s = set(list_1)
     return [x for x in list_2 if x not in s]
+
+def are_items_in_list_equal(input_list):
+    '''
+    returns true if everything in the list is the same
+    '''
+    return not input_list or input_list.count(input_list[0]) == len(input_list)
+
+def stake_weighted_average(item_stake_list):
+    '''
+    takes in a list of [[item, stake], [item, stake], ...]
+    '''
+    numerator = 0
+    denominator = 0
+    for item_stake in item_stake_list:
+        numerator += item_stake[0]*item_stake[1]
+        denominator += item_stake[1]
+        
+    return numerator/denominator
+    
+    
+    

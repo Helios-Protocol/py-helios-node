@@ -49,14 +49,19 @@ from p2p.constants import (
     FAST_SYNC_CUTOFF_PERIOD,
     NUM_CHAINS_TO_REQUEST,
     REPLY_TIMEOUT,
-    CONSENSUS_SYNC_TIME_PERIOD
+    CONSENSUS_SYNC_TIME_PERIOD,
+    MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED,
 )
 
 from p2p import protocol
 from p2p import eth
 from p2p import hls
 from p2p.cancel_token import CancelToken
-from p2p.exceptions import NoEligiblePeers, OperationCancelled
+from p2p.exceptions import (
+    NoEligiblePeers, 
+    OperationCancelled,
+    DatabaseResyncRequired,
+)
 from p2p.peer import BasePeer, HLSPeer, PeerPool, PeerPoolSubscriber
 from p2p.rlp import (
     BlockBody, 
@@ -165,7 +170,8 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         else:
             timestamp_to_check = self.current_syncing_root_timestamp
             root_hash_to_check = self.current_syncing_root_hash
-            
+        
+        self.logger.debug("timestamp used for registering peer in consensus = {}".format(timestamp_to_check))
         if peer.chain_head_root_hashes is not None:
             peer_root_hash_timestamps = SortedDict(peer.chain_head_root_hashes)
             
@@ -702,69 +708,113 @@ class RegularChainSyncer(FastChainSyncer):
         self.chain_head_db.load_saved_root_hash()
 
         
-    @property
-    def current_syncing_root_timestamp(self):
-        if not self._initial_sync_complete.is_set():
-            if self._current_syncing_root_timestamp is None or self._current_syncing_root_timestamp <= int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
-                last_synced_timestamp, last_synced_root_hash = self.chain_head_db.get_last_complete_historical_root_hash()
-                timestamp_to_sync, root_hash_to_sync = self.consensus.get_next_consensus_root_hash_after_timestamp(last_synced_timestamp)
-                self._current_syncing_root_timestamp, self._current_syncing_root_hash = timestamp_to_sync, root_hash_to_sync
-                
-            return self._current_syncing_root_timestamp
-        else:
-            return self._current_syncing_root_timestamp
+#    @property
+#    def current_syncing_root_timestamp(self):
+#        if not self._initial_sync_complete.is_set():
+#            if self._current_syncing_root_timestamp is None or self._current_syncing_root_timestamp <= int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
+#                last_synced_timestamp, last_synced_root_hash = self.chain_head_db.get_last_complete_historical_root_hash()
+#                
+#                
+#                timestamp_to_sync, root_hash_to_sync = self.consensus.get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(last_synced_timestamp)
+#                self._current_syncing_root_timestamp, self._current_syncing_root_hash = timestamp_to_sync, root_hash_to_sync
+#                
+#            return self._current_syncing_root_timestamp
+#        else:
+#            return self._current_syncing_root_timestamp
+#    
+#    @current_syncing_root_timestamp.setter
+#    def current_syncing_root_timestamp(self, value):
+#        self._current_syncing_root_timestamp = value
+#        
+#    @property
+#    def current_syncing_root_hash(self):
+#        if not self._initial_sync_complete.is_set():
+#            if self._current_syncing_root_timestamp is None or self._current_syncing_root_timestamp <= int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
+#                last_synced_timestamp, last_synced_root_hash = self.chain_head_db.get_last_complete_historical_root_hash()
+#                timestamp_to_sync, root_hash_to_sync = self.consensus.get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(last_synced_timestamp)
+#                self._current_syncing_root_timestamp, self._current_syncing_root_hash = timestamp_to_sync, root_hash_to_sync
+#                
+#            return self._current_syncing_root_hash
+#        else:
+#            return self._current_syncing_root_hash
     
-    @current_syncing_root_timestamp.setter
-    def current_syncing_root_timestamp(self, value):
-        self._current_syncing_root_timestamp = value
+#    @current_syncing_root_hash.setter
+#    def current_syncing_root_hash(self, value):
+#        self._current_syncing_root_hash = value
         
-    @property
-    def current_syncing_root_hash(self):
-        if not self._initial_sync_complete.is_set():
-            if self._current_syncing_root_timestamp is None or self._current_syncing_root_timestamp <= int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
-                last_synced_timestamp, last_synced_root_hash = self.chain_head_db.get_last_complete_historical_root_hash()
-                timestamp_to_sync, root_hash_to_sync = self.consensus.get_next_consensus_root_hash_after_timestamp(last_synced_timestamp)
-                self._current_syncing_root_timestamp, self._current_syncing_root_hash = timestamp_to_sync, root_hash_to_sync
-                
-            return self._current_syncing_root_hash
-        else:
-            return self._current_syncing_root_hash
-    
-    @current_syncing_root_hash.setter
-    def current_syncing_root_hash(self, value):
-        self._current_syncing_root_hash = value
+#    def set_current_syncing_root_hash_to_first_conflict(self):
+#        if self._current_syncing_root_timestamp is None or self._current_syncing_root_timestamp <= int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
+#        last_synced_timestamp, last_synced_root_hash = self.chain_head_db.get_last_complete_historical_root_hash()
+#        timestamp_to_sync, root_hash_to_sync = self.consensus.get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(last_synced_timestamp)
+#        self._current_syncing_root_timestamp, self._current_syncing_root_hash = timestamp_to_sync, root_hash_to_sync
+        
         
     async def _run(self) -> None:
         self.logger.debug("Starting regular chainsyncer. waiting for consensus and chain config to initialize.")
-        msg_loop = asyncio.ensure_future(self._handle_msg_loop())
+        asyncio.ensure_future(self._handle_msg_loop())
         consensus_ready = await self.consensus.coro_is_ready.wait()
         if consensus_ready:
             self.logger.debug("consensus ready")
             with self.subscribe(self.peer_pool):
                 self.logger.debug("syncing chronological blocks")
-                await self.sync_chronological_blocks()
+                #await self.sync_chronological_blocks()
+                #this runs forever
+                await self.sync_historical_root_hash_with_consensus()
                 #asyncio.ensure_future(self.re_queue_timeout_peers())
-                while True:
-                    #await self.wait_first(self.send_chronological_block_window_requests(), self._sync_complete.wait())
-                    await msg_loop
                     
-    async def sync_with_consensus(self):
+    
+    
+    async def does_local_blockchain_database_match_consensus(self):
+        try:
+            consensus_root_hash, latest_good_timestamp_before_conflict = await self.consensus.get_latest_root_hash_before_conflict()
+        except DatabaseResyncRequired:
+            self.logger.debug("Our database has been offline for too long. Need to perform fast sync again. Deleting the database now. Please restart the program.")
+            self.base_db.destroy_db()
+        
+        if latest_good_timestamp_before_conflict is None:
+            return True
+        else:
+            return False
+        
+    
+    async def sync_historical_root_hash_with_consensus(self):
+        self.logger.debug("sync_with_consensus starting")
         while True:
+            self.logger.debug("consensus loop start")
             #this loop can continuously look at the root hashes in consensus, if they dont match ours then we need to update to the new one
             #it also has to look at conflict blocks and make sure we always have the one that is in consensus.
-            if not self._initial_sync_complete.is_set():
-                raise SyncerOutOfOrder()
+#            if not self._initial_sync_complete.is_set():
+#                self.logger.debug("within sync_with_consensus loop. _initial_sync_complete not set, so running sync_chronological_blocks")
+#                self.sync_chronological_blocks()
+              
+            try:
+                consensus_root_hash, latest_good_timestamp = await self.consensus.get_latest_root_hash_before_conflict(before_timestamp = time.time()-MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED)
+            except DatabaseResyncRequired:
+                #this means none of our root hashes match consensus. We need to delete our entire database and do fast sync again
+                self.logger.debug("Our database has been offline for too long. Need to perform fast sync again. Deleting the database now. Please restart the program.")
+                self.base_db.destroy_db()
                 
-            consensus_root_hash, latest_good_timestamp = await self.consensus.get_latest_root_hash_before_conflict()
             #this is the latest one where we actually do match consensus. Now we re-sync up to the next one
             
             if consensus_root_hash is None:
+                #here we find that we have no conflict with the database that we currently have. 
+                #However, we havent checked to see if we have the most up to data database. Need to check here.
+                last_synced_timestamp_local, _ = self.chain_head_db.get_latest_historical_root_hash()
+                last_available_timestamp_from_peers = self.consensus.get_newest_peer_root_hash_timestamp()
+                if last_synced_timestamp_local < last_available_timestamp_from_peers:
+                    self.logger.debug("local database is in consensus but not up to date. running sync_chronological_blocks")
+                    self._initial_sync_complete.clear()
+                    await self.sync_chronological_blocks()
+                    
                 #if it is none, then we have no conflicts
+                self.logger.debug("no conflicts found")
                 await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
             else:
                 #We have conflicts, lets sync up one window, and let the loop continue to go through all windows
-                self.current_syncing_root_hash, self.current_syncing_root_timestamp = await self.consensus.get_next_consensus_root_hash_after_timestamp(self, latest_good_timestamp)
+                #self.current_syncing_root_timestamp, self.current_syncing_root_hash = self.consensus.get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(latest_good_timestamp)
+                self.current_syncing_root_timestamp, self.current_syncing_root_hash = self.consensus.get_next_consensus_root_hash_after_timestamp(latest_good_timestamp)
                 
+                self.logger.debug("Conflict found. Syncing historical window for time {}".format(self.current_syncing_root_timestamp))
                 #re-queue all peers so that we know which ones are in consensus
                 self.re_register_peers()
                 
@@ -783,26 +833,27 @@ class RegularChainSyncer(FastChainSyncer):
                 #make sure the peer has data for this timestamp. We may already be up to date, and there just havent been transactions for a while
                 sorted_dict_root_hashes = SortedDict(peer.chain_head_root_hashes)
                 peer_timestamps = list(sorted_dict_root_hashes.keys())
-                if peer_timestamps[-1] <= latest_good_timestamp:
+                if peer_timestamps[-1] < self.current_syncing_root_timestamp:
                     self.logger.debug("Skipping sync_with_consensus with this peer they dont have the correct root hash timestamp")
                     continue
                 
                 try:
-                    await self.sync_chronological_window(latest_good_timestamp, peer, new_window = False)
+                    #we sync the chronological window that leads up to the one we are syncing
+                    await self.sync_chronological_window(self.current_syncing_root_timestamp-TIME_BETWEEN_HEAD_HASH_SAVE, peer, new_window = False)
                 except TimeoutError:
                     self.logger.debug('sync_chronological_blocks timeout')
                     self.register_peer(peer)
                     continue
 
-                except Exception as e:
-                    self.logger.debug('Uncaught exception {}'.format(e))
-                    #there was an error importing the blocks. this most likely means one of the blocks was invalid.
-                    #so lets re-request this block window from someone else.
-                    self.register_peer(peer)
-                    continue
+#                except Exception as e:
+#                    self.logger.debug('Uncaught exception {}'.format(e))
+#                    #there was an error importing the blocks. this most likely means one of the blocks was invalid.
+#                    #so lets re-request this block window from someone else.
+#                    self.register_peer(peer)
+#                    continue
             
             
-        
+                self.register_peer(peer)
         
         
     
@@ -811,18 +862,9 @@ class RegularChainSyncer(FastChainSyncer):
     #TODO: on receive new block function, have a switch that checks if chronological blocks have run yet     
     async def sync_chronological_blocks(self):
         while not self._initial_sync_complete.is_set() and self.is_running:
-            #re-register peers so we know which ones are in consensus
-            self.re_register_peers()
             
-            peer = await self.wait(self._idle_peers_in_consensus.get())
-            if peer.is_running:
-                self.logger.debug("Found a peer to send chronological block requests to. peer wallet address = {}".format(peer.wallet_address))
-            else:
-                self.logger.info("%s disconnected, aborting sync with this peer", peer)
-                continue
-                
             last_synced_timestamp, last_synced_root_hash = self.chain_head_db.get_latest_historical_root_hash()
-            
+            #last_synced_timestamp, last_synced_root_hash = self.chain_head_db.get_last_complete_historical_root_hash()
             if last_synced_timestamp > time.time():
                 self.logger.debug("finished chronological block sync 3")
                 self._initial_sync_complete.set()
@@ -833,6 +875,20 @@ class RegularChainSyncer(FastChainSyncer):
                 self.logger.debug("finished chronological block sync 2")
                 self._initial_sync_complete.set()
                 return
+            
+            timestamp_to_check_peer_consensus, root_hash_to_check_peer_consensus = self.consensus.get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(last_synced_timestamp)
+            self.current_syncing_root_timestamp, self.current_syncing_root_hash = timestamp_to_check_peer_consensus, root_hash_to_check_peer_consensus
+            #re-register peers so we know which ones are in consensus
+            self.re_register_peers()
+            
+            peer = await self.wait(self._idle_peers_in_consensus.get())
+            if peer.is_running:
+                self.logger.debug("Found a peer to send chronological block requests to. peer wallet address = {}".format(peer.wallet_address))
+            else:
+                self.logger.info("%s disconnected, aborting sync with this peer", peer)
+                continue
+                
+            
             
             #make sure the peer has data for this timestamp. We may already be up to date, and there just havent been transactions for a while
             sorted_dict_root_hashes = SortedDict(peer.chain_head_root_hashes)
@@ -866,9 +922,13 @@ class RegularChainSyncer(FastChainSyncer):
     async def sync_chronological_window(self, window_start_timestamp, peer, new_window = False):
         #we can now download the chronological blocks for this window, and then save the root hash for the next window
         if new_window:
-            save_block_head_hash_timestamp = False
+            #for a new window, we don't want to propogate it to present yet because that will cause it to 
+            #look like we have downloaded all chronological block windows up to present
+            save_block_head_hash_timestamp = True
+            propogate_block_head_hash_timestamp_to_present = False
         else:
             save_block_head_hash_timestamp = True
+            propogate_block_head_hash_timestamp_to_present = True
             
         peer.sub_proto.send_get_chronological_block_window(window_start_timestamp)
 
@@ -879,24 +939,33 @@ class RegularChainSyncer(FastChainSyncer):
         
         #as long as these blocks are all newer than self.current_syncing_root_timestamp, then we dont need to worry about conflicts because
         #we cant have any blocks in this range of time yet.
-
-        for block in new_chronological_blocks:
-            wallet_address = self.chaindb.get_chain_wallet_address_for_block(block)
-            await self.chain.coro_import_block(block, wallet_address = wallet_address, save_block_head_hash_timestamp = save_block_head_hash_timestamp, allow_unprocessed=False)
+#        window_start_timestamp, save_block_head_hash_timestamp = True, allow_unprocessed=False):
+        self.chain.import_chronological_block_window(new_chronological_blocks, 
+                                                     window_start_timestamp = window_start_timestamp,
+                                                     save_block_head_hash_timestamp = save_block_head_hash_timestamp, 
+                                                     allow_unprocessed=False, 
+                                                     propogate_block_head_hash_timestamp_to_present = propogate_block_head_hash_timestamp_to_present)
+#        for block in new_chronological_blocks:
+#            wallet_address = self.chaindb.get_chain_wallet_address_for_block(block)
+#            await self.chain.coro_import_block(block, wallet_address = wallet_address, save_block_head_hash_timestamp = save_block_head_hash_timestamp, allow_unprocessed=False)
         
-        if new_window:
-            #if it is a new window, our chain head hash should match the expected one, and if so, we can save it to chain head db.
-            #we need to chainheaddb because the database was modified by the chain process.
-            self.chain_head_db.load_saved_root_hash()
-            local_head_root_hash = self.chain_head_db.get_root_hash()
-            if local_head_root_hash != final_root_hash:
-                self.logger.debug("root hash is not as expected after importing chronological block window. will re-request window. local: {}, expected: {}".format(local_head_root_hash,final_root_hash))
-                raise LocalRootHashNotAsExpected()
-                
-            else:
-                self.logger.debug('sync_chronological_blocks saving new root hash, root_hash = {}, timestamp = {}'.format(local_head_root_hash,window_start_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE))
-                self.chain_head_db.save_single_historical_root_hash(local_head_root_hash, window_start_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE)
-    
+#        if new_window:
+#            #if it is a new window, our chain head hash should match the expected one, and if so, we can save it to chain head db.
+#            #we need to chainheaddb because the database was modified by the chain process.
+#            self.chain_head_db.load_saved_root_hash()
+#            local_head_root_hash = self.chain_head_db.get_root_hash()
+#            if local_head_root_hash != final_root_hash:
+#                self.logger.debug("root hash is not as expected after importing chronological block window. will re-request window. local: {}, expected: {}".format(local_head_root_hash,final_root_hash))
+#                raise LocalRootHashNotAsExpected()
+#                
+#            else:
+#                self.logger.debug('sync_chronological_blocks saving new root hash, root_hash = {}, timestamp = {}'.format(local_head_root_hash,window_start_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE))
+#                self.chain_head_db.save_single_historical_root_hash(local_head_root_hash, window_start_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE)
+#        else:
+        local_head_root_hash = self.chain_head_db.get_historical_root_hash(self.current_syncing_root_timestamp)
+        if local_head_root_hash != final_root_hash:
+            self.logger.debug("root hash is not as expected after importing chronological block window for timestamp {}. will re-request window. local: {}, expected: {}".format(window_start_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE, local_head_root_hash,final_root_hash))
+            raise LocalRootHashNotAsExpected()
         
         
     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
@@ -1076,7 +1145,17 @@ class RegularChainSyncer(FastChainSyncer):
                                         msg: Dict[str, Any]) -> None:
         self.logger.debug("Received a fast sync chain, but in normal sync mode. Doing nothing")
 
-
+    async def _handle_new_block(self,
+                                        peer: HLSPeer,
+                                        msg: Dict[str, Any]) -> None:
+        pass
+    
+#        structure = [
+#            ('block', P2PBlock)
+#        ]
+        
+        
+        
 class DownloadedBlockPart(NamedTuple):
     part: Union[hls.BlockBody, List[Receipt]]
     unique_key: Union[bytes, Tuple[bytes, bytes]]

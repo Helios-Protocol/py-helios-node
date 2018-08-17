@@ -90,9 +90,7 @@ class BlockBodies(Command):
 class NewBlock(Command):
     _cmd_id = 7
     structure = [
-        ('block', sedes.List([BlockHeader,
-                              sedes.CountableList(P2PSendTransaction),
-                              sedes.CountableList(P2PReceiveTransaction)]))
+        ('block', P2PBlock)
     ]
 
 
@@ -201,6 +199,17 @@ class ChronologicalBlockWindow(Command):
         ('blocks', sedes.CountableList(P2PBlock)),
         ('final_root_hash', hash32)]
 
+class GetMinGasParameters(Command):
+    _cmd_id = 31
+    structure = [
+        ('num_centiseconds_from_now', sedes.big_endian_int),
+    ]
+    
+class MinGasParameters(Command):
+    _cmd_id = 32
+    structure = [
+        ('hist_net_tpc_capability', sedes.CountableList(sedes.List([sedes.big_endian_int, sedes.binary]))),
+        ('hist_min_allowed_gas_price', sedes.CountableList(sedes.List([sedes.big_endian_int, sedes.binary])))]
 
 class HLSProtocol(Protocol):
     name = 'HLS'
@@ -211,7 +220,8 @@ class HLSProtocol(Protocol):
         NewBlock, NewBlock, NewBlock, GetNodeData, NodeData,
         GetReceipts, Receipts, GetChainHeadTrieBranch, ChainHeadTrieBranch, GetChainHeadRootHashTimestamps,
         ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification,
-        GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain, GetChronologicalBlockWindow, ChronologicalBlockWindow]
+        GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain, GetChronologicalBlockWindow, 
+        ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters]
     cmd_length = 40
     logger = logging.getLogger("p2p.hls.HLSProtocol")
 
@@ -391,8 +401,31 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(data)
         self.send(header, body)
         
+    def send_new_block(self, block) -> None:
+        cmd = NewBlock(self.cmd_id_offset)
+        data = {
+            'block': block}
+        header, body = cmd.encode(data)
+        self.send(header, body)
+        
+    def send_get_min_gas_parameters(self, num_centiseconds_from_now = 50) -> None:
+        cmd = GetMinGasParameters(self.cmd_id_offset)
+        data = {
+            'num_centiseconds_from_now': num_centiseconds_from_now}
+        header, body = cmd.encode(data)
+        self.send(header, body)
+        
+    def send_min_gas_parameters(self, hist_net_tpc_capability, hist_min_allowed_gas_price) -> None:
+        cmd = MinGasParameters(self.cmd_id_offset)
+        data = {
+            'hist_net_tpc_capability': hist_net_tpc_capability,
+            'hist_min_allowed_gas_price': hist_min_allowed_gas_price}
+        header, body = cmd.encode(data)
+        self.send(header, body)
         
         
+
+
         
         
         

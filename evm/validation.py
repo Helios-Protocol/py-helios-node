@@ -195,6 +195,17 @@ def validate_historical_timestamp(value, title="Value"):
                 title=title,
             )
         )
+            
+def validate_centisecond_timestamp(value, title="Value"):
+    validate_uint256(value, title=title)
+    if value % 100 != 0:
+        raise ValidationError(
+            "{title} must be a multiple of {0}: Got: {1}".format(
+                100,
+                value,
+                title=title,
+            )
+        )
 
 def validate_is_queue_block(value, title='Value'):
     if not isinstance(value, BaseQueueBlock):

@@ -12,6 +12,10 @@ from evm.chains.mainnet import (
 from evm.db.backends.base import BaseDB
 from evm.db.backends.level import LevelDB
 
+from evm.db.journal import (
+    JournalDB,
+)
+
 from p2p.service import BaseService
 
 from trinity.exceptions import (
@@ -51,6 +55,7 @@ from trinity.utils.version import (
     construct_trinity_client_identifier,
 )
 
+
 #from trinity.dev_tools import load_local_nodes
 
 
@@ -87,7 +92,7 @@ class Whitelist(logging.Filter):
 #python main.py --instance 1 --filter_log p2p.chain.ChainSyncer --rand_db 1
 def main(instance_number = None) -> None:
     args = parser.parse_args()
-
+    
     log_level = getattr(logging, args.log_level.upper())
     #log_level = getattr(logging, 'INFO')
 
@@ -103,10 +108,11 @@ def main(instance_number = None) -> None:
     #print(logging.Logger.manager.loggerDict)
     filter_list = []
     filter_list.append('p2p.chain.ChainSyncer')
+    filter_list.append('evm.db.account.AccountDB')
     filter_list.append('evm.chain.chain.Chain')
     filter_list.append('evm.db.chain_head.ChainHeadDB')
     filter_list.append('evm.db.chain_db.ChainDB')
-    #filter_list.append('p2p.consensus.Consensus')
+    filter_list.append('p2p.consensus.Consensus')
     filter_list.append('p2p.kademlia.KademliaProtocol')
     filter_list.append('p2p.discovery.DiscoveryProtocol')
    
@@ -138,7 +144,6 @@ def main(instance_number = None) -> None:
     except AmbigiousFileSystem:
         exit_because_ambigious_filesystem(logger)
         
-
     if not is_data_dir_initialized(chain_config):
         # TODO: this will only work as is for chains with known genesis
         # parameters.  Need to flesh out how genesis parameters for custom
@@ -187,6 +192,7 @@ def main(instance_number = None) -> None:
         'profile': args.profile,
     }
 
+    #base_db = JournalDB(LevelDB)
     #First initialize the database process.
     database_server_process = ctx.Process(
         target=run_database_process,
@@ -238,6 +244,10 @@ def main(instance_number = None) -> None:
 @with_queued_logging
 def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> None:
     base_db = db_class(db_path=chain_config.database_dir)
+    #TODO:remove
+    base_db = JournalDB(base_db)
+    #base_db.destroy_db()
+    #exit()
     serve_chaindb(chain_config, base_db)
 
 

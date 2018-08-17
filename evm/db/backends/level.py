@@ -33,3 +33,12 @@ class LevelDB(BaseDB):
 
     def __delitem__(self, key: bytes) -> None:
         self.db.delete(key)
+        
+    def destroy_db(self):
+        try:
+            from plyvel import destroy_db
+        except ImportError:
+            raise ImportError("LevelDB requires the plyvel \
+                               library which is not available for import.")
+        self.db.close()
+        destroy_db(str(self.db_path))

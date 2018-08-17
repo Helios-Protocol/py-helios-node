@@ -93,3 +93,15 @@ class SchemaV1(BaseSchema):
     def make_current_syncing_info_lookup_key() -> bytes:
         return b'current-syncing-info'
     
+    @staticmethod
+    def make_historical_minimum_gas_price_lookup_key() -> bytes:
+        return b'h_minimum_gas_price'
+    
+    @staticmethod
+    def make_historical_tx_per_centisecond_lookup_key() -> bytes:
+        return b'h_tx_per_centisecond'
+    
+    @staticmethod
+    def make_historical_network_tpc_capability_lookup_key() -> bytes:
+        return b'h_net_tpc_cap'
+    

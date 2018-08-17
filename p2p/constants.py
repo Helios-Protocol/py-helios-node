@@ -63,8 +63,13 @@ FAST_SYNC_CUTOFF_PERIOD = 0 #testing
 NUM_CHAINS_TO_REQUEST = 5
 ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD = 60*24 #testing
 
-CONSENSUS_SYNC_TIME_PERIOD = 5 #the amount of time between checking that we are in sync with peers
 
+CONSENSUS_SYNC_TIME_PERIOD = 5 #the amount of time between checking that we are in sync with peers
+CONSENSUS_CHECK_MIN_GAS_SYSTEM_READY_TIME_PERIOD = 5
+CONSENSUS_CHECK_LOCAL_TPC_CAP_PERIOD = 60
+MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD = 5 #this should be set to 30 after testing
+MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG = 0 #This can only be set higher once the network is running. at the start this needs to be 0
+MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED = 60*5
 
 LOCAL_PEER_POOL_PATH = '/home/tommy/.local/share/trinity/local_peer_pool'
 

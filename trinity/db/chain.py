@@ -26,8 +26,12 @@ class ChainDBProxy(BaseProxy):
     coro_get_chain_wallet_address_for_block_hash = async_method('get_chain_wallet_address_for_block_hash')
     coro_get_all_blocks_on_chain = async_method('get_all_blocks_on_chain')
     coro_get_block_by_number = async_method('get_block_by_number')
-
-
+    coro_min_gas_system_initialization_required = async_method('min_gas_system_initialization_required')
+    coro_load_historical_network_tpc_capability = async_method('load_historical_network_tpc_capability')
+    coro_load_historical_minimum_gas_price = async_method('load_historical_minimum_gas_price')
+    coro_save_historical_minimum_gas_price = async_method('save_historical_minimum_gas_price')
+    coro_save_historical_network_tpc_capability = async_method('save_historical_network_tpc_capability')
+    coro_load_historical_tx_per_centisecond = async_method('load_historical_tx_per_centisecond')
 
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')
@@ -42,3 +46,9 @@ class ChainDBProxy(BaseProxy):
     get_block_by_number = sync_method('get_block_by_number')
     get_all_blocks_on_chain = sync_method('get_all_blocks_on_chain')
     get_chain_wallet_address_for_block = sync_method('get_chain_wallet_address_for_block')
+    min_gas_system_initialization_required = sync_method('min_gas_system_initialization_required')
+    load_historical_network_tpc_capability = sync_method('load_historical_network_tpc_capability')
+    load_historical_minimum_gas_price = sync_method('load_historical_minimum_gas_price')
+    save_historical_minimum_gas_price = sync_method('save_historical_minimum_gas_price')
+    save_historical_network_tpc_capability = sync_method('save_historical_network_tpc_capability')
+    load_historical_tx_per_centisecond = sync_method('load_historical_tx_per_centisecond')
