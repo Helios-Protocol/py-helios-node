@@ -406,7 +406,6 @@ class VM(BaseVM):
         """
         Import the given block to the chain.
         """
-        #TODO:check to see if it is replacing a block, or being added to the top
         if not isinstance(block, self.get_queue_block_class()):
             if block.sender != self.wallet_address:
                 raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
@@ -663,6 +662,7 @@ class VM(BaseVM):
     def convert_block_to_correct_class(self, block):
         """
         Returns a block that is an instance of the correct block class for this vm
+        Also converts the send transactions, and receive transactions into the correct class.
         """
         #parameters = list(dict(sender_block_1_imported._meta.fields).values())
         correct_transactions = []
@@ -682,11 +682,7 @@ class VM(BaseVM):
             transactions = correct_transactions,
             receive_transactions = correct_receive_transactions
         )
-#        self.block = correct_block.copy(
-#            header=block.header,
-#            transactions = correct_transactions,
-#            receive_transactions = correct_receive_transactions
-#        )
+
         
         return self.block
     
@@ -789,10 +785,11 @@ class VM(BaseVM):
                     block,
                 )
             )
+        #check signature validity. this will raise a validation error
+        block.header.check_signature_validity()
+        
         if not block.is_genesis:
-            #check signature validity. this will raise a validation error
-            block.header.check_signature_validity()
-
+            
             parent_header = get_parent_header(block.header, self.chaindb)
 
             validate_gas_limit(block.header.gas_limit, parent_header.gas_limit)
@@ -825,6 +822,7 @@ class VM(BaseVM):
             raise ValidationError(
                 "Block's transaction_root ({0}) does not match expected value: {1}".format(
                     block.header.transaction_root, tx_root_hash))
+            
         re_tx_root_hash, _ = make_trie_root_and_nodes(block.receive_transactions)
         if re_tx_root_hash != block.header.receive_transaction_root:
             raise ValidationError(

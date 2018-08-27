@@ -90,7 +90,8 @@ class BlockBodies(Command):
 class NewBlock(Command):
     _cmd_id = 7
     structure = [
-        ('block', P2PBlock)
+        ('block', P2PBlock),
+        ('chain_address', address)
     ]
 
 
@@ -208,8 +209,16 @@ class GetMinGasParameters(Command):
 class MinGasParameters(Command):
     _cmd_id = 32
     structure = [
-        ('hist_net_tpc_capability', sedes.CountableList(sedes.List([sedes.big_endian_int, sedes.binary]))),
-        ('hist_min_allowed_gas_price', sedes.CountableList(sedes.List([sedes.big_endian_int, sedes.binary])))]
+        ('hist_net_tpc_capability', sedes.CountableList(sedes.List([sedes.big_endian_int, sedes.big_endian_int]))),
+        ('hist_min_allowed_gas_price', sedes.CountableList(sedes.List([sedes.big_endian_int, sedes.big_endian_int])))]
+    
+class GetChainSegment(Command):
+    _cmd_id = 33
+    structure = [
+        ('chain_address', address),
+        ('block_number_start', sedes.big_endian_int),
+        ('block_number_end', sedes.big_endian_int)
+    ]
 
 class HLSProtocol(Protocol):
     name = 'HLS'
@@ -221,7 +230,7 @@ class HLSProtocol(Protocol):
         GetReceipts, Receipts, GetChainHeadTrieBranch, ChainHeadTrieBranch, GetChainHeadRootHashTimestamps,
         ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification,
         GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain, GetChronologicalBlockWindow, 
-        ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters]
+        ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters, GetChainSegment]
     cmd_length = 40
     logger = logging.getLogger("p2p.hls.HLSProtocol")
 
@@ -368,6 +377,16 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(data)
         self.send(header, body)
         
+    def send_get_chain_segment(self, chain_address, block_number_start, block_number_end) -> None:
+        cmd = GetChainSegment(self.cmd_id_offset)
+        data = {
+            'chain_address': chain_address,
+            'block_number_start': block_number_start,
+            'block_number_end': block_number_end,
+            }
+        header, body = cmd.encode(data)
+        self.send(header, body)
+        
     def send_get_chains_syncing(self, chain_request_info) -> None:
         cmd = GetChainsSyncing(self.cmd_id_offset)
         data = {
@@ -401,10 +420,11 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(data)
         self.send(header, body)
         
-    def send_new_block(self, block) -> None:
+    def send_new_block(self, block, wallet_address) -> None:
         cmd = NewBlock(self.cmd_id_offset)
         data = {
-            'block': block}
+            'block': block,
+            'wallet_address': wallet_address}
         header, body = cmd.encode(data)
         self.send(header, body)
         

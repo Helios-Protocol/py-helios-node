@@ -123,6 +123,12 @@ class UnprocessedBlockNotAllowed(PyEVMError):
     """
     pass
 
+class UnprocessedBlockChildIsProcessed(PyEVMError):
+    """
+    Raised when a child of an unprocessed block has been processed for some reason
+    """
+    pass
+
 class ReplacingBlocksNotAllowed(PyEVMError):
     """
     Raised when a block tries to replace another block when it is not allowed

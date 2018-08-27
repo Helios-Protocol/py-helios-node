@@ -107,7 +107,7 @@ def stake_weighted_average(item_stake_list):
     for item_stake in item_stake_list:
         numerator += item_stake[0]*item_stake[1]
         denominator += item_stake[1]
-        
+       
     return numerator/denominator
     
     

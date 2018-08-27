@@ -6,6 +6,7 @@ from typing import Callable
 
 @contextlib.contextmanager
 def profiler(filename):
+    
     pr = cProfile.Profile()
     pr.enable()
     try:

@@ -30,7 +30,7 @@ class ChainHeadDBProxy(BaseProxy):
     coro_save_single_historical_root_hash = async_method('save_single_historical_root_hash')
     coro_get_historical_root_hash = async_method('get_historical_root_hash')
     coro_get_latest_historical_root_hash = async_method('get_latest_historical_root_hash')
-    
+    coro_get_chain_head_hash = async_method('get_chain_head_hash')
     
 
     get_historical_root_hashes = sync_method('get_historical_root_hashes')
@@ -47,3 +47,4 @@ class ChainHeadDBProxy(BaseProxy):
     get_historical_root_hash = sync_method('get_historical_root_hash')
     load_saved_root_hash = sync_method('load_saved_root_hash')
     get_latest_historical_root_hash = sync_method('get_latest_historical_root_hash')
+    get_chain_head_hash = sync_method('get_chain_head_hash')

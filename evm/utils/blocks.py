@@ -109,6 +109,17 @@ def extract_block_header_sender(block_header: BaseBlockHeader) -> bytes:
     sender = public_key.to_canonical_address()
     return sender
 
+def get_block_average_transaction_gas_price(block):
+    total_sum = 0
+    num_tx = 0
+    for transaction in block.transactions:
+        num_tx += 1
+        total_sum += transaction.gas_price
+        
+    average = total_sum/num_tx
+    return average
+        
+
 
 
 

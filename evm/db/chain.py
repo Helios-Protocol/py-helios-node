@@ -296,13 +296,18 @@ class ChainDB(BaseChainDB):
         """
         if wallet_address is None:
             wallet_address = self.wallet_address
-        try:
-            canonical_head_hash = self.db[SchemaV1.make_canonical_head_hash_lookup_key(wallet_address)]
-        except KeyError:
-            raise CanonicalHeadNotFound("No canonical head set for this chain")
+        canonical_head_hash = self.get_canonical_head_hash(wallet_address)
         return self.get_block_header_by_hash(
             cast(Hash32, canonical_head_hash),
         )
+        
+    def get_canonical_head_hash(self, wallet_address = None):
+        if wallet_address is None:
+            wallet_address = self.wallet_address
+        try:
+            return self.db[SchemaV1.make_canonical_head_hash_lookup_key(wallet_address)]
+        except KeyError:
+            raise CanonicalHeadNotFound("No canonical head set for this chain")
         
     def get_block_by_hash(self, block_hash, block_class):
         
@@ -589,10 +594,10 @@ class ChainDB(BaseChainDB):
         if block.header.parent_hash != GENESIS_PARENT_HASH:
             self.add_block_child(block.header.parent_hash, block.header.hash)
 
-    def persist_non_canonical_block(self, block):
+    def persist_non_canonical_block(self, block, wallet_address):
         self.save_header_to_db(block.header)
         
-        self.save_block_hash_to_chain_wallet_address(block.hash)
+        self.save_block_hash_to_chain_wallet_address(block.hash, wallet_address)
         
         #add all receive transactions as children to the sender block
         self.add_block_receive_transactions_to_parent_child_lookup(block.header, block.receive_transaction_class)
@@ -604,29 +609,44 @@ class ChainDB(BaseChainDB):
     #
     # Unprocessed Block API
     #
-    def save_block_as_unprocessed(self, block):
+    def save_block_as_unprocessed(self, block, wallet_address):
         '''
         This saves the block as unprocessed, and saves to any unprocessed parents, including the one on this own chain and from receive transactions
         '''
-        self.save_unprocessed_block_lookup(block.hash)
+        self.logger.debug("saving block number {} as unprocessed on chain {}. the block hash is {}".format(block.number, encode_hex(wallet_address), encode_hex(block.hash)))
+        self.save_unprocessed_block_lookup(block.hash, block.number, wallet_address)
         if self.is_block_unprocessed(block.header.parent_hash):
             self.save_unprocessed_children_block_lookup(block.header.parent_hash)
         
         self.save_unprocessed_children_block_lookup_to_transaction_parents(block)
         
     
-    def save_block_as_processed(self, block):
+    def remove_block_from_unprocessed(self, block):
         '''
         This removes any unprocessed lookups for this block.
         '''
-        self.delete_unprocessed_block_lookup(block.hash)
-        self.delete_unprocessed_children_blocks_lookup(block.hash)
+        if self.is_block_unprocessed(block.hash):
+            #delete the two unprocessed lookups for this block
+            self.delete_unprocessed_block_lookup(block.hash, block.number)
+            
+            #delete all unprocessed lookups for transaction parents if nessisary
+            self.delete_unprocessed_children_block_lookup_to_transaction_parents_if_nessissary(block)
+            
+            #delete all unprocessed lookups for chain parent if nessisary
+            if not self.check_all_children_blocks_to_see_if_any_unprocessed(block.header.parent_hash):
+                self.delete_unprocessed_children_blocks_lookup(block.header.parent_hash)
+    
+ 
         
-        
-    def save_unprocessed_block_lookup(self, block_hash):
+    def save_unprocessed_block_lookup(self, block_hash, block_number, wallet_address):
         lookup_key = SchemaV1.make_unprocessed_block_lookup_key(block_hash)
         self.db[lookup_key] = b'1'
-    
+        
+        
+        lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(wallet_address, block_number)
+        self.db[lookup_key] = rlp.encode(block_hash, sedes=rlp.sedes.binary)
+        
+        
     def save_unprocessed_children_block_lookup(self, block_hash):
         lookup_key = SchemaV1.make_has_unprocessed_block_children_lookup_key(block_hash)
         self.db[lookup_key] = b'1'
@@ -640,6 +660,13 @@ class ChainDB(BaseChainDB):
             if self.is_block_unprocessed(receive_transaction.sender_block_hash) or not self.db.exists(receive_transaction.sender_block_hash):
                 self.logger.debug("saving parent children unprocessed block lookup for block hash {}".format(encode_hex(receive_transaction.sender_block_hash)))
                 self.save_unprocessed_children_block_lookup(receive_transaction.sender_block_hash)
+                
+    def delete_unprocessed_children_block_lookup_to_transaction_parents_if_nessissary(self, block):
+        
+        for receive_transaction in block.receive_transactions:
+            #or do we not even have the block
+            if not self.check_all_children_blocks_to_see_if_any_unprocessed(receive_transaction.sender_block_hash) :
+                self.delete_unprocessed_children_blocks_lookup(receive_transaction.sender_block_hash)
             
 
         
@@ -656,7 +683,7 @@ class ChainDB(BaseChainDB):
     
     def is_block_unprocessed(self, block_hash):
         '''
-        Returns True if the block is processed
+        Returns True if the block is unprocessed
         '''
         #if block_hash == GENESIS_PARENT_HASH:
         #    return True
@@ -667,16 +694,40 @@ class ChainDB(BaseChainDB):
         except KeyError:
             return False
         
+    def get_unprocessed_block_hash_by_block_number(self, wallet_address, block_number):
+        '''
+        Returns block hash if the block is unprocessed, false if it doesnt exist for this block number
+        '''
+        
+        lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(wallet_address, block_number)
+        try:
+            return rlp.decode(self.db[lookup_key], sedes = rlp.sedes.binary)
+        except KeyError:
+            return None
+        
     
         
-    def delete_unprocessed_block_lookup(self, block_hash):
+    def delete_unprocessed_block_lookup(self, block_hash, block_number):
         lookup_key = SchemaV1.make_unprocessed_block_lookup_key(block_hash)
         try:
             del(self.db[lookup_key])
         except KeyError:
             pass
         
+        wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, block_hash)
+        
+        lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(wallet_address, block_number)
+        
+        try:
+            del(self.db[lookup_key])
+        except KeyError:
+            pass
+        
+        
     def delete_unprocessed_children_blocks_lookup(self, block_hash):
+        '''
+        removes the lookup that says if this block has unprocessed children
+        '''
         lookup_key = SchemaV1.make_has_unprocessed_block_children_lookup_key(block_hash)
         try:
             del(self.db[lookup_key])
@@ -684,6 +735,25 @@ class ChainDB(BaseChainDB):
             pass
         
         
+    def check_all_children_blocks_to_see_if_any_unprocessed(self, block_hash):
+        '''
+        manually goes through all children blocks instead of using lookup table. 
+        if any children are unprocessed, it returns true, false otherwise.
+        '''
+        if not self.has_unprocessed_children(block_hash):
+            return False
+        
+        children_block_hashes = self.get_block_children(block_hash)
+        if children_block_hashes == None:
+            return False
+        
+        for child_block_hash in children_block_hashes:  
+            if self.is_block_unprocessed(child_block_hash):
+                return True
+            
+        return False
+    
+
         
         
     #
@@ -1439,12 +1509,6 @@ class ChainDB(BaseChainDB):
             
     
         
-        
-        
-        
-        
-        
-        
     def get_required_block_min_gas_price(self, block_timestamp):
         '''
         it is important that this doesn't run until our blockchain is up to date. If it is run before that,
@@ -1452,23 +1516,26 @@ class ChainDB(BaseChainDB):
         '''
         centisecond_window = int(block_timestamp/100) * 100
         
-        for i in range(2):
-            hist_min_gas_price = self.load_historical_minimum_gas_price()
-            
-            if (hist_min_gas_price is None 
-                or len(hist_min_gas_price) < MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE):
-                #there is no data for calculating min gas price
-                raise HistoricalMinGasPriceError("tried to get required block minimum gas price but historical minimum gas price has not been initialized")
-            
-            dict_hist_min_gas_price = dict(hist_min_gas_price)
-            
-            try:
-                return dict_hist_min_gas_price[centisecond_window]
-            except KeyError:
-                pass
-            
-            #we have to update the min gas price to now
-            self.update_historical_mimimum_gas_price()
+
+        hist_min_gas_price = self.load_historical_minimum_gas_price()
+        
+        if hist_min_gas_price is None:
+            #there is no data for calculating min gas price
+            raise HistoricalMinGasPriceError("tried to get required block minimum gas price but historical minimum gas price has not been initialized")
+        
+        dict_hist_min_gas_price = dict(hist_min_gas_price)
+        
+        try:
+            return dict_hist_min_gas_price[centisecond_window]
+        except KeyError:
+            pass
+        
+        #if we don't have this centisecond_window, lets return the previous one.
+        try:
+            return dict_hist_min_gas_price[centisecond_window-100]
+        except KeyError:
+            pass
+        
             
         raise HistoricalMinGasPriceError("Could not get required block min gas price")
         

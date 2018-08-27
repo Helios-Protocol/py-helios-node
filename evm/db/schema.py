@@ -82,6 +82,11 @@ class SchemaV1(BaseSchema):
         return b'is-unprocessed-block:%b' % block_hash
     
     @staticmethod
+    def make_unprocessed_block_lookup_by_number_key(wallet_address:Address, block_number: BlockNumber) -> bytes:
+        number_to_hash_key = b'block-number-to-unprocessed-hash:%b-%d' % (wallet_address, block_number)
+        return number_to_hash_key
+    
+    @staticmethod
     def make_has_unprocessed_block_children_lookup_key(block_hash: Hash32) -> bytes:
         return b'has-unprocessed-block-children:%b' % block_hash
     

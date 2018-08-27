@@ -78,10 +78,7 @@ from p2p.utils import (
     get_process_pool_executor,
 )
 
-from sortedcontainers import (
-    SortedDict,
-    SortedList
-)
+from sortedcontainers import SortedDict
 
 #next chain head hash is for the case where we are re-syncing and have a bunch of chains already.
 #dont need to re-download the whole chain if we already have part of it. We might also be missing some chains,
@@ -138,7 +135,6 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         self._idle_peers: asyncio.Queue[HLSPeer] = asyncio.Queue()
         self._idle_peers_in_consensus: asyncio.Queue[HLSPeer] = asyncio.Queue()
         self._new_headers: asyncio.Queue[List[BlockHeader]] = asyncio.Queue()
-        self.rpc_queue: asyncio.Queue[HLSPeer] = asyncio.Queue()
         # Those are used by our msg handlers and _download_block_parts() in order to track missing
         # bodies/receipts for a given chain segment.
         self._downloaded_receipts: asyncio.Queue[Tuple[HLSPeer, List[DownloadedBlockPart]]] = asyncio.Queue()  # noqa: E501
@@ -225,29 +221,6 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         for peer in peers :
             self.register_peer(peer)
         
-    async def _handle_rpc_loop(self) -> None:
-        while self.is_running:
-            try:
-                cmd, msg = await self.wait(self.rpc_queue.get())
-            except OperationCancelled:
-                break
-
-            # Our handle_msg() method runs cpu-intensive tasks in sub-processes so that the main
-            # loop can keep processing msgs, and that's why we use ensure_future() instead of
-            # awaiting for it to finish here.
-            asyncio.ensure_future(self.handle_rpc(cmd, msg))
-
-    async def handle_rpc(self, cmd, msg) -> None:
-        try:
-            await self._handle_rpc(cmd, msg)
-        except OperationCancelled:
-            # Silently swallow OperationCancelled exceptions because we run unsupervised (i.e.
-            # with ensure_future()). Our caller will also get an OperationCancelled anyway, and
-            # there it will be handled.
-            pass
-        except Exception:
-            self.logger.exception("Unexpected error when processing rpc")
-            
     async def _handle_msg_loop(self) -> None:
         while self.is_running:
             try:
@@ -283,7 +256,6 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
                 self.logger.debug("Syncing parameters set")
                 with self.subscribe(self.peer_pool):
                     asyncio.ensure_future(self.re_queue_timeout_peers())
-                    asyncio.ensure_future(self._handle_rpc_loop())
                     while True:
                         await self.wait_first(self.send_chain_requests(), self._sync_complete.wait())
                         #await self.send_chain_requests()
@@ -891,13 +863,13 @@ class RegularChainSyncer(FastChainSyncer):
                 
             
             #make sure the peer has data for this timestamp. We may already be up to date, and there just havent been transactions for a while
-            sorted_list_root_hashes = SortedList(peer.chain_head_root_hashes)
-
-            if sorted_list_root_hashes[-1][0] <= (self.current_syncing_root_timestamp-TIME_BETWEEN_HEAD_HASH_SAVE):
+            sorted_dict_root_hashes = SortedDict(peer.chain_head_root_hashes)
+            peer_timestamps = list(sorted_dict_root_hashes.keys())
+            if peer_timestamps[-1] <= last_synced_timestamp:
                 self.logger.debug("Skipping chronological block sync with this peer because they don't have any newer blocks and dont match our latest imported window")
                 continue
             try:
-                await self.sync_chronological_window(self.current_syncing_root_timestamp-TIME_BETWEEN_HEAD_HASH_SAVE, peer, new_window = True)
+                await self.sync_chronological_window(last_synced_timestamp, peer, new_window = True)
             except TimeoutError:
                 self.logger.debug('sync_chronological_blocks timeout')
                 self.register_peer(peer)
@@ -957,10 +929,12 @@ class RegularChainSyncer(FastChainSyncer):
         #we need to chainheaddb because the database was modified by the chain process.
         self.chain_head_db.load_saved_root_hash()
         local_head_root_hash = self.chain_head_db.get_historical_root_hash(self.current_syncing_root_timestamp)
-#        full_root_hash_list = self.chain_head_db.get_historical_root_hashes(after_timestamp = self.current_syncing_root_timestamp-10000)
-#        self.logger.debug("here are the root hashes around that time {}".format(full_root_hash_list))
+        full_root_hash_list = self.chain_head_db.get_historical_root_hashes(after_timestamp = self.current_syncing_root_timestamp-10000)
+        self.logger.debug("here are the root hashes around that time {}".format(full_root_hash_list))
         if local_head_root_hash != final_root_hash:
+            full_root_hash_list = self.chain_head_db.get_historical_root_hashes(after_timestamp = self.current_syncing_root_timestamp-10000)
             self.logger.debug("root hash is not as expected after importing chronological block window for timestamp {}. will re-request window. local: {}, expected: {}".format(window_start_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE, local_head_root_hash,final_root_hash))
+            self.logger.debug("here are the root hashes around that time {}".format(full_root_hash_list))
             raise LocalRootHashNotAsExpected()
         
         
@@ -984,11 +958,6 @@ class RegularChainSyncer(FastChainSyncer):
             await self._handle_get_chronological_block_window(peer, cast(Dict[str, Any], msg))
         elif isinstance(cmd, hls.ChronologicalBlockWindow):
             await self._handle_chronological_block_window(peer, cast(Dict[str, Any], msg))
-            
-            
-    async def _handle_rpc(self, cmd, msg) -> None:
-        if cmd == 'new_block':
-            await self._handle_new_block_from_rpc(cast(Dict[str, Any], msg))
                 
             
 
@@ -1176,15 +1145,6 @@ class RegularChainSyncer(FastChainSyncer):
             
             i += 1
         
-    
-    async def _handle_new_block_from_rpc(self,
-                                        msg: Dict[str, Any]) -> None:
-        
-        self.logger.debug("received new block from RPC. Processing")
-        new_block = msg['block']
-        chain_address = msg['chain_address']
-        await self.handle_new_block(new_block, chain_address)
-    
     async def _handle_new_block(self,
                                         peer: HLSPeer,
                                         msg: Dict[str, Any]) -> None:

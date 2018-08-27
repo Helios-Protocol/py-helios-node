@@ -194,6 +194,8 @@ class Consensus(BaseService, PeerPoolSubscriber):
         
         
         self.coro_is_ready = asyncio.Event()
+        self.coro_root_hash_statistics_ready = asyncio.Event()
+        
      
     '''
     Properties and utils
@@ -213,6 +215,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
         if self._is_bootnode is None:
             self._is_bootnode = self.chain_config.nodekey_public in [x.pubkey for x in self.chain_config.bootstrap_nodes]
         return self._is_bootnode
+    
     @property
     def has_enough_consensus_participants(self):
         if len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_bootnode:
@@ -408,8 +411,10 @@ class Consensus(BaseService, PeerPoolSubscriber):
     async def _run(self) -> None:
         asyncio.ensure_future(self._handle_msg_loop())
         test = asyncio.ensure_future(self.sync_min_gas_price_system())
+        
         #first lets make sure we add our own root_hash_timestamps
         with self.subscribe(self.peer_pool):
+            #await test
             while True:
                 
                 if self.coro_is_ready.is_set():
@@ -433,10 +438,12 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 
                 
                 
-                test_1 = self.chaindb.load_historical_network_tpc_capability()
-                test_2 = self.chaindb.load_historical_minimum_gas_price()
-                test_3 = self.chaindb.load_historical_tx_per_centisecond()
-                self.logger.debug("net_tpc_cap, min_gas_price, tpc = {}, {}, {}".format(test_1, test_2, test_3))
+#                test_1 = self.chaindb.load_historical_network_tpc_capability()
+#                test_2 = self.chaindb.load_historical_minimum_gas_price()
+#                test_3 = self.chaindb.load_historical_tx_per_centisecond()
+#                self.logger.debug("net_tpc_cap = {}".format(test_1))
+#                self.logger.debug("min_gas_price = {}".format(test_2))
+#                self.logger.debug("tpc = {}".format(test_3))
                 
                 #here we shouldnt pause because if it returned early than thats because we got some data from peers. we want to process data asap.
                 #self.populate_peer_consensus()
@@ -458,14 +465,14 @@ class Consensus(BaseService, PeerPoolSubscriber):
         await asyncio.sleep(0)
         
     def check_if_ready(self):
-        if self._last_check_to_see_if_consensus_ready < (int(time.time()) - CONSENSUS_CHECK_READY_TIME_PERIOD):
-            if self.has_enough_consensus_participants and self.has_enough_peers:
-                #await asyncio.sleep()
-                
-                self.coro_is_ready.set()
-            else:
-                self.coro_is_ready.clear()
-            self._last_check_to_see_if_consensus_ready = int(time.time())
+        #if self._last_check_to_see_if_consensus_ready < (int(time.time()) - CONSENSUS_CHECK_READY_TIME_PERIOD):
+        if self.has_enough_consensus_participants and self.has_enough_peers:
+            #await asyncio.sleep()
+            
+            self.coro_is_ready.set()
+        else:
+            self.coro_is_ready.clear()
+            #self._last_check_to_see_if_consensus_ready = int(time.time())
     '''
     Core functionality
     '''
@@ -612,8 +619,13 @@ class Consensus(BaseService, PeerPoolSubscriber):
             local_tpc_cap = await self.local_tpc_cap
             local_stake = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
             
-            all_candidate_item_stake.append([local_tpc_cap, local_stake])
+            if local_stake != 0:
+                all_candidate_item_stake.append([local_tpc_cap, local_stake])
             
+            if len(all_candidate_item_stake) == 0:
+                return None
+            
+            #self.logger.debug('AAAAAAAAAAAA {}'.format(all_candidate_item_stake))
             average_network_tpc_cap = int(stake_weighted_average(all_candidate_item_stake))
             return average_network_tpc_cap
         else:
@@ -647,6 +659,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 try: 
                     boot_node_peer = self.peer_pool.connected_nodes[boot_node]
                     #lets just ask the first bootnode we find that we are connected to.
+                    self.logger.debug("found bootnode to ask for min_gas_price initialization")
                     boot_node_peer.sub_proto.send_get_min_gas_parameters(num_centiseconds_from_now=50)
                     return
                 except KeyError:
@@ -727,10 +740,22 @@ class Consensus(BaseService, PeerPoolSubscriber):
             self._last_check_to_remove_old_local_root_hash_timestamps_from_peer_statistics = int(time.time())
             
     def _remove_data_for_old_root_hash_timestamps(self):
-        oldest_allowed_time = int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE*2
-        for timestamp, root_hash_stakes in self.root_hash_timestamps_statistics.copy().items():
-            if timestamp < oldest_allowed_time:
-                del(self.root_hash_timestamps_statistics[timestamp])
+        #cant do it by time because if the network was down for a while, and it starts back up, all of them might be too old.
+        #we have to remove ones if the length gets too long
+        max_allowed_length = NUMBER_OF_HEAD_HASH_TO_SAVE*2
+        current_statistics_length = len(self.root_hash_timestamps_statistics)
+        if current_statistics_length > max_allowed_length:
+            num_to_remove = current_statistics_length - max_allowed_length
+            sorted_root_hash_timestamps_statistics = SortedDict(self.root_hash_timestamps_statistics)
+            for i in range(num_to_remove):
+                sorted_root_hash_timestamps_statistics.popitem(0)
+            self.root_hash_timestamps_statistics = dict(sorted_root_hash_timestamps_statistics)
+            
+                
+#        oldest_allowed_time = int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE*2
+#        for timestamp, root_hash_stakes in self.root_hash_timestamps_statistics.copy().items():
+#            if timestamp < oldest_allowed_time:
+#                del(self.root_hash_timestamps_statistics[timestamp])
 
 
     def remove_data_for_blocks_that_achieved_consensus(self):
@@ -819,7 +844,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 to_return =  available_timestamp, self.get_root_hash_consensus(available_timestamp)
                 if to_return[1] != initial_local_root_hash_at_timestamp:
                     return to_return
-        
+                
         if self.is_bootnode:
             self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
             local_root_hash_timestamps = self.local_root_hash_timestamps
@@ -861,7 +886,10 @@ class Consensus(BaseService, PeerPoolSubscriber):
         
     
     def get_newest_peer_root_hash_timestamp(self):
-        return list(SortedDict(self.root_hash_timestamps_statistics).keys())[-1]
+        if len(self.root_hash_timestamps_statistics) > 0:
+            return list(SortedDict(self.root_hash_timestamps_statistics).keys())[-1]
+        else:
+            return None
         
     
     @property
@@ -1144,21 +1172,22 @@ class Consensus(BaseService, PeerPoolSubscriber):
         peer.sub_proto.send_stake_for_addresses(address_stakes)
         
     async def _handle_get_min_gas_parameters(self, peer: HLSPeer, msg) -> None:
-        hist_min_allowed_gas_price = await self.chaindb.coro_load_historical_minimum_gas_price(make_mutable = False, sort=True)
-        
-        if msg['num_centiseconds_from_now'] == 0:
-            average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
-            if average_network_tpc_cap is not None:
-                hist_net_tpc_capability = [[0, average_network_tpc_cap]]
-                hist_min_allowed_gas_price_new = [[0,hist_min_allowed_gas_price[-1][1]]]
-                peer.sub_proto.send_min_gas_initialization(hist_net_tpc_capability, hist_min_allowed_gas_price_new)
-        else:
-            hist_net_tpc_capability = await self.chaindb.coro_load_historical_network_tpc_capability(make_mutable = False, sort=True)
+        if self.min_gas_system_ready:
+            hist_min_allowed_gas_price = await self.chaindb.coro_load_historical_minimum_gas_price(mutable = False, sort=True)
             
-            num_centiseconds_to_send = min([len(hist_net_tpc_capability), len(hist_min_allowed_gas_price), msg['num_centiseconds_from_now']])
-        
-            peer.sub_proto.send_min_gas_initialization(hist_net_tpc_capability[-num_centiseconds_to_send:], hist_min_allowed_gas_price[-num_centiseconds_to_send:])
-            
+            if msg['num_centiseconds_from_now'] == 0:
+                average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
+                if average_network_tpc_cap is not None:
+                    hist_net_tpc_capability = [[0, average_network_tpc_cap]]
+                    hist_min_allowed_gas_price_new = [[0,hist_min_allowed_gas_price[-1][1]]]
+                    peer.sub_proto.send_min_gas_parameters(hist_net_tpc_capability, hist_min_allowed_gas_price_new)
+            else:
+                hist_net_tpc_capability = await self.chaindb.coro_load_historical_network_tpc_capability(mutable = False, sort=True)
+                
+                num_centiseconds_to_send = min([len(hist_net_tpc_capability), len(hist_min_allowed_gas_price), msg['num_centiseconds_from_now']])
+                self.logger.debug("sending {} centiseconds of min gas parameters".format(num_centiseconds_to_send))
+                peer.sub_proto.send_min_gas_parameters(hist_net_tpc_capability[-num_centiseconds_to_send:], hist_min_allowed_gas_price[-num_centiseconds_to_send:])
+                
     async def _handle_min_gas_parameters(self, peer: HLSPeer, msg) -> None:
         
         hist_net_tpc_capability = msg['hist_net_tpc_capability']
@@ -1175,8 +1204,8 @@ class Consensus(BaseService, PeerPoolSubscriber):
         #make sure they are a bootnode
         if peer.remote in self.bootstrap_nodes:
             if await self.chaindb.coro_min_gas_system_initialization_required():
-                self.chaindb.coro_save_historical_minimum_gas_price(hist_min_allowed_gas_price)
-                self.chaindb.coro_save_historical_network_tpc_capability(hist_net_tpc_capability)
+                await self.chaindb.coro_save_historical_minimum_gas_price(hist_min_allowed_gas_price)
+                await self.chaindb.coro_save_historical_network_tpc_capability(hist_net_tpc_capability)
                 
             
             

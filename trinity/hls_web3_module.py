@@ -59,7 +59,8 @@ class Hls(Module):
     iban = Iban
     gasPriceStrategy = None
 
-
+    
+        
     def namereg(self):
         raise NotImplementedError()
 
@@ -360,3 +361,8 @@ class Hls(Module):
 
     def setGasPriceStrategy(self, gas_price_strategy):
         self.gasPriceStrategy = gas_price_strategy
+
+    def devAddNewBlock(self):
+        return self.web3.manager.request_blocking("hls_devAddNewBlock", [])
+    
+    

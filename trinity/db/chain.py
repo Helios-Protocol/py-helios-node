@@ -32,6 +32,7 @@ class ChainDBProxy(BaseProxy):
     coro_save_historical_minimum_gas_price = async_method('save_historical_minimum_gas_price')
     coro_save_historical_network_tpc_capability = async_method('save_historical_network_tpc_capability')
     coro_load_historical_tx_per_centisecond = async_method('load_historical_tx_per_centisecond')
+    coro_get_required_block_min_gas_price = async_method('get_required_block_min_gas_price')
 
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')
@@ -52,3 +53,4 @@ class ChainDBProxy(BaseProxy):
     save_historical_minimum_gas_price = sync_method('save_historical_minimum_gas_price')
     save_historical_network_tpc_capability = sync_method('save_historical_network_tpc_capability')
     load_historical_tx_per_centisecond = sync_method('load_historical_tx_per_centisecond')
+    get_required_block_min_gas_price = sync_method('get_required_block_min_gas_price')

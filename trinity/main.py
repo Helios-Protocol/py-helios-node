@@ -108,13 +108,13 @@ def main(instance_number = None) -> None:
     #print(logging.Logger.manager.loggerDict)
     filter_list = []
     filter_list.append('p2p.chain.ChainSyncer')
-    filter_list.append('evm.db.account.AccountDB')
+    #filter_list.append('evm.db.account.AccountDB')
     filter_list.append('evm.chain.chain.Chain')
-    filter_list.append('evm.db.chain_head.ChainHeadDB')
+    #filter_list.append('evm.db.chain_head.ChainHeadDB')
     filter_list.append('evm.db.chain_db.ChainDB')
     filter_list.append('p2p.consensus.Consensus')
-    filter_list.append('p2p.kademlia.KademliaProtocol')
-    filter_list.append('p2p.discovery.DiscoveryProtocol')
+    #filter_list.append('p2p.kademlia.KademliaProtocol')
+    #filter_list.append('p2p.discovery.DiscoveryProtocol')
    
     
     
@@ -208,6 +208,7 @@ def main(instance_number = None) -> None:
         args=(chain_config, ),
         kwargs=extra_kwargs,
     )
+
 
     #start the processes
     database_server_process.start()

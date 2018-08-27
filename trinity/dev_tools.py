@@ -52,6 +52,7 @@ def create_dev_test_random_blockchain_database(base_db):
     
     sender_chain.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=5)
     
+    order_of_chains = []
     #now lets add 100 send receive block combinations
     for i in range (5):
         random.shuffle(random_private_keys)
@@ -83,6 +84,8 @@ def create_dev_test_random_blockchain_database(base_db):
 #        print('receivable_tx from account = {}'.format([encode_hex(x.sender_block_hash) for x in receivable_tx]))
 #        exit()
         
+        order_of_chains.append(encode_hex(privkey.public_key.to_canonical_address()))
+        
         logger.debug("Receiving ")
         
         #then receive the transactions
@@ -94,6 +97,10 @@ def create_dev_test_random_blockchain_database(base_db):
 
         logger.debug("finished creating block group {}".format(i))
     
+    order_of_chains.append(encode_hex(receiver_privkey.public_key.to_canonical_address()))
+    
+    #print("order_of_chains")
+    #print(order_of_chains)
     #print(sender_chain.chain_head_db.get_historical_root_hashes())
     
     

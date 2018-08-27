@@ -29,3 +29,4 @@ class ChainProxy(BaseProxy):
     import_chronological_block_window = sync_method('import_chronological_block_window')
     update_current_network_tpc_capability = sync_method('update_current_network_tpc_capability')
     get_local_tpc_cap = sync_method('get_local_tpc_cap')
+    validate_block_specification = sync_method('validate_block_specification')

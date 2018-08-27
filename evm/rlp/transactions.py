@@ -181,7 +181,8 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         Hook called during instantiation to ensure that all transaction
         parameters pass validation rules.
         """
-        self.check_signature_validity()
+        #removing this because it is unnessisary
+        #self.check_signature_validity()
         #make sure the send transaction is valid too.
         self.transaction.validate()
 
