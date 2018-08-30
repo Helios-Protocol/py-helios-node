@@ -7,19 +7,19 @@ from eth_utils import (
     keccak,
 )
 
-from evm.db.header import HeaderDB
-from evm.chains.header import HeaderChain
+from hvm.db.header import HeaderDB
+from hvm.chains.header import HeaderChain
 
-from evm.constants import (
+from hvm.constants import (
     GENESIS_BLOCK_NUMBER,
     GENESIS_DIFFICULTY,
     GENESIS_GAS_LIMIT,
 )
-from evm.db.backends.memory import MemoryDB
-from evm.rlp.headers import (
+from hvm.db.backends.memory import MemoryDB
+from hvm.rlp.headers import (
     BlockHeader,
 )
-from evm.utils.rlp import (
+from hvm.utils.rlp import (
     ensure_rlp_objects_are_equal,
 )
 

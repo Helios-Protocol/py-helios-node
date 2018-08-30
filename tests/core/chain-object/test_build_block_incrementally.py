@@ -1,6 +1,6 @@
 import pytest
 
-from evm.utils.address import force_bytes_to_address
+from hvm.utils.address import force_bytes_to_address
 
 from tests.core.helpers import (
     new_transaction,

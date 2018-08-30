@@ -6,26 +6,26 @@ from itertools import (
 
 from eth_hash.auto import keccak
 
-from evm.utils.blobs import (
+from hvm.utils.blobs import (
     calc_chunk_root,
     calc_merkle_root,
     deserialize_blobs,
     iterate_chunks,
     serialize_blobs,
 )
-from evm.utils.padding import (
+from hvm.utils.padding import (
     zpad_right,
 )
 
-from evm.utils.padding import zpad_left
-from evm.utils.numeric import int_to_big_endian
+from hvm.utils.padding import zpad_left
+from hvm.utils.numeric import int_to_big_endian
 
-from evm.constants import (
+from hvm.constants import (
     CHUNK_SIZE,
     COLLATION_SIZE,
     MAX_BLOB_SIZE
 )
-from evm.exceptions import (
+from hvm.exceptions import (
     ValidationError,
 )
 

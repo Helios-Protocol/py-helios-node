@@ -111,7 +111,7 @@ html_theme = 'sphinx_rtd_theme'
 # html_static_path = ['_static']
 
 # Allows the mod index to function more helpfully (not everything under 'e')
-modindex_common_prefix = ['evm.']
+modindex_common_prefix = ['hvm.']
 
 ##
 #  Below be monsters, for now.  You've been warned.
@@ -146,7 +146,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'py-evm.tex', 'py-evm Documentation',
+    (master_doc, 'py-hvm.tex', 'py-hvm Documentation',
      about['__author__'], 'manual'),
 ]
 
@@ -156,7 +156,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, about['__name__'], 'py-evm Documentation',
+    (master_doc, about['__name__'], 'py-hvm Documentation',
      about['__author__'], 1)
 ]
 
@@ -167,7 +167,7 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, about['__name__'], 'py-evm Documentation',
+    (master_doc, about['__name__'], 'py-hvm Documentation',
      about['__author__'], about['__name__'], about['__description__'],
      'Miscellaneous'),
 ]

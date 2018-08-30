@@ -4,17 +4,17 @@ import pytest
 import tempfile
 import uuid
 
-from trinity.rpc.main import (
+from helios.rpc.main import (
     RPCServer,
 )
-from trinity.rpc.ipc import (
+from helios.rpc.ipc import (
     IPCServer,
 )
-from trinity.utils.xdg import (
+from helios.utils.xdg import (
     XDG_DATA_HOME,
     get_xdg_trinity_root,
 )
-from trinity.utils.filesystem import (
+from helios.utils.filesystem import (
     is_under_path,
 )
 

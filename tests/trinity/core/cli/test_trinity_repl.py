@@ -1,6 +1,6 @@
 import pytest
 
-from trinity.console import console
+from helios.console import console
 
 
 def test_console(jsonrpc_ipc_pipe_path):

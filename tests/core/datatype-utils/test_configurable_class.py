@@ -1,6 +1,6 @@
 import pytest
 
-from evm.utils.datatypes import (
+from hvm.utils.datatypes import (
     Configurable,
 )
 

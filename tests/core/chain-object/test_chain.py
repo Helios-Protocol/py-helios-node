@@ -3,13 +3,13 @@ import rlp
 
 from eth_utils import decode_hex
 
-from evm import constants
-from evm.chains.mainnet import MAINNET_GENESIS_HEADER
-from evm.chains.ropsten import ROPSTEN_GENESIS_HEADER
-from evm.exceptions import (
+from hvm import constants
+from hvm.chains.mainnet import MAINNET_GENESIS_HEADER
+from hvm.chains.ropsten import ROPSTEN_GENESIS_HEADER
+from hvm.exceptions import (
     TransactionNotFound,
 )
-from evm.vm.forks.frontier.blocks import FrontierBlock
+from hvm.vm.forks.frontier.blocks import FrontierBlock
 
 from tests.core.fixtures import (
     valid_block_rlp,

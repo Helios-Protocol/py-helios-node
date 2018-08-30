@@ -13,8 +13,8 @@ from eth_hash.auto import keccak
 
 from eth_keys import keys
 
-from p2p import discovery
-from p2p import kademlia
+from hp2p import discovery
+from hp2p import kademlia
 
 
 def test_ping_pong():

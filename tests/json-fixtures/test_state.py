@@ -4,7 +4,7 @@ import pytest
 
 from eth_keys import keys
 
-from evm.db import (
+from hvm.db import (
     get_db_backend,
 )
 
@@ -15,27 +15,27 @@ from eth_utils import (
 
 from eth_hash.auto import keccak
 
-from evm.db.chain import ChainDB
-from evm.exceptions import (
+from hvm.db.chain import ChainDB
+from hvm.exceptions import (
     ValidationError,
 )
-from evm.vm.forks import (
+from hvm.vm.forks import (
     TangerineWhistleVM,
     FrontierVM,
     HomesteadVM,
     SpuriousDragonVM,
     ByzantiumVM,
 )
-from evm.vm.forks.tangerine_whistle.state import TangerineWhistleState
-from evm.vm.forks.frontier.state import FrontierState
-from evm.vm.forks.homestead.state import HomesteadState
-from evm.vm.forks.spurious_dragon.state import SpuriousDragonState
-from evm.vm.forks.byzantium.state import ByzantiumState
+from hvm.vm.forks.tangerine_whistle.state import TangerineWhistleState
+from hvm.vm.forks.frontier.state import FrontierState
+from hvm.vm.forks.homestead.state import HomesteadState
+from hvm.vm.forks.spurious_dragon.state import SpuriousDragonState
+from hvm.vm.forks.byzantium.state import ByzantiumState
 
-from evm.rlp.headers import (
+from hvm.rlp.headers import (
     BlockHeader,
 )
-from evm.tools.fixture_tests import (
+from hvm.tools.fixture_tests import (
     filter_fixtures,
     generate_fixture_tests,
     hash_log_entries,
@@ -43,7 +43,7 @@ from evm.tools.fixture_tests import (
     normalize_statetest_fixture,
     should_run_slow_tests,
 )
-from evm.utils.db import (
+from hvm.utils.db import (
     apply_state_dict,
 )
 

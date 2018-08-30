@@ -4,20 +4,20 @@ import socket
 
 from eth_keys import keys
 
-from evm.chains.ropsten import RopstenChain, ROPSTEN_GENESIS_HEADER
-from evm.db.chain import ChainDB
-from evm.db.header import HeaderDB
-from evm.db.backends.memory import MemoryDB
+from hvm.chains.ropsten import RopstenChain, ROPSTEN_GENESIS_HEADER
+from hvm.db.chain import ChainDB
+from hvm.db.header import HeaderDB
+from hvm.db.backends.memory import MemoryDB
 
-from p2p.peer import (
+from hp2p.peer import (
     ETHPeer,
     PeerPool,
 )
-from p2p.kademlia import (
+from hp2p.kademlia import (
     Node,
     Address,
 )
-from p2p.server import Server
+from hp2p.server import Server
 
 from auth_constants import eip8_values
 from dumb_peer import DumbPeer

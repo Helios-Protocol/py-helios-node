@@ -1,11 +1,11 @@
 import pytest
 
-from evm.constants import (
+from hvm.constants import (
     NULL_BYTE,
     UINT_256_MAX,
 )
 
-from evm.utils.numeric import (
+from hvm.utils.numeric import (
     int_to_bytes32,
 )
 

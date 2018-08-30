@@ -8,15 +8,15 @@ from eth_utils import (
 
 from eth_keys import keys
 
-from trinity.utils.chains import (
+from helios.utils.chains import (
     get_local_data_dir,
     get_nodekey_path,
 )
-from trinity.config import (
+from helios.config import (
     ChainConfig,
     DATABASE_DIR_NAME,
 )
-from trinity.utils.filesystem import (
+from helios.utils.filesystem import (
     is_same_path,
 )
 

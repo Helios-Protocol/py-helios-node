@@ -3,8 +3,8 @@ import functools
 
 import pytest
 
-from p2p.cancel_token import CancelToken, wait_with_token
-from p2p.exceptions import (
+from hp2p.cancel_token import CancelToken, wait_with_token
+from hp2p.exceptions import (
     EventLoopMismatch,
     OperationCancelled,
 )

@@ -1,14 +1,14 @@
 import logging
 import sys
 
-# from evm.utils.logging import TRACE_LEVEL_NUM
+# from hvm.utils.logging import TRACE_LEVEL_NUM
 
 import pytest
 
 
 @pytest.fixture(autouse=True, scope="session")
 def vm_logger():
-    logger = logging.getLogger('evm')
+    logger = logging.getLogger('hvm')
 
     handler = logging.StreamHandler(sys.stdout)
 
@@ -33,7 +33,7 @@ def vm_file_logger(request):
     import datetime
     import os
 
-    logger = logging.getLogger('evm')
+    logger = logging.getLogger('hvm')
 
     level = TRACE_LEVEL_NUM
     #level = logging.DEBUG

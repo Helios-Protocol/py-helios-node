@@ -8,16 +8,16 @@ from eth_utils import (
 
 from eth_keys import keys
 
-from p2p import ecies
-from p2p import kademlia
-from p2p.cancel_token import CancelToken
-from p2p.p2p_proto import Hello
-from p2p.auth import (
+from hp2p import ecies
+from hp2p import kademlia
+from hp2p.cancel_token import CancelToken
+from hp2p.p2p_proto import Hello
+from hp2p.auth import (
     HandshakeInitiator,
     HandshakeResponder,
 )
-from p2p.peer import BasePeer
-from p2p.server import decode_authentication
+from hp2p.peer import BasePeer
+from hp2p.server import decode_authentication
 
 from auth_constants import (
     eip8_values,

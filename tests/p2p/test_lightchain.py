@@ -6,20 +6,20 @@ import pytest
 import rlp
 from rlp import sedes
 
-from evm.chains.mainnet import BaseMainnetChain
-from evm.db.backends.memory import MemoryDB
-from evm.rlp.headers import BlockHeader
+from hvm.chains.mainnet import BaseMainnetChain
+from hvm.db.backends.memory import MemoryDB
+from hvm.rlp.headers import BlockHeader
 
-from p2p.lightchain import LightPeerChain
-from p2p.les import (
+from hp2p.lightchain import LightPeerChain
+from hp2p.les import (
     LESProtocol,
     Announce,
     BlockHeaders,
     GetBlockHeaders,
     Status,
 )
-from p2p.peer import LESPeer
-from p2p import protocol
+from hp2p.peer import LESPeer
+from hp2p import protocol
 
 from integration_test_helpers import FakeAsyncChainDB
 from peer_helpers import (

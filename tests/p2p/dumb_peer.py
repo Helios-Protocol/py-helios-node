@@ -1,5 +1,5 @@
-from p2p import protocol
-from p2p.peer import (
+from hp2p import protocol
+from hp2p.peer import (
     ETHPeer,
 )
 

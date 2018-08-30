@@ -2,11 +2,11 @@ from cytoolz import curry
 
 from eth_utils import decode_hex
 
-from evm.exceptions import (
+from hvm.exceptions import (
     ValidationError,
 )
 
-from evm.utils.spoof import (
+from hvm.utils.spoof import (
     SpoofTransaction,
 )
 

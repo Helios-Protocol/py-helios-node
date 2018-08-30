@@ -3,10 +3,10 @@ import pytest
 
 from eth_utils import decode_hex
 
-from trinity.chains import (
+from helios.chains import (
     is_data_dir_initialized,
 )
-from trinity.config import (
+from helios.config import (
     ChainConfig,
 )
 

@@ -1,10 +1,10 @@
 from eth_keys import keys
 from eth_utils import decode_hex
 
-from evm import constants
-from evm.chains.base import Chain
-from evm.db.backends.memory import MemoryDB
-from evm.vm.forks.frontier import _PoWMiningVM
+from hvm import constants
+from hvm.chains.base import Chain
+from hvm.db.backends.memory import MemoryDB
+from hvm.vm.forks.frontier import _PoWMiningVM
 
 
 class PowMiningChain(Chain):

@@ -1,16 +1,16 @@
 import pytest
 
-from evm.exceptions import (
+from hvm.exceptions import (
     VMError,
     Revert,
 )
-from evm.vm.message import (
+from hvm.vm.message import (
     Message,
 )
-from evm.vm.computation import (
+from hvm.vm.computation import (
     BaseComputation,
 )
-from evm.vm.transaction_context import (
+from hvm.vm.transaction_context import (
     BaseTransactionContext,
 )
 
@@ -18,7 +18,7 @@ from eth_utils import (
     to_canonical_address,
 )
 
-from evm.exceptions import (
+from hvm.exceptions import (
     ValidationError,
 )
 

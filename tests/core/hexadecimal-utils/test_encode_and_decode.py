@@ -7,7 +7,7 @@ from hypothesis import (
     strategies as st,
 )
 
-from evm.utils.hexadecimal import (
+from hvm.utils.hexadecimal import (
     encode_hex,
     decode_hex,
 )

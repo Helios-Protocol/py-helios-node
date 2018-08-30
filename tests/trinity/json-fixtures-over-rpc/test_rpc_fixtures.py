@@ -13,15 +13,15 @@ from eth_utils import (
     is_string,
 )
 
-from evm.tools.fixture_tests import (
+from hvm.tools.fixture_tests import (
     filter_fixtures,
     generate_fixture_tests,
     load_fixture,
     should_run_slow_tests,
 )
 
-from trinity.rpc import RPCServer
-from trinity.rpc.format import (
+from helios.rpc import RPCServer
+from helios.rpc.format import (
     fixture_block_in_rpc_format,
     fixture_state_in_rpc_format,
     fixture_transaction_in_rpc_format,

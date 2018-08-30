@@ -2,7 +2,7 @@ import pytest
 
 from eth_utils import decode_hex
 
-from evm import constants
+from hvm import constants
 
 from tests.core.helpers import (
     new_transaction,

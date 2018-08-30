@@ -1,6 +1,6 @@
 import pytest
-from evm.db.backends.memory import MemoryDB
-from evm.db.batch import BatchDB
+from hvm.db.backends.memory import MemoryDB
+from hvm.db.batch import BatchDB
 
 
 @pytest.fixture

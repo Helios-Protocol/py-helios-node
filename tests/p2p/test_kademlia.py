@@ -9,8 +9,8 @@ from eth_utils import (
     int_to_big_endian,
 )
 
-from p2p.cancel_token import CancelToken
-from p2p import kademlia
+from hp2p.cancel_token import CancelToken
+from hp2p import kademlia
 
 
 # Force our tests to fail quickly if they accidentally make network requests.

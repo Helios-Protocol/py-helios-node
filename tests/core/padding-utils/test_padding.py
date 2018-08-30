@@ -1,6 +1,6 @@
 import pytest
 
-from evm.utils.padding import (
+from hvm.utils.padding import (
     pad32,
     pad32r
 )

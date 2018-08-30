@@ -1,21 +1,21 @@
 import pytest
 
 
-from evm import Chain
-from evm.constants import (
+from hvm import Chain
+from hvm.constants import (
     GENESIS_BLOCK_NUMBER,
     GENESIS_DIFFICULTY,
     GENESIS_GAS_LIMIT,
 )
-from evm.db.backends.memory import MemoryDB
-from evm.db.chain import ChainDB
-from evm.exceptions import (
+from hvm.db.backends.memory import MemoryDB
+from hvm.db.chain import ChainDB
+from hvm.exceptions import (
     VMNotFound,
 )
-from evm.rlp.headers import (
+from hvm.rlp.headers import (
     BlockHeader,
 )
-from evm.vm.base import VM
+from hvm.vm.base import VM
 
 
 @pytest.fixture

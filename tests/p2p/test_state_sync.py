@@ -1,10 +1,10 @@
 import os
 import random
 
-from evm.db.backends.memory import MemoryDB
-from evm.db.account import AccountDB
+from hvm.db.backends.memory import MemoryDB
+from hvm.db.account import AccountDB
 
-from p2p.state import StateSync
+from hp2p.state import StateSync
 
 
 def make_random_state(n):

@@ -6,23 +6,23 @@ import tempfile
 
 import pytest
 
-from evm.chains.ropsten import ROPSTEN_GENESIS_HEADER, ROPSTEN_NETWORK_ID
-from evm.db.chain import (
+from hvm.chains.ropsten import ROPSTEN_GENESIS_HEADER, ROPSTEN_NETWORK_ID
+from hvm.db.chain import (
     ChainDB,
 )
 
-from trinity.chains import (
+from helios.chains import (
     serve_chaindb,
 )
-from trinity.config import (
+from helios.config import (
     ChainConfig,
 )
-from trinity.db.chain import ChainDBProxy
-from trinity.db.base import DBProxy
-from trinity.utils.db import (
+from helios.db.chain import ChainDBProxy
+from helios.db.base import DBProxy
+from helios.utils.db import (
     MemoryDB,
 )
-from trinity.utils.ipc import (
+from helios.utils.ipc import (
     wait_for_ipc,
     kill_process_gracefully,
 )

@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 
 deps = { 
-    'evm': [
+    'hvm': [
         "aiohttp>=2.3.1,<3.0.0",
         "async_lru>=0.1.0,<1.0.0",
         "cryptography>=2.0.3,<3.0.0",
@@ -17,24 +17,26 @@ deps = {
         "eth-keys>=0.2.0b3,<1.0.0",
         "trie>=1.3.5,<2.0.0",
         "lru-dict>=1.1.6",
+        "sortedcontainers>=2.0.4",
+        "pbkdf2>=1.3"
     ],
-    # The evm-extra sections is for libraries that the evm does not
+    # The hvm-extra sections is for libraries that the hvm does not
     # explicitly need to function and hence should not depend on.
-    # Installing these libraries may make the evm perform better than
+    # Installing these libraries may make the hvm perform better than
     # using the default fallbacks though.
-    'evm-extra': [
+    'hvm-extra': [
         "coincurve>=7.0.0,<8.0.0",
         "plyvel==1.0.4",
         "eth-hash[pycryptodome]",
     ],
-    'p2p': [
+    'hp2p': [
         "aiohttp>=2.3.1,<3.0.0",
         "async_lru>=0.1.0,<1.0.0",
         "netifaces>=0.10.7<1",
         "pysha3>=1.0.0,<2.0.0",
         "upnpclient>=0.0.8,<1",
     ],
-    'trinity': [
+    'helios': [
         "ipython>=6.2.1,<7.0.0",
         "plyvel==1.0.4",
         "coincurve>=7.0.0,<8.0.0",
@@ -55,7 +57,7 @@ deps = {
         "mypy<0.600",
     ],
     'doc': [
-        "py-evm>=0.2.0-alpha.14",
+        "py-hvm>=0.2.0-alpha.14",
         "pytest~=3.2",
         "Sphinx>=1.5.5,<2.0.0",
         "sphinx_rtd_theme>=0.1.9",
@@ -70,47 +72,47 @@ deps = {
 
 deps['dev'] = (
     deps['dev'] +
-    deps['evm'] +
-    deps['evm-extra'] +
-    deps['p2p'] +
-    deps['trinity'] +
+    deps['hvm'] +
+    deps['hvm-extra'] +
+    deps['hp2p'] +
+    deps['helios'] +
     deps['test'] +
     deps['doc'] +
     deps['lint']
 )
 
-# As long as evm, p2p and trinity are managed together in the py-evm
-# package, someone running a `pip install py-evm` should expect all
-# dependencies for evm, p2p and trinity to get installed.
-install_requires = deps['evm'] + deps['p2p'] + deps['trinity']
+# As long as hvm, hp2p and helios are managed together in the py-helios-node
+# package, someone running a `pip install py-helios-node` should expect all
+# dependencies for hvm, hp2p and helios to get installed.
+install_requires = deps['hvm'] + deps['hp2p'] + deps['helios']
 
 setup(
-    name='py-heliosvm',
+    name='py-helios-node',
     # *IMPORTANT*: Don't manually change the version here. Use the 'bumpversion' utility.
     version='0.2.0-alpha.18',
-    description='Python implementation of the Helios Virtual Machine',
+    description='Python implementation of the Helios Protocol Node',
     long_description_markdown_filename='README.md',
     author='Tommy Mckinnon',
     author_email='tommy@heliosprotocol.io',
-    url='https://github.com/Helios-Protocol/helios-vm',
+    url='https://github.com/Helios-Protocol/py-helios-node',
     include_package_data=True,
-    py_modules=['evm', 'trinity', 'p2p'],
+    py_modules=['hvm', 'helios', 'hp2p'],
     install_requires=install_requires,
     extras_require=deps,
     setup_requires=['setuptools-markdown'],
     license='MIT',
     zip_safe=False,
-    keywords='helios protocol blockchain vm',
+    keywords='helios protocol blockchain node vm',
     packages=find_packages(exclude=["tests", "tests.*"]),
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',
-        'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.6',
     ],
-    # trinity
+    # helios
     entry_points={
-        'console_scripts': ['trinity=trinity:main'],
+        'console_scripts': ['helios=helios:main'],
     },
 )

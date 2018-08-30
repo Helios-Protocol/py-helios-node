@@ -3,40 +3,40 @@ import itertools
 
 import pytest
 
-from evm.chains.shard import Shard
-from evm.db.backends.memory import MemoryDB
-from evm.db.shard import ShardDB
+from hvm.chains.shard import Shard
+from hvm.db.backends.memory import MemoryDB
+from hvm.db.shard import ShardDB
 
-from evm.utils.blobs import (
+from hvm.utils.blobs import (
     calc_chunk_root,
 )
-from evm.utils.padding import (
+from hvm.utils.padding import (
     zpad_right,
 )
 
-from p2p.sharding_protocol import (
+from hp2p.sharding_protocol import (
     ShardingProtocol,
     GetCollations,
     NewCollationHashes,
 )
-from p2p.sharding_peer import (
+from hp2p.sharding_peer import (
     ShardingPeer,
 )
-from p2p.shard_syncer import (
+from hp2p.shard_syncer import (
     ShardSyncer,
 )
-from p2p.cancel_token import (
+from hp2p.cancel_token import (
     CancelToken,
 )
 
-from p2p.exceptions import (
+from hp2p.exceptions import (
     HandshakeFailure,
 )
 
-from evm.rlp.headers import CollationHeader
-from evm.rlp.collations import Collation
+from hvm.rlp.headers import CollationHeader
+from hvm.rlp.collations import Collation
 
-from evm.constants import (
+from hvm.constants import (
     COLLATION_SIZE,
 )
 

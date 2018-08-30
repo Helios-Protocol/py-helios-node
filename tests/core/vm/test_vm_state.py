@@ -1,8 +1,8 @@
 import pytest
 
-from evm.db.backends.memory import MemoryDB
-from evm.exceptions import StateRootNotFound
-from evm.vm.forks.frontier.state import FrontierState
+from hvm.db.backends.memory import MemoryDB
+from hvm.exceptions import StateRootNotFound
+from hvm.vm.forks.frontier.state import FrontierState
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 import os
 import pytest
 
-from trinity.utils.filesystem import is_same_path
+from helios.utils.filesystem import is_same_path
 
 
 @pytest.mark.parametrize(

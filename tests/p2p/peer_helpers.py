@@ -4,16 +4,16 @@ from typing import List
 
 from eth_hash.auto import keccak
 
-from evm.chains.mainnet import MAINNET_GENESIS_HEADER
-from evm.db.backends.memory import MemoryDB
+from hvm.chains.mainnet import MAINNET_GENESIS_HEADER
+from hvm.db.backends.memory import MemoryDB
 
-from p2p import auth
-from p2p import constants
-from p2p import ecies
-from p2p import kademlia
-from p2p.cancel_token import CancelToken
-from p2p.peer import BasePeer, LESPeer, PeerPool
-from p2p.server import decode_authentication
+from hp2p import auth
+from hp2p import constants
+from hp2p import ecies
+from hp2p import kademlia
+from hp2p.cancel_token import CancelToken
+from hp2p.peer import BasePeer, LESPeer, PeerPool
+from hp2p.server import decode_authentication
 
 from integration_test_helpers import FakeAsyncHeaderDB
 

@@ -9,14 +9,14 @@ from eth_utils import (
 
 from eth_hash.auto import keccak
 
-from evm.chains.ropsten import ROPSTEN_NETWORK_ID, ROPSTEN_GENESIS_HEADER
-from evm.chains.mainnet import MAINNET_VM_CONFIGURATION
-from evm.db.backends.memory import MemoryDB
-from evm.vm.forks.frontier.blocks import FrontierBlock
+from hvm.chains.ropsten import ROPSTEN_NETWORK_ID, ROPSTEN_GENESIS_HEADER
+from hvm.chains.mainnet import MAINNET_VM_CONFIGURATION
+from hvm.db.backends.memory import MemoryDB
+from hvm.vm.forks.frontier.blocks import FrontierBlock
 
-from p2p import ecies
-from p2p.lightchain import LightPeerChain
-from p2p.peer import LESPeer
+from hp2p import ecies
+from hp2p.lightchain import LightPeerChain
+from hp2p.peer import LESPeer
 
 from integration_test_helpers import FakeAsyncHeaderDB, LocalGethPeerPool
 

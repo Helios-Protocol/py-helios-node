@@ -2,11 +2,11 @@ import pytest
 
 import os
 
-from trinity.chains import (
+from helios.chains import (
     is_data_dir_initialized,
     initialize_data_dir,
 )
-from trinity.config import (
+from helios.config import (
     ChainConfig,
 )
 

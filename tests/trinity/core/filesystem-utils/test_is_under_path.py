@@ -1,6 +1,6 @@
 import pytest
 
-from trinity.utils.filesystem import (
+from helios.utils.filesystem import (
     is_under_path,
 )
 

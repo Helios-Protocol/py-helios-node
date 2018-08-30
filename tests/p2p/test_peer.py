@@ -2,13 +2,13 @@ import asyncio
 
 import pytest
 
-from p2p.les import (
+from hp2p.les import (
     LESProtocol,
     LESProtocolV2,
 )
-from p2p.exceptions import NoMatchingPeerCapabilities
-from p2p.peer import LESPeer
-from p2p.p2p_proto import P2PProtocol
+from hp2p.exceptions import NoMatchingPeerCapabilities
+from hp2p.peer import LESPeer
+from hp2p.p2p_proto import P2PProtocol
 
 from peer_helpers import (
     get_directly_linked_peers_without_handshake,

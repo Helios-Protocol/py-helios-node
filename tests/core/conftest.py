@@ -7,12 +7,12 @@ from eth_utils import (
 )
 from eth_keys import keys
 
-from evm import Chain
-from evm import constants
-from evm.db.backends.memory import MemoryDB
+from hvm import Chain
+from hvm import constants
+from hvm.db.backends.memory import MemoryDB
 # TODO: tests should not be locked into one set of VM rules.  Look at expanding
 # to all mainnet vms.
-from evm.vm.forks.spurious_dragon import SpuriousDragonVM
+from hvm.vm.forks.spurious_dragon import SpuriousDragonVM
 
 
 def import_block_without_validation(chain, block):

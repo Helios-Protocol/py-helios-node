@@ -1,15 +1,15 @@
 import pytest
 
 # TODO: use a custom chain class only for testing.
-from evm.chains.ropsten import ROPSTEN_GENESIS_HEADER
-from evm.db.backends.level import LevelDB
-from evm.db.chain import ChainDB
+from hvm.chains.ropsten import ROPSTEN_GENESIS_HEADER
+from hvm.db.backends.level import LevelDB
+from hvm.db.chain import ChainDB
 
-from trinity.chains import (
+from helios.chains import (
     initialize_data_dir,
     is_database_initialized,
 )
-from trinity.config import (
+from helios.config import (
     ChainConfig,
 )
 

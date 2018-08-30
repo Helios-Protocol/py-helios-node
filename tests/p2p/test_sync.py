@@ -5,13 +5,13 @@ import pytest
 from eth_keys import keys
 from eth_utils import decode_hex
 
-from evm import constants
-from evm.db.backends.memory import MemoryDB
-from evm.vm.forks.frontier import FrontierVM, _PoWMiningVM
+from hvm import constants
+from hvm.db.backends.memory import MemoryDB
+from hvm.vm.forks.frontier import FrontierVM, _PoWMiningVM
 
-from p2p.peer import ETHPeer
-from p2p.chain import FastChainSyncer, RegularChainSyncer
-from p2p.state import StateDownloader
+from hp2p.peer import ETHPeer
+from hp2p.chain import FastChainSyncer, RegularChainSyncer
+from hp2p.state import StateDownloader
 
 from integration_test_helpers import FakeAsyncChain, FakeAsyncChainDB, FakeAsyncHeaderDB
 from peer_helpers import get_directly_linked_peers, MockPeerPoolWithConnectedPeers

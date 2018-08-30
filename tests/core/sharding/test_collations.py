@@ -1,9 +1,9 @@
 import pytest
 
-from evm.rlp.headers import (
+from hvm.rlp.headers import (
     CollationHeader,
 )
-from evm.rlp.collations import (
+from hvm.rlp.collations import (
     Collation,
 )
 

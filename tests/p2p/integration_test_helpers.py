@@ -4,14 +4,14 @@ from typing import Type
 from eth_utils import decode_hex
 from eth_keys import datatypes, keys
 
-from evm import MainnetChain, RopstenChain
-from evm.chains.base import Chain
-from evm.db.chain import AsyncChainDB
+from hvm import MainnetChain, RopstenChain
+from hvm.chains.base import Chain
+from hvm.db.chain import AsyncChainDB
 
-from p2p import kademlia
-from p2p.peer import BasePeer, HardCodedNodesPeerPool
+from hp2p import kademlia
+from hp2p.peer import BasePeer, HardCodedNodesPeerPool
 
-from trinity.db.header import AsyncHeaderDB
+from helios.db.header import AsyncHeaderDB
 
 
 def async_passthrough(base_name):

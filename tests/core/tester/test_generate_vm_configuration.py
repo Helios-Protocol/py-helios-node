@@ -2,8 +2,8 @@ import pytest
 
 import enum
 
-from evm.vm.forks.frontier import FrontierVM
-from evm.chains.tester import (
+from hvm.vm.forks.frontier import FrontierVM
+from hvm.chains.tester import (
     _generate_vm_configuration,
 )
 

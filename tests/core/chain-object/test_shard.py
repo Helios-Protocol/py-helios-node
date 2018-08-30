@@ -3,32 +3,32 @@ import pytest
 import random
 import itertools
 
-from evm.chains.shard import (
+from hvm.chains.shard import (
     Shard,
 )
-from evm.db.shard import (
+from hvm.db.shard import (
     ShardDB,
     Availability,
 )
-from evm.db import (
+from hvm.db import (
     get_db_backend,
 )
 
-from evm.rlp.headers import (
+from hvm.rlp.headers import (
     CollationHeader,
 )
-from evm.rlp.collations import (
+from hvm.rlp.collations import (
     Collation,
 )
 
-from evm.constants import (
+from hvm.constants import (
     COLLATION_SIZE,
 )
 
-from evm.utils.blobs import (
+from hvm.utils.blobs import (
     calc_chunk_root,
 )
-from evm.utils.padding import (
+from hvm.utils.padding import (
     zpad_right,
 )
 from eth_utils import (

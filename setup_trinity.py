@@ -4,22 +4,22 @@ from setuptools import setup
 
 
 setup(
-    name='trinity',
+    name='helios',
     # *IMPORTANT*: Don't manually change the version here. Use the 'bumpversion' utility.
     # NOT CURRENTLY APPLICABLE. VERSION BUMPS MANUAL FOR NOW
     version='0.1.0-alpha.2',
-    description='The Trinity Ethereum Client',
-    author='Ethereum Foundation',
-    author_email='piper@pipermerriam.com',
-    url='https://github.com/ethereum/py-evm',
+    description='The Helios Node',
+    author='Tommy Mckinnon',
+    author_email='tommy@heliosprotocol.io',
+    url='https://github.com/Helios-Protocol/py-helios-node',
     include_package_data=True,
     py_modules=[],
     install_requires=[
-        'py-evm[trinity,p2p]==0.2.0a18',
+        'py-helios-node[helios,hp2p]==0.2.0a18',
     ],
     license='MIT',
     zip_safe=False,
-    keywords='ethereum blockchain evm trinity',
+    keywords='blockchain hvm helios',
     packages=[],
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
@@ -28,8 +28,8 @@ setup(
         'Natural Language :: English',
         'Programming Language :: Python :: 3.6',
     ],
-    # trinity
+    # helios
     entry_points={
-        'console_scripts': ['trinity=trinity:main'],
+        'console_scripts': ['helios=helios:main'],
     },
 )
