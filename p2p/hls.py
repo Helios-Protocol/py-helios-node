@@ -30,6 +30,10 @@ from p2p.sedes import (
     HashOrNone,
 )
 
+from evm.constants import (
+    UINT_256_MAX
+)
+
 
 # Max number of items we can ask for in HLS requests. These are the values used in geth and if we
 # ask for more than this the peers will disconnect from us.
@@ -377,8 +381,11 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(data)
         self.send(header, body)
         
-    def send_get_chain_segment(self, chain_address, block_number_start, block_number_end) -> None:
+    def send_get_chain_segment(self, chain_address, block_number_start, block_number_end = None) -> None:
         cmd = GetChainSegment(self.cmd_id_offset)
+        if block_number_end is None:
+            block_number_end = UINT_256_MAX
+            
         data = {
             'chain_address': chain_address,
             'block_number_start': block_number_start,
@@ -420,11 +427,11 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(data)
         self.send(header, body)
         
-    def send_new_block(self, block, wallet_address) -> None:
+    def send_new_block(self, block, chain_address) -> None:
         cmd = NewBlock(self.cmd_id_offset)
         data = {
             'block': block,
-            'wallet_address': wallet_address}
+            'chain_address': chain_address}
         header, body = cmd.encode(data)
         self.send(header, body)
         

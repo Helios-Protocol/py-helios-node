@@ -133,6 +133,7 @@ def main(instance_number = None) -> None:
         args.port = args.port + args.instance
         os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(args.instance)
         os.environ["INSTANCE_NUMBER"] = str(args.instance)
+            
     elif instance_number is not None:
         args.port = args.port + instance_number
         os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(instance_number)
@@ -143,6 +144,7 @@ def main(instance_number = None) -> None:
         chain_config = ChainConfig.from_parser_args(args)
     except AmbigiousFileSystem:
         exit_because_ambigious_filesystem(logger)
+        
         
     if not is_data_dir_initialized(chain_config):
         # TODO: this will only work as is for chains with known genesis
@@ -275,7 +277,6 @@ async def exit_on_signal(service_to_exit: BaseService) -> None:
 @with_queued_logging
 def launch_node(chain_config: ChainConfig) -> None:
     display_launch_logs(chain_config)
-    
     
     NodeClass = chain_config.node_class
     node = NodeClass(chain_config)

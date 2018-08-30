@@ -428,11 +428,14 @@ class ChainHeadDB():
                 
                 if starting_timestamp == timestamp:
                     #we already had a root hash for this timestamp. just update the existing one.
-                    self.logger.debug("adding block hash to timestamp without propogating. root hash already existed. updating for time {}".format(timestamp))
+                    #self.logger.debug("adding block hash to timestamp without propogating. root hash already existed. updating for time {}".format(timestamp))
                     historical_roots_dict = dict(historical_roots)
                     historical_roots_dict[timestamp] = new_root_hash
                     historical_roots = list(historical_roots_dict.items())
+                    #self.logger.debug("finished adding block to timestamp. last_hist_root = {}, current_root_hash = {}".format(historical_roots[-1][1], self.root_hash))
+                    #self.logger.debug(new_root_hash)
                 else:
+                    #self.logger.debug("adding block hash to timestamp without propogating. root hash didnt exist")
                     sorted_historical_roots = SortedList(historical_roots)
                     for loop_timestamp in range(starting_timestamp, timestamp, TIME_BETWEEN_HEAD_HASH_SAVE):
                         sorted_historical_roots.add([loop_timestamp, existing_root_hash])
@@ -442,6 +445,7 @@ class ChainHeadDB():
         #now propogate the new head hash to any saved historical root hashes newer than this one.
         #effeciently do this by starting from the end and working back. we can assume 
         if historical_roots[-1][0] > timestamp:
+            self.logger.debug("propogating historical root hash timestamps forward")
             for i in range(len(historical_roots)-1, 0, -1):
                 if historical_roots[i][0] <= timestamp:
                     break
@@ -458,8 +462,12 @@ class ChainHeadDB():
                 #have to do this in case it is a tuple and we cannot modify
                 cur_timestamp = historical_roots[i][0]
                 historical_roots[i] = [cur_timestamp,new_root_hash]
-            
+         
+        #lets now make sure our root hash is the same as the last historical. It is possible that another thread or chain object
+        #has imported a block since this one was initialized.
         self.save_historical_root_hashes(historical_roots)
+        
+        self.root_hash = historical_roots[-1][1]
         
     
     #

@@ -152,6 +152,13 @@ from sortedcontainers import (
 if TYPE_CHECKING:
     from evm.vm.base import BaseVM  # noqa: F401
 
+from trinity.utils.mp import (
+    async_method,
+    sync_method,
+)
+
+from functools import partial
+import asyncio
 
 # Mapping from address to account state.
 # 'balance', 'nonce' -> int
@@ -367,8 +374,7 @@ class Chain(BaseChain):
             self.base_db = self.db
             self._journaldb = JournalDB(self.base_db)
             #we keep the name self.db so that all of the functions still work, but at this point it is a journaldb.
-            self.base_db = self._journaldb
-            
+            self.db = self._journaldb
             #reinitialize to ensure chain and chain_head_db have the new journaldb
             self.reinitialize()
         
@@ -1012,6 +1018,14 @@ class Chain(BaseChain):
                               wallet_address = wallet_address)
             
             
+    async def coro_import_block(self, *args, **kwargs):
+        loop = asyncio.get_event_loop()
+        
+        return await loop.run_in_executor(
+            None,
+            partial(self.import_block, *args, **kwargs)
+        )
+    
     def import_block(self, block: BaseBlock, 
                            perform_validation: bool=True,
                            save_block_head_hash_timestamp = True, 
@@ -1019,13 +1033,12 @@ class Chain(BaseChain):
                            allow_unprocessed = True, 
                            allow_replacement = True) -> BaseBlock:      
          
-        self.logger.debug("import_block, block number {}".format(block.number))
         #we handle replacing blocks here
         #this includes deleting any blocks that it might be replacing
         #then we start the journal db
         #then within _import_block, it can commit the journal
         #but we wont persist until it gets out here again.
-         
+        
         if wallet_address is not None:
             #we need to re-initialize the chain for the new wallet address.
             if wallet_address != self.wallet_address:
@@ -1057,10 +1070,10 @@ class Chain(BaseChain):
                 
                 #check to make sure the parent matches the one we have
                 if block.number != 0:
-                    if block.number == self.header.block_number:
-                        existing_parent_hash = self.chaindb.get_canonical_head_hash(self.wallet_address)
-                    else:
-                        existing_parent_hash = self.chaindb.get_unprocessed_block_hash_by_block_number(self.wallet_address, block.number-1)
+#                    if block.number == self.header.block_number:
+#                        existing_parent_hash = self.chaindb.get_canonical_head_hash(self.wallet_address)
+#                    else:
+                    existing_parent_hash = self.chaindb.get_unprocessed_block_hash_by_block_number(self.wallet_address, block.number-1)
                         
                     if block.header.parent_hash != existing_parent_hash:
                         raise ParentNotFound()
@@ -1195,12 +1208,13 @@ class Chain(BaseChain):
                     self.validate_block(imported_block)
 
                 
-                self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
-                self.chain_head_db.persist(True, False)
+                #self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
+                
                 if save_block_head_hash_timestamp:
                     self.chain_head_db.add_block_hash_to_chronological_window(imported_block.header.hash, imported_block.header.timestamp)
                     self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
                 
+                self.chain_head_db.persist(True, False)
                 self.chaindb.persist_block(imported_block)
                 
                 #here we must delete the unprocessed lookup before importing children
@@ -1223,7 +1237,6 @@ class Chain(BaseChain):
                 
                 #finally, remove unprocessed database lookups for this block
                 self.chaindb.delete_unprocessed_children_blocks_lookup(imported_block.hash)
-                
                 
                 return_block = imported_block
                 
@@ -1476,6 +1489,31 @@ class Chain(BaseChain):
     # Min Block Gas API used for throttling the network
     #
     
+    def re_initialize_historical_minimum_gas_price_at_genesis(self):
+        '''
+        re-initializes system with last set min gas price and net tpc cap
+        '''
+        hist_min_gas_price = self.chaindb.load_historical_minimum_gas_price()
+        hist_tpc_cap = self.chaindb.load_historical_network_tpc_capability()
+        hist_tx_per_centisecond = self.chaindb.load_historical_tx_per_centisecond()
+        
+        if hist_min_gas_price is not None:
+            init_min_gas_price = hist_min_gas_price[-1][1]
+        else:
+            init_min_gas_price = 1
+            
+        if hist_tpc_cap is not None:
+            init_tpc_cap = hist_tpc_cap[-1][1]
+        else:
+            init_tpc_cap = self.get_local_tpc_cap()
+            
+        if hist_tx_per_centisecond is not None:
+            init_tpc = hist_tx_per_centisecond[-1][1]
+        else:
+            init_tpc = None
+            
+        self.chaindb.initialize_historical_minimum_gas_price_at_genesis(init_min_gas_price, init_tpc_cap, init_tpc)
+            
     def update_current_network_tpc_capability(self, current_network_tpc_cap, update_min_gas_price = True):
         validate_uint256(current_network_tpc_cap, title="current_network_tpc_cap")
         self.chaindb.save_current_historical_network_tpc_capability(current_network_tpc_cap)
@@ -1499,13 +1537,13 @@ class Chain(BaseChain):
         hist_tpc = self.chaindb.load_historical_tx_per_centisecond()
         
         if hist_tpc is None:
-            end = current_historical_window-50*100
+            end_outer = current_historical_window-60*100
         else:
-            end = current_historical_window-NUMBER_OF_HEAD_HASH_TO_SAVE*TIME_BETWEEN_HEAD_HASH_SAVE
+            end_outer = current_historical_window-NUMBER_OF_HEAD_HASH_TO_SAVE*TIME_BETWEEN_HEAD_HASH_SAVE
         
         
         for historical_window_timestamp in range(current_historical_window,
-                                                 end, 
+                                                 end_outer, 
                                                  -TIME_BETWEEN_HEAD_HASH_SAVE):
         
             tpc_sum_dict = {}
@@ -1555,12 +1593,12 @@ class Chain(BaseChain):
         
         if hist_tpc is None:
             hist_tpc = list(new_hist_tpc_dict.items())
-            difference_found = True
         else:
             hist_tpc_dict = dict(hist_tpc)
             for timestamp, tpc in new_hist_tpc_dict.items():
                 if timestamp not in hist_tpc_dict or hist_tpc_dict[timestamp] != tpc:
-                    difference_found = True
+                    if tpc != 0:
+                        difference_found = True
                 hist_tpc_dict[timestamp] = tpc
             hist_tpc = list(hist_tpc_dict.items())
             

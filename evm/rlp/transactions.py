@@ -185,6 +185,8 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         #self.check_signature_validity()
         #make sure the send transaction is valid too.
         self.transaction.validate()
+        if self.transaction.to != self.receiver:
+            raise ValidationError("Receive transaction is trying to receive a transaction meant for another chain")
 
     #
     # Signature and Sender

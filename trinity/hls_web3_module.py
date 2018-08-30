@@ -362,7 +362,11 @@ class Hls(Module):
     def setGasPriceStrategy(self, gas_price_strategy):
         self.gasPriceStrategy = gas_price_strategy
 
-    def devAddNewBlock(self):
-        return self.web3.manager.request_blocking("hls_devAddNewBlock", [])
+    def devAddValidNewBlock(self, version = 1):
+        return self.web3.manager.request_blocking("hls_devAddValidNewBlock", [version])
+    
+    def devAddInvalidNewBlock(self, version = 1):
+        return self.web3.manager.request_blocking("hls_devAddInvalidNewBlock", [version])
+    
     
     

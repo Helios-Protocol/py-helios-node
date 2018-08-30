@@ -30,6 +30,10 @@ class FullNode(Node):
             self._chain = self.chain_class(self.db_manager.get_db(), self.wallet_address)
 
         return self._chain
+    
+    def get_new_chain(self):
+        return self.chain_class(self.db_manager.get_db(), self.wallet_address)
+
 
     #save as [public_key,ip,udp_port,tcp_port]
     def save_node_address_to_local_peer_pool_file(self):

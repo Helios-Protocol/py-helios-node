@@ -145,6 +145,14 @@ chain_parser.add_argument(
 )
     
 chain_parser.add_argument(
+    '--node_type',
+    type=int,
+    help=(
+        "The node type. #0 is master, 1 is fullnode, 2 is micronode, 4 is network launch node"
+    ),
+)
+    
+chain_parser.add_argument(
     '--instance',
     type=int,
     help=(

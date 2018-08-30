@@ -9,6 +9,12 @@ from trinity.utils.mp import (
     sync_method,
 )
 
+from evm.chains.base import Chain
+
+
+class AsyncChain(Chain):
+    coro_import_block = async_method('import_block')
+
 class ChainProxy(BaseProxy):
     coro_import_block = async_method('import_block')
     coro_import_chain = async_method('import_chain')
@@ -18,7 +24,7 @@ class ChainProxy(BaseProxy):
     coro_import_chronological_block_window = async_method('import_chronological_block_window')
     coro_update_current_network_tpc_capability = async_method('update_current_network_tpc_capability')
     coro_get_local_tpc_cap = async_method('get_local_tpc_cap')
-    
+    coro_re_initialize_historical_minimum_gas_price_at_genesis = async_method('re_initialize_historical_minimum_gas_price_at_genesis')
     
     import_block = sync_method('import_block')
     import_chain = sync_method('import_chain')
@@ -30,3 +36,5 @@ class ChainProxy(BaseProxy):
     update_current_network_tpc_capability = sync_method('update_current_network_tpc_capability')
     get_local_tpc_cap = sync_method('get_local_tpc_cap')
     validate_block_specification = sync_method('validate_block_specification')
+    re_initialize_historical_minimum_gas_price_at_genesis = sync_method('re_initialize_historical_minimum_gas_price_at_genesis')
+    

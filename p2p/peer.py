@@ -111,6 +111,7 @@ from .constants import (
 if TYPE_CHECKING:
     from trinity.db.header import BaseAsyncHeaderDB  # noqa: F401
 
+from sortedcontainers import SortedList
 
 async def handshake(remote: Node,
                     privkey: datatypes.PrivateKey,
@@ -686,6 +687,7 @@ class PeerPool(BaseService):
         self.privkey = privkey
         self.max_peers = max_peers
         self.connected_nodes: Dict[Node, BasePeer] = {}
+        self.wallet_address_to_peer_lookup = {}
         self._subscribers: List[PeerPoolSubscriber] = []
 
     def __len__(self):
@@ -723,6 +725,7 @@ class PeerPool(BaseService):
     def add_peer(self, peer):
         self.logger.info('Adding peer: %s', peer)
         self.connected_nodes[peer.remote] = peer
+        self.wallet_address_to_peer_lookup[peer.wallet_address] = peer
         for subscriber in self._subscribers:
             subscriber.register_peer(peer)
             peer.add_subscriber(subscriber.msg_queue)
@@ -799,8 +802,10 @@ class PeerPool(BaseService):
         """
         peer = cast(BasePeer, peer)
         if peer.remote in self.connected_nodes:
-            self.connected_nodes.pop(peer.remote)
-
+            #self.connected_nodes.pop(peer.remote)
+            del(self.connected_nodes[peer.remote])
+            del(self.wallet_address_to_peer_lookup[peer.wallet_address])
+            
     @property
     def peers(self) -> List[BasePeer]:
         return list(self.connected_nodes.values())
@@ -812,7 +817,16 @@ class PeerPool(BaseService):
         peers_by_td = groupby(operator.attrgetter('head_td'), self.peers)
         max_td = max(peers_by_td.keys())
         return random.choice(peers_by_td[max_td])
-
+    
+    def sort_peers_by_stake(self, peers = None):
+        if peers is None:
+            if not self.connected_nodes:
+                raise NoConnectedPeers()
+            peers = self.peers
+        
+        sorted_peers = SortedList(key = lambda x: x.stake, iterable = peers)
+        return sorted_peers
+        
     def get_peers(self, min_td: int) -> List[BasePeer]:
         return [peer for peer in self.peers if peer.head_td >= min_td]
 

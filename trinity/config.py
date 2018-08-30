@@ -64,6 +64,7 @@ class ChainConfig:
     _network_id: int = None
     _node_private_helios_key = None
     _node_wallet_address = None
+    _node_type = 1
     
     port: int = None
     _preferred_nodes: Tuple[KademliaNode, ...] = None
@@ -81,11 +82,14 @@ class ChainConfig:
                  port: int=30303,
                  preferred_nodes: Tuple[KademliaNode, ...]=None,
                  bootstrap_nodes: Tuple[KademliaNode, ...]=None,
+                 node_type = 1,
                  ) -> None:
         self.network_id = network_id
         self.max_peers = max_peers
         self.sync_mode = sync_mode
         self.port = port
+        self.node_type = int(node_type)
+
         self._preferred_nodes = preferred_nodes
         
         self._bootstrap_nodes = bootstrap_nodes
@@ -157,10 +161,14 @@ class ChainConfig:
             self._node_wallet_address = self.node_private_helios_key.public_key.to_canonical_address()
         return self._node_wallet_address
         
-    #0 is master, 1 is fullnode, 2 is micronode
+    #0 is master, 1 is fullnode, 2 is micronode, 4 is network launch node
     @property
     def node_type(self):
-        return 1
+        return self._node_type
+    
+    @node_type.setter
+    def node_type(self, val):
+        self._node_type = val
         
     @property
     def logfile_path(self) -> Path:

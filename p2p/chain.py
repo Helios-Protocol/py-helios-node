@@ -45,6 +45,7 @@ from evm.exceptions import (
     CanonicalHeadNotFound,
     ReplacingBlocksNotAllowed,
     ParentNotFound,
+    ValidationError,
 )
 from evm.rlp.headers import BlockHeader
 from evm.rlp.receipts import Receipt
@@ -83,6 +84,7 @@ from sortedcontainers import (
     SortedList
 )
 
+from p2p.consensus import BlockConflictChoice
 #next chain head hash is for the case where we are re-syncing and have a bunch of chains already.
 #dont need to re-download the whole chain if we already have part of it. We might also be missing some chains,
 #so sending the next head hash allows the other node to tell if we are missing a chain
@@ -124,8 +126,10 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
                  base_db,
                  peer_pool: PeerPool,
                  consensus,
+                 node,
                  token: CancelToken = None) -> None:
         super().__init__(token)
+        self.node = node
         self.consensus = consensus
         self.chain = chain
         self.chaindb = chaindb
@@ -730,6 +734,7 @@ class RegularChainSyncer(FastChainSyncer):
     """
     _current_syncing_root_timestamp = None
     _current_syncing_root_hash = None
+    _latest_block_conflict_choices_to_change = None
     
     def __init__(self,*args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -746,14 +751,19 @@ class RegularChainSyncer(FastChainSyncer):
         asyncio.ensure_future(self._handle_msg_loop())
         consensus_ready = await self.consensus.coro_is_ready.wait()
         if consensus_ready:
-            self.logger.debug("consensus ready")
-            with self.subscribe(self.peer_pool):
-                self.logger.debug("syncing chronological blocks")
-                #await self.sync_chronological_blocks()
-                #this runs forever
-                await self.sync_historical_root_hash_with_consensus()
-                #asyncio.ensure_future(self.re_queue_timeout_peers())
+            self.logger.debug('waiting for consensus min gas system ready')
+            min_gas_system_ready = await self.consensus.coro_min_gas_system_ready.wait()
+            if min_gas_system_ready:
+                self.logger.debug("consensus ready")
+                with self.subscribe(self.peer_pool):
+                    self.logger.debug("syncing chronological blocks")
+                    #await self.sync_chronological_blocks()
+                    asyncio.ensure_future(self._handle_rpc_loop())
                     
+                    #this runs forever
+                    asyncio.ensure_future(self.sync_historical_root_hash_with_consensus())
+                    #asyncio.ensure_future(self.re_queue_timeout_peers())
+                    await self.sync_block_conflict_with_consensus()
     
     
     async def does_local_blockchain_database_match_consensus(self):
@@ -769,11 +779,29 @@ class RegularChainSyncer(FastChainSyncer):
         else:
             return False
         
-    
-    async def sync_historical_root_hash_with_consensus(self):
-        self.logger.debug("sync_with_consensus starting")
+    async def sync_block_conflict_with_consensus(self):
+        self.logger.debug("sync_block_conflict_with_consensus starting")
         while True:
-            self.logger.debug("consensus loop start")
+            self.logger.debug("sync_historical_root_hash_with_consensus loop start")
+            block_conflict_choices_to_change = await self.consensus.get_correct_block_conflict_choice_where_we_differ_from_consensus()
+            if block_conflict_choices_to_change is not None:
+                #save this so that we know to replace our local block when this one is sent to us.
+                self._latest_block_conflict_choices_to_change = set(block_conflict_choices_to_change)
+                self.logger.debug("block conflict syncer found blocks that need changing.")
+                
+                for block_conflict_choice in block_conflict_choices_to_change:
+                    peers_with_block = self.consensus.get_peers_who_have_conflict_block(block_conflict_choice.block_hash)
+                    peers_sorted_by_stake = self.peer_pool.sort_peers_by_stake(peers = peers_with_block)
+                    
+                    self.logger.debug("asking a peer for the consensus version of a conflict block that we have")
+                    peers_sorted_by_stake[-1].sub_proto.send_get_chain_segment(block_conflict_choice.chain_address, block_conflict_choice.block_number)
+                    
+            await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD) 
+
+    async def sync_historical_root_hash_with_consensus(self):
+        self.logger.debug("sync_historical_root_hash_with_consensus starting")
+        while True:
+            self.logger.debug("sync_historical_root_hash_with_consensus loop start")
             #this loop can continuously look at the root hashes in consensus, if they dont match ours then we need to update to the new one
             #it also has to look at conflict blocks and make sure we always have the one that is in consensus.
 #            if not self._initial_sync_complete.is_set():
@@ -805,7 +833,7 @@ class RegularChainSyncer(FastChainSyncer):
                         
                     #if it is none, then we have no conflicts
                     self.logger.debug("no conflicts found")
-                await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
+                    await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
             else:
                 #We have conflicts, lets sync up one window, and let the loop continue to go through all windows
                 #self.current_syncing_root_timestamp, self.current_syncing_root_hash = self.consensus.get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(latest_good_timestamp)
@@ -851,7 +879,7 @@ class RegularChainSyncer(FastChainSyncer):
             
             
                 self.register_peer(peer)
-        
+            
         
     
     #run this once before running the main function that keeps our database up to date. 
@@ -933,10 +961,11 @@ class RegularChainSyncer(FastChainSyncer):
 #        window_start_timestamp, save_block_head_hash_timestamp = True, allow_unprocessed=False):
 #        if len(new_chronological_blocks) > 0:
 #            self.logger.debug("AAAAAAAAAAAA importing chronological window  {}".format(window_start_timestamp))
+
         self.chain.import_chronological_block_window(new_chronological_blocks, 
-                                                     window_start_timestamp = window_start_timestamp,
-                                                     save_block_head_hash_timestamp = True, 
-                                                     allow_unprocessed=False)
+                                                         window_start_timestamp = window_start_timestamp,
+                                                         save_block_head_hash_timestamp = True, 
+                                                         allow_unprocessed=True)
 #        for block in new_chronological_blocks:
 #            wallet_address = self.chaindb.get_chain_wallet_address_for_block(block)
 #            await self.chain.coro_import_block(block, wallet_address = wallet_address, save_block_head_hash_timestamp = save_block_head_hash_timestamp, allow_unprocessed=False)
@@ -984,9 +1013,13 @@ class RegularChainSyncer(FastChainSyncer):
             await self._handle_get_chronological_block_window(peer, cast(Dict[str, Any], msg))
         elif isinstance(cmd, hls.ChronologicalBlockWindow):
             await self._handle_chronological_block_window(peer, cast(Dict[str, Any], msg))
-            
+        elif isinstance(cmd, hls.GetChainSegment):
+            await self._handle_get_chain_segment(peer, cast(Dict[str, Any], msg))
+        elif isinstance(cmd, hls.Chain):
+            await self._handle_chain(peer, cast(Dict[str, Any], msg))    
             
     async def _handle_rpc(self, cmd, msg) -> None:
+        
         if cmd == 'new_block':
             await self._handle_new_block_from_rpc(cast(Dict[str, Any], msg))
                 
@@ -1142,6 +1175,29 @@ class RegularChainSyncer(FastChainSyncer):
         self.logger.info("Imported chain segment, new head: #%d", head.block_number)
         return head.block_number
     
+    async def _handle_get_chain_segment(self,
+                                        peer: HLSPeer,
+                                        msg: Dict[str, Any]) -> None:
+        
+#        data = {
+#            'chain_address': chain_address,
+#            'block_number_start': block_number_start,
+#            'block_number_end': block_number_end,
+#            }
+        
+        self.logger.debug("Peer %s made chains segment request: %s", peer.wallet_address, msg)
+        
+              
+        chain_address = msg['chain_address']
+        
+        #whole_chain = await self.chaindb.coro_get_all_blocks_on_chain(self.chain.get_vm().get_block_class(), chain_address)
+        chain_segment = await self.chaindb.coro_get_blocks_on_chain(P2PBlock, msg['block_number_start'], msg['block_number_end'], chain_address)
+        
+        peer.sub_proto.send_chain(chain_segment, True)
+        
+        self.logger.debug("sending chain with chain address {}".format(chain_address))
+        
+    
     async def _handle_chain(self,
                                         peer: HLSPeer,
                                         msg: Dict[str, Any]) -> None:
@@ -1183,17 +1239,17 @@ class RegularChainSyncer(FastChainSyncer):
         self.logger.debug("received new block from RPC. Processing")
         new_block = msg['block']
         chain_address = msg['chain_address']
-        await self.handle_new_block(new_block, chain_address)
+        await self.handle_new_block(new_block, chain_address, from_rpc = True)
     
     async def _handle_new_block(self,
                                         peer: HLSPeer,
                                         msg: Dict[str, Any]) -> None:
-        
+        self.logger.debug('received new block from network. processing')
         new_block = msg['block']
         chain_address = msg['chain_address']
         await self.handle_new_block(new_block, chain_address, peer = peer)
         
-    async def handle_new_block(self, new_block, chain_address, peer = None, propogate_to_network = True):
+    async def handle_new_block(self, new_block, chain_address, peer = None, propogate_to_network = True, from_rpc = False):
         #TODO. Here we need to validate the block as much as we can. Try to do this in a way where we can run it in another process to speed it up.
         #No point in doing anything if the block is invalid.
         #or to speed up transaction throughput we could just rely on the import to validate.
@@ -1202,7 +1258,10 @@ class RegularChainSyncer(FastChainSyncer):
 
         '''
         This returns true if the block is imported successfully, False otherwise
+        If the block comes from RPC, we need to treat it differently. If it is invalid for any reason whatsoever, we just delete.
         '''
+        
+        chain = self.node.get_new_chain()
         required_min_gas_price = self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)
         block_gas_price = int(get_block_average_transaction_gas_price(new_block))
         
@@ -1212,22 +1271,33 @@ class RegularChainSyncer(FastChainSyncer):
         
         #Get the head of the chain that we have in the database
         #need this to see if we are replacing a block
+        replacing_block_permitted = False
         try:
             canonical_head = self.chaindb.get_canonical_head(chain_address)
             
             #check to see if we are replacing a block
-            if new_block.number <= canonical_head.block_number:
+            if new_block.header.block_number <= canonical_head.block_number:
                 #it is trying to replace a block that we already have.
                 
                 #is it the same as the one we already have?
-                local_block_hash = self.chaindb.get_canonical_block_hash(new_block.number, chain_address) 
-                if new_block.hash == local_block_hash:
+                local_block_hash = self.chaindb.get_canonical_block_hash(new_block.header.block_number, chain_address) 
+                if new_block.header.hash == local_block_hash:
                     #we already have this block. Do nothing. Do not propogate if we already have it.
                     return True
                 else:
-                    #this is a conflict block. Send it to consensus and let the syncer do its thing.
-                    self.consensus.add_block_conflict(chain_address, new_block.number)
-                    return False
+                    #check to see if we are expecting this block because it is actually the new consensus block
+                    if self._latest_block_conflict_choices_to_change is not None:
+                        #we are actually expecting new blocks to overwrite. Lets check to see if this is one of them.
+                        block_conflict_choice = BlockConflictChoice(chain_address, new_block.header.block_number, new_block.header.hash)
+                        if block_conflict_choice in self._latest_block_conflict_choices_to_change:
+                            replacing_block_permitted = True
+                            self.logger.debug("received a block conflict that we were expecting. going to import and replace ours.")
+                    if not replacing_block_permitted:
+                        #this is a conflict block. Send it to consensus and let the syncer do its thing.
+                        if not from_rpc:
+                            self.logger.debug("received a conflicting block. sending to consensus as block conflict")
+                            self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
+                        return False
                 
         except CanonicalHeadNotFound:
             #we have to download the entire chain
@@ -1235,8 +1305,8 @@ class RegularChainSyncer(FastChainSyncer):
            
         #deal with the possibility of missing blocks
         #it is only possible that we are missing previous blocks if this is not the genesis block
-        if new_block.number > 0:
-            if canonical_head is None or new_block.number > (canonical_head.block_number + 1):
+        if new_block.header.block_number > 0:
+            if canonical_head is None or new_block.header.block_number > (canonical_head.block_number + 1):
                 #we need to download missing blocks. 
                 #lets keep it simple, just send this same peer a request for the new blocks that we need, plus this one again.
                 
@@ -1245,31 +1315,47 @@ class RegularChainSyncer(FastChainSyncer):
                         block_number_start = 0
                     else:
                         block_number_start = canonical_head.block_number + 1
-                        
-                    peer.sub_proto.send_get_chain_segment(chain_address, block_number_start, new_block.number)
+                    self.logger.debug('asking peer for the rest of missing chian')
+                    peer.sub_proto.send_get_chain_segment(chain_address, block_number_start, new_block.header.block_number)
                     return False
         
         try:
-            imported_block = await self.chain.coro_import_block(new_block, 
+            imported_block = await chain.coro_import_block(new_block, 
                                                wallet_address = chain_address,
-                                               allow_replacement = False)
+                                               allow_replacement = replacing_block_permitted)
         except ReplacingBlocksNotAllowed:
-            #it has not been validated yet.
-            self.chain.validate_block_specification(new_block)
-            self.consensus.add_block_conflict(chain_address, new_block.number)
-            pass
+            if not from_rpc:
+                #it has not been validated yet.
+                self.logger.debug('ReplacingBlocksNotAllowed error. adding to block conflicts')
+                chain.validate_block_specification(new_block)
+                self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
+            return False
         except ParentNotFound:
-            #it has not been validated yet
-            self.chain.validate_block_specification(new_block)
-            self.consensus.add_block_conflict(chain_address, new_block.number-1)
-            pass
-        except Exception as e:
-            self.logger.error('tried to import a block and got error {}'.format(e))
-            pass
+            if not from_rpc:
+                #it has not been validated yet
+                self.logger.debug('ParentNotFound error. adding to block conflicts')
+                chain.validate_block_specification(new_block)
+                self.consensus.add_block_conflict(chain_address, new_block.header.block_number-1)
+            return False
+        except ValidationError as e:
+            if not from_rpc:
+                self.logger.debug('ValidationError error when importing block. Error: {}'.format(e))
+            return False
+        except ValueError as e:
+            if not from_rpc:
+                self.logger.debug('ValueError error when importing block. Error: {}'.format(e))
+            return False
+#        except Exception as e:
+#            
+#            self.logger.error('tried to import a block and got error {}'.format(e))
+#            return
         
         if propogate_to_network:
-            for peer in self.peer_pool.peers:
-                peer.sub_proto.send_new_block(imported_block, chain_address) 
+            for loop_peer in self.peer_pool.peers:
+                #don't send the block back to the peer who gave it to us.
+                if loop_peer != peer:
+                    self.logger.debug('sending new block to peer {}'.format(loop_peer))
+                    loop_peer.sub_proto.send_new_block(imported_block, chain_address) 
         
         return True
         #check to make sure it meets the minimum gas requirements for the block timestamp.
@@ -1283,7 +1369,15 @@ class RegularChainSyncer(FastChainSyncer):
         #1) check to see if it conflicts with a block we already have
         #if yes, use consensus to figure out which one to keep. if no, import.
         #2) 
-        
+
+    ####################
+    ###Testing functions
+    ####################
+    
+    def propogate_block_to_network(self, block, chain_address):
+        for peer in self.peer_pool.peers:
+            self.logger.debug('sending test block to peer {}'.format(peer))
+            peer.sub_proto.send_new_block(block, chain_address)
         
         
 class DownloadedBlockPart(NamedTuple):

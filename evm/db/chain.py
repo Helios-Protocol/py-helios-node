@@ -336,19 +336,29 @@ class ChainDB(BaseChainDB):
         return output_block
         
         
+    def get_blocks_on_chain(self, block_class,  start, end, wallet_address = None):
+        if wallet_address is None:
+            wallet_address = self.wallet_address
+        
+        blocks = []
+        for block_number in range(start, end+1):
+            try:
+                new_block = self.get_block_by_number(block_number, block_class, wallet_address)
+                blocks.append(new_block)
+            except HeaderNotFound:
+                break
+        
+        return blocks
+    
     def get_all_blocks_on_chain(self, block_class, wallet_address = None):
         if wallet_address is None:
             wallet_address = self.wallet_address
             
         canonical_head_header = self.get_canonical_head(wallet_address = wallet_address)
-        chain_length = canonical_head_header.block_number + 1
+        head_block_number = canonical_head_header.block_number
         
-        blocks = []
-        for block_number in range(chain_length):
-            new_block = self.get_block_by_number(block_number, block_class, wallet_address)
-            blocks.append(new_block)
         
-        return blocks
+        return self.get_blocks_on_chain(block_class,  0, head_block_number, wallet_address = wallet_address)
         
         
     #
@@ -1180,15 +1190,21 @@ class ChainDB(BaseChainDB):
         validate_word(block_hash, title="Block_hash")
         origin_wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, block_hash)
         child_chains = self._get_block_children_chains(block_hash)
+        if child_chains is None:
+            return None
         try:
             child_chains.remove(origin_wallet_address)
         except KeyError:
+            pass
+        except AttributeError:
             pass
         if exclude_chains is not None:
             for wallet_address in exclude_chains:
                 try:
                     child_chains.remove(wallet_address)
                 except KeyError:
+                    pass
+                except AttributeError:
                     pass
         return list(child_chains)
     
@@ -1226,7 +1242,9 @@ class ChainDB(BaseChainDB):
         
     
     def load_historical_minimum_gas_price(self, mutable = True, sort = False):
-
+        '''
+        saved as timestamp, min gas price
+        '''
         lookup_key = SchemaV1.make_historical_minimum_gas_price_lookup_key()
         try:
             data = rlp.decode(self.db[lookup_key], sedes=CountableList(List([big_endian_int, big_endian_int])))
@@ -1328,8 +1346,11 @@ class ChainDB(BaseChainDB):
         average_centisecond_window_length = MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH
         min_centisecond_time_between_change_in_minimum_gas = MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE
         
-        assert(len(historical_minimum_allowed_gas) >= min_centisecond_time_between_change_in_minimum_gas)
-        assert(len(historical_tx_per_centisecond) > average_centisecond_delay+average_centisecond_window_length), historical_tx_per_centisecond
+        if not len(historical_minimum_allowed_gas) >= min_centisecond_time_between_change_in_minimum_gas:
+            raise HistoricalMinGasPriceError('historical_minimum_allowed_gas too short. it is a lenght of {}, but should be a length of {}'.format(len(historical_minimum_allowed_gas),min_centisecond_time_between_change_in_minimum_gas))
+        if not len(historical_tx_per_centisecond) > average_centisecond_delay+average_centisecond_window_length:
+            raise HistoricalMinGasPriceError('historical_tx_per_centisecond too short. it is a lenght of {}, but should be a length of {}'.format(len(historical_tx_per_centisecond),average_centisecond_delay+average_centisecond_window_length))
+
     
         if not are_items_in_list_equal(historical_minimum_allowed_gas[-1*min_centisecond_time_between_change_in_minimum_gas:]):
             #we have to wait longer to change minimum gas
@@ -1353,7 +1374,7 @@ class ChainDB(BaseChainDB):
             
             return new_minimum_allowed_gas
         
-    def initialize_historical_minimum_gas_price_at_genesis(self, min_gas_price, net_tpc_cap):
+    def initialize_historical_minimum_gas_price_at_genesis(self, min_gas_price, net_tpc_cap, tpc = None):
         current_centisecond = int(time.time()/100) * 100
         
         historical_minimum_gas_price = []
@@ -1362,16 +1383,22 @@ class ChainDB(BaseChainDB):
         
         for timestamp in range(current_centisecond-100*50, current_centisecond+100, 100):
             historical_minimum_gas_price.append([timestamp, min_gas_price])
-            if min_gas_price <= 1:
-                historical_tx_per_centisecond.append([timestamp, 0])
+            if tpc is not None:
+                historical_tx_per_centisecond.append([timestamp, tpc])
             else:
-                historical_tx_per_centisecond.append([timestamp, int(net_tpc_cap*0.94)])
+                if min_gas_price <= 1:
+                    historical_tx_per_centisecond.append([timestamp, 0])
+                else:
+                    historical_tx_per_centisecond.append([timestamp, int(net_tpc_cap*0.94)])
             historical_tpc_capability.append([timestamp, net_tpc_cap])
             
         self.save_historical_minimum_gas_price(historical_minimum_gas_price)
         self.save_historical_tx_per_centisecond(historical_tx_per_centisecond, de_sparse = False)
         self.save_historical_network_tpc_capability(historical_tpc_capability, de_sparse = False)
-    
+        
+
+            
+            
     def recalculate_historical_mimimum_gas_price(self, start_timestamp, end_timestamp = None):
         #we just have to delete the ones in front of this time and update
         self.delete_newer_historical_mimimum_gas_price(start_timestamp)
@@ -1389,9 +1416,9 @@ class ChainDB(BaseChainDB):
             raise HistoricalMinGasPriceError("tried to update historical minimum gas price but historical minimum gas price has not been initialized")
             
         sorted_hist_min_gas_price = SortedDict(hist_min_gas_price)
-        if sorted_hist_min_gas_price.peekitem(0)[0] > start_timestamp:
-            raise HistoricalMinGasPriceError("tried to recalculate historical minimum gas price at timestamp {}, however that timestamp doesnt exist".format(start_timestamp))
-    
+#        if sorted_hist_min_gas_price.peekitem(0)[0] > start_timestamp:
+#            raise HistoricalMinGasPriceError("tried to recalculate historical minimum gas price at timestamp {}, however that timestamp doesnt exist".format(start_timestamp))
+#    
 
         #make sure we leave at least the minimum amount to calculate future min gas prices. otherwise we cant do anything.
         if MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE > (MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY + MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH):
@@ -1475,7 +1502,6 @@ class ChainDB(BaseChainDB):
             historical_minimum_allowed_gas = [i[1] for i in sorted_hist_min_gas_price]
             
             
-            
             for timestamp in range(start_timestamp, end_timestamp, 100):
                 historical_tx_per_centisecond = [i[1] for i in sorted_hist_tx_per_centi if i[0] < timestamp]
                 try:
@@ -1483,7 +1509,7 @@ class ChainDB(BaseChainDB):
                 except KeyError:
                     #lets allow it if it is just the very last one because it may be slightly delaid in updating
                     if timestamp == end_timestamp-100:
-                        goal_tx_per_centisecond = hist_network_tpc_cap[end_timestamp-100]
+                        goal_tx_per_centisecond = hist_network_tpc_cap[end_timestamp-200]
                     else:
                         raise HistoricalNetworkTPCMissing
                 next_centisecond_min_gas_price = self.calculate_next_centisecond_minimum_gas_price(historical_minimum_allowed_gas, 
@@ -1492,7 +1518,6 @@ class ChainDB(BaseChainDB):
                 
                 #first make sure we append it to historical_minimum_allowed_gas
                 historical_minimum_allowed_gas.append(next_centisecond_min_gas_price)
-                
                 #now add it to the sortedList
                 sorted_hist_min_gas_price.add([timestamp, next_centisecond_min_gas_price])
             
@@ -1525,6 +1550,7 @@ class ChainDB(BaseChainDB):
         
         dict_hist_min_gas_price = dict(hist_min_gas_price)
         
+        #self.logger.debug('get_required_block_min_gas_price, centisecond_window = {}, dict_hist_min_gas_price = {}'.format(centisecond_window, dict_hist_min_gas_price))
         try:
             return dict_hist_min_gas_price[centisecond_window]
         except KeyError:

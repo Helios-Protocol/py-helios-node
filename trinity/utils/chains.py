@@ -124,16 +124,18 @@ def construct_chain_config_params(args):
         
     if args.data_dir is not None:
         yield 'data_dir', args.data_dir
+        
+    if args.node_type is not None:
+        yield 'node_type', args.node_type
 
     if args.nodekey_path and args.nodekey:
         raise ValueError("Cannot provide both nodekey_path and nodekey")
+    
     elif args.nodekey_path is not None:
         yield 'nodekey_path', args.nodekey_path
     elif args.nodekey is not None:
         yield 'nodekey', decode_hex(args.nodekey)
         
-    elif args.nodekey is not None:
-        yield 'nodekey', decode_hex(args.nodekey)
 
     if args.max_peers is not None:
         yield 'max_peers', args.max_peers
