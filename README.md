@@ -1,5 +1,5 @@
 # Helios Protocol Node
-This is the pre-alpha stage of the HeliosProtocol node, is currently under active development and is not yet complete.
+This is the pre-alpha stage of the HeliosProtocol node. It is currently under active development and is not yet complete.
 
 ## Installing
 
