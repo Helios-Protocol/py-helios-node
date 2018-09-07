@@ -59,6 +59,11 @@ from hvm.rlp.sedes import(
     trie_root
 )
 
+from hvm.utils.msgpack import (
+    hm_encode,
+    hm_decode,
+)
+
 # Use lru-dict instead of functools.lru_cache because the latter doesn't let us invalidate a single
 # entry, so we'd have to invalidate the whole cache in _set_account() and that turns out to be too
 # expensive.
@@ -435,16 +440,18 @@ class AccountDB(BaseAccountDB):
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
         rlp_account = self._journaldb.get(account_lookup_key, b'')
         if rlp_account:
-            account = rlp.decode(rlp_account, sedes=Account)
+            #account = rlp.decode(rlp_account, sedes=Account)
+            account = hm_decode(rlp_account, sedes_classes=[Account])
         else:
             account = Account()
         return account
 
 
     def _set_account(self, address, account):
-        rlp_account = rlp.encode(account, sedes=Account)
+        #encoded_account = rlp.encode(account, sedes=Account)
+        encoded_account = hm_encode(account)
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
-        self._journaldb[account_lookup_key] = rlp_account
+        self._journaldb[account_lookup_key] = encoded_account
         
 
     #

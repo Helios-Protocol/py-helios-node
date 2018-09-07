@@ -110,7 +110,7 @@ def main(instance_number = None) -> None:
     filter_list.append('hp2p.chain.ChainSyncer')
     #filter_list.append('hvm.db.account.AccountDB')
     filter_list.append('hvm.chain.chain.Chain')
-    filter_list.append('hvm.db.chain_head.ChainHeadDB')
+    #filter_list.append('hvm.db.chain_head.ChainHeadDB')
     filter_list.append('hvm.db.chain_db.ChainDB')
     filter_list.append('hp2p.consensus.Consensus')
     #filter_list.append('hp2p.kademlia.KademliaProtocol')

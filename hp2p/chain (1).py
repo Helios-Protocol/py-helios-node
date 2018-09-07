@@ -3,7 +3,6 @@ import logging
 import math
 import operator
 import time
-from collections import namedtuple
 from random import shuffle
 from typing import (
     Any,
@@ -14,7 +13,7 @@ from typing import (
     Tuple,
     Union,
     cast,
-    Iterable)
+)
 
 from cytoolz import (
     partition_all,
@@ -84,13 +83,8 @@ from sortedcontainers import (
     SortedDict,
     SortedList
 )
-from helios.utils.profiling import (
-    setup_cprofiler,
-)
-
 
 from hp2p.consensus import BlockConflictChoice
-
 #next chain head hash is for the case where we are re-syncing and have a bunch of chains already.
 #dont need to re-download the whole chain if we already have part of it. We might also be missing some chains,
 #so sending the next head hash allows the other node to tell if we are missing a chain
@@ -148,7 +142,6 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         self._idle_peers: asyncio.Queue[HLSPeer] = asyncio.Queue()
         self._idle_peers_in_consensus: asyncio.Queue[HLSPeer] = asyncio.Queue()
         self._new_headers: asyncio.Queue[List[BlockHeader]] = asyncio.Queue()
-        self._new_blocks_to_import: asyncio.Queue[List[NewBlockQueueItem]] = asyncio.Queue()
         self.rpc_queue: asyncio.Queue[HLSPeer] = asyncio.Queue()
         # Those are used by our msg handlers and _download_block_parts() in order to track missing
         # bodies/receipts for a given chain segment.
@@ -235,7 +228,29 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
         #then requeue them all again
         for peer in peers :
             self.register_peer(peer)
+        
+    async def _handle_rpc_loop(self) -> None:
+        while self.is_running:
+            try:
+                cmd, msg = await self.wait(self.rpc_queue.get())
+            except OperationCancelled:
+                break
 
+            # Our handle_msg() method runs cpu-intensive tasks in sub-processes so that the main
+            # loop can keep processing msgs, and that's why we use ensure_future() instead of
+            # awaiting for it to finish here.
+            asyncio.ensure_future(self.handle_rpc(cmd, msg))
+
+    async def handle_rpc(self, cmd, msg) -> None:
+        try:
+            await self._handle_rpc(cmd, msg)
+        except OperationCancelled:
+            # Silently swallow OperationCancelled exceptions because we run unsupervised (i.e.
+            # with ensure_future()). Our caller will also get an OperationCancelled anyway, and
+            # there it will be handled.
+            pass
+        except Exception:
+            self.logger.exception("Unexpected error when processing rpc")
             
     async def _handle_msg_loop(self) -> None:
         while self.is_running:
@@ -272,6 +287,7 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
                 self.logger.debug("Syncing parameters set")
                 with self.subscribe(self.peer_pool):
                     asyncio.ensure_future(self.re_queue_timeout_peers())
+                    asyncio.ensure_future(self._handle_rpc_loop())
                     while True:
                         await self.wait_first(self.send_chain_requests(), self._sync_complete.wait())
                         #await self.send_chain_requests()
@@ -568,7 +584,6 @@ class FastChainSyncer(BaseService, PeerPoolSubscriber):
             #self.logger.debug("Ignoring %s message from %s: msg %r", cmd, peer, msg)
             pass
 
-
 #    def _handle_block_headers(self, headers: List[BlockHeader]) -> None:
 #        if not headers:
 #            self.logger.warn("Got an empty BlockHeaders msg")
@@ -733,7 +748,7 @@ class RegularChainSyncer(FastChainSyncer):
 
     async def _run(self) -> None:
         self.logger.debug("Starting regular chainsyncer. waiting for consensus and chain config to initialize.")
-
+        asyncio.ensure_future(self._handle_msg_loop())
         consensus_ready = await self.consensus.coro_is_ready.wait()
         if consensus_ready:
             self.logger.debug('waiting for consensus min gas system ready')
@@ -743,74 +758,26 @@ class RegularChainSyncer(FastChainSyncer):
                 with self.subscribe(self.peer_pool):
                     self.logger.debug("syncing chronological blocks")
                     #await self.sync_chronological_blocks()
-                    asyncio.ensure_future(self._handle_msg_loop())
-                    asyncio.ensure_future(self._handle_import_block_loop())
+                    asyncio.ensure_future(self._handle_rpc_loop())
                     
                     #this runs forever
                     asyncio.ensure_future(self.sync_historical_root_hash_with_consensus())
                     #asyncio.ensure_future(self.re_queue_timeout_peers())
                     await self.sync_block_conflict_with_consensus()
     
-    async def _handle_msg_loop(self) -> None:
-        while self.is_running:
-            try:
-                peer, cmd, msg = await self.wait(self.msg_queue.get())
-            except OperationCancelled:
-                break
-
-            # Our handle_msg() method runs cpu-intensive tasks in sub-processes so that the main
-            # loop can keep processing msgs, and that's why we use ensure_future() instead of
-            # awaiting for it to finish here.
-            asyncio.ensure_future(self.handle_msg(peer, cmd, msg))
-
-    async def handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
-                         msg: protocol._DecodedMsgType) -> None:
-        try:
-            await self._handle_msg(peer, cmd, msg)
-        except OperationCancelled:
-            # Silently swallow OperationCancelled exceptions because we run unsupervised (i.e.
-            # with ensure_future()). Our caller will also get an OperationCancelled anyway, and
-            # there it will be handled.
-            pass
-        except Exception:
-            self.logger.exception("Unexpected error when processing msg from %s", peer)
-
-    async def _handle_import_block_loop(self):
-        while self.is_running:
-            try:
-                new_block_queue_item = await self.wait(self._new_blocks_to_import.get())
-            except OperationCancelled:
-                break
-            self.logger.debug('found new block to import in queue. sending to handling function')
-            # we await for the import block function here to make sure that we are only importing one block at a time.
-            # later we will add multiprocessing with multiple instances of this object to import in parallel.
-            try:
-                await self.handle_new_block(new_block = new_block_queue_item.new_block,
-                                            chain_address = new_block_queue_item.chain_address,
-                                            peer = new_block_queue_item.peer,
-                                            propogate_to_network = new_block_queue_item.propogate_to_network,
-                                            from_rpc = new_block_queue_item.from_rpc)
-            except OperationCancelled:
-                # Silently swallow OperationCancelled exceptions because we run unsupervised (i.e.
-                # with ensure_future()). Our caller will also get an OperationCancelled anyway, and
-                # there it will be handled.
-                pass
-            except Exception:
-                self.logger.exception("Unexpected error when importing block from %s", new_block_queue_item.peer)
-
+    
     async def does_local_blockchain_database_match_consensus(self):
         try:
             consensus_root_hash, latest_good_timestamp_before_conflict = await self.consensus.get_latest_root_hash_before_conflict()
-            if latest_good_timestamp_before_conflict is None:
-                return True
-            else:
-                return False
         except DatabaseResyncRequired:
             self.logger.debug("Our database has been offline for too long. Need to perform fast sync again. Database should be deleted and program should be restarted. ")
-            #input("Press Enter to continue if you would like to do this, otherwise force close the program.")
-            #self.base_db.destroy_db()
+            input("Press Enter to continue if you would like to do this, otherwise force close the program.")
+            self.base_db.destroy_db()
         
-
+        if latest_good_timestamp_before_conflict is None:
+            return True
+        else:
+            return False
         
     async def sync_block_conflict_with_consensus(self):
         self.logger.debug("sync_block_conflict_with_consensus starting")
@@ -847,8 +814,7 @@ class RegularChainSyncer(FastChainSyncer):
                 #this means none of our root hashes match consensus. We need to delete our entire database and do fast sync again
                 self.logger.debug("Our database has been offline for too long. Need to perform fast sync again. Database should be deleted and program should be restarted. ")
                 input("Press Enter to continue if you would like to do this, otherwise force close the program.")
-                #self.base_db.destroy_db()
-                sys.exit()
+                self.base_db.destroy_db()
                 
             #this is the latest one where we actually do match consensus. Now we re-sync up to the next one
             
@@ -1029,7 +995,11 @@ class RegularChainSyncer(FastChainSyncer):
         
     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
-        if isinstance(cmd, hls.NewBlock):
+        if isinstance(cmd, hls.BlockHeaders):
+            self._handle_block_headers(list(cast(Tuple[BlockHeader], msg)))
+        elif isinstance(cmd, hls.BlockBodies):
+            await self._handle_block_bodies(peer, list(cast(Tuple[hls.BlockBody], msg)))
+        elif isinstance(cmd, hls.NewBlock):
             await self._handle_new_block(peer, cast(Dict[str, Any], msg))
         elif isinstance(cmd, hls.GetBlockHeaders):
             await self._handle_get_block_headers(peer, cast(Dict[str, Any], msg))
@@ -1047,7 +1017,18 @@ class RegularChainSyncer(FastChainSyncer):
             await self._handle_get_chain_segment(peer, cast(Dict[str, Any], msg))
         elif isinstance(cmd, hls.Chain):
             await self._handle_chain(peer, cast(Dict[str, Any], msg))    
+            
+    async def _handle_rpc(self, cmd, msg) -> None:
+        
+        if cmd == 'new_block':
+            await self._handle_new_block_from_rpc(cast(Dict[str, Any], msg))
+                
+            
 
+
+
+                    
+                
                     
 #    async def re_queue_timeout_peers(self):
 #        while not self._sync_complete.is_set() and self.is_running:
@@ -1250,22 +1231,25 @@ class RegularChainSyncer(FastChainSyncer):
                 break
             
             i += 1
-
+        
     
-    async def _handle_new_block(self,peer: HLSPeer,
-                                    msg: Dict[str, Any]) -> None:
-
+    async def _handle_new_block_from_rpc(self,
+                                        msg: Dict[str, Any]) -> None:
+        
+        self.logger.debug("received new block from RPC. Processing")
+        new_block = msg['block']
+        chain_address = msg['chain_address']
+        await self.handle_new_block(new_block, chain_address, from_rpc = True)
+    
+    async def _handle_new_block(self,
+                                        peer: HLSPeer,
+                                        msg: Dict[str, Any]) -> None:
         self.logger.debug('received new block from network. processing')
         new_block = msg['block']
         chain_address = msg['chain_address']
-        queue_item = NewBlockQueueItem(new_block=new_block, chain_address = chain_address, peer=peer)
-        self._new_blocks_to_import.put_nowait(queue_item)
-
-        #await self.handle_new_block(new_block, chain_address, peer = peer)
-
-
-
-    async def handle_new_block(self, new_block: P2PBlock, chain_address: bytes, peer: BasePeer = None, propogate_to_network: bool = True, from_rpc:bool = False):
+        await self.handle_new_block(new_block, chain_address, peer = peer)
+        
+    async def handle_new_block(self, new_block, chain_address, peer = None, propogate_to_network = True, from_rpc = False):
         #TODO. Here we need to validate the block as much as we can. Try to do this in a way where we can run it in another process to speed it up.
         #No point in doing anything if the block is invalid.
         #or to speed up transaction throughput we could just rely on the import to validate.
@@ -1276,15 +1260,15 @@ class RegularChainSyncer(FastChainSyncer):
         This returns true if the block is imported successfully, False otherwise
         If the block comes from RPC, we need to treat it differently. If it is invalid for any reason whatsoever, we just delete.
         '''
-        self.logger.debug("handling new block")
+        
         chain = self.node.get_new_chain()
         required_min_gas_price = self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)
         block_gas_price = int(get_block_average_transaction_gas_price(new_block))
         
         if block_gas_price < required_min_gas_price:
-            self.logger.debug("New block didn't have high enough gas price. block_gas_price = {}, required_min_gas_price = {}".format(block_gas_price, required_min_gas_price))
             return False
-
+        
+        
         #Get the head of the chain that we have in the database
         #need this to see if we are replacing a block
         replacing_block_permitted = False
@@ -1299,7 +1283,6 @@ class RegularChainSyncer(FastChainSyncer):
                 local_block_hash = self.chaindb.get_canonical_block_hash(new_block.header.block_number, chain_address) 
                 if new_block.header.hash == local_block_hash:
                     #we already have this block. Do nothing. Do not propogate if we already have it.
-                    self.logger.debug("We already have this block, doing nothing")
                     return True
                 else:
                     #check to see if we are expecting this block because it is actually the new consensus block
@@ -1308,19 +1291,18 @@ class RegularChainSyncer(FastChainSyncer):
                         block_conflict_choice = BlockConflictChoice(chain_address, new_block.header.block_number, new_block.header.hash)
                         if block_conflict_choice in self._latest_block_conflict_choices_to_change:
                             replacing_block_permitted = True
-                            self.logger.debug("Received a block conflict that we were expecting. going to import and replace ours.")
+                            self.logger.debug("received a block conflict that we were expecting. going to import and replace ours.")
                     if not replacing_block_permitted:
                         #this is a conflict block. Send it to consensus and let the syncer do its thing.
                         if not from_rpc:
-                            self.logger.debug("Received a conflicting block. sending to consensus as block conflict.")
+                            self.logger.debug("received a conflicting block. sending to consensus as block conflict")
                             self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
                         return False
-
+                
         except CanonicalHeadNotFound:
             #we have to download the entire chain
             canonical_head = None
-
-
+           
         #deal with the possibility of missing blocks
         #it is only possible that we are missing previous blocks if this is not the genesis block
         if new_block.header.block_number > 0:
@@ -1336,18 +1318,11 @@ class RegularChainSyncer(FastChainSyncer):
                     self.logger.debug('asking peer for the rest of missing chian')
                     peer.sub_proto.send_get_chain_segment(chain_address, block_number_start, new_block.header.block_number)
                     return False
-
-
+        
         try:
-            if new_block.header.block_number < 200:
-                imported_block = await chain.coro_import_block(new_block,
-                                                   wallet_address = chain_address,
-                                                   allow_replacement = replacing_block_permitted)
-            else:
-                imported_block = chain.import_block_with_profiler(new_block,
-                                                    wallet_address = chain_address,
-                                                    allow_replacement = replacing_block_permitted)
-                sys.exit()
+            imported_block = await chain.coro_import_block(new_block, 
+                                               wallet_address = chain_address,
+                                               allow_replacement = replacing_block_permitted)
         except ReplacingBlocksNotAllowed:
             if not from_rpc:
                 #it has not been validated yet.
@@ -1409,16 +1384,6 @@ class DownloadedBlockPart(NamedTuple):
     part: Union[hls.BlockBody, List[Receipt]]
     unique_key: Union[bytes, Tuple[bytes, bytes]]
 
-
-class NewBlockQueueItem:
-    def __init__(self, new_block: P2PBlock, chain_address: bytes, peer: Union[BasePeer, None]=None, propogate_to_network:bool=True, from_rpc: bool=False):
-        self.new_block = new_block
-        self.chain_address = chain_address
-        self.peer = peer
-        self.propogate_to_network = propogate_to_network
-        self.from_rpc = from_rpc
-
-#NewBlockQueueItem = namedtuple(NewBlockQueueItem, 'new_block chain_address peer propogate_to_network from_rpc')
 
 def _body_key(header: BlockHeader) -> Tuple[bytes, bytes]:
     """Return the unique key of the body for the given header.

@@ -6,13 +6,14 @@ from typing import Callable
 
 @contextlib.contextmanager
 def profiler(filename):
-    
+    print('TESTEST1')
     pr = cProfile.Profile()
     pr.enable()
     try:
         yield
     finally:
         pr.disable()
+        print('TESTEST2')
         pr.dump_stats(filename)
 
 

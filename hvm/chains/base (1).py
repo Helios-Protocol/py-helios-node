@@ -634,8 +634,7 @@ class Chain(BaseChain):
         canonical chain.
         """
         return self.chaindb.get_canonical_block_hash(block_number)
-
-
+    
     #
     # Blockchain Database API
     #
@@ -723,7 +722,7 @@ class Chain(BaseChain):
             transaction = self.chaindb.get_receive_transaction_by_index_and_block_hash(
                 block_hash,
                 index,
-                VM.get_receive_transaction_class(),
+                VM.get_transaction_class(),
             )
 
         if transaction.hash == transaction_hash:
@@ -787,41 +786,28 @@ class Chain(BaseChain):
             transactions.append(tx)
         return transactions, tx_keys
     
-    def create_receivable_transactions(self):
-        tx_keys = self.get_vm().state.account_db.get_receivable_transactions(self.wallet_address)
-        if len(tx_keys) == 0:
+    def create_receivable_signed_transactions(self):
+        transactions, tx_keys = self.get_receivable_transactions(self.wallet_address)
+        
+        if transactions == False:
             return []
-
-        # class TransactionKey(rlp.Serializable):
-        #     fields = [
-        #         ('transaction_hash', hash32),
-        #         ('sender_block_hash', hash32),
-        #     ]
-        #
         receive_transactions = []
-        for tx_key in tx_keys:
+        for i, tx in enumerate(transactions):
             re_tx = self.get_vm().create_receive_transaction(
-                    sender_block_hash = tx_key.sender_block_hash,
-                    send_transaction_hash=tx_key.transaction_hash,
+                    sender_block_hash = tx_keys[i].sender_block_hash, 
+                    transaction=tx, 
+                    v=0,
+                    r=0,
+                    s=0,
                     )
-
+            re_tx = re_tx.get_signed(self.private_key, self.network_id)
             receive_transactions.append(re_tx)
         return receive_transactions
     
     def populate_queue_block_with_receive_tx(self):
-        receive_tx = self.create_receivable_transactions()
+        receive_tx = self.create_receivable_signed_transactions()
         self.add_transactions_to_queue_block(receive_tx)
         return receive_tx
-
-    def get_receive_transactions(self, wallet_address):
-        validate_canonical_address(wallet_address, title="wallet_address")
-        vm = self.get_vm()
-        account_db = vm.state.account_db
-        receivable_tx_keys = account_db.get_receivable_transactions(wallet_address)
-        #todo: finish this function
-        #print(receivable_tx_hashes)
-
-
     #
     # Execution API
     #
@@ -1039,12 +1025,6 @@ class Chain(BaseChain):
             None,
             partial(self.import_block, *args, **kwargs)
         )
-
-    from hvm.utils.profile import profile
-    @profile(sortby='cumulative')
-    def import_block_with_profiler(self, *args, **kwargs):
-        self.import_block(*args, **kwargs)
-
     
     def import_block(self, block: BaseBlock, 
                            perform_validation: bool=True,
@@ -1313,9 +1293,9 @@ class Chain(BaseChain):
             return block
         
         #before adding to unprocessed blocks, make sure the receive transactions are valid
-        # for receive_transaction in block.receive_transactions:
-        #     #there must be at least 1 to get this far
-        #     receive_transaction.validate()
+        for receive_transaction in block.receive_transactions:
+            #there must be at least 1 to get this far
+            receive_transaction.validate()
             
         #now we add it to unprocessed blocks
         self.chaindb.save_block_as_unprocessed(block, wallet_address)
@@ -1471,7 +1451,7 @@ class Chain(BaseChain):
         return mature_stake
     
     
-    def get_immature_receive_balance(self, wallet_address: Union[bytes, type(None)] = None):
+    def get_immature_receive_balance(self, wallet_address = None):
         if wallet_address is None:
             wallet_address = self.wallet_address
         
@@ -1485,9 +1465,8 @@ class Chain(BaseChain):
             return total
         else:
             block_receive_transactions = self.chaindb.get_block_receive_transactions(canonical_head,transaction_class)
-            for receive_transaction in block_receive_transactions:
-                send_transaction = self.get_canonical_transaction(receive_transaction.send_transaction_hash)
-                total += send_transaction.value
+            for transaction in block_receive_transactions:
+                total += transaction.transaction.value
         
         previous_header = canonical_head
         while True:
@@ -1499,10 +1478,9 @@ class Chain(BaseChain):
             if parent_header.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:
                 break
             block_receive_transactions = self.chaindb.get_block_receive_transactions(parent_header,transaction_class)
-            for receive_transaction in block_receive_transactions:
-                send_transaction = self.get_canonical_transaction(receive_transaction.send_transaction_hash)
-                total += send_transaction.value
-
+            for transaction in block_receive_transactions:
+                total += transaction.transaction.value
+            
             previous_header = parent_header
         
         return total
@@ -1552,17 +1530,18 @@ class Chain(BaseChain):
     
     def update_tpc_from_chronological(self, update_min_gas_price = True):
         #start at the newest window, if the same tps stop. but if different tps keep going back
-        self.logger.debug("Updating tpc from chronological")
         current_historical_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
         current_centisecond = int(time.time()/100) * 100
         
         #load this once to find out if its None. If it is None, then the node just started, lets only go back 50 steps
-        #hist_tpc = self.chaindb.load_historical_tx_per_centisecond()
+        hist_tpc = self.chaindb.load_historical_tx_per_centisecond()
         
-
-        end_outer = current_historical_window-60*100
-
-
+        if hist_tpc is None:
+            end_outer = current_historical_window-60*100
+        else:
+            end_outer = current_historical_window-NUMBER_OF_HEAD_HASH_TO_SAVE*TIME_BETWEEN_HEAD_HASH_SAVE
+        
+        
         for historical_window_timestamp in range(current_historical_window,
                                                  end_outer, 
                                                  -TIME_BETWEEN_HEAD_HASH_SAVE):
@@ -1618,8 +1597,8 @@ class Chain(BaseChain):
             hist_tpc_dict = dict(hist_tpc)
             for timestamp, tpc in new_hist_tpc_dict.items():
                 if timestamp not in hist_tpc_dict or hist_tpc_dict[timestamp] != tpc:
-                    #if tpc != 0:
-                    difference_found = True
+                    if tpc != 0:
+                        difference_found = True
                 hist_tpc_dict[timestamp] = tpc
             hist_tpc = list(hist_tpc_dict.items())
             
@@ -1632,16 +1611,13 @@ class Chain(BaseChain):
     
     def get_local_tpc_cap(self):
         #base it on the time it takes to import a block
-
-        from hvm.utils.profile import profile
-
+        
         from hvm.db.backends.memory import MemoryDB
         from hvm import MainnetChain
         from hvm.chains.mainnet import (
             MAINNET_TPC_CAP_TEST_GENESIS_PARAMS,
             MAINNET_TPC_CAP_TEST_GENESIS_STATE,
             TPC_CAP_TEST_GENESIS_PRIVATE_KEY,
-            MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT,
         )
         from hvm.constants import random_private_keys
                 
@@ -1652,16 +1628,22 @@ class Chain(BaseChain):
                                           MAINNET_TPC_CAP_TEST_GENESIS_STATE, 
                                           private_key = TPC_CAP_TEST_GENESIS_PRIVATE_KEY)
         
-        block_to_import = chain.get_vm().get_block_class().from_dict(MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT)
-
-
-        #@profile(sortby='cumulative')
-        def temp():
-            chain.import_block(block_to_import)
+        receiver_privkey = keys.PrivateKey(random_private_keys[0])
+        
+        chain.create_and_sign_transaction_for_queue_block(
+                    gas_price=0x01,
+                    gas=0x0c3500,
+                    to=receiver_privkey.public_key.to_canonical_address(),
+                    value=1000,
+                    data=b"",
+                    v=0,
+                    r=0,
+                    s=0
+                    )
+        
         start_time = time.time()
-        temp()
+        chain.import_current_queue_block()
         duration = time.time()-start_time
-        #self.logger.debug('duration = {} seconds'.format(duration))
         tx_per_centisecond = 100/duration
         return tx_per_centisecond
         
@@ -1686,7 +1668,7 @@ class Chain(BaseChain):
 #        historical_
         
         
-
+        
     
     
 # This class is a work in progress; its main purpose is to define the API of an asyncio-compatible

@@ -33,7 +33,7 @@ from hvm.rlp.receipts import (
 )
 
 
-def make_helios_testnet_receipt(base_header, send_transaction, receive_transaction, computation):
+def make_helios_testnet_receipt(base_header, transaction, computation):
     logs = [
         Log(address, topics, data)
         for address, topics, data
@@ -42,17 +42,24 @@ def make_helios_testnet_receipt(base_header, send_transaction, receive_transacti
 
     gas_remaining = computation.get_gas_remaining()
     gas_refund = computation.get_gas_refund()
-    if receive_transaction is None:
+    if isinstance(transaction, BaseTransaction):
         tx_gas_used = (
-            send_transaction.gas - gas_remaining
+            transaction.gas - gas_remaining
         ) - min(
             gas_refund,
-            (send_transaction.gas - gas_remaining) // 2,
+            (transaction.gas - gas_remaining) // 2,
         )
-
+    else:
+        tx_gas_used = (
+            transaction.transaction.gas - gas_remaining
+        ) - min(
+            gas_refund,
+            (transaction.transaction.gas - gas_remaining) // 2,
+        )
+    #receive transactions dont use gas.
+    if isinstance(transaction, BaseTransaction):
         gas_used = base_header.gas_used + tx_gas_used
     else:
-        # receive transactions dont use gas.
         gas_used = base_header.gas_used
     
     if computation.is_error:

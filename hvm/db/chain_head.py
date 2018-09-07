@@ -11,6 +11,17 @@ from typing import Set, Tuple  # noqa: F401
 from eth_typing import Hash32
 
 import rlp
+from hvm.utils.pickle import (
+    hp_encode,
+    hp_decode,
+)
+
+from hvm.utils.msgpack import (
+    hm_encode,
+    hm_decode,
+)
+
+from hvm.utils.profile import profile
 
 from trie import (
     HexaryTrie,
@@ -383,6 +394,7 @@ class ChainHeadDB():
 #        self.save_historical_root_hashes(historical_roots)
     
     #going to need to optimize this with c code.
+    #@profile(sortby='cumulative')
     def add_block_hash_to_timestamp(self, address, head_hash, timestamp):
         validate_canonical_address(address, title="Wallet Address")
         validate_is_bytes(head_hash, title='Head Hash')
@@ -465,6 +477,8 @@ class ChainHeadDB():
          
         #lets now make sure our root hash is the same as the last historical. It is possible that another thread or chain object
         #has imported a block since this one was initialized.
+
+
         self.save_historical_root_hashes(historical_roots)
         
         self.root_hash = historical_roots[-1][1]
@@ -667,8 +681,13 @@ class ChainHeadDB():
     def save_historical_root_hashes(self, root_hashes):
         #if root_hashes[-1][0] == 1534567000:
         #    exit()
+        if len(root_hashes) > 1000:
+            root_hashes = root_hashes[-1000:]
+
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
-        data = rlp.encode(root_hashes, sedes=CountableList(List([big_endian_int, hash32])))
+        #data = rlp.encode(root_hashes, sedes=CountableList(List([big_endian_int, hash32])))
+        #data = hp_encode(root_hashes)
+        data = hm_encode(root_hashes)
         self.db.set(
             historical_head_root_lookup_key,
             data,
@@ -711,7 +730,9 @@ class ChainHeadDB():
     def get_historical_root_hashes(self, after_timestamp = None):
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
         try:
-            data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=CountableList(List([big_endian_int, hash32])))
+            #data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=CountableList(List([big_endian_int, hash32])))
+            #data = hp_decode(self.db[historical_head_root_lookup_key])
+            data = hm_decode(self.db[historical_head_root_lookup_key])
             if after_timestamp is None:
                 return make_mutable(data)
             else:

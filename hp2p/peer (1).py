@@ -163,7 +163,6 @@ class BasePeer(BaseService):
     listen_port = 30303
     # Will be set upon the successful completion of a P2P handshake.
     sub_proto: protocol.Protocol = None
-    wallet_address = None
 
     def __init__(self,
                  remote: Node,

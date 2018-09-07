@@ -68,6 +68,58 @@ class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
     def __str__(self) -> str:
         return "Block #{b.number}".format(b=self)
 
+    def to_dict(self):
+        block = {}
+        header = {}
+
+        parameter_names = list(dict(self.header._meta.fields).keys())
+        for parameter_name in parameter_names:
+            header[parameter_name] = getattr(self.header, parameter_name)
+
+        transactions = []
+        for tx in self.transactions:
+            transaction = {}
+            parameter_names = list(dict(tx._meta.fields).keys())
+            for parameter_name in parameter_names:
+                transaction[parameter_name] = getattr(tx, parameter_name)
+            transactions.append(transaction)
+
+        receive_transactions = []
+        for tx in self.receive_transactions:
+            transaction = {}
+            parameter_names = list(dict(tx._meta.fields).keys())
+            for parameter_name in parameter_names:
+                transaction[parameter_name] = getattr(tx, parameter_name)
+            receive_transactions.append(transaction)
+
+        block['header'] = header
+        block['transactions'] = transactions
+        block['receive_transactions'] = receive_transactions
+
+        return block
+
+    @classmethod
+    def from_dict(cls, block_as_dict):
+        transaction_class = cls.transaction_class
+        receive_transaction_class = cls.receive_transaction_class
+        header_class = cls.header_class
+        #block_class = cls.__class__()
+
+        header = header_class(**block_as_dict['header'])
+
+        transactions = []
+        for tx in block_as_dict['transactions']:
+            transaction = transaction_class(**tx)
+            transactions.append(transaction)
+
+        receive_transactions = []
+        for tx in block_as_dict['receive_transactions']:
+            transaction = receive_transaction_class(**tx)
+            receive_transactions.append(transaction)
+
+        new_block = cls(header = header, transactions = transactions, receive_transactions = receive_transactions)
+
+        return new_block
 
 class BaseQueueBlock(BaseBlock):
     #variables to avoid python loops

@@ -421,10 +421,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
     def register_peer(self, peer: BasePeer) -> None:
         #self.peer_root_hash_timestamps[peer.wallet_address] = [new_peer_stake, new_root_hash_timestamps]
         pass
-
-    ###############
-    ## Loopers
-    ###############
+        
     async def _handle_msg_loop(self) -> None:
         while self.is_running:
             try:
@@ -438,7 +435,6 @@ class Consensus(BaseService, PeerPoolSubscriber):
             #self.logger.debug("received cmd, msg {}, {}".format(cmd, msg))
             asyncio.ensure_future(self.handle_msg(peer, cmd, msg))
 
-
     async def handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                          msg: protocol._DecodedMsgType) -> None:
         try:
@@ -451,29 +447,22 @@ class Consensus(BaseService, PeerPoolSubscriber):
         except Exception:
             self.logger.exception("Unexpected error when processing msg from %s", peer)
 
-
-    async def _sync_min_gas_price_system_loop(self):
-        while self.is_running:
-            try:
-                await self.sync_min_gas_price_system()
-            except Exception as e:
-                self.logger.exception("Unexpected error when syncing minimum gas system. Error: {}".format(e))
-
-            await asyncio.sleep(MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD)
-
     async def _run(self) -> None:
         asyncio.ensure_future(self._handle_msg_loop())
         if self.chain_config.node_type == 4:
             self.logger.debug('re-initializing min gas system')
             self.chain.re_initialize_historical_minimum_gas_price_at_genesis()
             
-        asyncio.ensure_future(self._sync_min_gas_price_system_loop())
+        test = asyncio.ensure_future(self.sync_min_gas_price_system())
         
         #first lets make sure we add our own root_hash_timestamps
         with self.subscribe(self.peer_pool):
             #await test
             while True:
-
+                try:
+                    self.logger.debug('result from min gas price system syncer = {}'.format(test.exception()))
+                except asyncio.InvalidStateError:
+                    pass
                 
                 if self.coro_is_ready.is_set():
                     ready = 'true'
@@ -500,12 +489,12 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 self.logger.debug('get_correct_block_conflict_hashes_where_we_differ_from_consensus = {}'.format(blocks_to_change))
 #                if blocks_to_change is not None:
 #                    self.logger.debug('get_peers_who_have_conflict_block {}'.format(self.get_peers_who_have_conflict_block(blocks_to_change[0])))
-                #test_1 = self.chaindb.load_historical_network_tpc_capability()
-                #test_2 = self.chaindb.load_historical_minimum_gas_price()
-                #test_3 = self.chaindb.load_historical_tx_per_centisecond()
-                #self.logger.debug("net_tpc_cap = {}".format(test_1))
-                #self.logger.debug("min_gas_price = {}".format(test_2))
-                #self.logger.debug("tpc = {}".format(test_3))
+#                test_1 = self.chaindb.load_historical_network_tpc_capability()
+#                test_2 = self.chaindb.load_historical_minimum_gas_price()
+#                test_3 = self.chaindb.load_historical_tx_per_centisecond()
+#                self.logger.debug("net_tpc_cap = {}".format(test_1))
+#                self.logger.debug("min_gas_price = {}".format(test_2))
+#                self.logger.debug("tpc = {}".format(test_3))
                 
                 #here we shouldnt pause because if it returned early than thats because we got some data from peers. we want to process data asap.
                 #self.populate_peer_consensus()
@@ -522,9 +511,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 #yeild control to other coroutines after each loop
                 #await asyncio.sleep(0)
             
-
-
-
+                
     async def _cleanup(self) -> None:
         # We don't need to cancel() anything, but we yield control just so that the coroutines we
         # run in the background notice the cancel token has been triggered and return.
@@ -712,37 +699,35 @@ class Consensus(BaseService, PeerPoolSubscriber):
             return average_network_tpc_cap
         else:
             return None
-
-
-
-
+            
     async def sync_min_gas_price_system(self):
         '''
         Makes sure our system for keeping track of minimum allowed gas price is in sync with the network
         This is used to throttle the transaction rate when it reaches the limit that the network can handle.
         '''
-        if self.chaindb.min_gas_system_initialization_required():
-            self.coro_min_gas_system_ready.clear()
-        else:
-            self.coro_min_gas_system_ready.set()
-
-
-        if self.coro_min_gas_system_ready.is_set():
-            self.logger.debug("sync_min_gas_price_system, min_gas_system_ready = True")
-            average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
-            if average_network_tpc_cap is not None:
-                self.chain.update_current_network_tpc_capability(average_network_tpc_cap, update_min_gas_price = True)
-
-            #TODO. here we just ask for the last centisecond.
-            for peer in self.peer_pool.peers:
-                peer.sub_proto.send_get_min_gas_parameters(num_centiseconds_from_now=0)
-
-        else:
-            self.logger.debug("sync_min_gas_price_system, min_gas_system_ready = False")
-            #here we just ask for the last 50 centiseconds.
-            await self.initialize_min_gas_price_from_bootnode_if_required()
-
-
+        while True:
+            if self.chaindb.min_gas_system_initialization_required():
+                self.coro_min_gas_system_ready.clear()
+            else:
+                self.coro_min_gas_system_ready.set()
+            
+                    
+            if self.coro_min_gas_system_ready.is_set():
+                self.logger.debug("sync_min_gas_price_system, min_gas_system_ready = True")
+                average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
+                if average_network_tpc_cap is not None:
+                    self.chain.update_current_network_tpc_capability(average_network_tpc_cap, update_min_gas_price = True)
+                
+                #TODO. here we just ask for the last centisecond.
+                for peer in self.peer_pool.peers:
+                    peer.sub_proto.send_get_min_gas_parameters(num_centiseconds_from_now=0)
+                
+            else:
+                self.logger.debug("sync_min_gas_price_system, min_gas_system_ready = False")
+                #here we just ask for the last 50 centiseconds.
+                await self.initialize_min_gas_price_from_bootnode_if_required()
+            await asyncio.sleep(MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD)
+        
     async def initialize_min_gas_price_from_bootnode_if_required(self):
         if not self.coro_min_gas_system_ready.is_set():
             for boot_node in self.bootstrap_nodes:

@@ -1349,7 +1349,7 @@ class ChainDB(BaseChainDB):
         if not len(historical_minimum_allowed_gas) >= min_centisecond_time_between_change_in_minimum_gas:
             raise HistoricalMinGasPriceError('historical_minimum_allowed_gas too short. it is a lenght of {}, but should be a length of {}'.format(len(historical_minimum_allowed_gas),min_centisecond_time_between_change_in_minimum_gas))
         if not len(historical_tx_per_centisecond) > average_centisecond_delay+average_centisecond_window_length:
-            raise HistoricalMinGasPriceError('historical_tx_per_centisecond too short. it is a lenght of {}, but should be a length of {}'.format(len(historical_tx_per_centisecond),average_centisecond_delay+average_centisecond_window_length))
+            raise HistoricalMinGasPriceError('historical_tx_per_centisecond too short. it is a length of {}, but should be a length of {}'.format(len(historical_tx_per_centisecond),average_centisecond_delay+average_centisecond_window_length))
 
     
         if not are_items_in_list_equal(historical_minimum_allowed_gas[-1*min_centisecond_time_between_change_in_minimum_gas:]):

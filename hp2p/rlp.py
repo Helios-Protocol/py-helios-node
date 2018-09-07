@@ -22,10 +22,7 @@ class P2PSendTransaction(rlp.Serializable):
 class P2PReceiveTransaction(rlp.Serializable):
     fields =[
         ('sender_block_hash', hash32),
-        ('transaction', P2PSendTransaction),
-        ('v', sedes.big_endian_int),
-        ('r', sedes.big_endian_int),
-        ('s', sedes.big_endian_int),
+        ('send_transaction_hash', hash32),
     ]
 
 class P2PBlock(rlp.Serializable):

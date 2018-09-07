@@ -25,6 +25,8 @@ import time
 class HeliosTestnetBlock(BaseBlock):
     transaction_class = HeliosTestnetTransaction
     receive_transaction_class = HeliosTestnetReceiveTransaction
+    header_class = BlockHeader
+
     fields = [
         ('header', BlockHeader),
         ('transactions', CountableList(transaction_class)),

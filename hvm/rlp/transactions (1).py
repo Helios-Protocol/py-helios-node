@@ -144,8 +144,6 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         return hash(self.hash)
 
 
-
-
 class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
 
     @classmethod
@@ -156,6 +154,20 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
     def hash(self) -> bytes:
         return keccak(rlp.encode(self))
 
+    @property
+    def sender(self) -> Address:
+        """
+        Convenience property for the return value of `get_sender`
+        """
+        return self.transaction.get_sender()
+    
+
+    @property
+    def receiver(self) -> Address:
+        """
+        Convenience property for the return value of `get_sender`
+        """
+        return self.get_receiver()
 
     # +-------------------------------------------------------------+
     # | API that must be implemented by all Transaction subclasses. |
@@ -172,11 +184,40 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         #removing this because it is unnessisary
         #self.check_signature_validity()
         #make sure the send transaction is valid too.
-        print("need to handle receive transaction validation elsewhere")
-        # self.transaction.validate()
-        # if self.transaction.to != self.receiver:
-        #     raise ValidationError("Receive transaction is trying to receive a transaction meant for another chain")
+        self.transaction.validate()
+        if self.transaction.to != self.receiver:
+            raise ValidationError("Receive transaction is trying to receive a transaction meant for another chain")
 
+    #
+    # Signature and Sender
+    #
+    @property
+    def is_signature_valid(self) -> bool:
+        try:
+            self.check_signature_validity()
+        except ValidationError:
+            return False
+        else:
+            return True
+
+    @abstractmethod
+    def check_signature_validity(self) -> None:
+        """
+        Checks signature validity, raising a ValidationError if the signature
+        is invalid.
+        """
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def get_receiver(self) -> Address:
+        """
+        Get the 20-byte address which received this transaction.
+        """
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def get_signed(self, private_key, chain_id) -> 'BaseReceiveTransaction':
+        raise NotImplementedError("Must be implemented by subclasses")
 
     def __eq__(self, other):
         return self.hash == other.hash

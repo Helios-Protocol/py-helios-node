@@ -1,6 +1,6 @@
 
 import rlp
-
+from functools import lru_cache
 from eth_keys import keys
 from eth_keys.exceptions import (
     BadSignature,
@@ -62,7 +62,7 @@ def create_transaction_signature(transaction: Union[BaseTransaction, BaseReceive
     return v, r, s
 
 
-def validate_transaction_signature(transaction: Union[BaseTransaction, BaseReceiveTransaction]) -> None:
+def validate_transaction_signature(transaction: Union[BaseTransaction, BaseReceiveTransaction], return_sender = False) -> None:
     if is_eip_155_signed_transaction(transaction):
         v = extract_signature_v(transaction.v)
     else:
@@ -86,20 +86,18 @@ def validate_transaction_signature(transaction: Union[BaseTransaction, BaseRecei
     if not signature.verify_msg(message, public_key):
         raise ValidationError("Invalid Signature")
 
+    if return_sender:
+        return public_key.to_canonical_address()
 
+#@lru_cache(maxsize=32)
 def extract_transaction_sender(transaction: Union[BaseTransaction, BaseReceiveTransaction]) -> bytes:
     if is_eip_155_signed_transaction(transaction):
-        if is_even(transaction.v):
-            v = 28
-        else:
-            v = 27
+        v = extract_signature_v(transaction.v)
     else:
         v = transaction.v
 
-    r, s = transaction.r, transaction.s
-
     canonical_v = v - 27
-    vrs = (canonical_v, r, s)
+    vrs = (canonical_v, transaction.r, transaction.s)
     signature = keys.Signature(vrs=vrs)
     
     transaction_parts = rlp.decode(rlp.encode(transaction))
