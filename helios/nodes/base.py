@@ -98,7 +98,6 @@ class Node(BaseService):
             return EmptyService()
 
     async def _run(self):
-        self.logger.debug("test")
         self._ipc_server = self.make_ipc_server()
         
         # The RPC server needs its own thread, because it provides a synchcronous

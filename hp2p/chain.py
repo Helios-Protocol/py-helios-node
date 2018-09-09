@@ -996,7 +996,9 @@ class RegularChainSyncer(FastChainSyncer):
 #        if len(new_chronological_blocks) > 0:
 #            self.logger.debug("AAAAAAAAAAAA importing chronological window  {}".format(window_start_timestamp))
 
-        self.chain.import_chronological_block_window(new_chronological_blocks, 
+        chain = self.node.get_new_chain()
+
+        chain.import_chronological_block_window(new_chronological_blocks,
                                                          window_start_timestamp = window_start_timestamp,
                                                          save_block_head_hash_timestamp = True, 
                                                          allow_unprocessed=True)
@@ -1018,7 +1020,7 @@ class RegularChainSyncer(FastChainSyncer):
 #                self.chain_head_db.save_single_historical_root_hash(local_head_root_hash, window_start_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE)
 #        else:
         #we need to chainheaddb because the database was modified by the chain process.
-        self.chain_head_db.load_saved_root_hash()
+        #self.chain_head_db.load_saved_root_hash()
         local_head_root_hash = self.chain_head_db.get_historical_root_hash(self.current_syncing_root_timestamp)
 #        full_root_hash_list = self.chain_head_db.get_historical_root_hashes(after_timestamp = self.current_syncing_root_timestamp-10000)
 #        self.logger.debug("here are the root hashes around that time {}".format(full_root_hash_list))

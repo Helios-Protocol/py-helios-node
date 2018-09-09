@@ -48,10 +48,10 @@ def extract_signature_v(v: int) -> int:
 
 #require chain id
 def create_transaction_signature(transaction: Union[BaseTransaction, BaseReceiveTransaction], private_key, chain_id):
-    transaction_parts = rlp.decode(rlp.encode(transaction))
-    transaction_parts_for_signature = (
-        transaction_parts[:-3] + [int_to_big_endian(chain_id), b'', b'']
-    )
+    transaction_parts = rlp.decode(rlp.encode(transaction), use_list = True)
+
+    transaction_parts_for_signature = transaction_parts[:-3] + [int_to_big_endian(chain_id), b'', b'']
+
     message = rlp.encode(transaction_parts_for_signature)
     signature = private_key.sign_msg(message)
 
@@ -72,7 +72,7 @@ def validate_transaction_signature(transaction: Union[BaseTransaction, BaseRecei
     vrs = (canonical_v, transaction.r, transaction.s)
     signature = keys.Signature(vrs=vrs)
     
-    transaction_parts = rlp.decode(rlp.encode(transaction))
+    transaction_parts = rlp.decode(rlp.encode(transaction), use_list = True)
     transaction_parts_for_signature = (
         transaction_parts[:-3] + [int_to_big_endian(transaction.chain_id), b'', b'']
     )

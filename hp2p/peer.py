@@ -8,6 +8,7 @@ import struct
 import time
 import json
 import secrets
+import sys
 
 from abc import (
     ABC,
@@ -323,6 +324,7 @@ class BasePeer(BaseService):
         self.close()
 
     async def _run(self):
+
         while True:
             try:
                 cmd, msg = await self.read_msg()

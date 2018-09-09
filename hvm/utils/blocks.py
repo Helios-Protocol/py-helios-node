@@ -44,7 +44,7 @@ def extract_signature_v(v: int) -> int:
 
 
 def create_block_header_signature(block_header: BaseBlockHeader, private_key, chain_id):
-    transaction_parts = rlp.decode(rlp.encode(block_header))
+    transaction_parts = rlp.decode(rlp.encode(block_header), use_list = True)
     transaction_parts_for_signature = (
         transaction_parts[:-3] + [int_to_big_endian(chain_id), b'', b'']
     )
@@ -69,7 +69,7 @@ def validate_block_header_signature(block_header: BaseBlockHeader) -> None:
     vrs = (canonical_v, block_header.r, block_header.s)
     signature = keys.Signature(vrs=vrs)
      
-    transaction_parts = rlp.decode(rlp.encode(block_header))
+    transaction_parts = rlp.decode(rlp.encode(block_header), use_list = True)
     transaction_parts_for_signature = (
         transaction_parts[:-3] + [int_to_big_endian(block_header.chain_id), b'', b'']
     )
@@ -99,7 +99,7 @@ def extract_block_header_sender(block_header: BaseBlockHeader) -> bytes:
     vrs = (canonical_v, r, s)
     signature = keys.Signature(vrs=vrs)
     
-    transaction_parts = rlp.decode(rlp.encode(block_header))
+    transaction_parts = rlp.decode(rlp.encode(block_header), use_list = True)
     transaction_parts_for_signature = (
         transaction_parts[:-3] + [int_to_big_endian(block_header.chain_id), b'', b'']
     )

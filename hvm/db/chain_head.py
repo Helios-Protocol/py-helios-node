@@ -685,9 +685,9 @@ class ChainHeadDB():
             root_hashes = root_hashes[-1000:]
 
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
-        #data = rlp.encode(root_hashes, sedes=CountableList(List([big_endian_int, hash32])))
+        data = rlp.encode(root_hashes, sedes=CountableList(List([big_endian_int, hash32])))
         #data = hp_encode(root_hashes)
-        data = hm_encode(root_hashes)
+        #data = hm_encode(root_hashes)
         self.db.set(
             historical_head_root_lookup_key,
             data,
@@ -730,9 +730,9 @@ class ChainHeadDB():
     def get_historical_root_hashes(self, after_timestamp = None):
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
         try:
-            #data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=CountableList(List([big_endian_int, hash32])))
+            data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=CountableList(List([big_endian_int, hash32])))
             #data = hp_decode(self.db[historical_head_root_lookup_key])
-            data = hm_decode(self.db[historical_head_root_lookup_key])
+            #data = hm_decode(self.db[historical_head_root_lookup_key])
             if after_timestamp is None:
                 return make_mutable(data)
             else:

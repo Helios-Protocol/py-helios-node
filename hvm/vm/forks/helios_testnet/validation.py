@@ -38,7 +38,8 @@ def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransa
         #this is just a normal send transaction
         if send_transaction.sender != caller_chain_address:
             raise ValidationError(
-                'Send transaction sender doesnt match the caller_chain_address. If sending a tx, it must be sent by the sender chain address')
+                'Send transaction sender doesnt match the caller_chain_address. If sending a tx, it must be sent by the sender chain address. Transaction sender = {}, caller_chain_address = {}'
+                    .format(send_transaction.sender, caller_chain_address))
 
         gas_cost = send_transaction.gas * send_transaction.gas_price
         sender_balance = account_db.get_balance(send_transaction.sender)

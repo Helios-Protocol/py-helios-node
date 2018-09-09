@@ -430,7 +430,7 @@ class AccountDB(BaseAccountDB):
             receivable_transactions = (),
             block_conflicts = (),
         )
-        account_hashable_encoded = rlp.encode(account_hashable)
+        account_hashable_encoded = rlp.encode(account_hashable, sedes=Account)
         return keccak(account_hashable_encoded)
     
     #
@@ -440,16 +440,16 @@ class AccountDB(BaseAccountDB):
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
         rlp_account = self._journaldb.get(account_lookup_key, b'')
         if rlp_account:
-            #account = rlp.decode(rlp_account, sedes=Account)
-            account = hm_decode(rlp_account, sedes_classes=[Account])
+            account = rlp.decode(rlp_account, sedes=Account)
+            #account = hm_decode(rlp_account, sedes_classes=[Account])
         else:
             account = Account()
         return account
 
 
     def _set_account(self, address, account):
-        #encoded_account = rlp.encode(account, sedes=Account)
-        encoded_account = hm_encode(account)
+        encoded_account = rlp.encode(account, sedes=Account)
+        #encoded_account = hm_encode(account)
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
         self._journaldb[account_lookup_key] = encoded_account
         

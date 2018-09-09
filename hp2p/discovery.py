@@ -319,6 +319,7 @@ class PreferredNodeDiscoveryProtocol(DiscoveryProtocol):
 
 class DiscoveryService(BaseService):
     logger = logging.getLogger("hp2p.discovery.DiscoveryService")
+
     _lookup_running = asyncio.Lock()
     _last_lookup: float = 0
     _lookup_interval: int = 30
@@ -329,9 +330,12 @@ class DiscoveryService(BaseService):
         self.peer_pool = peer_pool
 
     async def _run(self) -> None:
+        self.logger.debug("starting discovery service")
+
         connect_loop_sleep = 2
         asyncio.ensure_future(self.proto.bootstrap())
         while True:
+            self.logger.debug("Number of connected peers in peer pool = {}".format(len(self.peer_pool)))
             await self.maybe_connect_to_more_peers()
             await self.wait(asyncio.sleep(connect_loop_sleep))
 

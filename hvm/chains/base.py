@@ -361,6 +361,7 @@ class Chain(BaseChain):
         self.__init__(self.db, self.wallet_address, self.private_key)
         
     def set_new_wallet_address(self, wallet_address: Address, private_key: BaseKey=None):
+        self.logger.debug('setting new wallet address')
         self.wallet_address = wallet_address
         self.private_key = private_key
         self.reinitialize()
@@ -883,7 +884,6 @@ class Chain(BaseChain):
         if wallet_address is not None:
             #we need to re-initialize the chain for the new wallet address.
             if wallet_address != self.wallet_address:
-                self.logger.debug("setting new wallet address for chain")
                 self.set_new_wallet_address(wallet_address = wallet_address)
                 
         self.get_vm()
@@ -1062,7 +1062,6 @@ class Chain(BaseChain):
         if wallet_address is not None:
             #we need to re-initialize the chain for the new wallet address.
             if wallet_address != self.wallet_address:
-                self.logger.debug("setting new wallet address for chain")
                 self.set_new_wallet_address(wallet_address = wallet_address)
                 
         journal_enabled = False

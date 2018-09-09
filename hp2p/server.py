@@ -267,12 +267,8 @@ class Server(BaseService):
             
         
     async def _run(self) -> None:        
-        self.logger.info("Running server...")
-#        print('testtest')
-#        print(self.chain_head_db.get_root_hash())
-#        print(self.chain_head_db.get_root_hash(1000))
-#        exit()
-        
+        self.logger.debug("Running server...")
+
         external_ip = '0.0.0.0'
         if DO_UPNP:
             upnp_dev = await self._discover_upnp_device()
@@ -301,6 +297,8 @@ class Server(BaseService):
             asyncio.ensure_future(self.refresh_nat_portmap())
             
         peer_pool_task = asyncio.ensure_future(self.peer_pool.run())
+
+
         asyncio.ensure_future(self.discovery.run())
         asyncio.ensure_future(self.consensus.run())
         asyncio.ensure_future(self.syncer.run())

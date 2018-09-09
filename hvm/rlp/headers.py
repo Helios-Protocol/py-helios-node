@@ -164,7 +164,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
     @property
     def hash(self) -> Hash32:
         if self._hash is None:
-            self._hash = keccak(rlp.encode(self))
+            self._hash = keccak(rlp.encode(self, sedes = self.__class__))
         return self._hash
 
     @property

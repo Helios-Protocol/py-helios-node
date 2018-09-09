@@ -41,9 +41,10 @@ from helios.utils.ipc import (
     kill_process_gracefully,
 )
 from helios.utils.logging import (
-    setup_trinity_stdout_logging,
+    setup_trinity_stderr_logging,
     setup_trinity_file_and_queue_logging,
     with_queued_logging,
+    setup_log_levels,
 )
 from helios.utils.mp import (
     ctx,
@@ -82,19 +83,20 @@ TRINITY_AMBIGIOUS_FILESYSTEM_INFO = (
     "   Make sure all paths are pre-initialized as Trinity won't attempt\n"
     "   to create directories outside of the helios root directory\n"
 )
-class Whitelist(logging.Filter):
-    def __init__(self, *whitelist):
-        self.whitelist = [logging.Filter(name) for name in whitelist]
-    
-    def filter(self, record):
-        return any(f.filter(record) for f in self.whitelist)
-    
+
+
+
 #python main.py --instance 1 --filter_log hp2p.chain.ChainSyncer --rand_db 1
 def main(instance_number = None) -> None:
     args = parser.parse_args()
     
     log_level = getattr(logging, args.log_level.upper())
-    #log_level = getattr(logging, 'INFO')
+    #print('log level = ',log_level)
+    stderr_log_level = logging.DEBUG
+    file_log_level = logging.DEBUG
+
+
+
 
     if args.network_id not in PRECONFIGURED_NETWORKS:
         raise NotImplementedError(
@@ -102,31 +104,39 @@ def main(instance_number = None) -> None:
             "networks are supported.".format(args.network_id)
         )
 
-    logger, formatter, handler_stream = setup_trinity_stdout_logging(log_level)
+    #For errors to show, they must pass through stderr_log_level, and the log levels given in setup_log_levels
+    stderr_logger, formatter, handler_stream = setup_trinity_stderr_logging(stderr_log_level)
 
     #print this to see all of the loggers to choose from. have to call it after they are initialized
     #print(logging.Logger.manager.loggerDict)
-    filter_list = []
-    filter_list.append('hp2p.chain.ChainSyncer')
-    #filter_list.append('hvm.db.account.AccountDB')
-    filter_list.append('hvm.chain.chain.Chain')
-    filter_list.append('hvm.db.chain_head.ChainHeadDB')
-    filter_list.append('hvm.db.chain_db.ChainDB')
-    filter_list.append('hp2p.consensus.Consensus')
-    #filter_list.append('hp2p.kademlia.KademliaProtocol')
-    #filter_list.append('hp2p.discovery.DiscoveryProtocol')
-   
-    
-    
-    #filter_list.append('hp2p.consensus.Consensus')
-    if args.filter_log != None:
-        #handler_stream.addFilter(logging.Filter('hp2p.chain.ChainSyncer'))
-        #handler_stream.addFilter(logging.Filter(args.filter_log), logging.Filter('hvm.chain.chain.Chain'))
-        #handler_stream.addFilter(Whitelist(args.filter_log, 'hp2p.chain.ChainSyncer', 'hvm.chain.chain.Chain'))
-        filter_list.append(args.filter_log)
-    
-    handler_stream.addFilter(Whitelist(*filter_list))
-        
+    log_levels = {}
+    log_levels['default'] = logging.INFO
+
+
+    log_levels['hvm'] = logging.INFO  #sets all of hvm
+    log_levels['hvm.db.account.AccountDB'] = logging.INFO
+    log_levels['hvm.chain.chain.Chain'] = logging.DEBUG
+    log_levels['hvm.db.chain_head.ChainHeadDB'] = logging.INFO
+    log_levels['hvm.db.chain_db.ChainDB'] = logging.INFO
+
+    log_levels['hp2p.chain.ChainSyncer'] = logging.DEBUG
+    log_levels['hp2p.peer'] = logging.INFO
+    log_levels['hp2p.peer.PeerPool'] = logging.INFO
+    log_levels['hp2p.consensus.Consensus'] = logging.DEBUG
+    log_levels['hp2p.kademlia.KademliaProtocol'] = logging.INFO
+    log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.DEBUG
+    log_levels['hp2p.discovery.DiscoveryService'] = logging.DEBUG
+    log_levels['hp2p.server.Server'] = logging.INFO
+
+    log_levels['hp2p.hls'] = logging.INFO
+
+
+
+
+    setup_log_levels(log_levels = log_levels)
+
+
+
     if args.rand_db == 1:
         os.environ["GENERATE_RANDOM_DATABASE"] = 'true'
     if args.instance is not None:
@@ -140,10 +150,12 @@ def main(instance_number = None) -> None:
         os.environ["INSTANCE_NUMBER"] = str(instance_number)
         
     #args.data_dir = '/d:/Google Drive/forex/blockchain coding/Helios/prototype desktop/py-hvm/helios/data/'
+
+
     try:
         chain_config = ChainConfig.from_parser_args(args)
     except AmbigiousFileSystem:
-        exit_because_ambigious_filesystem(logger)
+        exit_because_ambigious_filesystem(stderr_logger)
         
         
     if not is_data_dir_initialized(chain_config):
@@ -153,7 +165,7 @@ def main(instance_number = None) -> None:
         try:
             initialize_data_dir(chain_config)
         except AmbigiousFileSystem:
-            exit_because_ambigious_filesystem(logger)
+            exit_because_ambigious_filesystem(stderr_logger)
         except MissingPath as e:
             msg = (
                 "\n"
@@ -162,16 +174,24 @@ def main(instance_number = None) -> None:
                 "Either manually create the path or ensure you are using a data directory\n"
                 "inside the XDG_TRINITY_ROOT path"
             ).format(e.path)
-            logger.error(msg)
+            stderr_logger.error(msg)
             sys.exit(1)
 
+
     logger, log_queue, listener = setup_trinity_file_and_queue_logging(
-        logger,
+        stderr_logger,
         formatter,
         handler_stream,
         chain_config,
-        log_level
+        file_log_level,
     )
+
+
+    min_configured_log_level = min(
+        stderr_log_level,
+        file_log_level
+    )
+
     
 #    print('testtest')
 #    for handler in logging.root.handlers:
@@ -190,7 +210,8 @@ def main(instance_number = None) -> None:
 
     extra_kwargs = {
         'log_queue': log_queue,
-        'log_level': log_level,
+        'log_level': min_configured_log_level,
+        'log_levels': log_levels,
         'profile': args.profile,
     }
 
@@ -219,7 +240,8 @@ def main(instance_number = None) -> None:
 
     networking_process.start()
     logger.info("Started networking process (pid=%d)", networking_process.pid)
-    
+
+
     try:
         if args.subcommand == 'console':
             console(chain_config.jsonrpc_ipc_path, use_ipython=not args.vanilla_shell)
@@ -276,6 +298,7 @@ async def exit_on_signal(service_to_exit: BaseService) -> None:
 @setup_cprofiler('launch_node')
 @with_queued_logging
 def launch_node(chain_config: ChainConfig) -> None:
+
     display_launch_logs(chain_config)
     
     NodeClass = chain_config.node_class

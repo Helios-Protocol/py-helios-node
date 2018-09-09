@@ -1048,7 +1048,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
             try:
                 return list(SortedDict(self.root_hash_timestamps_statistics).keys())[-1]
             except TypeError:
-                self.logger.debug('TESTEST {}'.format(self.root_hash_timestamps_statistics))
+                pass
         else:
             return None
         
