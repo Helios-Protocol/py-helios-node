@@ -73,6 +73,16 @@ trinity_parser.add_argument(
     ),
 )
 
+trinity_parser.add_argument(
+    '--rpc_port',
+    type=int,
+    required=False,
+    default=30304,
+    help=(
+        "Port on which helios should listen for incoming RPC JSON connections. Default: 8545"
+    ),
+)
+
 
 #
 # Logging configuration

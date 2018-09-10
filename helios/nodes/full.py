@@ -21,6 +21,7 @@ class FullNode(Node):
         self._network_id = chain_config.network_id
         self._node_key = chain_config.nodekey
         self._node_port = chain_config.port
+        self._rpc_port = chain_config.rpc_port
         self._max_peers = chain_config.max_peers
         
         #self.save_node_address_to_local_peer_pool_file()
@@ -74,8 +75,6 @@ class FullNode(Node):
             manager = self.db_manager
             #for development and testing we will use a list of hardcoded peer nodes
             self._p2p_server = Server(
-                self._node_key,
-                self._node_port,
                 self,
                 manager.get_chain(),  # type: ignore
                 manager.get_chaindb(),  # type: ignore

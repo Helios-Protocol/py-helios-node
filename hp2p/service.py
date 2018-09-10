@@ -12,10 +12,9 @@ class BaseService(ABC):
     logger: logging.Logger = None
     # Number of seconds cancel() will wait for run() to finish.
     _wait_until_finished_timeout = 5
+    _logger = None
 
     def __init__(self, token: CancelToken=None) -> None:
-        if self.logger is None:
-            self.logger = logging.getLogger(self.__module__ + '.' + self.__class__.__name__)
 
         self._run_lock = asyncio.Lock()
         self.cleaned_up = asyncio.Event()
@@ -25,6 +24,13 @@ class BaseService(ABC):
             self.cancel_token = base_token
         else:
             self.cancel_token = base_token.chain(token)
+
+    @property
+    def logger(self):
+        if self._logger is None:
+            self._logger = logging.getLogger(self.__module__ + '.' + self.__class__.__name__)
+        return self._logger
+
 
     async def wait(
             self, awaitable: Awaitable, token: CancelToken = None, timeout: float = None) -> Any:

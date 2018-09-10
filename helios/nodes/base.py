@@ -37,6 +37,7 @@ from helios.rpc.ipc import (
 from helios.config import (
     ChainConfig,
 )
+from helios.rpc.http_server import run as run_http_rpc_server
 
 
 class Node(BaseService):

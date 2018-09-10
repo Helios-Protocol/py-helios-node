@@ -80,6 +80,7 @@ class ChainConfig:
                  nodekey: PrivateKey=None,
                  sync_mode: str=SYNC_FULL,
                  port: int=30303,
+                 rpc_port: int = 30304,
                  preferred_nodes: Tuple[KademliaNode, ...]=None,
                  bootstrap_nodes: Tuple[KademliaNode, ...]=None,
                  node_type = 1,
@@ -88,6 +89,7 @@ class ChainConfig:
         self.max_peers = max_peers
         self.sync_mode = sync_mode
         self.port = port
+        self.rpc_port = rpc_port
         self.node_type = int(node_type)
 
         self._preferred_nodes = preferred_nodes

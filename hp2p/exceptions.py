@@ -1,3 +1,7 @@
+from typing import (
+    Any
+)
+
 class BaseP2PError(Exception):
     """
     The base class for all hp2p errors.
@@ -141,3 +145,11 @@ class NoConnectedPeers(BaseP2PError):
     Raised when we are not connected to any peers.
     """
     pass
+
+class NoInternalAddressMatchesDevice(BaseP2PError):
+    """
+    Raised when no internal IP address matches the UPnP device that is being configured.
+    """
+    def __init__(self, *args: Any, device_hostname: str=None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.device_hostname = device_hostname

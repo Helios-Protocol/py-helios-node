@@ -903,6 +903,16 @@ class RegularChainSyncer(FastChainSyncer):
                     self.logger.debug('sync_chronological_blocks timeout')
                     self.register_peer(peer)
                     continue
+                except LocalRootHashNotAsExpected:
+                    self.register_peer(peer)
+                    continue
+                except Exception as e:
+                    self.logger.debug('Uncaught exception {}'.format(e))
+                    # there was an error importing the blocks. this most likely means one of the blocks was invalid.
+                    # so lets re-request this block window from someone else.
+                    self.register_peer(peer)
+                    raise e
+                    continue
 
 #                except Exception as e:
 #                    self.logger.debug('Uncaught exception {}'.format(e))

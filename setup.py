@@ -30,6 +30,7 @@ deps = {
         "eth-hash[pycryptodome]",
     ],
     'hp2p': [
+        "asyncio-cancel-token==0.1.0a2",
         "aiohttp>=2.3.1,<3.0.0",
         "async_lru>=0.1.0,<1.0.0",
         "netifaces>=0.10.7<1",

@@ -324,13 +324,16 @@ class AccountDB(BaseAccountDB):
         #self.logger.debug("adding receivable transaction {}".format(encode_hex(transaction_hash)))
         #if encode_hex(transaction_hash) == '0x81ecfdd5c983a324928612ce103d0bfb49adaf804b72a124cfcf83de48578075':
         #    traceback.print_stack()
-        #first lets make sure we don't already have the transaction
-        if self.get_receivable_transaction(address, transaction_hash) is not False:
-            raise ValueError("Tried to save a receivable transaction that was already saved")
-            
+
 
         account = self._get_account(address)
         receivable_transactions = account.receivable_transactions
+
+        # first lets make sure we don't already have the transaction
+        for tx_key in receivable_transactions:
+            if tx_key.transaction_hash == transaction_hash:
+                raise ValueError("Tried to save a receivable transaction that was already saved")
+
         
         new_receivable_transactions = receivable_transactions + (TransactionKey(transaction_hash, sender_block_hash), )
         

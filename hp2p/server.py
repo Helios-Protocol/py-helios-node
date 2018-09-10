@@ -42,6 +42,7 @@ from hp2p.discovery import (
     PreferredNodeDiscoveryProtocol,
     DiscoveryService
 )
+from hp2p.nat import UPnPService
 from hp2p.exceptions import (
     DecryptionError,
     HandshakeFailure,
@@ -76,8 +77,6 @@ class Server(BaseService):
     peer_pool: PeerPool = None
 
     def __init__(self,
-                 privkey: datatypes.PrivateKey,
-                 port: int,
                  node,
                  chain: AsyncChain,
                  chaindb: AsyncChainDB,
@@ -93,14 +92,18 @@ class Server(BaseService):
                  
                  ) -> None:
         super().__init__(token)
+
         self.node = node
+        self.privkey: datatypes.PrivateKey = node._node_key
+        self.port = node._node_port
+        self.rpc_port = node._rpc_port
+
         self.chain_config = chain_config
         self.chaindb = chaindb
         self.chain = chain
         self.chain_head_db = chain_head_db
         self.base_db = base_db
-        self.privkey = privkey
-        self.port = port
+
         self.network_id = network_id
         self.peer_class = peer_class
         self.max_peers = max_peers
@@ -109,6 +112,7 @@ class Server(BaseService):
         self.peer_pool = self._make_peer_pool()
         self.consensus = self._make_consensus(self.peer_pool, self.bootstrap_nodes)
         self.syncer = self._make_syncer(self.peer_pool,self.consensus, self.node)
+        self.upnp_service = UPnPService(self.port, self.rpc_port, token=self.cancel_token)
         
         if not bootstrap_nodes:
             self.logger.warn("Running with no bootstrap nodes")
@@ -269,7 +273,12 @@ class Server(BaseService):
     async def _run(self) -> None:        
         self.logger.debug("Running server...")
 
-        external_ip = '0.0.0.0'
+        mapped_external_ip = await self.upnp_service.add_nat_portmap()
+        if mapped_external_ip is None:
+            external_ip = '0.0.0.0'
+        else:
+            external_ip = mapped_external_ip
+
         if DO_UPNP:
             upnp_dev = await self._discover_upnp_device()
             if upnp_dev is not None:
@@ -298,7 +307,7 @@ class Server(BaseService):
             
         peer_pool_task = asyncio.ensure_future(self.peer_pool.run())
 
-
+        asyncio.ensure_future(self.upnp_service.run())
         asyncio.ensure_future(self.discovery.run())
         asyncio.ensure_future(self.consensus.run())
         asyncio.ensure_future(self.syncer.run())
