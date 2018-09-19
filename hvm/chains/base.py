@@ -573,13 +573,16 @@ class Chain(BaseChain):
         validate_word(block_hash, title="Block Hash")
         return self.chaindb.get_block_header_by_hash(block_hash)
 
-    def get_canonical_head(self):
+    def get_canonical_head(self, wallet_address = None):
         """
         Returns the block header at the canonical chain head.
 
         Raises CanonicalHeadNotFound if there's no head defined for the canonical chain.
         """
-        return self.chaindb.get_canonical_head()
+        if wallet_address is not None:
+            return self.chaindb.get_canonical_head(wallet_address)
+        else:
+            return self.chaindb.get_canonical_head()
 
 
     #

@@ -66,8 +66,8 @@ class Hls(RPCModule):
     def accounts(self):
         raise NotImplementedError()
 
-    def blockNumber(self):
-        num = self._chain.get_canonical_head().block_number
+    def blockNumber(self, chain_address):
+        num = self._chain.get_canonical_head(chain_address).block_number
         return hex(num)
 
     def coinbase(self):
@@ -90,7 +90,7 @@ class Hls(RPCModule):
         return block_to_dict(block, self._chain, include_transactions)
 
     @format_params(to_int_if_hex, identity)
-    def getBlockByNumber(self, at_block, include_transactions):
+    def getBlockByNumber(self, at_block, chain_address, include_transactions):
         block = get_block_at_number(self._chain, at_block)
         return block_to_dict(block, self._chain, include_transactions)
 
@@ -604,5 +604,8 @@ class Hls(RPCModule):
 
 
 
-
+    def test(self):
+        to_return = {}
+        to_return['response'] = 'worked'
+        return to_return
 

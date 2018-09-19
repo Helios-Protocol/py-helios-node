@@ -35,6 +35,15 @@ import socket
 import sys
 import time
 import threading
+import json
+from eth_utils import (
+    to_bytes,
+    to_text,
+)
+try:
+    from json import JSONDecodeError
+except ImportError:
+    JSONDecodeError = ValueError
 
 if sys.platform == 'win32':
     import win32file
@@ -42,9 +51,9 @@ if sys.platform == 'win32':
 
 
 VERSION = '0.2'
-BUFSIZE = 32
-DELIMITER = ord('\n')
-BACKEND_CONNECTION_TIMEOUT=30.0
+BUFSIZE = 4096
+DELIMITER = ord('}')
+BACKEND_CONNECTION_TIMEOUT=5
 INFO = """JSON-RPC Proxy
 Version:  {version}
 Proxy:    {proxy_url}
@@ -193,11 +202,13 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         request_content = self.rfile.read(request_length)
         # self.log_message("Headers:  {}".format(self.headers))
         # self.log_message("Request:  {}".format(request_content))
+        #{"jsonrpc": "2.0", "method": "hls_test", "params": [], "id": 0}
+        #{"jsonrpc":"2.0","id":"1337","method":"hls_test"}
 
         try:
             response_content = self.server.process(request_content)
+            print('test2')
             # self.log_message("Response: {}".format(response_content))
-
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.send_header("Content-length", len(response_content))
@@ -240,12 +251,14 @@ class Proxy(HTTPServer):
         response = b''
         while True:
             r = self.conn.recv(BUFSIZE)
-            if not r:
-                break
-            if r[-1] == DELIMITER:
-                response += r[:-1]
-                break
+
             response += r
+            try:
+                json.loads(to_text(response))
+            except JSONDecodeError:
+                continue
+            else:
+                return response
 
         return response
 
@@ -304,6 +317,7 @@ if __name__ == '__main__':
     print('starting')
     backend_path = '/home/tommy/.local/share/helios/instance_0/mainnet/jsonrpc.ipc'
     proxy_url = 'http://0.0.0.0:30304'
+    #proxy_url = DEFAULT_PROXY_URL
     #proxy_url = 'http://50.68.92.147:30304/'
     run(proxy_url, backend_path)
     print('finished')

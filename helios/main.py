@@ -129,7 +129,10 @@ def main(instance_number = None) -> None:
     log_levels['hp2p.server.Server'] = logging.INFO
     log_levels['hp2p.UPnPService'] = logging.DEBUG
 
+    log_levels['helios.rpc.ipc'] = logging.DEBUG
+
     log_levels['hp2p.hls'] = logging.INFO
+
 
 
 

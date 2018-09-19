@@ -22,6 +22,10 @@ async def connection_handler(execute_rpc, cancel_token, reader, writer):
     '''
     Catch fatal errors, log them, and close the connection
     '''
+    # print('testesttsetessteset')
+    # data = await reader.read(1000)
+    # print(data.decode())
+    # print('done')
     logger = logging.getLogger('helios.rpc.ipc')
 
     try:
@@ -33,6 +37,7 @@ async def connection_handler(execute_rpc, cancel_token, reader, writer):
     except Exception:
         logger.exception("Unrecognized exception while handling requests")
     finally:
+
         writer.close()
 
 
@@ -134,6 +139,7 @@ class IPCServer:
         )
         self.logger.info('IPC started at: %s', os.path.abspath(self.ipc_path))
         await self.cancel_token.wait()
+        self.logger.info('IPC cancelled')
 
     async def stop(self):
         if self.cancel_token is not None:

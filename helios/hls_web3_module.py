@@ -368,5 +368,6 @@ class Hls(Module):
     def devAddInvalidNewBlock(self, version = 1):
         return self.web3.manager.request_blocking("hls_devAddInvalidNewBlock", [version])
     
-    
+    def test(self):
+        return self.web3.manager.request_blocking("hls_test", [])
     
