@@ -136,6 +136,8 @@ def construct_chain_config_params(args):
     elif args.nodekey is not None:
         yield 'nodekey', decode_hex(args.nodekey)
         
+    if args.do_rpc_http_server is not None:
+        yield 'do_rpc_http_server', args.do_rpc_http_server
 
     if args.max_peers is not None:
         yield 'max_peers', args.max_peers

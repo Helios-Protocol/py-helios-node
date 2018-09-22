@@ -6,7 +6,7 @@ from uuid import UUID
 import traceback
 import logging
 from lru import LRU
-from typing import Set, Tuple  # noqa: F401
+from typing import Set, Tuple, List  # noqa: F401
 
 from eth_typing import Hash32
 
@@ -64,6 +64,8 @@ from hvm.utils.msgpack import (
     hm_decode,
 )
 
+
+
 # Use lru-dict instead of functools.lru_cache because the latter doesn't let us invalidate a single
 # entry, so we'd have to invalidate the whole cache in _set_account() and that turns out to be too
 # expensive.
@@ -102,6 +104,12 @@ class BaseAccountDB(metaclass=ABCMeta):
 
     def delta_balance(self, address, delta):
         self.set_balance(address, self.get_balance(address) + delta)
+
+    #
+    # Receivable Transactions
+    #
+    def get_receivable_transactions(self, address) -> List[TransactionKey]:
+        raise NotImplementedError("Must be implemented by subclasses")
 
     #
     # Code
@@ -286,7 +294,7 @@ class AccountDB(BaseAccountDB):
     #
     # Receivable Transactions
     #
-    def get_receivable_transactions(self, address):
+    def get_receivable_transactions(self, address) -> List[TransactionKey]:
         validate_canonical_address(address, title="Storage Address")
         account = self._get_account(address)
         return account.receivable_transactions

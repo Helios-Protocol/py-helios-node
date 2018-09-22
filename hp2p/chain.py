@@ -1349,43 +1349,53 @@ class RegularChainSyncer(FastChainSyncer):
                     peer.sub_proto.send_get_chain_segment(chain_address, block_number_start, new_block.header.block_number)
                     return False
 
-
+        if from_rpc:
+            #blocks from RPC will be missing fields such as receipts. So they will fail a validation check.
+            ensure_block_unchainged = False
+        else:
+            ensure_block_unchainged = True
         try:
-            if new_block.header.block_number < 200:
-                imported_block = await chain.coro_import_block(new_block,
-                                                   wallet_address = chain_address,
-                                                   allow_replacement = replacing_block_permitted)
-            else:
-                imported_block = chain.import_block_with_profiler(new_block,
-                                                    wallet_address = chain_address,
-                                                    allow_replacement = replacing_block_permitted)
-                sys.exit()
+            # if new_block.header.block_number < 200:
+                # imported_block = await chain.coro_import_block(new_block,
+                #                                    wallet_address = chain_address,
+                #                                    allow_replacement = replacing_block_permitted)
+
+            imported_block = chain.import_block(new_block,
+                                                           wallet_address=chain_address,
+                                                           allow_replacement=replacing_block_permitted,
+                                                           ensure_block_unchainged = ensure_block_unchainged)
+            # else:
+            #     imported_block = chain.import_block_with_profiler(new_block,
+            #                                         wallet_address = chain_address,
+            #                                         allow_replacement = replacing_block_permitted)
+
         except ReplacingBlocksNotAllowed:
+            self.logger.debug('ReplacingBlocksNotAllowed error. adding to block conflicts')
             if not from_rpc:
                 #it has not been validated yet.
-                self.logger.debug('ReplacingBlocksNotAllowed error. adding to block conflicts')
                 chain.validate_block_specification(new_block)
                 self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
             return False
         except ParentNotFound:
+            self.logger.debug('ParentNotFound error. adding to block conflicts')
             if not from_rpc:
                 #it has not been validated yet
-                self.logger.debug('ParentNotFound error. adding to block conflicts')
+
                 chain.validate_block_specification(new_block)
                 self.consensus.add_block_conflict(chain_address, new_block.header.block_number-1)
             return False
         except ValidationError as e:
-            if not from_rpc:
-                self.logger.debug('ValidationError error when importing block. Error: {}'.format(e))
+            self.logger.debug('ValidationError error when importing block. Error: {}'.format(e))
             return False
         except ValueError as e:
-            if not from_rpc:
-                self.logger.debug('ValueError error when importing block. Error: {}'.format(e))
+            self.logger.debug('ValueError error when importing block. Error: {}'.format(e))
             return False
-#        except Exception as e:
-#            
-#            self.logger.error('tried to import a block and got error {}'.format(e))
-#            return
+        except Exception as e:
+            self.logger.error('tried to import a block and got error {}'.format(e))
+            return
+
+        self.logger.debug('successfully imported block')
+
         
         if propogate_to_network:
             for loop_peer in self.peer_pool.peers:

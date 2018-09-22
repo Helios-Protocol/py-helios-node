@@ -37,7 +37,7 @@ from helios.rpc.ipc import (
 from helios.config import (
     ChainConfig,
 )
-from helios.rpc.http_server import run as run_http_rpc_server
+
 
 
 class Node(BaseService):
@@ -63,6 +63,10 @@ class Node(BaseService):
 
     @abstractmethod
     def get_chain(self) -> BaseChain:
+        raise NotImplementedError("Node classes must implement this method")
+
+    @abstractmethod
+    def get_new_chain(self, chain_address: bytes) -> BaseChain:
         raise NotImplementedError("Node classes must implement this method")
 
     @abstractmethod
@@ -93,14 +97,16 @@ class Node(BaseService):
 
     def make_ipc_server(self) -> Union[IPCServer, BaseService]:
         if self._jsonrpc_ipc_path:
-            rpc = RPCServer(self.get_chain(), self.get_p2p_server())
+            rpc = RPCServer(self, self.get_chain(), self.get_p2p_server())
             return IPCServer(rpc, self._jsonrpc_ipc_path)
         else:
             return EmptyService()
 
+
+
     async def _run(self):
         self._ipc_server = self.make_ipc_server()
-        
+
         # The RPC server needs its own thread, because it provides a synchcronous
         # API which might call into hp2p async methods. These sync->async calls
         # deadlock if they are run in the same Thread and loop.
@@ -110,6 +116,7 @@ class Node(BaseService):
         self._ipc_loop = ipc_loop
 
         asyncio.run_coroutine_threadsafe(self._ipc_server.run(loop=ipc_loop), loop=ipc_loop)
+
 
         async with self._auxiliary_services:
             await self.get_p2p_server().run()

@@ -9,7 +9,7 @@ from cytoolz import (
 from eth_utils import (
     to_tuple,
 )
-
+from eth_utils import decode_hex
 from hvm.exceptions import ValidationError
 
 
@@ -92,5 +92,41 @@ def convert_rlp_to_correct_class(wanted_class, given_object):
     new_object = wanted_class(*parameters)
     return new_object
 
+
+def convert_micro_block_dict_to_correct_types(block_dict):
+    '''
+    This is to deal with signed blocks coming in from RPC. They don't contain all of the same fields as a normal block
+    :param block_dict:
+    :return:
+    '''
+    block_dict['header']['parent_hash'] = decode_hex(block_dict['header']['parent_hash'])
+    block_dict['header']['transaction_root'] = decode_hex(block_dict['header']['transaction_root'])
+    block_dict['header']['receive_transaction_root'] = decode_hex(block_dict['header']['receive_transaction_root'])
+    block_dict['header']['extra_data'] = decode_hex(block_dict['header']['extra_data'])
+    block_dict['header']['block_number'] = int(block_dict['header']['block_number'], 16)
+    block_dict['header']['timestamp'] = int(block_dict['header']['timestamp'], 16)
+    block_dict['header']['v'] = int(block_dict['header']['v'], 16)
+    block_dict['header']['r'] = int(block_dict['header']['r'], 16)
+    block_dict['header']['s'] = int(block_dict['header']['s'], 16)
+
+    for i in range(len(block_dict['transactions'])):
+        block_dict['transactions'][i]['nonce'] = int(block_dict['transactions'][i]['nonce'], 16)
+        block_dict['transactions'][i]['gas_price'] = int(block_dict['transactions'][i]['gas_price'], 16)
+        block_dict['transactions'][i]['gas'] = int(block_dict['transactions'][i]['gas'], 16)
+        block_dict['transactions'][i]['value'] = int(block_dict['transactions'][i]['value'], 16)
+        block_dict['transactions'][i]['v'] = int(block_dict['transactions'][i]['v'], 16)
+        block_dict['transactions'][i]['r'] = int(block_dict['transactions'][i]['r'], 16)
+        block_dict['transactions'][i]['s'] = int(block_dict['transactions'][i]['s'], 16)
+
+        block_dict['transactions'][i]['to'] = decode_hex(block_dict['transactions'][i]['to'])
+        block_dict['transactions'][i]['data'] = decode_hex(block_dict['transactions'][i]['data'])
+
+    for i in range(len(block_dict['receive_transactions'])):
+        block_dict['receive_transactions'][i]['parent_block_hash'] = decode_hex(
+            block_dict['receive_transactions'][i]['parent_block_hash'])
+        block_dict['receive_transactions'][i]['transaction_hash'] = decode_hex(
+            block_dict['receive_transactions'][i]['transaction_hash'])
+
+    return block_dict
     
     

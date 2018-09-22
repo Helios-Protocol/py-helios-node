@@ -61,11 +61,13 @@ class RPCServer:
         Web3,
     )
 
-    def __init__(self, chain, p2p_server=None):
+    def __init__(self, node, chain, p2p_server=None):
         self.modules: Dict[str, RPCModule] = {}
         self.chain = chain
+        self.node: 'Node' = node
+
         for M in self.module_classes:
-            self.modules[M.__name__.lower()] = M(chain, p2p_server)
+            self.modules[M.__name__.lower()] = M(node, chain, p2p_server)
         if len(self.modules) != len(self.module_classes):
             raise ValueError("apparent name conflict in RPC module_classes", self.module_classes)
 

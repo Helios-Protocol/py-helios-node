@@ -207,7 +207,6 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
 
         try:
             response_content = self.server.process(request_content)
-            print('test2')
             # self.log_message("Response: {}".format(response_content))
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -316,7 +315,8 @@ if __name__ == '__main__':
     #args = parse_args()
     print('starting')
     backend_path = '/home/tommy/.local/share/helios/instance_0/mainnet/jsonrpc.ipc'
-    proxy_url = 'http://0.0.0.0:30304'
+    #proxy_url = 'http://0.0.0.0:30304'
+    proxy_url = 'http://127.0.0.1:30304'
     #proxy_url = DEFAULT_PROXY_URL
     #proxy_url = 'http://50.68.92.147:30304/'
     run(proxy_url, backend_path)

@@ -84,6 +84,7 @@ class ChainConfig:
                  preferred_nodes: Tuple[KademliaNode, ...]=None,
                  bootstrap_nodes: Tuple[KademliaNode, ...]=None,
                  node_type = 1,
+                 do_rpc_http_server = True
                  ) -> None:
         self.network_id = network_id
         self.max_peers = max_peers
@@ -91,6 +92,7 @@ class ChainConfig:
         self.port = port
         self.rpc_port = rpc_port
         self.node_type = int(node_type)
+        self.do_rpc_http_server = do_rpc_http_server
 
         self._preferred_nodes = preferred_nodes
         
@@ -117,7 +119,8 @@ class ChainConfig:
             self.logfile_path = logfile_path
         else:
             self.logfile_path = get_logfile_path(self.data_dir)
-      
+
+
     @property
     def preferred_nodes(self):
         if self._preferred_nodes is None:
@@ -149,6 +152,13 @@ class ChainConfig:
         return self._bootstrap_nodes
       
     @property
+    def do_upnp(self):
+        if "INSTANCE_NUMBER" in os.environ:
+            return int(os.environ["INSTANCE_NUMBER"]) == 0
+        else:
+            return True
+
+    @property
     def node_private_helios_key(self):
         if self._node_private_helios_key is None:
             if "INSTANCE_NUMBER" in os.environ:
@@ -156,7 +166,7 @@ class ChainConfig:
             else:
                 self._node_private_helios_key = get_primary_node_private_helios_key()
         return self._node_private_helios_key
-    
+
     @property
     def node_wallet_address(self):
         if self._node_wallet_address is None:

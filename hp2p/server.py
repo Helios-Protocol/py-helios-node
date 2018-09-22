@@ -112,7 +112,8 @@ class Server(BaseService):
         self.peer_pool = self._make_peer_pool()
         self.consensus = self._make_consensus(self.peer_pool, self.bootstrap_nodes)
         self.syncer = self._make_syncer(self.peer_pool,self.consensus, self.node)
-        self.upnp_service = UPnPService(self.port, self.rpc_port, token=self.cancel_token)
+        if self.chain_config.do_upnp:
+            self.upnp_service = UPnPService(self.port, self.rpc_port, token=self.cancel_token)
         
         if not bootstrap_nodes:
             self.logger.warn("Running with no bootstrap nodes")
@@ -272,14 +273,17 @@ class Server(BaseService):
         
     async def _run(self) -> None:        
         self.logger.debug("Running server...")
-
-        mapped_external_ip = await self.upnp_service.add_nat_portmap()
+        if self.chain_config.do_upnp:
+            mapped_external_ip = await self.upnp_service.add_nat_portmap()
+        else:
+            mapped_external_ip = None
+            self.logger.debug("not doing upnp")
         if mapped_external_ip is None:
             external_ip = '0.0.0.0'
         else:
             external_ip = mapped_external_ip
 
-        if DO_UPNP:
+        if self.chain_config.do_upnp:
             upnp_dev = await self._discover_upnp_device()
             if upnp_dev is not None:
                 external_ip = upnp_dev.WANIPConn1.GetExternalIPAddress()['NewExternalIPAddress']
@@ -301,13 +305,15 @@ class Server(BaseService):
         
         await self._start_udp_listener(discovery_proto)
         self.discovery = DiscoveryService(discovery_proto, self.peer_pool)
-        
-        if DO_UPNP:
+
+        if self.chain_config.do_upnp:
             asyncio.ensure_future(self.refresh_nat_portmap())
             
         peer_pool_task = asyncio.ensure_future(self.peer_pool.run())
 
-        asyncio.ensure_future(self.upnp_service.run())
+        if self.chain_config.do_upnp:
+            asyncio.ensure_future(self.upnp_service.run())
+
         asyncio.ensure_future(self.discovery.run())
         asyncio.ensure_future(self.consensus.run())
         asyncio.ensure_future(self.syncer.run())

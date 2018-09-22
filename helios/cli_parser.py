@@ -83,6 +83,16 @@ trinity_parser.add_argument(
     ),
 )
 
+trinity_parser.add_argument(
+    '--do_rpc_http_server',
+    type=int,
+    required=False,
+    default=1,
+    help=(
+        "Should we run the http RPC server?"
+    ),
+)
+
 
 #
 # Logging configuration

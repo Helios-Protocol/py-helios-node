@@ -42,7 +42,7 @@ def setup_log_levels(log_levels: Dict[str, int]) -> None:
         del(log_levels['default'])
     except KeyError:
         default_level = logging.DEBUG
-    logging.getLogger().setLevel(default_level)
+    #logging.getLogger().setLevel(default_level)
 
     for name, level in log_levels.items():
         logger = logging.getLogger(name)
@@ -123,6 +123,8 @@ def setup_queue_logging(log_queue: Queue, level: int, log_levels = None) -> None
     # logging.getLogger('hp2p.discovery').setLevel(logging.INFO)
     if log_levels is not None:
         setup_log_levels(log_levels=log_levels)
+
+    #logging.getLogger('hp2p.UPnPService').setLevel(logging.INFO)
 
     logger.debug('Logging initialized: PID=%s', os.getpid())
 

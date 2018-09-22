@@ -500,12 +500,12 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 self.logger.debug('get_correct_block_conflict_hashes_where_we_differ_from_consensus = {}'.format(blocks_to_change))
 #                if blocks_to_change is not None:
 #                    self.logger.debug('get_peers_who_have_conflict_block {}'.format(self.get_peers_who_have_conflict_block(blocks_to_change[0])))
-                #test_1 = self.chaindb.load_historical_network_tpc_capability()
-                #test_2 = self.chaindb.load_historical_minimum_gas_price()
-                #test_3 = self.chaindb.load_historical_tx_per_centisecond()
-                #self.logger.debug("net_tpc_cap = {}".format(test_1))
-                #self.logger.debug("min_gas_price = {}".format(test_2))
-                #self.logger.debug("tpc = {}".format(test_3))
+#                 test_1 = self.chaindb.load_historical_network_tpc_capability()
+#                 test_2 = self.chaindb.load_historical_minimum_gas_price()
+#                 test_3 = self.chaindb.load_historical_tx_per_centisecond()
+#                 self.logger.debug("net_tpc_cap = {}".format(test_1))
+#                 self.logger.debug("min_gas_price = {}".format(test_2))
+#                 self.logger.debug("tpc = {}".format(test_3))
                 
                 #here we shouldnt pause because if it returned early than thats because we got some data from peers. we want to process data asap.
                 #self.populate_peer_consensus()

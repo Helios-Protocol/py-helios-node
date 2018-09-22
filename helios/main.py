@@ -56,6 +56,8 @@ from helios.utils.version import (
     construct_trinity_client_identifier,
 )
 
+from helios.rpc.http_server import Proxy as http_rpc_proxy
+
 
 #from helios.dev_tools import load_local_nodes
 
@@ -115,21 +117,25 @@ def main(instance_number = None) -> None:
 
     log_levels['hvm'] = logging.INFO  #sets all of hvm
     log_levels['hvm.db.account.AccountDB'] = logging.INFO
+    log_levels['hvm.chain'] = logging.DEBUG
     log_levels['hvm.chain.chain.Chain'] = logging.DEBUG
     log_levels['hvm.db.chain_head.ChainHeadDB'] = logging.INFO
-    log_levels['hvm.db.chain_db.ChainDB'] = logging.INFO
+    log_levels['hvm.db.chain_db.ChainDB'] = logging.DEBUG
 
+    log_levels['hp2p'] = logging.INFO
+    log_levels['hp2p.chain'] = logging.DEBUG
     log_levels['hp2p.chain.ChainSyncer'] = logging.DEBUG
     log_levels['hp2p.peer'] = logging.INFO
     log_levels['hp2p.peer.PeerPool'] = logging.INFO
     log_levels['hp2p.consensus.Consensus'] = logging.DEBUG
     log_levels['hp2p.kademlia.KademliaProtocol'] = logging.INFO
-    log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.DEBUG
-    log_levels['hp2p.discovery.DiscoveryService'] = logging.DEBUG
-    log_levels['hp2p.server.Server'] = logging.INFO
-    log_levels['hp2p.UPnPService'] = logging.DEBUG
+    log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.INFO
+    log_levels['hp2p.discovery.DiscoveryService'] = logging.INFO
+    log_levels['hp2p.server.Server'] = logging.DEBUG
+    log_levels['hp2p.UPnPService'] = logging.INFO
 
     log_levels['helios.rpc.ipc'] = logging.DEBUG
+    log_levels['helios.Node'] = logging.DEBUG
 
     log_levels['hp2p.hls'] = logging.INFO
 
@@ -144,12 +150,16 @@ def main(instance_number = None) -> None:
     if args.rand_db == 1:
         os.environ["GENERATE_RANDOM_DATABASE"] = 'true'
     if args.instance is not None:
-        args.port = args.port + args.instance
+        args.port = args.port + args.instance*2
+        if args.instance != 0:
+            args.do_rpc_http_server = False
         os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(args.instance)
         os.environ["INSTANCE_NUMBER"] = str(args.instance)
             
     elif instance_number is not None:
-        args.port = args.port + instance_number
+        args.port = args.port + instance_number*2
+        if instance_number != 0:
+            args.do_rpc_http_server = False
         os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(instance_number)
         os.environ["INSTANCE_NUMBER"] = str(instance_number)
         
@@ -237,6 +247,9 @@ def main(instance_number = None) -> None:
     )
 
 
+
+
+
     #start the processes
     database_server_process.start()
     logger.info("Started DB server process (pid=%d)", database_server_process.pid)
@@ -245,6 +258,16 @@ def main(instance_number = None) -> None:
     networking_process.start()
     logger.info("Started networking process (pid=%d)", networking_process.pid)
 
+    rpc_http_server_started = False
+    if chain_config.do_rpc_http_server and chain_config.jsonrpc_ipc_path:
+        rpc_http_proxy_process = ctx.Process(
+            target=launch_rpc_http_proxy,
+            args=(chain_config,),
+        )
+
+        rpc_http_proxy_process.start()
+        logger.info("Started RPC HTTP proxy process (pid=%d)", networking_process.pid)
+        rpc_http_server_started = True
 
     try:
         if args.subcommand == 'console':
@@ -267,6 +290,10 @@ def main(instance_number = None) -> None:
         logger.info('DB server process (pid=%d) terminated', database_server_process.pid)
         kill_process_gracefully(networking_process, logger)
         logger.info('Networking process (pid=%d) terminated', networking_process.pid)
+
+        if rpc_http_server_started:
+            kill_process_gracefully(rpc_http_proxy_process, logger)
+            logger.info('RPC HTTP proxy process (pid=%d) terminated', networking_process.pid)
 
 
 @setup_cprofiler('run_database_process')
@@ -311,6 +338,13 @@ def launch_node(chain_config: ChainConfig) -> None:
     run_service_until_quit(node)
 
 
+def launch_rpc_http_proxy(chain_config: ChainConfig) -> None:
+
+    proxy_url = "http://0.0.0.0:" + str(chain_config.rpc_port)
+    http_rpc_proxy_service = http_rpc_proxy(proxy_url, chain_config.jsonrpc_ipc_path)
+    http_rpc_proxy_service.run()
+
+
 def display_launch_logs(chain_config: ChainConfig) -> None:
     logger = logging.getLogger('helios')
     logger.info(HELIOS_HEADER)
@@ -326,6 +360,7 @@ def run_service_until_quit(service: BaseService) -> None:
     loop.close()
 
 
+
 if __name__ == "__main__":
     __spec__ = 'None'
-    main(1)
+    main(0)

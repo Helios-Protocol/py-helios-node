@@ -19,10 +19,19 @@ from helios.rpc.format import (
 
 from hp2p.chain import NewBlockQueueItem
 
+from eth_utils import is_hex_address, to_checksum_address
+
 # Tell mypy to ignore this import as a workaround for https://github.com/python/mypy/issues/4049
 from helios.rpc.modules import (  # type: ignore
     RPCModule,
 )
+
+from hvm.utils.headers import (
+    compute_gas_limit,
+)
+from hvm.chains.base import BaseChain
+
+from hvm.utils.rlp import convert_micro_block_dict_to_correct_types
 
 
 def get_header(chain, at_block):
@@ -608,4 +617,50 @@ class Hls(RPCModule):
         to_return = {}
         to_return['response'] = 'worked'
         return to_return
+
+
+    def getBlockCreationInfo(self, chain_address):
+
+        if not is_hex_address(chain_address):
+            return {'error':"invalid chain address",
+                    'given chain address': chain_address}
+
+        chain_address = decode_hex(chain_address)
+
+        #create new chain for all requests
+        chain = self._node.get_new_chain(chain_address)
+
+        to_return = {}
+
+        to_return['block_number'] = encode_hex(int_to_big_endian(chain.header.block_number))
+        to_return['parent_hash'] = encode_hex(chain.header.parent_hash)
+
+        vm = chain.get_vm()
+
+        to_return['nonce'] = encode_hex(int_to_big_endian(vm.state.account_db.get_nonce(chain_address)))
+
+        receivable_tx_dicts = []
+        receivable_tx_keys = vm.state.account_db.get_receivable_transactions(chain_address)
+
+        for tx_key in receivable_tx_keys:
+            receivable_tx_dicts.append({'transaction_hash': encode_hex(tx_key.transaction_hash),
+                                        'sender_block_hash': encode_hex(tx_key.sender_block_hash)})
+
+        to_return['receive_tx'] = receivable_tx_dicts
+
+        return to_return
+
+    def sendSignedBlock(self, block_dict):
+        block_dict = convert_micro_block_dict_to_correct_types(block_dict)
+        block_dict['header']['gas_limit'] = compute_gas_limit()
+
+        block = self._chain.get_vm().get_block_class().from_dict(block_dict)
+
+        syncer = self._p2p_server.syncer.chain_syncer
+
+        block_queue_item = NewBlockQueueItem(new_block=block, chain_address=block.sender, from_rpc=True)
+
+        syncer._new_blocks_to_import.put_nowait(block_queue_item)
+
+        return True
 

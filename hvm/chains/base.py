@@ -1049,12 +1049,13 @@ class Chain(BaseChain):
         self.import_block(*args, **kwargs)
 
     
-    def import_block(self, block: BaseBlock, 
+    def import_block(self, block: BaseBlock,
                            perform_validation: bool=True,
                            save_block_head_hash_timestamp = True, 
                            wallet_address = None, 
                            allow_unprocessed = True, 
-                           allow_replacement = True) -> BaseBlock:      
+                           allow_replacement = True,
+                           ensure_block_unchainged:bool = True) -> BaseBlock:
          
         #we handle replacing blocks here
         #this includes deleting any blocks that it might be replacing
@@ -1175,7 +1176,8 @@ class Chain(BaseChain):
                                perform_validation = perform_validation,
                                save_block_head_hash_timestamp = save_block_head_hash_timestamp, 
                                wallet_address = wallet_address, 
-                               allow_unprocessed = allow_unprocessed)
+                               allow_unprocessed = allow_unprocessed,
+                               ensure_block_unchainged = ensure_block_unchainged)
         
         except Exception as e:
             if journal_enabled:
@@ -1197,7 +1199,8 @@ class Chain(BaseChain):
                            perform_validation: bool=True,
                            save_block_head_hash_timestamp = True, 
                            wallet_address = None, 
-                           allow_unprocessed = True) -> BaseBlock:
+                           allow_unprocessed = True,
+                           ensure_block_unchainged: bool = True) -> BaseBlock:
         """
         Imports a complete block.
         """
@@ -1225,8 +1228,10 @@ class Chain(BaseChain):
                
                 
                 # Validate the imported block.
-                if perform_validation:
+                if ensure_block_unchainged:
+                    self.logger.debug('ensuring block unchanged')
                     ensure_imported_block_unchanged(imported_block, block)
+                if perform_validation:
                     self.validate_block(imported_block)
 
                 
@@ -1252,7 +1257,7 @@ class Chain(BaseChain):
                     encode_hex(imported_block.hash),
                 )
                 self.import_unprocessed_children(imported_block,
-                                                 perform_validation= perform_validation,
+                                                 perform_validation= True,
                                                save_block_head_hash_timestamp = save_block_head_hash_timestamp,
                                                allow_unprocessed = True)
 

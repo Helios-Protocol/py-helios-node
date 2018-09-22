@@ -160,12 +160,23 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
         )
 
     _hash = None
+    _micro_header_hash = None
 
     @property
     def hash(self) -> Hash32:
         if self._hash is None:
             self._hash = keccak(rlp.encode(self, sedes = self.__class__))
         return self._hash
+
+    @property
+    def micro_header_hash(self) -> Hash32:
+        if self._micro_header_hash is None:
+            header_parts = rlp.decode(rlp.encode(self), use_list=True)
+            header_parts_for_hash = (
+                    header_parts[:3] + [header_parts[5]] + header_parts[8:10] + header_parts[-3:]
+            )
+            self._micro_header_hash = keccak(rlp.encode(header_parts_for_hash))
+        return self._micro_header_hash
 
     @property
     def hex_hash(self):

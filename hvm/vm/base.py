@@ -89,6 +89,7 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     chaindb = None  # type: BaseChainDB
     _state_class = None  # type: Type[BaseState]
     network_id = 0
+    state: BaseState = None
     
     @abstractmethod
     def __init__(self, header, chaindb):

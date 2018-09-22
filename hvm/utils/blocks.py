@@ -42,13 +42,20 @@ def extract_signature_v(v: int) -> int:
     else:
         return V_OFFSET
 
+def get_message_from_block_header(block_header: BaseBlockHeader, chain_id:int = None) -> bytes:
+    if chain_id is None:
+        chain_id = block_header.chain_id
+
+    header_parts = rlp.decode(rlp.encode(block_header, sedes = block_header.__class__), use_list=True)
+    header_parts_for_signature = (
+            header_parts[:3] + [header_parts[5]] + header_parts[8:10] + [int_to_big_endian(chain_id), b'', b'']
+    )
+    message = rlp.encode(header_parts_for_signature)
+    return message
+
 
 def create_block_header_signature(block_header: BaseBlockHeader, private_key, chain_id):
-    transaction_parts = rlp.decode(rlp.encode(block_header), use_list = True)
-    transaction_parts_for_signature = (
-        transaction_parts[:-3] + [int_to_big_endian(chain_id), b'', b'']
-    )
-    message = rlp.encode(transaction_parts_for_signature)
+    message = get_message_from_block_header(block_header, chain_id)
     
     signature = private_key.sign_msg(message)
 
@@ -68,12 +75,8 @@ def validate_block_header_signature(block_header: BaseBlockHeader) -> None:
     canonical_v = v - 27
     vrs = (canonical_v, block_header.r, block_header.s)
     signature = keys.Signature(vrs=vrs)
-     
-    transaction_parts = rlp.decode(rlp.encode(block_header), use_list = True)
-    transaction_parts_for_signature = (
-        transaction_parts[:-3] + [int_to_big_endian(block_header.chain_id), b'', b'']
-    )
-    message = rlp.encode(transaction_parts_for_signature)
+
+    message = get_message_from_block_header(block_header)
     
     try:
         public_key = signature.recover_public_key_from_msg(message)
@@ -98,16 +101,14 @@ def extract_block_header_sender(block_header: BaseBlockHeader) -> bytes:
     canonical_v = v - 27
     vrs = (canonical_v, r, s)
     signature = keys.Signature(vrs=vrs)
-    
-    transaction_parts = rlp.decode(rlp.encode(block_header), use_list = True)
-    transaction_parts_for_signature = (
-        transaction_parts[:-3] + [int_to_big_endian(block_header.chain_id), b'', b'']
-    )
-    message = rlp.encode(transaction_parts_for_signature)
+
+    message = get_message_from_block_header(block_header)
     
     public_key = signature.recover_public_key_from_msg(message)
     sender = public_key.to_canonical_address()
     return sender
+
+
 
 def get_block_average_transaction_gas_price(block):
     total_sum = 0

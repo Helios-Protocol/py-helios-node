@@ -1563,7 +1563,7 @@ class ChainDB(BaseChainDB):
             pass
         
             
-        raise HistoricalMinGasPriceError("Could not get required block min gas price")
+        raise HistoricalMinGasPriceError("Could not get required block min gas price for block timestamp {}".format(block_timestamp))
         
     def min_gas_system_initialization_required(self):
         test_1 = self.load_historical_minimum_gas_price(mutable = False)

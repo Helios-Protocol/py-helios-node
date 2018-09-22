@@ -32,8 +32,10 @@ class FullNode(Node):
 
         return self._chain
     
-    def get_new_chain(self):
-        return self.chain_class(self.db_manager.get_db(), self.wallet_address)
+    def get_new_chain(self, chain_address = None):
+        if chain_address is None:
+            chain_address = self.wallet_address
+        return self.chain_class(self.db_manager.get_db(), chain_address)
 
 
     #save as [public_key,ip,udp_port,tcp_port]
