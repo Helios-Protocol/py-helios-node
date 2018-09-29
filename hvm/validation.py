@@ -18,6 +18,7 @@ from hvm.constants import (
     GAS_LIMIT_MINIMUM,
     SECPK1_N,
     UINT_256_MAX,
+    UINT_64_MAX,
     BLOCK_GAS_LIMIT,
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
@@ -178,6 +179,29 @@ def validate_uint256(value, title="Value"):
             )
         )
     if value > UINT_256_MAX:
+        raise ValidationError(
+            "{title} exeeds maximum UINT256 size.  Got: {0}".format(
+                value,
+                title=title,
+            )
+        )
+
+def validate_uint64(value, title="Value"):
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValidationError(
+            "{title} must be an integer: Got: {0}".format(
+                type(value),
+                title=title,
+            )
+        )
+    if value < 0:
+        raise ValidationError(
+            "{title} cannot be negative: Got: {0}".format(
+                value,
+                title=title,
+            )
+        )
+    if value > UINT_64_MAX:
         raise ValidationError(
             "{title} exeeds maximum UINT256 size.  Got: {0}".format(
                 value,

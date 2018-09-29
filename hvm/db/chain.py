@@ -136,7 +136,7 @@ class BaseChainDB(metaclass=ABCMeta):
     # Canonical Chain API
     #
     @abstractmethod
-    def get_canonical_block_header_by_number(self, block_number: BlockNumber) -> BlockHeader:
+    def get_canonical_block_header_by_number(self, block_number: BlockNumber, wallet_address: Address = None) -> BlockHeader:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -275,7 +275,7 @@ class ChainDB(BaseChainDB):
                 "No header found on the canonical chain {} with number {}".format(wallet_address, block_number)
             )
 
-    def get_canonical_block_header_by_number(self, block_number: BlockNumber, wallet_address = None) -> BlockHeader:
+    def get_canonical_block_header_by_number(self, block_number: BlockNumber, wallet_address: Address = None) -> BlockHeader:
         """
         Returns the block header with the given number in the canonical chain.
 

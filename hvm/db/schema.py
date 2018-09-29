@@ -109,4 +109,13 @@ class SchemaV1(BaseSchema):
     @staticmethod
     def make_historical_network_tpc_capability_lookup_key() -> bytes:
         return b'h_net_tpc_cap'
-    
+
+    @staticmethod
+    def make_peer_node_health_lookup(wallet_address:Address, after_block_number:BlockNumber) -> bytes:
+        key = b'peer_node_health:%b-%d' % (wallet_address, after_block_number)
+        return key
+
+    @staticmethod
+    def make_latest_reward_block_number_lookup(wallet_address: Address) -> bytes:
+        key = b'latest_reward_block_number:%b-%d' % (wallet_address)
+        return key

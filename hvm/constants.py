@@ -12,6 +12,7 @@ UINT256 = 'uint256'
 BYTES = 'bytes'
 
 UINT_256_MAX = 2**256 - 1
+UINT_64_MAX = 2**64 - 1
 UINT_256_CEILING = 2**256
 UINT_255_MAX = 2**255 - 1
 UINT_255_CEILING = 2**255
@@ -218,3 +219,12 @@ MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY = 5  #this is the delay in centiseconds.
 MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH = 6 #centisecond
 MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE = 9 #centisecond. This is the total number of centisecond that must pass before the minimum price of gas can change.
 MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP = 1000
+
+
+
+######
+#constants for calculating health of peers for staking purposes
+######
+TIME_BETWEEN_PEER_NODE_HEALTH_CHECK = 60*60 # 1 hour
+PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS = 100 #this is the average response time where the staking score starts to be reduced.
+PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_50_PERCENT_REDUCTION_MS = 500 #this is the response time in ms where the staking score is reduced by 50%

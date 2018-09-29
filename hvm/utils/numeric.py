@@ -8,6 +8,8 @@ from hvm.constants import (
     UINT_256_CEILING,
 )
 
+from hvm.validation import validate_is_integer
+
 
 def int_to_big_endian(value: int) -> bytes:
     byte_length = math.ceil(value.bit_length() / 8)
@@ -109,6 +111,18 @@ def stake_weighted_average(item_stake_list):
         denominator += item_stake[1]
        
     return numerator/denominator
+
+def add_sample_to_average(previous_average: int, new_sample: int, new_n: int) -> float:
+    if new_n < 1:
+        raise ValueError("new_n must be 1 or greater when adding sample to average")
+    validate_is_integer(new_n, title="new_n")
+
+    if new_n == 1:
+        #this is the first sample, just return new_sample
+        return new_sample
+    else:
+        new_average = previous_average*(new_n-1)/new_n + new_sample/new_n
+        return new_average
     
     
     
