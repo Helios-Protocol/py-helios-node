@@ -131,6 +131,7 @@ from hvm.utils.rlp import (
 )
 
 from hvm.db.chain_head import ChainHeadDB
+from hvm.db.consensus import ConsensusDB
 
 from eth_keys import keys
 from eth_keys.datatypes import(
@@ -327,6 +328,7 @@ class Chain(BaseChain):
     
     chaindb_class = ChainDB  # type: Type[BaseChainDB]
     chain_head_db_class = ChainHeadDB
+    consensus_db_class = ConsensusDB
 
     def __init__(self, base_db: BaseDB, wallet_address: Address, private_key: BaseKey=None) -> None:
         if not self.vm_configuration:
@@ -344,6 +346,7 @@ class Chain(BaseChain):
         self.wallet_address = wallet_address
         self.chaindb = self.get_chaindb_class()(self.db, self.wallet_address)
         self.chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(self.db)
+        self.consensus_db = self.get_consensus_db_class()(self.db, self.chaindb)
         
         try:
             self.header = self.create_header_from_parent(self.get_canonical_head())
@@ -428,6 +431,12 @@ class Chain(BaseChain):
         if cls.chain_head_db_class is None:
             raise AttributeError("`chaindb_class` not set")
         return cls.chain_head_db_class
+
+    @classmethod
+    def get_consensus_db_class(cls) -> Type[BaseChainDB]:
+        if cls.consensus_db_class is None:
+            raise AttributeError("`chaindb_class` not set")
+        return cls.consensus_db_class
     
     @classmethod
     def get_genesus_wallet_address(cls) -> Type[BaseChainDB]:

@@ -86,6 +86,7 @@ class NodeStakingScore(rlp.Serializable, metaclass=ABCMeta):
         ('recipient_node_wallet_address', address),
         ('score', f_big_endian_int),
         ('since_block_number', f_big_endian_int),
+        ('timestamp', f_big_endian_int),
         ('v', big_endian_int),
         ('r', big_endian_int),
         ('s', big_endian_int),

@@ -135,6 +135,8 @@ class ConsensusDB():
     # not have its time counted towards uptime until it finishes syncing and responds to requests.
 
     # note: whenever a reward block is processed, we need to save the block number
+    # note: when reverting blocks, if one has a reward transaction then need to update get_latest_reward_block_number
+    # also need to add all of the new health request statistics to the previous health request for the previous after_block_number
 
     def save_health_request(self, peer_wallet_address: Address, response_time: int = float('inf')):
 
@@ -160,8 +162,8 @@ class ConsensusDB():
                                                                                                   average_response_time = new_average_response_time)
 
 
-    def get_latest_reward_block_number(self, peer_wallet_address: Address):
-        validate_canonical_address(peer_wallet_address, title="Value")
+    def get_latest_reward_block_number(self, peer_wallet_address: Address) -> int:
+        validate_canonical_address(peer_wallet_address, title="peer_wallet_address")
 
         key = SchemaV1.make_latest_reward_block_number_lookup(peer_wallet_address)
         rlp_latest_block_number = self.db.get(key, b'')
@@ -171,6 +173,14 @@ class ConsensusDB():
             return 0
 
 
+    def set_latest_reward_block_number(self, peer_wallet_address: Address, block_number: int) -> None:
+        validate_canonical_address(peer_wallet_address, title="peer_wallet_address")
+
+        key = SchemaV1.make_latest_reward_block_number_lookup(peer_wallet_address)
+
+        self.db[key] = rlp.encode(block_number, sedes = f_big_endian_int)
+
+
     def get_peer_score(self, peer_wallet_address: Address, after_block_number: BlockNumber) -> NodeStakingScore:
         peer_node_health = self._get_peer_node_health(peer_wallet_address, after_block_number)
 
@@ -178,6 +188,7 @@ class ConsensusDB():
         #     ('recipient_node_wallet_address', address),
         #     ('score', f_big_endian_int),
         #     ('since_block_number', f_big_endian_int),
+        #     ('timestamp', f_big_endian_int),
         #     ('v', f_big_endian_int),
         #     ('r', f_big_endian_int),
         #     ('s', f_big_endian_int),
@@ -197,7 +208,7 @@ class ConsensusDB():
                                                   peer_node_health.average_response_time,
                                                   time_since_last_specified_block)
 
-        node_staking_score = NodeStakingScore(peer_wallet_address, score)
+        return NodeStakingScore(peer_wallet_address, score, after_block_number, int(time.time()))
 
 
     def calculate_node_staking_score(self, requests_sent: int, failed_requests: int, average_response_time: int, time_since_last_reward) -> int:
