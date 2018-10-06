@@ -8,7 +8,7 @@ Command Line Interface (CLI)
 
 .. code-block:: shell
 
-    usage: trinity [-h] [--version] [--trinity-root-dir TRINITY_ROOT_DIR]
+    usage: trinity [-h] [--version] [--trinity-root-dir HELIOS_ROOT_DIR]
                 [-l {debug,info}] [--network-id NETWORK_ID | --ropsten]
                 [--sync-mode {full,light} | --light] [--data-dir DATA_DIR]
                 [--nodekey NODEKEY] [--nodekey-path NODEKEY_PATH]
@@ -24,7 +24,7 @@ Command Line Interface (CLI)
 
     sync mode:
     --version             show program's version number and exit
-    --trinity-root-dir TRINITY_ROOT_DIR
+    --trinity-root-dir HELIOS_ROOT_DIR
                             The filesystem path to the base directory that trinity
                             will store it's information. Default:
                             $XDG_DATA_HOME/.local/share/trinity

@@ -9,19 +9,13 @@ from typing import (
 )
 from urllib.parse import urlparse
 
-from hp2p.cancel_token import CancelToken, wait_with_token
-from hp2p.exceptions import (
+from cancel_token import (
+    CancelToken,
     OperationCancelled,
 )
-# from cancel_token import (
-#     CancelToken,
-#     OperationCancelled,
-# )
 from hp2p.exceptions import (
     NoInternalAddressMatchesDevice,
 )
-
-
 import netifaces
 from hp2p.service import BaseService
 import upnpclient
@@ -79,7 +73,7 @@ class UPnPService(BaseService):
         On every iteration we configure the port mapping with a lifetime of 30 minutes and then
         sleep for that long as well.
         """
-        while self.is_running:
+        while self.is_operational:
             try:
                 # Wait for the port mapping lifetime, and then try registering it again
                 await self.wait(asyncio.sleep(self._nat_portmap_lifetime))
@@ -99,7 +93,6 @@ class UPnPService(BaseService):
         :return: the IP address of the new mapping (or None if failed)
         """
         self.logger.info("Setting up NAT portmap...")
-
         try:
             async for upnp_dev in self._discover_upnp_devices():
                 try:

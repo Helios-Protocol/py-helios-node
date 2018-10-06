@@ -1,5 +1,10 @@
 import pytest
 
+from eth_utils import (
+    to_canonical_address,
+    ValidationError,
+)
+
 from hvm.exceptions import (
     VMError,
     Revert,
@@ -14,13 +19,6 @@ from hvm.vm.transaction_context import (
     BaseTransactionContext,
 )
 
-from eth_utils import (
-    to_canonical_address,
-)
-
-from hvm.exceptions import (
-    ValidationError,
-)
 
 NORMALIZED_ADDRESS_A = "0x0f572e5295c57f15886f9b263e2f6d2d6c7b5ec6"
 NORMALIZED_ADDRESS_B = "0xcd1722f3947def4cf144679da39c4c32bdc35681"

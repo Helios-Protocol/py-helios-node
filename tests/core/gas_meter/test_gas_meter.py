@@ -1,10 +1,11 @@
 import pytest
-
+from eth_utils import (
+    ValidationError,
+)
 from hvm.vm.gas_meter import (
     GasMeter,
 )
 from hvm.exceptions import (
-    ValidationError,
     OutOfGas,
 )
 

@@ -1,24 +1,47 @@
 import functools
-
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Union,
+)
 from cytoolz import (
     compose,
-    identity,
+    merge,
 )
 
 from eth_utils import (
-    add_0x_prefix,
+    apply_formatters_to_dict,
+    decode_hex,
     encode_hex,
     int_to_big_endian,
 )
 
 import rlp
 
+from hvm.chains.base import (
+    AsyncChain
+)
+from hvm.constants import (
+    CREATE_CONTRACT_ADDRESS,
+)
+from hvm.rlp.blocks import (
+    BaseBlock
+)
+from hvm.rlp.headers import (
+    BlockHeader
+)
+from hvm.rlp.transactions import (
+    BaseTransaction
+)
 
-def transaction_to_dict(transaction):
+
+def transaction_to_dict(transaction: BaseTransaction) -> Dict[str, str]:
     return dict(
         hash=encode_hex(transaction.hash),
         nonce=hex(transaction.nonce),
-        gasLimit=hex(transaction.gas),
+        gas=hex(transaction.gas),
         gasPrice=hex(transaction.gas_price),
         to=encode_hex(transaction.to),
         value=hex(transaction.value),
@@ -29,7 +52,32 @@ def transaction_to_dict(transaction):
     )
 
 
-def header_to_dict(header):
+hexstr_to_int = functools.partial(int, base=16)
+
+
+TRANSACTION_NORMALIZER = {
+    'data': decode_hex,
+    'from': decode_hex,
+    'gas': hexstr_to_int,
+    'gasPrice': hexstr_to_int,
+    'nonce': hexstr_to_int,
+    'to': decode_hex,
+    'value': hexstr_to_int,
+}
+
+SAFE_TRANSACTION_DEFAULTS = {
+    'data': b'',
+    'to': CREATE_CONTRACT_ADDRESS,
+    'value': 0,
+}
+
+
+def normalize_transaction_dict(transaction_dict: Dict[str, str]) -> Dict[str, Any]:
+    normalized_dict = apply_formatters_to_dict(TRANSACTION_NORMALIZER, transaction_dict)
+    return merge(SAFE_TRANSACTION_DEFAULTS, normalized_dict)
+
+
+def header_to_dict(header: BlockHeader) -> Dict[str, str]:
     logs_bloom = encode_hex(int_to_big_endian(header.bloom))[2:]
     logs_bloom = '0x' + logs_bloom.rjust(512, '0')
     header_dict = {
@@ -53,10 +101,13 @@ def header_to_dict(header):
     return header_dict
 
 
-def block_to_dict(block, chain, include_transactions):
+def block_to_dict(block: BaseBlock,
+                  chain: AsyncChain,
+                  include_transactions: bool) -> Dict[str, Union[str, List[str]]]:
+
     header_dict = header_to_dict(block.header)
 
-    block_dict = dict(
+    block_dict: Dict[str, Union[str, List[str]]] = dict(
         header_dict,
         totalDifficulty=hex(chain.get_score(block.hash)),
         uncles=[encode_hex(uncle.hash) for uncle in block.uncles],
@@ -72,26 +123,26 @@ def block_to_dict(block, chain, include_transactions):
     return block_dict
 
 
-def format_params(*formatters):
-    def decorator(func):
+def format_params(*formatters: Any) -> Callable[..., Any]:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
-        def formatted_func(self, *args):
+        async def formatted_func(self: Any, *args: Any) -> Callable[..., Any]:
             if len(formatters) != len(args):
                 raise TypeError("could not apply %d formatters to %r" % (len(formatters), args))
             formatted = (formatter(arg) for formatter, arg in zip(formatters, args))
-            return func(self, *formatted)
+            return await func(self, *formatted)
         return formatted_func
     return decorator
 
 
-def to_int_if_hex(value):
+def to_int_if_hex(value: Any) -> Any:
     if isinstance(value, str) and value.startswith('0x'):
         return int(value, 16)
     else:
         return value
 
 
-def empty_to_0x(val):
+def empty_to_0x(val: str) -> str:
     if val:
         return val
     else:
@@ -99,67 +150,3 @@ def empty_to_0x(val):
 
 
 remove_leading_zeros = compose(hex, functools.partial(int, base=16))
-
-RPC_STATE_NORMALIZERS = {
-    'balance': remove_leading_zeros,
-    'code': empty_to_0x,
-    'nonce': remove_leading_zeros,
-}
-
-
-def fixture_state_in_rpc_format(state):
-    return {
-        key: RPC_STATE_NORMALIZERS.get(key, identity)(value)
-        for key, value in state.items()
-    }
-
-
-RPC_BLOCK_REMAPPERS = {
-    'bloom': 'logsBloom',
-    'coinbase': 'miner',
-    'transactionsTrie': 'transactionsRoot',
-    'uncleHash': 'sha3Uncles',
-    'receiptTrie': 'receiptsRoot',
-}
-
-RPC_BLOCK_NORMALIZERS = {
-    'difficulty': remove_leading_zeros,
-    'extraData': empty_to_0x,
-    'gasLimit': remove_leading_zeros,
-    'gasUsed': remove_leading_zeros,
-    'number': remove_leading_zeros,
-    'timestamp': remove_leading_zeros,
-}
-
-
-def fixture_block_in_rpc_format(state):
-    return {
-        RPC_BLOCK_REMAPPERS.get(key, key):
-        RPC_BLOCK_NORMALIZERS.get(key, identity)(value)
-        for key, value in state.items()
-    }
-
-
-RPC_TRANSACTION_REMAPPERS = {
-    'data': 'input',
-}
-
-RPC_TRANSACTION_NORMALIZERS = {
-    'nonce': remove_leading_zeros,
-    'gasLimit': remove_leading_zeros,
-    'gasPrice': remove_leading_zeros,
-    'value': remove_leading_zeros,
-    'data': empty_to_0x,
-    'to': add_0x_prefix,
-    'r': remove_leading_zeros,
-    's': remove_leading_zeros,
-    'v': remove_leading_zeros,
-}
-
-
-def fixture_transaction_in_rpc_format(state):
-    return {
-        RPC_TRANSACTION_REMAPPERS.get(key, key):
-        RPC_TRANSACTION_NORMALIZERS.get(key, identity)(value)
-        for key, value in state.items()
-    }

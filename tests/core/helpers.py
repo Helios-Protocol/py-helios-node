@@ -1,13 +1,24 @@
+import sys
+
 from cytoolz import curry
 
-from eth_utils import decode_hex
+import pytest
 
-from hvm.exceptions import (
+from eth_utils import (
+    decode_hex,
     ValidationError,
 )
 
+from hvm.chains.base import MiningChain
+
 from hvm.utils.spoof import (
     SpoofTransaction,
+)
+
+
+greater_equal_python36 = pytest.mark.skipif(
+    sys.version_info < (3, 6),
+    reason="requires python3.6 or higher"
 )
 
 
@@ -36,6 +47,10 @@ def new_transaction(
 
 
 def fill_block(chain, from_, key, gas, data):
+    if not isinstance(chain, MiningChain):
+        pytest.skip("Cannot fill block automatically unless using a MiningChain")
+        return
+
     recipient = decode_hex('0xa94f5374fce5edbc8e2a8697c15331677e6ebf0c')
     amount = 100
 

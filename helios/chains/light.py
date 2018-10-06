@@ -4,12 +4,14 @@ from typing import (  # noqa: F401
     Any,
     Optional,
     Callable,
+    Coroutine,
     cast,
     Dict,
     Generator,
     Iterator,
     Tuple,
     Type,
+    TypeVar,
     TYPE_CHECKING,
     Union,
 )
@@ -37,13 +39,22 @@ from hvm.rlp.headers import (
     BlockHeader,
     HeaderParams,
 )
+from hvm.rlp.receipts import (
+    Receipt
+)
 from hvm.rlp.transactions import (
     BaseTransaction,
     BaseUnsignedTransaction,
 )
+from hvm.utils.spoof import (
+    SpoofTransaction,
+)
+from hvm.vm.computation import (
+    BaseComputation
+)
 
-from hp2p.lightchain import (
-    LightPeerChain,
+from helios.sync.light.service import (
+    BaseLightPeerChain,
 )
 
 if TYPE_CHECKING:
@@ -53,14 +64,14 @@ if TYPE_CHECKING:
 class LightDispatchChain(BaseChain):
     """
     Provide the :class:`BaseChain` API, even though only a
-    :class:`LightPeerChain` is syncing. Store results locally so that not
+    :class:`BaseLightPeerChain` is syncing. Store results locally so that not
     all requests hit the light peer network.
     """
 
     ASYNC_TIMEOUT_SECONDS = 10
     _loop = None
 
-    def __init__(self, headerdb: BaseHeaderDB, peer_chain: LightPeerChain) -> None:
+    def __init__(self, headerdb: BaseHeaderDB, peer_chain: BaseLightPeerChain) -> None:
         self._headerdb = headerdb
         self._peer_chain = peer_chain
         self._peer_chain_loop = asyncio.get_event_loop()
@@ -108,7 +119,7 @@ class LightDispatchChain(BaseChain):
     def get_block_header_by_hash(self, block_hash: Hash32) -> BlockHeader:
         return self._headerdb.get_block_header_by_hash(block_hash)
 
-    def get_canonical_head(self):
+    def get_canonical_head(self) -> BlockHeader:
         return self._headerdb.get_canonical_head()
 
     def get_score(self, block_hash: Hash32) -> int:
@@ -117,21 +128,26 @@ class LightDispatchChain(BaseChain):
     #
     # Block API
     #
-    def get_ancestors(self, limit: int, header: BlockHeader=None) -> Iterator[BaseBlock]:
+    def get_ancestors(self, limit: int, header: BlockHeader) -> Tuple[BaseBlock, ...]:
         raise NotImplementedError("Chain classes must implement " + inspect.stack()[0][3])
 
     def get_block(self) -> BaseBlock:
         raise NotImplementedError("Chain classes must implement " + inspect.stack()[0][3])
 
     def get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
+        raise NotImplementedError("Use coro_get_block_by_hash")
+
+    async def coro_get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
         header = self._headerdb.get_block_header_by_hash(block_hash)
-        return self.get_block_by_header(header)
+        return await self.coro_get_block_by_header(header)
 
     def get_block_by_header(self, header: BlockHeader) -> BaseBlock:
+        raise NotImplementedError("Use coro_get_block_by_header")
+
+    async def coro_get_block_by_header(self, header: BlockHeader) -> BaseBlock:
         # TODO check local cache, before hitting peer
-        block_body = self._run_async(
-            self._peer_chain.get_block_body_by_hash(header.hash)
-        )
+
+        block_body = await self._peer_chain.coro_get_block_body_by_hash(header.hash)
 
         block_class = self.get_vm_class_for_block_number(header.block_number).get_block_class()
         transactions = [
@@ -145,15 +161,22 @@ class LightDispatchChain(BaseChain):
         )
 
     def get_canonical_block_by_number(self, block_number: BlockNumber) -> BaseBlock:
+        raise NotImplementedError("Use coro_get_canonical_block_by_number")
+
+    async def coro_get_canonical_block_by_number(self, block_number: BlockNumber) -> BaseBlock:
         """
         Return the block with the given number from the canonical chain.
         Raises HeaderNotFound if it is not found.
         """
         header = self._headerdb.get_canonical_block_header_by_number(block_number)
-        return self.get_block_by_header(header)
+        return await self.get_block_by_header(header)
 
-    def get_canonical_block_hash(self, block_number):
+    def get_canonical_block_hash(self, block_number: int) -> Hash32:
         return self._headerdb.get_canonical_block_hash(block_number)
+
+    def build_block_with_transactions(
+            self, transactions: Tuple[BaseTransaction, ...], parent_header: BlockHeader) -> None:
+        raise NotImplementedError("Chain classes must implement " + inspect.stack()[0][3])
 
     #
     # Transaction API
@@ -172,10 +195,21 @@ class LightDispatchChain(BaseChain):
     #
     # Execution API
     #
-    def apply_transaction(self, transaction):
+    def apply_transaction(
+            self,
+            transaction: BaseTransaction) -> Tuple[BaseBlock, Receipt, BaseComputation]:
         raise NotImplementedError("Chain classes must implement " + inspect.stack()[0][3])
 
-    def estimate_gas(self, transaction: BaseTransaction, at_header: BlockHeader=None) -> int:
+    def get_transaction_result(
+            self,
+            transaction: Union[BaseTransaction, SpoofTransaction],
+            at_header: BlockHeader) -> bytes:
+        raise NotImplementedError("Chain classes must implement " + inspect.stack()[0][3])
+
+    def estimate_gas(
+            self,
+            transaction: Union[BaseTransaction, SpoofTransaction],
+            at_header: BlockHeader=None) -> int:
         raise NotImplementedError("Chain classes must implement " + inspect.stack()[0][3])
 
     def import_block(self, block: BaseBlock, perform_validation: bool=True) -> BaseBlock:
@@ -187,6 +221,9 @@ class LightDispatchChain(BaseChain):
     #
     # Validation API
     #
+    def validate_receipt(self, receipt: Receipt, at_header: BlockHeader) -> None:
+        raise NotImplementedError("Chain classes must implement " + inspect.stack()[0][3])
+
     def validate_block(self, block: BaseBlock) -> None:
         raise NotImplementedError("Chain classes must implement " + inspect.stack()[0][3])
 
@@ -199,10 +236,9 @@ class LightDispatchChain(BaseChain):
     def validate_uncles(self, block: BaseBlock) -> None:
         raise NotImplementedError("Chain classes must implement " + inspect.stack()[0][3])
 
-    #
-    # Async utils
-    #
-
-    def _run_async(self, async_method):
-        future = asyncio.run_coroutine_threadsafe(async_method, loop=self._peer_chain_loop)
-        return future.result(self.ASYNC_TIMEOUT_SECONDS)
+    def validate_chain(
+            self,
+            parent: BlockHeader,
+            chain: Tuple[BlockHeader, ...],
+            seal_check_random_sample_rate: int = 1) -> None:
+        raise NotImplementedError("Chain classes must implement " + inspect.stack()[0][3])

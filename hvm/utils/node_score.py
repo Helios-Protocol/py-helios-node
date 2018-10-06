@@ -1,4 +1,4 @@
-
+from typing import TYPE_CHECKING
 import rlp
 from functools import lru_cache
 from eth_keys import keys
@@ -15,9 +15,7 @@ from hvm.utils.numeric import (
 )
 from typing import Union
 
-from hvm.rlp.consensus import (
-    NodeStakingScore
-)
+
 
 from hvm.utils.transactions import (
     extract_chain_id,
@@ -25,13 +23,18 @@ from hvm.utils.transactions import (
 
 )
 
+if TYPE_CHECKING:
+    from hvm.rlp.consensus import (
+        NodeStakingScore
+    )
+
 
 EIP155_CHAIN_ID_OFFSET = 35
 V_OFFSET = 27
 
 
 
-def create_node_staking_score_signature(node_staking_score: NodeStakingScore, private_key, chain_id):
+def create_node_staking_score_signature(node_staking_score: 'NodeStakingScore', private_key, chain_id):
     transaction_parts = rlp.decode(rlp.encode(node_staking_score), use_list = True)
 
     transaction_parts_for_signature = transaction_parts[:-3] + [int_to_big_endian(chain_id), b'', b'']
@@ -46,7 +49,7 @@ def create_node_staking_score_signature(node_staking_score: NodeStakingScore, pr
     return v, r, s
 
 
-def validate_node_staking_score_signature(node_staking_score: NodeStakingScore, return_sender = False) -> None:
+def validate_node_staking_score_signature(node_staking_score: 'NodeStakingScore', return_sender = False) -> None:
     v = extract_signature_v(node_staking_score.v)
 
 
@@ -72,7 +75,7 @@ def validate_node_staking_score_signature(node_staking_score: NodeStakingScore, 
         return public_key.to_canonical_address()
 
 #@lru_cache(maxsize=32)
-def extract_node_staking_score_sender(node_staking_score: NodeStakingScore) -> bytes:
+def extract_node_staking_score_sender(node_staking_score: 'NodeStakingScore') -> bytes:
 
     v = extract_signature_v(node_staking_score.v)
 

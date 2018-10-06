@@ -15,16 +15,12 @@ from hvm.constants import (
     GENESIS_DIFFICULTY,
     GENESIS_GAS_LIMIT,
 )
-from hvm.db.backends.memory import MemoryDB
 from hvm.rlp.headers import (
     BlockHeader,
 )
-from hvm.utils.rlp import (
-    ensure_rlp_objects_are_equal,
+from hvm.tools.rlp import (
+    assert_headers_eq,
 )
-
-
-assert_headers_eq = ensure_rlp_objects_are_equal(obj_a_name='actual', obj_b_name='expected')
 
 
 @to_tuple
@@ -40,11 +36,6 @@ def mk_header_chain(base_header, length):
         )
         yield next_header
         previous_header = next_header
-
-
-@pytest.fixture
-def base_db():
-    return MemoryDB()
 
 
 @pytest.fixture
@@ -106,17 +97,17 @@ def test_header_chain_import_block(header_chain, genesis_header):
     chain_c = mk_header_chain(genesis_header, 5)
 
     for header in chain_a:
-        res = header_chain.import_header(header)
+        res, _ = header_chain.import_header(header)
         assert res == (header,)
         assert_headers_eq(header_chain.header, header)
 
     for header in chain_b:
-        res = header_chain.import_header(header)
+        res, _ = header_chain.import_header(header)
         assert res == tuple()
         assert_headers_eq(header_chain.header, chain_a[-1])
 
     for idx, header in enumerate(chain_c, 1):
-        res = header_chain.import_header(header)
+        res, _ = header_chain.import_header(header)
         if idx <= 3:
             # prior to passing up `chain_a` each import should not return new
             # canonical headers.

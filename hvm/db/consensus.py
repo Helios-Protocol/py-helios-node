@@ -1,8 +1,5 @@
 import time
-from abc import (
-    ABCMeta,
-    abstractmethod
-)
+from typing import TYPE_CHECKING
 from uuid import UUID
 import logging
 from lru import LRU
@@ -89,9 +86,9 @@ from hvm.rlp.consensus import (
     PeerNodeHealth,
     NodeStakingScore,
 )
+from hvm.db.backends.base import BaseDB
 
 if TYPE_CHECKING:
-    from hvm.db.backends.base import BaseDB
     from hvm.db.chain import BaseChainDB
 
 # Use lru-dict instead of functools.lru_cache because the latter doesn't let us invalidate a single
@@ -103,11 +100,11 @@ account_cache = LRU(2048)
 class ConsensusDB():
 
     db: BaseDB = None
-    chaindb: BaseChainDB = None
+    chaindb: 'BaseChainDB' = None
 
     logger = logging.getLogger('hvm.db.chain_head.ChainHeadDB')
 
-    def __init__(self, db:BaseDB, chaindb:BaseChainDB):
+    def __init__(self, db:BaseDB, chaindb:'BaseChainDB'):
         """
         Binary trie database for storing the hash of the head block of each wallet address.
         """
@@ -159,7 +156,7 @@ class ConsensusDB():
 
         self._set_peer_node_health(peer_wallet_address, after_block_number, peer_node_health.copy(requests_sent = new_requests_sent,
                                                                                                   failed_requests = new_failed_requests,
-                                                                                                  average_response_time = new_average_response_time)
+                                                                                                  average_response_time = new_average_response_time))
 
 
     def get_latest_reward_block_number(self, peer_wallet_address: Address) -> int:

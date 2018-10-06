@@ -2,7 +2,7 @@ from __future__ import unicode_literals
 
 import pytest
 
-from hvm.exceptions import (
+from eth_utils import (
     ValidationError,
 )
 from hvm.constants import (

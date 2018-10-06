@@ -8,6 +8,7 @@ from cytoolz import accumulate
 from eth_utils import (
     to_tuple,
     keccak,
+    ValidationError,
 )
 
 from hvm.constants import (
@@ -19,22 +20,13 @@ from hvm.exceptions import (
     CanonicalHeadNotFound,
     ParentNotFound,
 )
-from hvm.db.backends.memory import MemoryDB
 from hvm.db.header import HeaderDB
 from hvm.rlp.headers import (
     BlockHeader,
 )
-from hvm.utils.rlp import (
-    ensure_rlp_objects_are_equal,
+from hvm.tools.rlp import (
+    assert_headers_eq,
 )
-
-
-assert_headers_eq = ensure_rlp_objects_are_equal(obj_a_name='actual', obj_b_name='expected')
-
-
-@pytest.fixture
-def base_db():
-    return MemoryDB()
 
 
 @pytest.fixture
@@ -83,8 +75,7 @@ def test_headerdb_get_canonical_head_with_header_chain(headerdb, genesis_header)
 
     headers = mk_header_chain(genesis_header, length=10)
 
-    for header in headers:
-        headerdb.persist_header(header)
+    headerdb.persist_header_chain(headers)
 
     head = headerdb.get_canonical_head()
     assert_headers_eq(head, headers[-1])
@@ -101,8 +92,19 @@ def test_headerdb_persist_header_disallows_unknown_parent(headerdb):
         headerdb.persist_header(header)
 
 
+def test_headerdb_persist_header_chain_disallows_non_contiguous_chain(headerdb, genesis_header):
+    headerdb.persist_header(genesis_header)
+
+    headers = mk_header_chain(genesis_header, length=3)
+
+    non_contiguous_headers = (headers[0], headers[2], headers[1],)
+
+    with pytest.raises(ValidationError, match="Non-contiguous chain"):
+        headerdb.persist_header_chain(non_contiguous_headers)
+
+
 def test_headerdb_persist_header_returns_new_canonical_chain(headerdb, genesis_header):
-    gen_result = headerdb.persist_header(genesis_header)
+    gen_result, _ = headerdb.persist_header(genesis_header)
     assert gen_result == (genesis_header,)
 
     chain_a = mk_header_chain(genesis_header, 3)
@@ -110,15 +112,15 @@ def test_headerdb_persist_header_returns_new_canonical_chain(headerdb, genesis_h
     chain_c = mk_header_chain(genesis_header, 5)
 
     for header in chain_a:
-        res = headerdb.persist_header(header)
+        res, _ = headerdb.persist_header(header)
         assert res == (header,)
 
     for header in chain_b:
-        res = headerdb.persist_header(header)
+        res, _ = headerdb.persist_header(header)
         assert res == tuple()
 
     for idx, header in enumerate(chain_c, 1):
-        res = headerdb.persist_header(header)
+        res, _ = headerdb.persist_header(header)
         if idx <= 3:
             # prior to passing up `chain_a` each import should not return new
             # canonical headers.
@@ -147,8 +149,7 @@ def test_headerdb_get_score_for_non_genesis_headers(headerdb, genesis_header):
     difficulties = tuple(h.difficulty for h in headers)
     scores = tuple(accumulate(operator.add, difficulties, genesis_header.difficulty))
 
-    for header in headers:
-        headerdb.persist_header(header)
+    headerdb.persist_header_chain(headers)
 
     for header, expected_score in zip(headers, scores[1:]):
         actual_score = headerdb.get_score(header.hash)
@@ -215,8 +216,7 @@ def test_headerdb_header_retrieval_by_hash(headerdb, genesis_header):
 
     headers = mk_header_chain(genesis_header, length=10)
 
-    for header in headers:
-        headerdb.persist_header(header)
+    headerdb.persist_header_chain(headers)
 
     # can we get the genesis header by hash
     actual = headerdb.get_block_header_by_hash(genesis_header.hash)
@@ -232,8 +232,7 @@ def test_headerdb_canonical_header_retrieval_by_number(headerdb, genesis_header)
 
     headers = mk_header_chain(genesis_header, length=10)
 
-    for header in headers:
-        headerdb.persist_header(header)
+    headerdb.persist_header_chain(headers)
 
     # can we get the genesis header by hash
     actual = headerdb.get_canonical_block_header_by_number(genesis_header.block_number)

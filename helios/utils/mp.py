@@ -1,36 +1,35 @@
 import asyncio
-import traceback
 import functools
 import multiprocessing
 import os
-from typing import Callable, Any
+from typing import (
+    Any,
+    Awaitable,
+    Callable
+)
 
 
-MP_CONTEXT = os.environ.get('TRINITY_MP_CONTEXT', 'spawn')
+MP_CONTEXT = os.environ.get('HELIOS_MP_CONTEXT', 'spawn')
 
 
 # sets the type of process that multiprocessing will create.
 ctx = multiprocessing.get_context(MP_CONTEXT)
-def error(msg, *args):
-    return multiprocessing.get_logger().error(msg, *args)
 
 
 def async_method(method_name: str) -> Callable[..., Any]:
-    async def method(self, *args, **kwargs):
+    async def method(self: Any, *args: Any, **kwargs: Any) -> Awaitable[Any]:
         loop = asyncio.get_event_loop()
-        
+
         return await loop.run_in_executor(
             None,
             functools.partial(self._callmethod, kwds=kwargs),
             method_name,
             args,
         )
-
-            
     return method
 
 
 def sync_method(method_name: str) -> Callable[..., Any]:
-    def method(self, *args, **kwargs):
+    def method(self: Any, *args: Any, **kwargs: Any) -> Any:
         return self._callmethod(method_name, args, kwargs)
     return method

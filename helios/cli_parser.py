@@ -1,8 +1,13 @@
 import argparse
+import logging
+from typing import (
+    Any,
+)
 
 from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
+from hvm.tools.logging import TRACE_LEVEL_NUM
 
 from hp2p.kademlia import Node
 
@@ -14,11 +19,15 @@ from helios.constants import (
 
 
 class ValidateAndStoreEnodes(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        if values is None:
+    def __call__(self,
+                 parser: argparse.ArgumentParser,
+                 namespace: argparse.Namespace,
+                 value: Any,
+                 option_string: str=None) -> None:
+        if value is None:
             return
 
-        enode = Node.from_uri(values)
+        enode = Node.from_uri(value)
 
         if getattr(namespace, self.dest) is None:
             setattr(namespace, self.dest, [])
@@ -26,25 +35,100 @@ class ValidateAndStoreEnodes(argparse.Action):
         enode_list.append(enode)
 
 
-#DEFAULT_LOG_LEVEL = 'info'
-DEFAULT_LOG_LEVEL = 'debug'
-LOG_LEVEL_CHOICES = (
-    'debug',
-    'info',
-)
+LOG_LEVEL_CHOICES = {
+    # numeric versions
+    '5': TRACE_LEVEL_NUM,
+    '10': logging.DEBUG,
+    '20': logging.INFO,
+    '30': logging.WARNING,
+    '40': logging.ERROR,
+    '50': logging.CRITICAL,
+    # string versions
+    'TRACE': TRACE_LEVEL_NUM,
+    'DEBUG': logging.DEBUG,
+    'INFO': logging.INFO,
+    'WARN': logging.WARNING,
+    'WARNING': logging.WARNING,
+    'ERROR': logging.ERROR,
+    'CRITICAL': logging.CRITICAL,
+}
 
 
-parser = argparse.ArgumentParser(description='Trinity')
+class ValidateAndStoreLogLevel(argparse.Action):
+    def __call__(self,
+                 parser: argparse.ArgumentParser,
+                 namespace: argparse.Namespace,
+                 value: Any,
+                 option_string: str=None) -> None:
+        if value is None:
+            return
+
+        raw_value = value.upper()
+
+        # this is a global log level.
+        if raw_value in LOG_LEVEL_CHOICES:
+            path = None
+            log_level = LOG_LEVEL_CHOICES[raw_value]
+        else:
+            path, _, raw_log_level = value.partition('=')
+
+            if not path or not raw_log_level:
+                raise argparse.ArgumentError(
+                    self,
+                    "Invalid logging config: '{0}'.  Log level may be specified "
+                    "as a global logging level using the syntax `--log-level "
+                    "<LEVEL-NAME>` or for to specify the logging level for an "
+                    "individual logger, '--log-level "
+                    "<LOGGER-NAME>:<LEVEL-NAME>'".format(value)
+                )
+
+            try:
+                log_level = LOG_LEVEL_CHOICES[raw_log_level.upper()]
+            except KeyError:
+                raise argparse.ArgumentError(
+                    self,
+                    (
+                        "Invalid logging level.  Got '{0}'.  Must be one of\n"
+                        " - 5/10/20/30/40 (numeric logging levels)\n"
+                        " - trace/debug/info/warn/warning/error/critical (lowercase)\n"
+                        " - TRACE/DEBUG/INFO/WARN/WARNING/ERROR/CRITICAL (uppercase)\n"
+                    ).format(raw_log_level),
+                )
+
+        if getattr(namespace, self.dest) is None:
+            setattr(namespace, self.dest, {})
+        log_levels = getattr(namespace, self.dest)
+        if path in log_levels:
+            if path is None:
+                raise argparse.ArgumentError(
+                    self,
+                    "Global logging has already been configured to '{0}'.  The "
+                    "global logging level may only be specified once.".format(
+                        log_level,
+                    )
+                )
+            else:
+                raise argparse.ArgumentError(
+                    self,
+                    "The logging level for '{0}' was provided more than once. "
+                    "Please ensure the each name is provided only once"
+                )
+        log_levels[path] = log_level
+
+
+parser = argparse.ArgumentParser(description='Helios')
 
 #
 # subparser for sub commands
 #
+# Plugins may add subcommands with a `func` attribute
+# to gain control over the main Helios process
 subparser = parser.add_subparsers(dest='subcommand')
 
 #
 # Argument Groups
 #
-trinity_parser = parser.add_argument_group('sync mode')
+helios_parser = parser.add_argument_group('sync mode')
 logging_parser = parser.add_argument_group('logging')
 network_parser = parser.add_argument_group('network')
 syncing_parser = parser.add_argument_group('sync mode')
@@ -53,27 +137,26 @@ debug_parser = parser.add_argument_group('debug')
 
 
 #
-# Trinity Globals
+# Helios Globals
 #
-trinity_parser.add_argument('--version', action='version', version=__version__)
-trinity_parser.add_argument(
+helios_parser.add_argument('--version', action='version', version=__version__)
+helios_parser.add_argument(
     '--helios-root-dir',
     help=(
         "The filesystem path to the base directory that helios will store it's "
         "information.  Default: $XDG_DATA_HOME/.local/share/helios"
     ),
 )
-trinity_parser.add_argument(
+helios_parser.add_argument(
     '--port',
     type=int,
     required=False,
     default=30303,
     help=(
-        "Port on which helios should listen for incoming hp2p/discovery connections. Default: 30303"
+        "Port on which helios should listen for incoming p2p/discovery connections. Default: 30303"
     ),
 )
-
-trinity_parser.add_argument(
+helios_parser.add_argument(
     '--rpc_port',
     type=int,
     required=False,
@@ -82,8 +165,7 @@ trinity_parser.add_argument(
         "Port on which helios should listen for incoming RPC JSON connections. Default: 8545"
     ),
 )
-
-trinity_parser.add_argument(
+helios_parser.add_argument(
     '--do_rpc_http_server',
     type=int,
     required=False,
@@ -93,16 +175,36 @@ trinity_parser.add_argument(
     ),
 )
 
-
 #
 # Logging configuration
 #
 logging_parser.add_argument(
     '-l',
     '--log-level',
-    choices=LOG_LEVEL_CHOICES,
-    default=DEFAULT_LOG_LEVEL,
-    help="Sets the logging level",
+    action=ValidateAndStoreLogLevel,
+    dest="log_levels",
+    metavar="LEVEL",
+    help=(
+        "Configure the logging level. The `LEVEL` may be provide as any of: "
+        "TRACE/DEBUG/INFO/WARN/WARNING/ERROR/CRITICAL, "
+        "5/10/20/30/40/50, or to specify "
+        "the logging level for a specific logger, `--log-level "
+        "LOGGER_NAME=LEVEL`.  Default: INFO"
+    ),
+)
+logging_parser.add_argument(
+    '--stderr-log-level',
+    dest="stderr_log_level",
+    help=(
+        "Configure the logging level for the stderr logging."
+    ),
+)
+logging_parser.add_argument(
+    '--file-log-level',
+    dest="file_log_level",
+    help=(
+        "Configure the logging level for file-based logging."
+    ),
 )
 
 #
@@ -116,7 +218,6 @@ networkid_parser.add_argument(
     default=MAINNET_NETWORK_ID,
 )
 
-
 network_parser.add_argument(
     '--preferred-node',
     action=ValidateAndStoreEnodes,
@@ -125,6 +226,12 @@ network_parser.add_argument(
         "An enode address which will be 'preferred' above nodes found using the "
         "discovery protocol"
     ),
+)
+
+network_parser.add_argument(
+    '--discv5',
+    action='store_true',
+    help=("Enable experimental v5 (topic) discovery mechanism"),
 )
 
 network_parser.add_argument(
@@ -163,7 +270,18 @@ chain_parser.add_argument(
         "The directory where chain data is stored"
     ),
 )
-    
+chain_parser.add_argument(
+    '--nodekey',
+    help=(
+        "Hexadecimal encoded private key to use for the nodekey"
+    )
+)
+chain_parser.add_argument(
+    '--nodekey-path',
+    help=(
+        "The filesystem path to the file which contains the nodekey"
+    )
+)
 chain_parser.add_argument(
     '--node_type',
     type=int,
@@ -171,7 +289,7 @@ chain_parser.add_argument(
         "The node type. #0 is master, 1 is fullnode, 2 is micronode, 4 is network launch node"
     ),
 )
-    
+
 chain_parser.add_argument(
     '--instance',
     type=int,
@@ -187,29 +305,6 @@ chain_parser.add_argument(
         "generate a random blockchain database"
     ),
 )
-    
-chain_parser.add_argument(
-    '--filter_log',
-    default=None,
-    help=(
-        "Only allow logging for this module"
-    ),
-)
-
-
-
-chain_parser.add_argument(
-    '--nodekey',
-    help=(
-        "Hexadecimal encoded private key to use for the nodekey"
-    )
-)
-chain_parser.add_argument(
-    '--nodekey-path',
-    help=(
-        "The filesystem path to the file which contains the nodekey"
-    )
-)
 
 
 #
@@ -223,30 +318,10 @@ debug_parser.add_argument(
     ),
 )
 
-
 #
-# Add `console` sub-command to helios CLI.
+# Add `fix-unclean-shutdown` sub-command to helios CLI
 #
-console_parser = subparser.add_parser(
-    'console', help='run the chain and start the helios REPL')
-console_parser.add_argument(
-    '--vanilla-shell',
-    action='store_true',
-    default=False,
-    help='start a native Python shell'
-)
-
-
-#
-# Add `attach` sub-command to helios CLI.
-#
-attach_parser = subparser.add_parser(
-    'attach',
-    help='open an REPL attached to a currently running chain',
-)
-attach_parser.add_argument(
-    '--vanilla-shell',
-    action='store_true',
-    default=False,
-    help='start a native Python shell'
+fix_unclean_shutdown_parser = subparser.add_parser(
+    'fix-unclean-shutdown',
+    help='close any dangling processes from a previous unclean shutdown',
 )

@@ -17,8 +17,10 @@ from typing import (
     Type,
     TYPE_CHECKING,
     Union,
+    Optional,
 )
 
+from hvm.types import Timestamp
 
 import rlp
 
@@ -82,14 +84,14 @@ from hvm.rlp.sedes import(
     trie_root,
     address,
     hash32,
-    
+
 )
 from rlp.sedes import(
     big_endian_int,
     CountableList,
     binary,
-    List        
 )
+
 
 from hvm.db.journal import (
     JournalDB,
@@ -99,7 +101,7 @@ from hvm.utils.rlp import make_mutable
 
 from sortedcontainers import (
     SortedList,
-    SortedDict,      
+    SortedDict,
 )
 
 from hvm.utils.numeric import (
@@ -216,7 +218,7 @@ class BaseChainDB(metaclass=ABCMeta):
             transaction_index: int,
             transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
         raise NotImplementedError("ChainDB classes must implement this method")
-        
+
     @abstractmethod
     def get_receive_transaction_by_index_and_block_hash(
             self,
@@ -245,14 +247,14 @@ class BaseChainDB(metaclass=ABCMeta):
 class ChainDB(BaseChainDB):
     logger = logging.getLogger('hvm.db.chain_db.ChainDB')
     _journaldb = None
-    
+
     def __init__(self, db: BaseDB, wallet_address:Address) -> None:
         self.db = db
-        validate_canonical_address(wallet_address, "Wallet Address") 
+        validate_canonical_address(wallet_address, "Wallet Address")
         self.wallet_address = wallet_address
 
- 
-    
+
+
     #
     # Canonical Chain API
     #
@@ -284,7 +286,7 @@ class ChainDB(BaseChainDB):
         """
         if wallet_address is None:
             wallet_address = self.wallet_address
-            
+
         validate_uint256(block_number, title="Block Number")
         return self.get_block_header_by_hash(self.get_canonical_block_hash(block_number, wallet_address))
 
@@ -300,7 +302,7 @@ class ChainDB(BaseChainDB):
         return self.get_block_header_by_hash(
             cast(Hash32, canonical_head_hash),
         )
-        
+
     def get_canonical_head_hash(self, wallet_address = None):
         if wallet_address is None:
             wallet_address = self.wallet_address
@@ -308,38 +310,38 @@ class ChainDB(BaseChainDB):
             return self.db[SchemaV1.make_canonical_head_hash_lookup_key(wallet_address)]
         except KeyError:
             raise CanonicalHeadNotFound("No canonical head set for this chain")
-        
+
     def get_block_by_hash(self, block_hash, block_class):
-        
+
         block_header = self.get_block_header_by_hash(block_hash)
-        
+
         send_transactions = self.get_block_transactions(block_header, block_class.transaction_class)
-        
+
         receive_transactions = self.get_block_receive_transactions(block_header, block_class.receive_transaction_class)
-        
+
         output_block = block_class(block_header, send_transactions, receive_transactions)
-        
+
         return output_block
-    
+
     def get_block_by_number(self, block_number, block_class, wallet_address = None):
         if wallet_address is None:
             wallet_address = self.wallet_address
-        
+
         block_header = self.get_canonical_block_header_by_number(block_number, wallet_address)
-        
+
         send_transactions = self.get_block_transactions(block_header, block_class.transaction_class)
-        
+
         receive_transactions = self.get_block_receive_transactions(block_header, block_class.receive_transaction_class)
-        
+
         output_block = block_class(block_header, send_transactions, receive_transactions)
-        
+
         return output_block
-        
-        
+
+
     def get_blocks_on_chain(self, block_class,  start, end, wallet_address = None):
         if wallet_address is None:
             wallet_address = self.wallet_address
-        
+
         blocks = []
         for block_number in range(start, end+1):
             try:
@@ -347,20 +349,20 @@ class ChainDB(BaseChainDB):
                 blocks.append(new_block)
             except HeaderNotFound:
                 break
-        
+
         return blocks
-    
+
     def get_all_blocks_on_chain(self, block_class, wallet_address = None):
         if wallet_address is None:
             wallet_address = self.wallet_address
-            
+
         canonical_head_header = self.get_canonical_head(wallet_address = wallet_address)
         head_block_number = canonical_head_header.block_number
-        
-        
+
+
         return self.get_blocks_on_chain(block_class,  0, head_block_number, wallet_address = wallet_address)
-        
-        
+
+
     #
     # Header API
     #
@@ -397,9 +399,9 @@ class ChainDB(BaseChainDB):
             raise ParentNotFound(
                 "Cannot persist block header ({}) with unknown parent ({})".format(
                     encode_hex(header.hash), encode_hex(header.parent_hash)))
-        
+
         self.save_header_to_db(header)
-        
+
         #save the block to the chain wallet address lookup db
         #this is so we can lookup which chain the block belongs to.
         self.save_block_hash_to_chain_wallet_address(header.hash)
@@ -412,25 +414,25 @@ class ChainDB(BaseChainDB):
             new_headers = self._set_as_canonical_chain_head(header)
 
         return new_headers
-    
-    
-    
+
+
+
     def save_header_to_db(self, header: BlockHeader):
         self.db.set(
             header.hash,
             rlp.encode(header),
         )
-    
+
 
     def delete_canonical_chain(self, wallet_address = None):
         if wallet_address is None:
             wallet_address = self.wallet_address
-            
+
         try:
             canonical_header = self.get_canonical_head(wallet_address = wallet_address)
         except CanonicalHeadNotFound:
             canonical_header = None
-            
+
         if canonical_header is not None:
             for i in range(0, canonical_header.block_number+1):
                 header_to_remove = self.get_canonical_block_header_by_number(i, wallet_address = wallet_address)
@@ -438,10 +440,10 @@ class ChainDB(BaseChainDB):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
                 for transaction_hash in self.get_block_receive_transaction_hashes(header_to_remove):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
-            
+
             del(self.db[SchemaV1.make_canonical_head_hash_lookup_key(wallet_address)])
-        
-        
+
+
     # TODO: update this to take a `hash` rather than a full header object.
     #this also accepts a header that has a smaller block number than the current header
     #in which case it will trunkate the chain.
@@ -457,12 +459,12 @@ class ChainDB(BaseChainDB):
 
         if wallet_address is None:
             wallet_address = self.wallet_address
-         
+
         try:
             canonical_header = self.get_canonical_head(wallet_address = wallet_address)
         except CanonicalHeadNotFound:
             canonical_header = None
-            
+
         if canonical_header is not None and header.block_number <= canonical_header.block_number:
             for i in range(header.block_number +1, canonical_header.block_number+1):
                 header_to_remove = self.get_canonical_block_header_by_number(i, wallet_address = wallet_address)
@@ -470,12 +472,12 @@ class ChainDB(BaseChainDB):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
                 for transaction_hash in self.get_block_receive_transaction_hashes(header_to_remove):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
-            
+
             new_canonical_headers = tuple()
-            
+
         else:
             new_canonical_headers = tuple(reversed(self._find_new_ancestors(header)))
-    
+
             # remove transaction lookups for blocks that are no longer canonical
             for h in new_canonical_headers:
                 try:
@@ -491,10 +493,10 @@ class ChainDB(BaseChainDB):
                         pass
                     for transaction_hash in self.get_block_receive_transaction_hashes(old_header):
                         self._remove_transaction_from_canonical_chain(transaction_hash)
-    
+
             for h in new_canonical_headers:
                 self._add_block_number_to_hash_lookup(h)
-    
+
         self.db.set(SchemaV1.make_canonical_head_hash_lookup_key(self.wallet_address), header.hash)
 
         return new_canonical_headers
@@ -546,20 +548,20 @@ class ChainDB(BaseChainDB):
             rlp.encode(header.hash, sedes=rlp.sedes.binary),
         )
 
-    
+
     #
     # Block API
     #
-    
+
     def get_number_of_send_tx_in_block(self, block_hash):
         '''
         returns the number of send tx in a block
         '''
         #get header
         header = self.get_block_header_by_hash(block_hash)
-        
+
         return self._get_block_transaction_count(header.transaction_root)
-        
+
     @classmethod
     def get_chain_wallet_address_for_block_hash(cls, db, block_hash):
         block_hash_save_key = SchemaV1.make_block_hash_to_chain_wallet_address_lookup_key(block_hash)
@@ -567,20 +569,20 @@ class ChainDB(BaseChainDB):
             return db[block_hash_save_key]
         except KeyError:
             raise ValueError("Block hash {} not found in database".format(block_hash))
-            
+
     def get_chain_wallet_address_for_block(self, block):
         if block.header.block_number == 0:
             return block.header.sender
         else:
             return self.get_chain_wallet_address_for_block_hash(self.db, block.header.parent_hash)
-        
-        
+
+
     def save_block_hash_to_chain_wallet_address(self, block_hash, wallet_address = None):
         if wallet_address is None:
             wallet_address = self.wallet_address
         block_hash_save_key = SchemaV1.make_block_hash_to_chain_wallet_address_lookup_key(block_hash)
         self.db[block_hash_save_key] = wallet_address
-        
+
     def persist_block(self, block: 'BaseBlock') -> None:
         '''
         Persist the given block's header and uncles.
@@ -588,34 +590,34 @@ class ChainDB(BaseChainDB):
         Assumes all block transactions have been persisted already.
         '''
         new_canonical_headers = self.persist_header(block.header)
-        
-        
+
+
 
         for header in new_canonical_headers:
             for index, transaction_hash in enumerate(self.get_block_transaction_hashes(header)):
                 self._add_transaction_to_canonical_chain(transaction_hash, header, index)
             for index, transaction_hash in enumerate(self.get_block_receive_transaction_hashes(header)):
                 self._add_receive_transaction_to_canonical_chain(transaction_hash, header, index)
-            
+
             #add all receive transactions as children to the sender block
             self.add_block_receive_transactions_to_parent_child_lookup(header, block.receive_transaction_class)
-        
+
         #we also have to save this block as the child of the parent block in the same chain
         if block.header.parent_hash != GENESIS_PARENT_HASH:
             self.add_block_child(block.header.parent_hash, block.header.hash)
 
     def persist_non_canonical_block(self, block, wallet_address):
         self.save_header_to_db(block.header)
-        
+
         self.save_block_hash_to_chain_wallet_address(block.hash, wallet_address)
-        
+
         #add all receive transactions as children to the sender block
         self.add_block_receive_transactions_to_parent_child_lookup(block.header, block.receive_transaction_class)
-        
+
         #we also have to save this block as the child of the parent block in the same chain
         if block.header.parent_hash != GENESIS_PARENT_HASH:
             self.add_block_child(block.header.parent_hash, block.header.hash)
-    
+
     #
     # Unprocessed Block API
     #
@@ -627,10 +629,10 @@ class ChainDB(BaseChainDB):
         self.save_unprocessed_block_lookup(block.hash, block.number, wallet_address)
         if self.is_block_unprocessed(block.header.parent_hash):
             self.save_unprocessed_children_block_lookup(block.header.parent_hash)
-        
+
         self.save_unprocessed_children_block_lookup_to_transaction_parents(block)
-        
-    
+
+
     def remove_block_from_unprocessed(self, block):
         '''
         This removes any unprocessed lookups for this block.
@@ -638,48 +640,48 @@ class ChainDB(BaseChainDB):
         if self.is_block_unprocessed(block.hash):
             #delete the two unprocessed lookups for this block
             self.delete_unprocessed_block_lookup(block.hash, block.number)
-            
+
             #delete all unprocessed lookups for transaction parents if nessisary
             self.delete_unprocessed_children_block_lookup_to_transaction_parents_if_nessissary(block)
-            
+
             #delete all unprocessed lookups for chain parent if nessisary
             if not self.check_all_children_blocks_to_see_if_any_unprocessed(block.header.parent_hash):
                 self.delete_unprocessed_children_blocks_lookup(block.header.parent_hash)
-    
- 
-        
+
+
+
     def save_unprocessed_block_lookup(self, block_hash, block_number, wallet_address):
         lookup_key = SchemaV1.make_unprocessed_block_lookup_key(block_hash)
         self.db[lookup_key] = b'1'
-        
-        
+
+
         lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(wallet_address, block_number)
         self.db[lookup_key] = rlp.encode(block_hash, sedes=rlp.sedes.binary)
-        
-        
+
+
     def save_unprocessed_children_block_lookup(self, block_hash):
         lookup_key = SchemaV1.make_has_unprocessed_block_children_lookup_key(block_hash)
         self.db[lookup_key] = b'1'
-        
+
         #need to also save for all receive transaction parents
-        
+
     def save_unprocessed_children_block_lookup_to_transaction_parents(self, block):
-        
+
         for receive_transaction in block.receive_transactions:
             #or do we not even have the block
             if self.is_block_unprocessed(receive_transaction.sender_block_hash) or not self.db.exists(receive_transaction.sender_block_hash):
                 self.logger.debug("saving parent children unprocessed block lookup for block hash {}".format(encode_hex(receive_transaction.sender_block_hash)))
                 self.save_unprocessed_children_block_lookup(receive_transaction.sender_block_hash)
-                
+
     def delete_unprocessed_children_block_lookup_to_transaction_parents_if_nessissary(self, block):
-        
+
         for receive_transaction in block.receive_transactions:
             #or do we not even have the block
             if not self.check_all_children_blocks_to_see_if_any_unprocessed(receive_transaction.sender_block_hash) :
                 self.delete_unprocessed_children_blocks_lookup(receive_transaction.sender_block_hash)
-            
 
-        
+
+
     def has_unprocessed_children(self, block_hash):
         '''
         Returns True if the block has unprocessed children
@@ -690,7 +692,7 @@ class ChainDB(BaseChainDB):
             return True
         except KeyError:
             return False
-    
+
     def is_block_unprocessed(self, block_hash):
         '''
         Returns True if the block is unprocessed
@@ -703,37 +705,37 @@ class ChainDB(BaseChainDB):
             return True
         except KeyError:
             return False
-        
+
     def get_unprocessed_block_hash_by_block_number(self, wallet_address, block_number):
         '''
         Returns block hash if the block is unprocessed, false if it doesnt exist for this block number
         '''
-        
+
         lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(wallet_address, block_number)
         try:
             return rlp.decode(self.db[lookup_key], sedes = rlp.sedes.binary)
         except KeyError:
             return None
-        
-    
-        
+
+
+
     def delete_unprocessed_block_lookup(self, block_hash, block_number):
         lookup_key = SchemaV1.make_unprocessed_block_lookup_key(block_hash)
         try:
             del(self.db[lookup_key])
         except KeyError:
             pass
-        
+
         wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, block_hash)
-        
+
         lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(wallet_address, block_number)
-        
+
         try:
             del(self.db[lookup_key])
         except KeyError:
             pass
-        
-        
+
+
     def delete_unprocessed_children_blocks_lookup(self, block_hash):
         '''
         removes the lookup that says if this block has unprocessed children
@@ -743,8 +745,8 @@ class ChainDB(BaseChainDB):
             del(self.db[lookup_key])
         except KeyError:
             pass
-        
-        
+
+
     def check_all_children_blocks_to_see_if_any_unprocessed(self, block_hash):
         '''
         manually goes through all children blocks instead of using lookup table. 
@@ -752,20 +754,20 @@ class ChainDB(BaseChainDB):
         '''
         if not self.has_unprocessed_children(block_hash):
             return False
-        
+
         children_block_hashes = self.get_block_children(block_hash)
         if children_block_hashes == None:
             return False
-        
-        for child_block_hash in children_block_hashes:  
+
+        for child_block_hash in children_block_hashes:
             if self.is_block_unprocessed(child_block_hash):
                 return True
-            
-        return False
-    
 
-        
-        
+        return False
+
+
+
+
     #
     # Transaction API
     #
@@ -792,7 +794,7 @@ class ChainDB(BaseChainDB):
         transaction_db = HexaryTrie(self.db, root_hash=block_header.transaction_root)
         transaction_db[index_key] = rlp.encode(transaction)
         return transaction_db.root_hash
-    
+
     def add_receive_transaction(self,
                         block_header: BlockHeader,
                         index_key: int,
@@ -815,9 +817,9 @@ class ChainDB(BaseChainDB):
         Returns an iterable of transactions for the block speficied by the
         given block header.
         """
-            
+
         return self._get_block_transactions(header.transaction_root, transaction_class)
-    
+
     def get_block_receive_transactions(
             self,
             header: BlockHeader,
@@ -826,7 +828,7 @@ class ChainDB(BaseChainDB):
         Returns an iterable of transactions for the block speficied by the
         given block header.
         """
-            
+
         return self._get_block_transactions(header.receive_transaction_root, transaction_class)
 
     @to_list
@@ -840,7 +842,7 @@ class ChainDB(BaseChainDB):
         )
         for encoded_transaction in all_encoded_transactions:
             yield keccak(encoded_transaction)
-            
+
     @to_list
     def get_block_receive_transaction_hashes(self, block_header: BlockHeader) -> Iterable[Hash32]:
         """
@@ -893,7 +895,7 @@ class ChainDB(BaseChainDB):
         else:
             raise TransactionNotFound(
                 "No transaction is at index {} of block {}".format(transaction_index, block_number))
-            
+
     def get_transaction_by_index_and_block_hash(
             self,
             block_hash: Hash32,
@@ -917,7 +919,7 @@ class ChainDB(BaseChainDB):
         else:
             raise TransactionNotFound(
                 "No transaction is at index {} of block {}".format(transaction_index, block_number))
-            
+
     def get_receive_transaction_by_index_and_block_hash(
             self,
             block_hash: Hash32,
@@ -941,7 +943,7 @@ class ChainDB(BaseChainDB):
         else:
             raise TransactionNotFound(
                 "No transaction is at index {} of block {}".format(transaction_index, block_number))
-            
+
     def get_receive_transaction_by_index(
             self,
             block_number: BlockNumber,
@@ -996,7 +998,7 @@ class ChainDB(BaseChainDB):
                 yield transaction_db[transaction_key]
             else:
                 break
-            
+
     def _get_block_transaction_count(self, transaction_root: Hash32):
         '''
         Returns iterable of the encoded transactions for the given block header
@@ -1049,7 +1051,7 @@ class ChainDB(BaseChainDB):
             SchemaV1.make_transaction_hash_to_block_lookup_key(transaction_hash),
             rlp.encode(transaction_key),
         )
-        
+
     def _add_receive_transaction_to_canonical_chain(self,
                                             transaction_hash: Hash32,
                                             block_header: BlockHeader,
@@ -1078,56 +1080,56 @@ class ChainDB(BaseChainDB):
     def add_block_receive_transactions_to_parent_child_lookup(self, block_header, transaction_class):
         block_receive_transactions = self.get_block_receive_transactions(block_header,
                                                                         transaction_class)
-        
+
         for receive_transaction in block_receive_transactions:
             self.add_block_child(
                        receive_transaction.sender_block_hash,
                        block_header.hash)
-    
+
     def remove_block_receive_transactions_to_parent_child_lookup(self, block_header, transaction_class):
         block_receive_transactions = self.get_block_receive_transactions(block_header,
                                                                         transaction_class)
-        
+
         for receive_transaction in block_receive_transactions:
             self.remove_block_child(
                        receive_transaction.sender_block_hash,
                        block_header.hash)
-            
-        
+
+
     def remove_block_child(self,
                        parent_block_hash: Hash32,
                        child_block_hash: Hash32):
-        
+
         validate_word(parent_block_hash, title="Block_hash")
         validate_word(child_block_hash, title="Block_hash")
-        
+
         block_children = self.get_block_children(parent_block_hash)
-        
+
         if block_children is None or child_block_hash not in block_children:
             self.logger.debug("tried to remove a block child that doesnt exist")
         else:
             block_children = make_mutable(block_children)
             block_children.remove(child_block_hash)
             self.save_block_children(parent_block_hash, block_children)
-            
+
     def remove_block_from_all_parent_child_lookups(self, block_header, transaction_class):
         '''
         Removes block from parent child lookups coming from transactions, and from within the chain.
         '''
         self.remove_block_receive_transactions_to_parent_child_lookup(block_header, transaction_class)
         self.remove_block_child(block_header.parent_hash, block_header.hash)
-        
 
-    
+
+
     def add_block_child(self,
                        parent_block_hash: Hash32,
                        child_block_hash: Hash32):
         validate_word(parent_block_hash, title="Block_hash")
         validate_word(child_block_hash, title="Block_hash")
-        
+
         block_children = self.get_block_children(parent_block_hash)
-        
-        
+
+
         if block_children is None:
             self.save_block_children(parent_block_hash, [child_block_hash])
         elif child_block_hash in block_children:
@@ -1136,7 +1138,7 @@ class ChainDB(BaseChainDB):
             block_children = make_mutable(block_children)
             block_children.append(child_block_hash)
             self.save_block_children(parent_block_hash, block_children)
-    
+
     def get_block_children(self, parent_block_hash: Hash32):
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
@@ -1144,49 +1146,49 @@ class ChainDB(BaseChainDB):
             return rlp.decode(self.db[block_children_lookup_key], sedes=rlp.sedes.CountableList(hash32))
         except KeyError:
             return None
-        
+
     def get_all_descendant_block_hashes(self, block_hash: Hash32):
         validate_word(block_hash, title="Block_hash")
         descentant_blocks = self._get_all_descendant_block_hashes(block_hash)
         return descentant_blocks
-        
+
     def _get_all_descendant_block_hashes(self, block_hash: Hash32):
-        
+
         #lookup children
         children = self.get_block_children(block_hash)
-        
+
         if children == None:
             return None
         else:
             child_blocks = set()
             for child_block_hash in children:
-                
+
                 child_blocks.add(child_block_hash)
-                
+
                 sub_children_blocks = self._get_all_descendant_block_hashes(child_block_hash)
-                
+
                 if sub_children_blocks is not None:
                     child_blocks.update(sub_children_blocks)
             return child_blocks
-        
+
     def save_block_children(self, parent_block_hash: Hash32,
                             block_children):
-        
+
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         self.db[block_children_lookup_key] = rlp.encode(block_children, sedes=rlp.sedes.CountableList(hash32))
-    
+
     def delete_all_block_children(self, parent_block_hash: Hash32):
-        
+
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         try:
             del(self.db[block_children_lookup_key])
         except KeyError:
             pass
-        
+
     #we don't want to count the stake from the origin wallet address. This could allow 51% attacks.The origin chain shouldn't count becuase it is the chain with the conflict.
-    def get_block_children_chains(self, block_hash, exclude_chains = None):
+    def get_block_children_chains(self, block_hash, exclude_chains:List = None) -> List[Address]:
         validate_word(block_hash, title="Block_hash")
         origin_wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, block_hash)
         child_chains = self._get_block_children_chains(block_hash)
@@ -1207,11 +1209,11 @@ class ChainDB(BaseChainDB):
                 except AttributeError:
                     pass
         return list(child_chains)
-    
+
     def _get_block_children_chains(self, block_hash):
         #lookup children
         children = self.get_block_children(block_hash)
-        
+
         if children == None:
             return None
         else:
@@ -1219,48 +1221,48 @@ class ChainDB(BaseChainDB):
             for child_block_hash in children:
                 chain_wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, child_block_hash)
                 child_chains.add(chain_wallet_address)
-                
+
                 sub_children_chain_wallet_addresses = self._get_block_children_chains(child_block_hash)
-                
+
                 if sub_children_chain_wallet_addresses is not None:
                     child_chains.update(sub_children_chain_wallet_addresses)
             return child_chains
-        
+
     #
     # Historical minimum allowed gas price API for throttling the network
     #
-    def save_historical_minimum_gas_price(self, historical_minimum_gas_price):
+    def save_historical_minimum_gas_price(self, historical_minimum_gas_price: List[List[Union[Timestamp, int]]]) -> None:
         '''
         This takes list of timestamp, gas_price. The timestamps are every minute
         '''
         lookup_key = SchemaV1.make_historical_minimum_gas_price_lookup_key()
-        encoded_data = rlp.encode(historical_minimum_gas_price[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=CountableList(List([big_endian_int, big_endian_int])))
+        encoded_data = rlp.encode(historical_minimum_gas_price[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
         self.db.set(
             lookup_key,
             encoded_data,
         )
-        
-    
-    def load_historical_minimum_gas_price(self, mutable = True, sort = False):
+
+
+    def load_historical_minimum_gas_price(self, mutable:bool = True, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
         '''
         saved as timestamp, min gas price
         '''
         lookup_key = SchemaV1.make_historical_minimum_gas_price_lookup_key()
         try:
-            data = rlp.decode(self.db[lookup_key], sedes=CountableList(List([big_endian_int, big_endian_int])))
+            data = rlp.decode(self.db[lookup_key], sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
             if sort:
                 if len(data) > 0:
                     sorted_data = SortedList(data)
                     data = tuple(sorted_data)
-                
+
             if mutable:
                 return make_mutable(data)
             else:
                 return data
         except KeyError:
             return None
-        
-        
+
+
     def save_historical_tx_per_centisecond(self, historical_tx_per_centisecond, de_sparse = True):
         '''
         This takes list of timestamp, tx_per_minute. The timestamps are every minute, tx_per_minute must be an intiger
@@ -1269,12 +1271,12 @@ class ChainDB(BaseChainDB):
         if de_sparse:
             historical_tx_per_centisecond = de_sparse_timestamp_item_list(historical_tx_per_centisecond, 100, filler = 0)
         lookup_key = SchemaV1.make_historical_tx_per_centisecond_lookup_key()
-        encoded_data = rlp.encode(historical_tx_per_centisecond[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=CountableList(List([big_endian_int, big_endian_int])))
+        encoded_data = rlp.encode(historical_tx_per_centisecond[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
         self.db.set(
             lookup_key,
             encoded_data,
         )
-        
+
     def load_historical_tx_per_centisecond(self, mutable = True, sort = False):
         '''
         returns a list of [timestamp, tx/centisecond]
@@ -1282,105 +1284,111 @@ class ChainDB(BaseChainDB):
 
         lookup_key = SchemaV1.make_historical_tx_per_centisecond_lookup_key()
         try:
-            data = rlp.decode(self.db[lookup_key], sedes=CountableList(List([big_endian_int, big_endian_int])))
+            data = rlp.decode(self.db[lookup_key], sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
             if sort:
                 if len(data) > 0:
                     sorted_data = SortedList(data)
                     data = tuple(sorted_data)
-                
+
             if mutable:
                 return make_mutable(data)
             else:
                 return data
         except KeyError:
             return None
-        
-    def save_historical_network_tpc_capability(self, historical_tpc_capability, de_sparse = False):
+
+    def save_historical_network_tpc_capability(self, historical_tpc_capability: List[List[Union[Timestamp, int]]], de_sparse: bool = False) -> None:
         '''
         This takes list of timestamp, historical_tpc_capability. The timestamps are every minute, historical_tpc_capability must be an intiger
         '''
         if de_sparse:
             historical_tpc_capability = de_sparse_timestamp_item_list(historical_tpc_capability, 100, filler = None)
         lookup_key = SchemaV1.make_historical_network_tpc_capability_lookup_key()
-        encoded_data = rlp.encode(historical_tpc_capability[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=CountableList(List([big_endian_int, big_endian_int])))
+        encoded_data = rlp.encode(historical_tpc_capability[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
         self.db.set(
             lookup_key,
             encoded_data,
         )
-        
+
     def save_current_historical_network_tpc_capability(self, current_tpc_capability):
         validate_uint256(current_tpc_capability, title="current_tpc_capability")
         existing = self.load_historical_network_tpc_capability()
         current_centisecond = int(time.time()/100) * 100
         existing.append([current_centisecond, current_tpc_capability])
         self.save_historical_network_tpc_capability(existing, de_sparse = True)
-        
-    
+
+
 #    def update_historical_network_tpc_capability(self, timestamp, network_tpc_cap, perform_validation = True):
 #        if perform_validation:
 #            validate_centisecond_timestamp(timestamp, title="timestamp")
 #            validate_uint256(network_tpc_cap, title="network_tpc_cap")
-            
-        
-        
-        
-    def load_historical_network_tpc_capability(self, mutable = True, sort = False):
+
+
+
+
+    def load_historical_network_tpc_capability(self, mutable:bool = True, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
+        '''
+        Returns a list of [timestamp, transactions per second]
+        :param mutable:
+        :param sort:
+        :return:
+        '''
         lookup_key = SchemaV1.make_historical_network_tpc_capability_lookup_key()
         try:
-            data = rlp.decode(self.db[lookup_key], sedes=CountableList(List([big_endian_int, big_endian_int])))
+            data = rlp.decode(self.db[lookup_key], sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
             if sort:
                 if len(data) > 0:
                     sorted_data = SortedList(data)
                     data = tuple(sorted_data)
-                
+
             if mutable:
                 return make_mutable(data)
             else:
                 return data
         except KeyError:
             return None
-        
-      
+
+
     def calculate_next_centisecond_minimum_gas_price(self, historical_minimum_allowed_gas, historical_tx_per_centisecond, goal_tx_per_centisecond):
         average_centisecond_delay = MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY
         average_centisecond_window_length = MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH
         min_centisecond_time_between_change_in_minimum_gas = MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE
-        
+
         if not len(historical_minimum_allowed_gas) >= min_centisecond_time_between_change_in_minimum_gas:
             raise HistoricalMinGasPriceError('historical_minimum_allowed_gas too short. it is a lenght of {}, but should be a length of {}'.format(len(historical_minimum_allowed_gas),min_centisecond_time_between_change_in_minimum_gas))
         if not len(historical_tx_per_centisecond) > average_centisecond_delay+average_centisecond_window_length:
             raise HistoricalMinGasPriceError('historical_tx_per_centisecond too short. it is a length of {}, but should be a length of {}'.format(len(historical_tx_per_centisecond),average_centisecond_delay+average_centisecond_window_length))
 
-    
+
         if not are_items_in_list_equal(historical_minimum_allowed_gas[-1*min_centisecond_time_between_change_in_minimum_gas:]):
             #we have to wait longer to change minimum gas
             return historical_minimum_allowed_gas[-1]
         else:
             my_sum = sum(historical_tx_per_centisecond[-average_centisecond_delay-average_centisecond_window_length:-average_centisecond_delay])
             average = my_sum/average_centisecond_window_length
-            
+
             error = average - goal_tx_per_centisecond
-            
-            
+
+
             if error > 1:
                 new_minimum_allowed_gas = historical_minimum_allowed_gas[-1] + 1
             elif error < -1:
                 new_minimum_allowed_gas = historical_minimum_allowed_gas[-1] -1
             else:
                 new_minimum_allowed_gas = historical_minimum_allowed_gas[-1]
-                
+
             if new_minimum_allowed_gas < 1:
                 new_minimum_allowed_gas = 1
-            
+
             return new_minimum_allowed_gas
-        
+
     def initialize_historical_minimum_gas_price_at_genesis(self, min_gas_price, net_tpc_cap, tpc = None):
         current_centisecond = int(time.time()/100) * 100
-        
+
         historical_minimum_gas_price = []
         historical_tx_per_centisecond = []
         historical_tpc_capability = []
-        
+
         for timestamp in range(current_centisecond-100*50, current_centisecond+100, 100):
             historical_minimum_gas_price.append([timestamp, min_gas_price])
             if tpc is not None:
@@ -1391,106 +1399,106 @@ class ChainDB(BaseChainDB):
                 else:
                     historical_tx_per_centisecond.append([timestamp, int(net_tpc_cap*0.94)])
             historical_tpc_capability.append([timestamp, net_tpc_cap])
-            
+
         self.save_historical_minimum_gas_price(historical_minimum_gas_price)
         self.save_historical_tx_per_centisecond(historical_tx_per_centisecond, de_sparse = False)
         self.save_historical_network_tpc_capability(historical_tpc_capability, de_sparse = False)
-        
 
-            
-            
+
+
+
     def recalculate_historical_mimimum_gas_price(self, start_timestamp, end_timestamp = None):
         #we just have to delete the ones in front of this time and update
         self.delete_newer_historical_mimimum_gas_price(start_timestamp)
-        
+
         #then update the missing items:
         self.update_historical_mimimum_gas_price(end_timestamp=end_timestamp)
-        
+
     def delete_newer_historical_mimimum_gas_price(self, start_timestamp):
         self.logger.debug("deleting historical min gas price newer than {}".format(start_timestamp))
         hist_min_gas_price = self.load_historical_minimum_gas_price()
-        
-        if (hist_min_gas_price is None 
+
+        if (hist_min_gas_price is None
             or len(hist_min_gas_price) < MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE):
             #there is no data for calculating min gas price
             raise HistoricalMinGasPriceError("tried to update historical minimum gas price but historical minimum gas price has not been initialized")
-            
+
         sorted_hist_min_gas_price = SortedDict(hist_min_gas_price)
 #        if sorted_hist_min_gas_price.peekitem(0)[0] > start_timestamp:
 #            raise HistoricalMinGasPriceError("tried to recalculate historical minimum gas price at timestamp {}, however that timestamp doesnt exist".format(start_timestamp))
-#    
+#
 
         #make sure we leave at least the minimum amount to calculate future min gas prices. otherwise we cant do anything.
         if MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE > (MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY + MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH):
             min_required_centiseconds_remaining = MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE + 3
         else:
             min_required_centiseconds_remaining = (MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY + MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH) + 3
-            
+
         #we assume we have hist_net_tpc_capability back to at least as early as the earliest hist_min_gas_price, which should always be the case
         earliest_allowed_timestamp = sorted_hist_min_gas_price.keys()[min_required_centiseconds_remaining]
         if start_timestamp < earliest_allowed_timestamp:
             start_timestamp = earliest_allowed_timestamp
-            
+
         if sorted_hist_min_gas_price.peekitem(-1)[0] > start_timestamp:
             end_timestamp = sorted_hist_min_gas_price.peekitem(-1)[0]+100
-            
+
             for timestamp in range(start_timestamp, end_timestamp):
                 try:
                     del(sorted_hist_min_gas_price[timestamp])
                 except KeyError:
                     pass
-                
+
             hist_min_gas_price = list(sorted_hist_min_gas_price.items())
             #save it with the deleted items
             self.save_historical_minimum_gas_price(hist_min_gas_price)
-        
-        
+
+
     def update_historical_mimimum_gas_price(self,end_timestamp=None):
         '''
         needs to be called any time the chains are modified, and any time we lookup required gas price
         it saves the historical block price up to MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY minutes ago using all information in our database
         '''
-            
+
         hist_min_gas_price = self.load_historical_minimum_gas_price()
-        
-        if (hist_min_gas_price is None 
+
+        if (hist_min_gas_price is None
             or len(hist_min_gas_price) < MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE):
             #there is no data for calculating min gas price
             raise HistoricalMinGasPriceError("tried to update historical minimum gas price but historical minimum gas price has not been initialized")
-        
+
         sorted_hist_min_gas_price = SortedList(hist_min_gas_price)
-        
+
         current_centisecond = int(time.time()/100) * 100
-        
+
         if sorted_hist_min_gas_price[-1][0] != current_centisecond:
-            
+
             hist_tx_per_centi = self.load_historical_tx_per_centisecond()
             if hist_tx_per_centi is None:
                 #there is no data for calculating min gas price
                 raise HistoricalMinGasPriceError("tried to update historical minimum gas price but historical transactions per centisecond is empty")
-            
+
             if len(hist_tx_per_centi) < (MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY + MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH + 1):
                 raise HistoricalMinGasPriceError("tried to update historical minimum gas price but historical transactions per centisecond is empty")
-            
+
             sorted_hist_tx_per_centi = SortedList(hist_tx_per_centi)
-            
+
             #only update if there is a newer entry in hist tx per centi
             if sorted_hist_tx_per_centi[-1][0] <= sorted_hist_min_gas_price[-1][0]:
                 self.logger.debug("No need to update historical minimum gas price because there have been no newer transactions")
                 return
-            
+
             hist_network_tpc_cap = self.load_historical_network_tpc_capability()
             if hist_network_tpc_cap is None:
                 #there is no data for calculating min gas price
                 raise HistoricalMinGasPriceError("tried to update historical minimum gas price but historical network tpc capability is empty")
 
-            
+
             hist_network_tpc_cap = dict(hist_network_tpc_cap)
-            
+
             #now lets do the updating:
-            
+
             start_timestamp = sorted_hist_min_gas_price[-1][0]+100
-            
+
             if not end_timestamp:
                 end_timestamp = current_centisecond+100
             else:
@@ -1498,10 +1506,10 @@ class ChainDB(BaseChainDB):
                     end_timestamp = current_centisecond+100
                 else:
                     end_timestamp = int(end_timestamp/100) * 100+100
-            
+
             historical_minimum_allowed_gas = [i[1] for i in sorted_hist_min_gas_price]
-            
-            
+
+
             for timestamp in range(start_timestamp, end_timestamp, 100):
                 historical_tx_per_centisecond = [i[1] for i in sorted_hist_tx_per_centi if i[0] < timestamp]
                 try:
@@ -1512,82 +1520,82 @@ class ChainDB(BaseChainDB):
                         goal_tx_per_centisecond = hist_network_tpc_cap[end_timestamp-200]
                     else:
                         raise HistoricalNetworkTPCMissing
-                next_centisecond_min_gas_price = self.calculate_next_centisecond_minimum_gas_price(historical_minimum_allowed_gas, 
-                                                                                                   historical_tx_per_centisecond, 
+                next_centisecond_min_gas_price = self.calculate_next_centisecond_minimum_gas_price(historical_minimum_allowed_gas,
+                                                                                                   historical_tx_per_centisecond,
                                                                                                    goal_tx_per_centisecond)
-                
+
                 #first make sure we append it to historical_minimum_allowed_gas
                 historical_minimum_allowed_gas.append(next_centisecond_min_gas_price)
                 #now add it to the sortedList
                 sorted_hist_min_gas_price.add([timestamp, next_centisecond_min_gas_price])
-            
-            
+
+
             #now lets change it into a list
             hist_min_gas_price = list(sorted_hist_min_gas_price)
-            
+
             #now remove any that are to old.
             if len(hist_min_gas_price) > MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:
                 hist_min_gas_price = hist_min_gas_price[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:]
-                
+
             #and finally save it
             self.save_historical_minimum_gas_price(hist_min_gas_price)
-            
-    
-        
+
+
+
     def get_required_block_min_gas_price(self, block_timestamp):
         '''
         it is important that this doesn't run until our blockchain is up to date. If it is run before that,
         it will give the wrong number.
         '''
         centisecond_window = int(block_timestamp/100) * 100
-        
+
 
         hist_min_gas_price = self.load_historical_minimum_gas_price()
-        
+
         if hist_min_gas_price is None:
             #there is no data for calculating min gas price
             raise HistoricalMinGasPriceError("tried to get required block minimum gas price but historical minimum gas price has not been initialized")
-        
+
         dict_hist_min_gas_price = dict(hist_min_gas_price)
-        
+
         #self.logger.debug('get_required_block_min_gas_price, centisecond_window = {}, dict_hist_min_gas_price = {}'.format(centisecond_window, dict_hist_min_gas_price))
         try:
             return dict_hist_min_gas_price[centisecond_window]
         except KeyError:
             pass
-        
+
         #if we don't have this centisecond_window, lets return the previous one.
         try:
             return dict_hist_min_gas_price[centisecond_window-100]
         except KeyError:
             pass
-        
-            
+
+
         raise HistoricalMinGasPriceError("Could not get required block min gas price for block timestamp {}".format(block_timestamp))
-        
+
     def min_gas_system_initialization_required(self):
         test_1 = self.load_historical_minimum_gas_price(mutable = False)
         test_3 = self.load_historical_network_tpc_capability(mutable = False)
-        
+
         if test_1 is None or test_3 is None:
             return True
-        
+
         min_centisecond_window = int(time.time()/100) * 100-100*15
         sorted_test_3 = SortedList(test_3)
         if sorted_test_3[-1][0] < min_centisecond_window:
             return True
-        
+
         return False
-        
-    
-        
-        
-    
-    
+
+
+
+
+
+
     #
     # Raw Database API
     #
-    
+
     def exists(self, key: bytes) -> bool:
         """
         Returns True if the given key exists in the database.
@@ -1610,23 +1618,24 @@ class ChainDB(BaseChainDB):
 def _decode_block_header(header_rlp: bytes) -> BlockHeader:
     return rlp.decode(header_rlp, sedes=BlockHeader)
 
-
-class AsyncChainDB(ChainDB):
-
-    async def coro_get_block_header_by_hash(self, block_hash: Hash32) -> BlockHeader:
-        raise NotImplementedError()
-
-    async def coro_get_canonical_head(self) -> BlockHeader:
-        raise NotImplementedError()
-
-    async def coro_header_exists(self, block_hash: Hash32) -> bool:
-        raise NotImplementedError()
-
-    async def coro_get_canonical_block_hash(self, block_number: BlockNumber) -> Hash32:
-        raise NotImplementedError()
-
-    async def coro_persist_header(self, header: BlockHeader) -> Tuple[BlockHeader, ...]:
-        raise NotImplementedError()
-
-    async def coro_persist_trie_data_dict(self, trie_data_dict: Dict[bytes, bytes]) -> None:
-        raise NotImplementedError()
+# TODO: remove this commented class
+# this class has been moved to helios
+# class AsyncChainDB(ChainDB):
+#
+#     async def coro_get_block_header_by_hash(self, block_hash: Hash32) -> BlockHeader:
+#         raise NotImplementedError()
+#
+#     async def coro_get_canonical_head(self) -> BlockHeader:
+#         raise NotImplementedError()
+#
+#     async def coro_header_exists(self, block_hash: Hash32) -> bool:
+#         raise NotImplementedError()
+#
+#     async def coro_get_canonical_block_hash(self, block_number: BlockNumber) -> Hash32:
+#         raise NotImplementedError()
+#
+#     async def coro_persist_header(self, header: BlockHeader) -> Tuple[BlockHeader, ...]:
+#         raise NotImplementedError()
+#
+#     async def coro_persist_trie_data_dict(self, trie_data_dict: Dict[bytes, bytes]) -> None:
+#         raise NotImplementedError()

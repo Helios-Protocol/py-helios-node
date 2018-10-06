@@ -1,5 +1,9 @@
 import enum
-from typing import cast, Dict
+from typing import (
+    cast,
+    Dict,
+    TYPE_CHECKING
+)
 
 from cytoolz import assoc
 
@@ -7,11 +11,17 @@ import rlp
 from rlp import sedes
 
 from hp2p.exceptions import MalformedMessage
+
 from hp2p.protocol import (
     Command,
     Protocol,
     _DecodedMsgType,
 )
+
+if TYPE_CHECKING:
+    from hp2p.peer import (  # noqa: F401
+        BasePeer
+    )
 
 
 class Hello(Command):
@@ -28,6 +38,7 @@ class Hello(Command):
 
 @enum.unique
 class DisconnectReason(enum.Enum):
+    """More details at https://github.com/ethereum/wiki/wiki/%C3%90%CE%9EVp2p-Wire-Protocol#p2p"""
     disconnect_requested = 0
     tcp_sub_system_error = 1
     bad_protocol = 2
@@ -40,8 +51,7 @@ class DisconnectReason(enum.Enum):
     unexpected_identity = 9
     connected_to_self = 10
     timeout = 11
-    subprotocol_error = 12
-    other = 16
+    subprotocol_error = 16
 
 
 class Disconnect(Command):
@@ -56,10 +66,10 @@ class Disconnect(Command):
 
     def decode(self, data: bytes) -> _DecodedMsgType:
         try:
-            raw_decoded = cast(Dict[str, int], super(Disconnect, self).decode(data))
+            raw_decoded = cast(Dict[str, int], super().decode(data))
         except rlp.exceptions.ListDeserializationError:
-            self.logger.warn("Malformed Disconnect message: %s", data)
-            raise MalformedMessage("Malformed Disconnect message: {0}".format(data))
+            self.logger.warning("Malformed Disconnect message: %s", data)
+            raise MalformedMessage(f"Malformed Disconnect message: {data}")
         return assoc(raw_decoded, 'reason_name', self.get_reason_name(raw_decoded['reason']))
 
 
@@ -72,30 +82,30 @@ class Pong(Command):
 
 
 class P2PProtocol(Protocol):
-    name = 'hp2p'
+    name = 'p2p'
     version = 4
     _commands = [Hello, Ping, Pong, Disconnect]
     cmd_length = 16
 
-    def __init__(self, peer):
+    def __init__(self, peer: 'BasePeer') -> None:
         # For the base protocol the cmd_id_offset is always 0.
-        super(P2PProtocol, self).__init__(peer, cmd_id_offset=0)
+        super().__init__(peer, cmd_id_offset=0)
 
-    def send_handshake(self):
+    def send_handshake(self) -> None:
         # TODO: move import out once this is in the helios codebase
-        from helios.utils.version import construct_trinity_client_identifier
+        from helios.utils.version import construct_helios_client_identifier
         data = dict(version=self.version,
-                    client_version_string=construct_trinity_client_identifier(),
+                    client_version_string=construct_helios_client_identifier(),
                     capabilities=self.peer.capabilities,
                     listen_port=self.peer.listen_port,
                     remote_pubkey=self.peer.privkey.public_key.to_bytes())
         header, body = Hello(self.cmd_id_offset).encode(data)
         self.send(header, body)
 
-    def send_disconnect(self, reason):
+    def send_disconnect(self, reason: DisconnectReason) -> None:
         header, body = Disconnect(self.cmd_id_offset).encode(dict(reason=reason))
         self.send(header, body)
 
-    def send_pong(self):
+    def send_pong(self) -> None:
         header, body = Pong(self.cmd_id_offset).encode({})
         self.send(header, body)

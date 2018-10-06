@@ -1,13 +1,15 @@
 import pytest
 
 
-from hvm import Chain
+from hvm.chains.base import (
+    Chain,
+    MiningChain,
+)
 from hvm.constants import (
     GENESIS_BLOCK_NUMBER,
     GENESIS_DIFFICULTY,
     GENESIS_GAS_LIMIT,
 )
-from hvm.db.backends.memory import MemoryDB
 from hvm.db.chain import ChainDB
 from hvm.exceptions import (
     VMNotFound,
@@ -49,11 +51,6 @@ class ChainForTesting(Chain):
 
 
 @pytest.fixture()
-def base_db():
-    return MemoryDB()
-
-
-@pytest.fixture()
 def chaindb(base_db):
     return ChainDB(base_db)
 
@@ -73,7 +70,7 @@ def test_header_chain_get_vm_class_for_block_number(base_db, genesis_header):
 
 
 def test_header_chain_invalid_if_no_vm_configuration(base_db, genesis_header):
-    chain_class = Chain.configure('ChainNoEmptyConfiguration', vm_configuration=())
+    chain_class = MiningChain.configure('ChainNoEmptyConfiguration', vm_configuration=())
     with pytest.raises(ValueError):
         chain_class(base_db, genesis_header)
 

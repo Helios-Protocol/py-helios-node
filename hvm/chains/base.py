@@ -21,6 +21,7 @@ from typing import (  # noqa: F401
     Type,
     TYPE_CHECKING,
     Union,
+    List,
 )
 
 import logging
@@ -29,6 +30,8 @@ from cytoolz import (
     assoc,
     groupby,
 )
+
+from hvm.types import Timestamp
 
 from eth_typing import (
     Address,
@@ -153,10 +156,6 @@ from sortedcontainers import (
 if TYPE_CHECKING:
     from hvm.vm.base import BaseVM  # noqa: F401
 
-from helios.utils.mp import (
-    async_method,
-    sync_method,
-)
 
 from functools import partial
 import asyncio
@@ -271,6 +270,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def get_canonical_block_hash(self, block_number):
         raise NotImplementedError("Chain classes must implement this method")
 
+    @abstractmethod
+    def get_all_chronological_blocks_for_window(self, window_timestamp: Timestamp) -> List[BaseBlock]:
+        raise NotImplementedError("Chain classes must implement this method")
+
     #
     # Transaction API
     #
@@ -298,6 +301,17 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def import_block(self, block: BaseBlock, perform_validation: bool=True) -> BaseBlock:
         raise NotImplementedError("Chain classes must implement this method")
 
+    @abstractmethod
+    def import_chain(self, block_list: List[BaseBlock], perform_validation: bool = True, save_block_head_hash_timestamp: bool=True) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp,
+                                          save_block_head_hash_timestamp: bool = True,
+                                          allow_unprocessed: bool = False) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+
     #
     # Validation API
     #
@@ -307,6 +321,34 @@ class BaseChain(Configurable, metaclass=ABCMeta):
 
     @abstractmethod
     def validate_gaslimit(self, header: BlockHeader) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    #
+    # Stake API
+    #
+    # this doesnt count the stake of the origin chain
+    @abstractmethod
+    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_mature_stake(self, wallet_address: Address = None) -> int:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    #
+    # Min Block Gas API used for throttling the network
+    #
+    @abstractmethod
+    def re_initialize_historical_minimum_gas_price_at_genesis(self) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def update_current_network_tpc_capability(self, current_network_tpc_cap: int,
+                                              update_min_gas_price: bool = True) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_local_tpc_cap(self) -> int:
         raise NotImplementedError("Chain classes must implement this method")
 
 
@@ -974,7 +1016,7 @@ class Chain(BaseChain):
         
         
         
-    def import_chronological_block_window(self, block_list, window_start_timestamp, save_block_head_hash_timestamp = True, allow_unprocessed=False):
+    def import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp, save_block_head_hash_timestamp:bool = True, allow_unprocessed:bool =False) -> None:
         validate_uint256(window_start_timestamp, title='timestamp')
 
         #if we are given a block that is not one of the two allowed classes, try converting it.
@@ -1023,7 +1065,7 @@ class Chain(BaseChain):
                     self.logger.debug("Tried to propogate the previous historical root hash but there was none. This shouldn't happen")
         #self.logger.debug("historical root hashes after chronological block import {}".format(self.chain_head_db.get_historical_root_hashes()))
     
-    def import_chain(self, block_list, perform_validation: bool=True, save_block_head_hash_timestamp = True):
+    def import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp = True) -> None:
         self.logger.debug("importing chain")
         
         #if we are given a block that is not one of the two allowed classes, try converting it.
@@ -1044,13 +1086,13 @@ class Chain(BaseChain):
                               wallet_address = wallet_address)
             
             
-    async def coro_import_block(self, *args, **kwargs):
-        loop = asyncio.get_event_loop()
-        
-        return await loop.run_in_executor(
-            None,
-            partial(self.import_block, *args, **kwargs)
-        )
+    # async def coro_import_block(self, *args, **kwargs):
+    #     loop = asyncio.get_event_loop()
+    #
+    #     return await loop.run_in_executor(
+    #         None,
+    #         partial(self.import_block, *args, **kwargs)
+    #     )
 
     from hvm.utils.profile import profile
     @profile(sortby='cumulative')
@@ -1227,6 +1269,7 @@ class Chain(BaseChain):
         if isinstance(block, self.get_vm(refresh=False).get_queue_block_class()):
             # If it was a queueblock, then the header will have changed after importing
             perform_validation = False
+            ensure_block_unchainged = False
             
         
         if not self.chaindb.is_block_unprocessed(block.header.parent_hash):
@@ -1365,7 +1408,7 @@ class Chain(BaseChain):
         
         return self.import_block(self.queue_block)
     
-    def get_all_chronological_blocks_for_window(self, window_timestamp):
+    def get_all_chronological_blocks_for_window(self, window_timestamp:Timestamp) -> List[BaseBlock]:
         validate_uint256(window_timestamp, title='timestamp')
         chronological_blocks = self.chain_head_db.load_chronological_block_window(window_timestamp)
         if chronological_blocks is None:
@@ -1450,7 +1493,7 @@ class Chain(BaseChain):
     # Stake API
     #
     #this doesnt count the stake of the origin chain
-    def get_block_stake_from_children(self, block_hash, exclude_chains = None):
+    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
         validate_word(block_hash, title="Block Hash")
         
         children_chain_wallet_addresses = self.chaindb.get_block_children_chains(block_hash, exclude_chains)
@@ -1465,7 +1508,7 @@ class Chain(BaseChain):
             return total_stake
                 
                        
-    def get_mature_stake(self, wallet_address = None):
+    def get_mature_stake(self, wallet_address: Address = None) -> int:
         if wallet_address is None:
             wallet_address = self.wallet_address
             
@@ -1527,7 +1570,7 @@ class Chain(BaseChain):
     # Min Block Gas API used for throttling the network
     #
     
-    def re_initialize_historical_minimum_gas_price_at_genesis(self):
+    def re_initialize_historical_minimum_gas_price_at_genesis(self) -> None:
         '''
         re-initializes system with last set min gas price and net tpc cap
         '''
@@ -1552,7 +1595,7 @@ class Chain(BaseChain):
             
         self.chaindb.initialize_historical_minimum_gas_price_at_genesis(init_min_gas_price, init_tpc_cap, init_tpc)
             
-    def update_current_network_tpc_capability(self, current_network_tpc_cap, update_min_gas_price = True):
+    def update_current_network_tpc_capability(self, current_network_tpc_cap: int, update_min_gas_price:bool = True) -> None:
         validate_uint256(current_network_tpc_cap, title="current_network_tpc_cap")
         self.chaindb.save_current_historical_network_tpc_capability(current_network_tpc_cap)
         
@@ -1646,7 +1689,7 @@ class Chain(BaseChain):
         return not difference_found
             
     
-    def get_local_tpc_cap(self):
+    def get_local_tpc_cap(self) -> int:
         #base it on the time it takes to import a block
 
         from hvm.utils.profile import profile
@@ -1713,3 +1756,32 @@ class AsyncChain(Chain):
                                 block: BlockHeader,
                                 perform_validation: bool=True) -> BaseBlock:
         raise NotImplementedError()
+
+    async def coro_import_chain(self, block_list: List[BaseBlock], perform_validation: bool = True,
+                     save_block_head_hash_timestamp: bool = True) -> None:
+        raise NotImplementedError()
+
+    async def coro_get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
+        raise NotImplementedError()
+
+    async def coro_get_mature_stake(self, wallet_address: Address = None) -> int:
+        raise NotImplementedError()
+
+    async def coro_get_all_chronological_blocks_for_window(self, window_timestamp: Timestamp) -> List[BaseBlock]:
+        raise NotImplementedError()
+
+    async def coro_import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp,
+                                          save_block_head_hash_timestamp: bool = True,
+                                          allow_unprocessed: bool = False) -> None:
+        raise NotImplementedError()
+
+    async def coro_update_current_network_tpc_capability(self, current_network_tpc_cap: int,
+                                              update_min_gas_price: bool = True) -> None:
+        raise NotImplementedError()
+
+    async def coro_get_local_tpc_cap(self) -> int:
+        raise NotImplementedError()
+
+    async def coro_re_initialize_historical_minimum_gas_price_at_genesis(self) -> None:
+        raise NotImplementedError()
+

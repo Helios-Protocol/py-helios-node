@@ -12,7 +12,6 @@ from eth_hash.auto import keccak
 from hvm.constants import (
     BLANK_ROOT_HASH,
 )
-from hvm.db.backends.memory import MemoryDB
 from hvm.db.chain import (
     ChainDB,
 )
@@ -24,8 +23,8 @@ from hvm.exceptions import (
 from hvm.rlp.headers import (
     BlockHeader,
 )
-from hvm.tools.fixture_tests import (
-    assert_rlp_equal,
+from hvm.tools.rlp import (
+    assert_headers_eq,
 )
 from hvm.vm.forks.frontier.blocks import (
     FrontierBlock,
@@ -45,11 +44,6 @@ def set_empty_root(chaindb, header):
         receipt_root=BLANK_ROOT_HASH,
         state_root=BLANK_ROOT_HASH,
     )
-
-
-@pytest.fixture
-def base_db():
-    return MemoryDB()
 
 
 @pytest.fixture
@@ -73,7 +67,7 @@ def block(request, header):
 def test_chaindb_add_block_number_to_hash_lookup(chaindb, block):
     block_number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(block.number)
     assert not chaindb.exists(block_number_to_hash_key)
-    chaindb._add_block_number_to_hash_lookup(block.header)
+    chaindb.persist_block(block)
     assert chaindb.exists(block_number_to_hash_key)
 
 
@@ -127,11 +121,11 @@ def test_chaindb_get_block_header_by_hash(chaindb, block, header):
     header = set_empty_root(chaindb, header)
     chaindb.persist_block(block)
     block_header = chaindb.get_block_header_by_hash(block.hash)
-    assert_rlp_equal(block_header, header)
+    assert_headers_eq(block_header, header)
 
 
 def test_chaindb_get_canonical_block_hash(chaindb, block):
     block = block.copy(header=set_empty_root(chaindb, block.header))
-    chaindb._add_block_number_to_hash_lookup(block.header)
+    chaindb.persist_block(block)
     block_hash = chaindb.get_canonical_block_hash(block.number)
     assert block_hash == block.hash

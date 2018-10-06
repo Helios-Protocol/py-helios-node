@@ -10,20 +10,9 @@ from logging.handlers import (
     QueueHandler,
     RotatingFileHandler,
 )
-from multiprocessing import Queue
+
 import os
 import sys
-from typing import (
-    Tuple,
-    Callable
-)
-
-from cytoolz import dissoc
-
-from helios.config import (
-    ChainConfig,
-)
-
 from typing import (
     Any,
     cast,
@@ -33,27 +22,56 @@ from typing import (
     Callable,
 )
 
+from cytoolz import dissoc
+
+from hvm.tools.logging import (
+    TraceLogger,
+)
+
+from helios.config import (
+    ChainConfig,
+)
+
+if TYPE_CHECKING:
+    from multiprocessing import Queue  # noqa: F401
+
 LOG_BACKUP_COUNT = 10
 LOG_MAX_MB = 5
 
-def setup_log_levels(log_levels: Dict[str, int]) -> None:
-    try:
-        default_level = log_levels['default']
-        del(log_levels['default'])
-    except KeyError:
-        default_level = logging.DEBUG
-    #logging.getLogger().setLevel(default_level)
 
+class HeliosLogFormatter(logging.Formatter):
+
+    def __init__(self, fmt: str, datefmt: str) -> None:
+        super().__init__(fmt, datefmt)
+
+    def format(self, record: logging.LogRecord) -> str:
+        record.shortname = record.name.split('.')[-1]  # type: ignore
+        return super().format(record)
+
+
+class HasTraceLogger:
+    _logger: TraceLogger = None
+
+    @property
+    def logger(self) -> TraceLogger:
+        if self._logger is None:
+            self._logger = cast(
+                TraceLogger,
+                logging.getLogger(self.__module__ + '.' + self.__class__.__name__)
+            )
+        return self._logger
+
+
+def setup_log_levels(log_levels: Dict[str, int]) -> None:
     for name, level in log_levels.items():
         logger = logging.getLogger(name)
         logger.setLevel(level)
 
 
-def setup_trinity_stderr_logging(level: int=None,
-                                 ) -> Tuple[Logger, Formatter, StreamHandler]:
+def setup_helios_stderr_logging(level: int=None,
+                                ) -> Tuple[Logger, Formatter, StreamHandler]:
     if level is None:
         level = logging.INFO
-
     logger = logging.getLogger('helios')
     logger.setLevel(logging.DEBUG)
 
@@ -61,8 +79,8 @@ def setup_trinity_stderr_logging(level: int=None,
     handler_stream.setLevel(level)
 
     # TODO: allow configuring `detailed` logging
-    formatter = logging.Formatter(
-        fmt='%(levelname)8s  %(asctime)s  %(module)10s  %(message)s',
+    formatter = HeliosLogFormatter(
+        fmt='%(levelname)8s  %(asctime)s  %(shortname)20s  %(message)s',
         datefmt='%m-%d %H:%M:%S'
     )
 
@@ -75,7 +93,7 @@ def setup_trinity_stderr_logging(level: int=None,
     return logger, formatter, handler_stream
 
 
-def setup_trinity_file_and_queue_logging(
+def setup_helios_file_and_queue_logging(
         logger: Logger,
         formatter: Formatter,
         handler_stream: StreamHandler,
@@ -109,29 +127,20 @@ def setup_trinity_file_and_queue_logging(
     return logger, log_queue, listener
 
 
-def setup_queue_logging(log_queue: Queue, level: int, log_levels = None) -> None:
+def setup_queue_logging(log_queue: 'Queue[str]', level: int) -> None:
     queue_handler = QueueHandler(log_queue)
     queue_handler.setLevel(level)
 
-    logger = logging.getLogger()
+    logger = cast(TraceLogger, logging.getLogger())
     logger.addHandler(queue_handler)
-    #logger.setLevel(level)
-    # These loggers generates too much DEBUG noise, drowning out the important things, so force
-    # the INFO level for it until https://github.com/ethereum/py-evm/issues/806 is fixed.
-    # logging.getLogger('hp2p.peer.Peer').setLevel(logging.INFO)
-    # logging.getLogger('hp2p.kademlia').setLevel(logging.INFO)
-    # logging.getLogger('hp2p.discovery').setLevel(logging.INFO)
-    if log_levels is not None:
-        setup_log_levels(log_levels=log_levels)
-
-    #logging.getLogger('hp2p.UPnPService').setLevel(logging.INFO)
+    logger.setLevel(level)
 
     logger.debug('Logging initialized: PID=%s', os.getpid())
 
 
-def with_queued_logging(fn: Callable) -> Callable:
+def with_queued_logging(fn: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(fn)
-    def inner(*args, **kwargs):
+    def inner(*args: Any, **kwargs: Any) -> Any:
         try:
             log_queue = kwargs['log_queue']
         except KeyError:
@@ -139,20 +148,28 @@ def with_queued_logging(fn: Callable) -> Callable:
                 fn.__name__,
             ))
         else:
-            log_level = kwargs.get('log_level', logging.INFO)
-            log_levels = kwargs.get('log_levels', None)
-            setup_queue_logging(log_queue, level=log_level, log_levels = log_levels)
+            level = kwargs.get('log_level', logging.INFO)
+            setup_queue_logging(log_queue, level)
 
-            inner_kwargs = dissoc(kwargs, 'log_queue', 'log_level', 'log_levels')
+            inner_kwargs = dissoc(kwargs, 'log_queue', 'log_level')
 
             return fn(*args, **inner_kwargs)
     return inner
 
-# class Whitelist(logging.Filter):
-#     def __init__(self, *whitelist):
-#         self.whitelist = [logging.Filter(name) for name in whitelist]
-#
-#     def filter(self, record):
-#         return any(f.filter(record) for f in self.whitelist)
 
-# handler_stream.addFilter(Whitelist(*filter_list))
+def _set_environ_if_missing(name: str, val: str) -> None:
+    """
+    Set the environment variable so that other processes get the changed value.
+    """
+    if os.environ.get(name, '') == '':
+        os.environ[name] = val
+
+
+def enable_warnings_by_default() -> None:
+    """
+    This turns on some python and asyncio warnings, unless
+    the related environment variables are already set.
+    """
+    _set_environ_if_missing('PYTHONWARNINGS', 'default')
+    # PYTHONASYNCIODEBUG is not turned on by default because it slows down sync a *lot*
+    logging.getLogger('asyncio').setLevel(logging.DEBUG)

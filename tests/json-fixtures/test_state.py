@@ -1,24 +1,27 @@
+import logging
 import os
 
 import pytest
 
 from eth_keys import keys
 
-from hvm.db import (
-    get_db_backend,
-)
-
 from eth_utils import (
     to_bytes,
     to_tuple,
+    ValidationError,
 )
 
 from eth_hash.auto import keccak
 
-from hvm.db.chain import ChainDB
-from hvm.exceptions import (
-    ValidationError,
+from eth_typing.enums import (
+    ForkName
 )
+
+
+from hvm.db import (
+    get_db_backend,
+)
+from hvm.db.chain import ChainDB
 from hvm.vm.forks import (
     TangerineWhistleVM,
     FrontierVM,
@@ -35,10 +38,12 @@ from hvm.vm.forks.byzantium.state import ByzantiumState
 from hvm.rlp.headers import (
     BlockHeader,
 )
-from hvm.tools.fixture_tests import (
+from hvm.tools._utils.hashing import (
+    hash_log_entries,
+)
+from hvm.tools.fixtures import (
     filter_fixtures,
     generate_fixture_tests,
-    hash_log_entries,
     load_fixture,
     normalize_statetest_fixture,
     should_run_slow_tests,
@@ -47,12 +52,6 @@ from hvm.utils.db import (
     apply_state_dict,
 )
 
-from eth_typing.enums import (
-    ForkName
-)
-
-from tests.conftest import vm_logger
-
 
 ROOT_PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
@@ -60,7 +59,7 @@ ROOT_PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 BASE_FIXTURE_PATH = os.path.join(ROOT_PROJECT_DIR, 'fixtures', 'GeneralStateTests')
 
 
-LOGGER = vm_logger()
+logger = logging.getLogger('hls.tests.fixtures.GeneralStateTests')
 
 
 @to_tuple
@@ -134,6 +133,20 @@ SLOWEST_TESTS = {
 }
 
 
+# These are tests that are thought to be incorrect or buggy upstream,
+# at the commit currently checked out in submodule `fixtures`.
+# Ideally, this list should be empty.
+# WHEN ADDING ENTRIES, ALWAYS PROVIDE AN EXPLANATION!
+INCORRECT_UPSTREAM_TESTS = {
+    # The test considers a "synthetic" scenario (the state described there can't
+    # be arrived at using regular consensus rules).
+    # * https://github.com/ethereum/py-evm/pull/1224#issuecomment-418775512
+    # The result is in conflict with the yellow-paper:
+    # * https://github.com/ethereum/py-evm/pull/1224#issuecomment-418800369
+    ('stRevertTest/RevertInCreateInInit.json', 'RevertInCreateInInit', 'Byzantium', 0),
+}
+
+
 def mark_statetest_fixtures(fixture_path, fixture_key, fixture_fork, fixture_index):
     fixture_id = (fixture_path, fixture_key, fixture_fork, fixture_index)
     if fixture_path.startswith('stTransactionTest/zeroSigTransa'):
@@ -145,6 +158,8 @@ def mark_statetest_fixtures(fixture_path, fixture_key, fixture_fork, fixture_ind
             return pytest.mark.skip("Skipping slow test")
     elif fixture_path.startswith('stQuadraticComplexityTest'):
         return pytest.mark.skip("Skipping slow test")
+    elif fixture_id in INCORRECT_UPSTREAM_TESTS:
+        return pytest.mark.xfail(reason="Listed in INCORRECT_UPSTREAM_TESTS.")
 
 
 def pytest_generate_tests(metafunc):
@@ -314,7 +329,7 @@ def test_state_fixtures(fixture, fixture_vm_class):
     except ValidationError as err:
         block = vm.block
         transaction_error = err
-        LOGGER.warn("Got transaction error", exc_info=True)
+        logger.warning("Got transaction error", exc_info=True)
     else:
         transaction_error = False
 

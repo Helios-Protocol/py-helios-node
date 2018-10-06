@@ -10,13 +10,14 @@ deps = {
         "cryptography>=2.0.3,<3.0.0",
         "cytoolz>=0.9.0,<1.0.0",
         "eth-bloom>=1.0.0,<2.0.0",
-        "eth-utils>=1.0.1,<2.0.0",
-        "pyethash>=0.1.27,<1.0.0",
-        "py-ecc>=1.4.2,<2.0.0",
-        "rlp>=1.0.1,<2.0.0",
         "eth-keys>=0.2.0b3,<1.0.0",
-        "trie>=1.3.5,<2.0.0",
+        "eth-typing>=1.1.0,<2.0.0",
+        "eth-utils>=1.2.0,<2.0.0",
         "lru-dict>=1.1.6",
+        "py-ecc>=1.4.2,<2.0.0",
+        "pyethash>=0.1.27,<1.0.0",
+        "rlp>=1.0.3,<2.0.0",
+        "trie>=1.3.5,<2.0.0",
         "sortedcontainers>=2.0.4",
         "pbkdf2>=1.3"
     ],
@@ -25,49 +26,66 @@ deps = {
     # Installing these libraries may make the hvm perform better than
     # using the default fallbacks though.
     'hvm-extra': [
-        "coincurve>=7.0.0,<8.0.0",
-        "plyvel==1.0.4",
-        "eth-hash[pycryptodome]",
+        "coincurve>=8.0.0,<9.0.0",
+        "eth-hash[pysha3];implementation_name=='cpython'",
+        "eth-hash[pycryptodome];implementation_name=='pypy'",
+        "plyvel==1.0.5",
     ],
     'hp2p': [
         "asyncio-cancel-token==0.1.0a2",
         "aiohttp>=2.3.1,<3.0.0",
         "async_lru>=0.1.0,<1.0.0",
+        "eth-hash>=0.1.4,<1",
         "netifaces>=0.10.7<1",
         "pysha3>=1.0.0,<2.0.0",
         "upnpclient>=0.0.8,<1",
     ],
     'helios': [
+        "async-generator==1.10",
+        "bloom-filter==1.3",
+        "cachetools>=2.1.0,<3.0.0",
+        "coincurve>=8.0.0,<9.0.0",
         "ipython>=6.2.1,<7.0.0",
-        "plyvel==1.0.4",
-        "coincurve>=7.0.0,<8.0.0",
-        "web3>=4.1.0,<5.0.0",
-        # required for rlp>=1.0.0
-        "eth-account>=0.2.1,<1",
+        "plyvel==1.0.5",
+        "web3==4.4.1",
+        "lahja==0.8.0",
+        "uvloop==0.11.2;platform_system=='Linux' or platform_system=='Darwin'",
+        "websockets==5.0.1",
     ],
     'test': [
-        "hypothesis==3.44.26",
-        "pytest~=3.2",
-        "pytest-asyncio==0.8.0",
+        "hypothesis==3.69.5",
+        # pinned to <3.7 until async fixtures work again
+        # https://github.com/pytest-dev/pytest-asyncio/issues/89
+        "pytest>=3.6,<3.7",
+        "pytest-asyncio==0.9.0",
         "pytest-cov==2.5.1",
-        "pytest-xdist==1.18.1",
         "pytest-watch>=4.1.0,<5",
+        "pytest-xdist==1.18.1",
+        # only needed for p2p
+        "pytest-asyncio-network-simulator==0.1.0a2;python_version>='3.6'",
     ],
     'lint': [
         "flake8==3.5.0",
-        "mypy<0.600",
+        "mypy==0.620",
+    ],
+    'benchmark': [
+        "termcolor>=1.1.0,<2.0.0",
+        "web3>=4.1.0,<5.0.0",
     ],
     'doc': [
-        "py-hvm>=0.2.0-alpha.14",
+        "py-evm>=0.2.0-alpha.14",
         "pytest~=3.2",
-        "Sphinx>=1.5.5,<2.0.0",
+        # Sphinx pined to `<1.8.0`: https://github.com/sphinx-doc/sphinx/issues/3494
+        "Sphinx>=1.5.5,<1.8.0",
         "sphinx_rtd_theme>=0.1.9",
         "sphinxcontrib-asyncio>=0.2.0",
     ],
     'dev': [
         "bumpversion>=0.5.3,<1",
         "wheel",
+        "setuptools>=36.2.0",
         "tox==2.7.0",
+        "twine",
     ],
 }
 
@@ -90,7 +108,7 @@ install_requires = deps['hvm'] + deps['hp2p'] + deps['helios']
 setup(
     name='py-helios-node',
     # *IMPORTANT*: Don't manually change the version here. Use the 'bumpversion' utility.
-    version='0.2.0-alpha.18',
+    version='0.2.0-alpha.33',
     description='Python implementation of the Helios Protocol Node',
     long_description_markdown_filename='README.md',
     author='Tommy Mckinnon',

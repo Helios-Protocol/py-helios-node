@@ -1,14 +1,22 @@
+from argparse import ArgumentParser, Namespace
+import os
 import asyncio
 import logging
 import signal
-import sys
-import os
-from typing import Type
+from typing import (
+    Any,
+    Dict,
+    Type,
+)
+
+from lahja import (
+    EventBus,
+    Endpoint,
+)
 
 from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
-
 from hvm.db.backends.base import BaseDB
 from hvm.db.backends.level import LevelDB
 
@@ -25,26 +33,44 @@ from helios.exceptions import (
 from helios.chains import (
     initialize_data_dir,
     is_data_dir_initialized,
-    serve_chaindb,
-)
-from helios.console import (
-    console,
+    get_chaindb_manager,
 )
 from helios.cli_parser import (
     parser,
+    subparser,
 )
 from helios.config import (
     ChainConfig,
+)
+from helios.constants import (
+    MAIN_EVENTBUS_ENDPOINT,
+    NETWORKING_EVENTBUS_ENDPOINT,
+)
+from helios.events import (
+    ShutdownRequest
+)
+from helios.extensibility import (
+    BaseManagerProcessScope,
+    MainAndIsolatedProcessScope,
+    PluginManager,
+    SharedProcessScope,
+)
+from helios.extensibility.events import (
+    HeliosStartupEvent
+)
+from helios.plugins.registry import (
+    ENABLED_PLUGINS
 )
 from helios.utils.ipc import (
     wait_for_ipc,
     kill_process_gracefully,
 )
 from helios.utils.logging import (
-    setup_trinity_stderr_logging,
-    setup_trinity_file_and_queue_logging,
-    with_queued_logging,
+    enable_warnings_by_default,
     setup_log_levels,
+    setup_helios_stderr_logging,
+    setup_helios_file_and_queue_logging,
+    with_queued_logging,
 )
 from helios.utils.mp import (
     ctx,
@@ -52,14 +78,15 @@ from helios.utils.mp import (
 from helios.utils.profiling import (
     setup_cprofiler,
 )
+from helios.utils.shutdown import (
+    exit_signal_with_service,
+)
 from helios.utils.version import (
-    construct_trinity_client_identifier,
+    construct_helios_client_identifier,
+    is_prerelease,
 )
 
 from helios.rpc.http_server import Proxy as http_rpc_proxy
-
-
-#from helios.dev_tools import load_local_nodes
 
 
 PRECONFIGURED_NETWORKS = {MAINNET_NETWORK_ID}
@@ -71,34 +98,32 @@ HELIOS_HEADER = (
     "\ \  __ \  \ \  __\   \ \ \____  \ \ \  \ \ \/\ \  \ \___  \  \n"
     " \ \_\ \_\  \ \_____\  \ \_____\  \ \_\  \ \_____\  \/\_____\ \n"
     "  \/_/\/_/   \/_____/   \/_____/   \/_/   \/_____/   \/_____/ \n"
-)   
+)
 
-TRINITY_AMBIGIOUS_FILESYSTEM_INFO = (
+HELIOS_AMBIGIOUS_FILESYSTEM_INFO = (
     "Could not initialize data directory\n\n"
     "   One of these conditions must be met:\n"
     "   * HOME environment variable set\n"
-    "   * XDG_TRINITY_ROOT environment variable set\n"
-    "   * TRINITY_DATA_DIR environment variable set\n"
+    "   * XDG_HELIOS_ROOT environment variable set\n"
+    "   * HELIOS_DATA_DIR environment variable set\n"
     "   * --data-dir command line argument is passed\n"
     "\n"
     "   In case the data directory is outside of the helios root directory\n"
-    "   Make sure all paths are pre-initialized as Trinity won't attempt\n"
+    "   Make sure all paths are pre-initialized as Helios won't attempt\n"
     "   to create directories outside of the helios root directory\n"
 )
 
 
+def main() -> None:
+    event_bus = EventBus(ctx)
+    main_endpoint = event_bus.create_endpoint(MAIN_EVENTBUS_ENDPOINT)
+    main_endpoint.connect()
 
-#python main.py --instance 1 --filter_log hp2p.chain.ChainSyncer --rand_db 1
-def main(instance_number = None) -> None:
+    plugin_manager = setup_plugins(
+        MainAndIsolatedProcessScope(event_bus, main_endpoint)
+    )
+    plugin_manager.amend_argparser_config(parser, subparser)
     args = parser.parse_args()
-    
-    log_level = getattr(logging, args.log_level.upper())
-    #print('log level = ',log_level)
-    stderr_log_level = logging.DEBUG
-    file_log_level = logging.DEBUG
-
-
-
 
     if args.network_id not in PRECONFIGURED_NETWORKS:
         raise NotImplementedError(
@@ -106,11 +131,27 @@ def main(instance_number = None) -> None:
             "networks are supported.".format(args.network_id)
         )
 
-    #For errors to show, they must pass through stderr_log_level, and the log levels given in setup_log_levels
-    stderr_logger, formatter, handler_stream = setup_trinity_stderr_logging(stderr_log_level)
+    has_ambigous_logging_config = (
+        args.log_levels is not None and
+        None in args.log_levels and
+        args.stderr_log_level is not None
+    )
+    if has_ambigous_logging_config:
+        parser.error(
+            "\n"
+            "Ambiguous logging configuration: The logging level for stderr was "
+            "configured with both `--stderr-log-level` and `--log-level`. "
+            "Please remove one of these flags",
+        )
 
-    #print this to see all of the loggers to choose from. have to call it after they are initialized
-    #print(logging.Logger.manager.loggerDict)
+    if is_prerelease():
+        # this modifies the asyncio logger, but will be overridden by any custom settings below
+        enable_warnings_by_default()
+
+    stderr_logger, formatter, handler_stream = setup_helios_stderr_logging(
+        args.stderr_log_level or (args.log_levels and args.log_levels.get(None))
+    )
+
     log_levels = {}
     log_levels['default'] = logging.INFO
 
@@ -140,9 +181,6 @@ def main(instance_number = None) -> None:
     log_levels['hp2p.hls'] = logging.INFO
 
 
-
-
-
     setup_log_levels(log_levels = log_levels)
 
 
@@ -155,23 +193,16 @@ def main(instance_number = None) -> None:
             args.do_rpc_http_server = False
         os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(args.instance)
         os.environ["INSTANCE_NUMBER"] = str(args.instance)
-            
-    elif instance_number is not None:
-        args.port = args.port + instance_number*2
-        if instance_number != 0:
-            args.do_rpc_http_server = False
-        os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(instance_number)
-        os.environ["INSTANCE_NUMBER"] = str(instance_number)
-        
+
+
     #args.data_dir = '/d:/Google Drive/forex/blockchain coding/Helios/prototype desktop/py-hvm/helios/data/'
 
 
     try:
         chain_config = ChainConfig.from_parser_args(args)
     except AmbigiousFileSystem:
-        exit_because_ambigious_filesystem(stderr_logger)
-        
-        
+        parser.error(HELIOS_AMBIGIOUS_FILESYSTEM_INFO)
+
     if not is_data_dir_initialized(chain_config):
         # TODO: this will only work as is for chains with known genesis
         # parameters.  Need to flesh out how genesis parameters for custom
@@ -179,58 +210,72 @@ def main(instance_number = None) -> None:
         try:
             initialize_data_dir(chain_config)
         except AmbigiousFileSystem:
-            exit_because_ambigious_filesystem(stderr_logger)
+            parser.error(HELIOS_AMBIGIOUS_FILESYSTEM_INFO)
         except MissingPath as e:
-            msg = (
+            parser.error(
                 "\n"
-                "It appears that {} does not exist.\n"
-                "Trinity does not attempt to create directories outside of its root path\n"
-                "Either manually create the path or ensure you are using a data directory\n"
-                "inside the XDG_TRINITY_ROOT path"
-            ).format(e.path)
-            stderr_logger.error(msg)
-            sys.exit(1)
+                f"It appears that {e.path} does not exist. "
+                "Helios does not attempt to create directories outside of its root path. "
+                "Either manually create the path or ensure you are using a data directory "
+                "inside the XDG_HELIOS_ROOT path"
+            )
 
-
-    logger, log_queue, listener = setup_trinity_file_and_queue_logging(
+    file_logger, log_queue, listener = setup_helios_file_and_queue_logging(
         stderr_logger,
         formatter,
         handler_stream,
         chain_config,
-        file_log_level,
+        args.file_log_level,
     )
 
+    display_launch_logs(chain_config)
 
+    # compute the minimum configured log level across all configured loggers.
     min_configured_log_level = min(
-        stderr_log_level,
-        file_log_level
+        stderr_logger.level,
+        file_logger.level,
+        *(args.log_levels or {}).values()
     )
-
-    
-#    print('testtest')
-#    for handler in logging.root.handlers:
-#        logger.info('test')
-#        logger.info(handler)
-        
-    
-    # if console command, run the helios CLI
-    if args.subcommand == 'attach':
-        console(chain_config.jsonrpc_ipc_path, use_ipython=not args.vanilla_shell)
-        sys.exit(0)
-
-    # start the listener thread to handle logs produced by other processes in
-    # the local logger.
-    listener.start()
 
     extra_kwargs = {
         'log_queue': log_queue,
         'log_level': min_configured_log_level,
-        'log_levels': log_levels,
         'profile': args.profile,
     }
 
-    #base_db = JournalDB(LevelDB)
-    #First initialize the database process.
+    # Plugins can provide a subcommand with a `func` which does then control
+    # the entire process from here.
+    if hasattr(args, 'func'):
+        args.func(args, chain_config)
+    else:
+        helios_boot(
+            args,
+            chain_config,
+            extra_kwargs,
+            plugin_manager,
+            listener,
+            event_bus,
+            main_endpoint,
+            stderr_logger,
+        )
+
+
+def helios_boot(args: Namespace,
+                chain_config: ChainConfig,
+                extra_kwargs: Dict[str, Any],
+                plugin_manager: PluginManager,
+                listener: logging.handlers.QueueListener,
+                event_bus: EventBus,
+                main_endpoint: Endpoint,
+                logger: logging.Logger) -> None:
+    # start the listener thread to handle logs produced by other processes in
+    # the local logger.
+    listener.start()
+
+    networking_endpoint = event_bus.create_endpoint(NETWORKING_EVENTBUS_ENDPOINT)
+    event_bus.start()
+
+    # First initialize the database process.
     database_server_process = ctx.Process(
         target=run_database_process,
         args=(
@@ -242,23 +287,26 @@ def main(instance_number = None) -> None:
 
     networking_process = ctx.Process(
         target=launch_node,
-        args=(chain_config, ),
+        args=(args, chain_config, networking_endpoint,),
         kwargs=extra_kwargs,
     )
 
-
-
-
-
-    #start the processes
+    # start the processes
     database_server_process.start()
     logger.info("Started DB server process (pid=%d)", database_server_process.pid)
-    wait_for_ipc(chain_config.database_ipc_path)
+
+    # networking process needs the IPC socket file provided by the database process
+    try:
+        wait_for_ipc(chain_config.database_ipc_path)
+    except TimeoutError as e:
+        logger.error("Timeout waiting for database to start.  Exiting...")
+        kill_process_gracefully(database_server_process, logger)
+        ArgumentParser().error(message="Timed out waiting for database start")
 
     networking_process.start()
     logger.info("Started networking process (pid=%d)", networking_process.pid)
 
-    rpc_http_server_started = False
+    rpc_http_proxy_process = None
     if chain_config.do_rpc_http_server and chain_config.jsonrpc_ipc_path:
         rpc_http_proxy_process = ctx.Process(
             target=launch_rpc_http_proxy,
@@ -267,76 +315,129 @@ def main(instance_number = None) -> None:
 
         rpc_http_proxy_process.start()
         logger.info("Started RPC HTTP proxy process (pid=%d)", networking_process.pid)
-        rpc_http_server_started = True
 
+
+    main_endpoint.subscribe(
+        ShutdownRequest,
+        lambda ev: kill_helios_gracefully(
+            logger,
+            database_server_process,
+            networking_process,
+            plugin_manager,
+            main_endpoint,
+            event_bus
+        )
+    )
+
+    plugin_manager.prepare(args, chain_config, extra_kwargs)
+    plugin_manager.broadcast(HeliosStartupEvent(
+        args,
+        chain_config
+    ))
     try:
-        if args.subcommand == 'console':
-            console(chain_config.jsonrpc_ipc_path, use_ipython=not args.vanilla_shell)
-        else:
-            networking_process.join()
+        loop = asyncio.get_event_loop()
+        loop.run_forever()
+        loop.close()
     except KeyboardInterrupt:
-        # When a user hits Ctrl+C in the terminal, the SIGINT is sent to all processes in the
-        # foreground *process group*, so both our networking and database processes will terminate
-        # at the same time and not sequentially as we'd like. That shouldn't be a problem but if
-        # we keep getting unhandled BrokenPipeErrors/ConnectionResetErrors like reported in
-        # https://github.com/ethereum/py-evm/issues/827, we might want to change the networking
-        # process' signal handler to wait until the DB process has terminated before doing its
-        # thing.
-        # Notice that we still need the kill_process_gracefully() calls here, for when the user
-        # simply uses 'kill' to send a signal to the main process, but also because they will
-        # perform a non-gracefull shutdown if the process takes too long to terminate.
-        logger.info('Keyboard Interrupt: Stopping')
-        kill_process_gracefully(database_server_process, logger)
-        logger.info('DB server process (pid=%d) terminated', database_server_process.pid)
-        kill_process_gracefully(networking_process, logger)
-        logger.info('Networking process (pid=%d) terminated', networking_process.pid)
+        kill_helios_gracefully(
+            logger,
+            database_server_process,
+            networking_process,
+            rpc_http_proxy_process,
+            plugin_manager,
+            main_endpoint,
+            event_bus
+        )
 
-        if rpc_http_server_started:
-            kill_process_gracefully(rpc_http_proxy_process, logger)
-            logger.info('RPC HTTP proxy process (pid=%d) terminated', networking_process.pid)
+
+def kill_helios_gracefully(logger: logging.Logger,
+                           database_server_process: Any,
+                           networking_process: Any,
+                           rpc_http_server_process: Any,
+                           plugin_manager: PluginManager,
+                           main_endpoint: Endpoint,
+                           event_bus: EventBus,
+                           message: str="Helios shudown complete\n") -> None:
+    # When a user hits Ctrl+C in the terminal, the SIGINT is sent to all processes in the
+    # foreground *process group*, so both our networking and database processes will terminate
+    # at the same time and not sequentially as we'd like. That shouldn't be a problem but if
+    # we keep getting unhandled BrokenPipeErrors/ConnectionResetErrors like reported in
+    # https://github.com/ethereum/py-evm/issues/827, we might want to change the networking
+    # process' signal handler to wait until the DB process has terminated before doing its
+    # thing.
+    # Notice that we still need the kill_process_gracefully() calls here, for when the user
+    # simply uses 'kill' to send a signal to the main process, but also because they will
+    # perform a non-gracefull shutdown if the process takes too long to terminate.
+    logger.info('Keyboard Interrupt: Stopping')
+    plugin_manager.shutdown_blocking()
+    main_endpoint.stop()
+    event_bus.stop()
+    for name, process in [("DB", database_server_process), ("Networking", networking_process), ("RPC http server", rpc_http_server_process)]:
+        # Our sub-processes will have received a SIGINT already (see comment above), so here we
+        # wait 2s for them to finish cleanly, and if they fail we kill them for real.
+        if process is not None:
+            process.join(2)
+            if process.is_alive():
+                kill_process_gracefully(process, logger)
+            logger.info('%s process (pid=%d) terminated', name, process.pid)
+
+    # This is required to be within the `kill_helios_gracefully` so that
+    # plugins can trigger a shutdown of the helios process.
+    ArgumentParser().exit(message=message)
 
 
 @setup_cprofiler('run_database_process')
 @with_queued_logging
 def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> None:
-    base_db = db_class(db_path=chain_config.database_dir)
-    #TODO:remove
-    base_db = JournalDB(base_db)
-    #base_db.destroy_db()
-    #exit()
-    serve_chaindb(chain_config, base_db)
+    with chain_config.process_id_file('database'):
+        base_db = db_class(db_path=chain_config.database_dir)
 
+        # TODO:remove
+        #base_db = JournalDB(base_db)
 
-def exit_because_ambigious_filesystem(logger: logging.Logger) -> None:
-    logger.error(TRINITY_AMBIGIOUS_FILESYSTEM_INFO)
-    sys.exit(1)
+        manager = get_chaindb_manager(chain_config, base_db)
+        server = manager.get_server()  # type: ignore
 
+        def _sigint_handler(*args: Any) -> None:
+            server.stop_event.set()
 
-async def exit_on_signal(service_to_exit: BaseService) -> None:
-    loop = asyncio.get_event_loop()
-    sigint_received = asyncio.Event()
-    for sig in [signal.SIGINT, signal.SIGTERM]:
-        # TODO also support Windows
-        loop.add_signal_handler(sig, sigint_received.set)
+        signal.signal(signal.SIGINT, _sigint_handler)
 
-    await sigint_received.wait()
-    try:
-        await service_to_exit.cancel()
-    finally:
-        loop.stop()
+        try:
+            server.serve_forever()
+        except SystemExit:
+            server.stop_event.set()
+            raise
 
 
 @setup_cprofiler('launch_node')
 @with_queued_logging
-def launch_node(chain_config: ChainConfig) -> None:
+def launch_node(args: Namespace, chain_config: ChainConfig, endpoint: Endpoint) -> None:
+    with chain_config.process_id_file('networking'):
 
-    display_launch_logs(chain_config)
-    
-    NodeClass = chain_config.node_class
-    node = NodeClass(chain_config)
-    
-    run_service_until_quit(node)
+        endpoint.connect()
 
+        NodeClass = chain_config.node_class
+        # Temporary hack: We setup a second instance of the PluginManager.
+        # The first instance was only to configure the ArgumentParser whereas
+        # for now, the second instance that lives inside the networking process
+        # performs the bulk of the work. In the future, the PluginManager
+        # should probably live in its own process and manage whether plugins
+        # run in the shared plugin process or spawn their own.
+
+        plugin_manager = setup_plugins(SharedProcessScope(endpoint))
+        plugin_manager.prepare(args, chain_config)
+        plugin_manager.broadcast(HeliosStartupEvent(
+            args,
+            chain_config
+        ))
+
+        node = NodeClass(plugin_manager, chain_config)
+        loop = node.get_event_loop()
+        asyncio.ensure_future(handle_networking_exit(node, plugin_manager, endpoint), loop=loop)
+        asyncio.ensure_future(node.run(), loop=loop)
+        loop.run_forever()
+        loop.close()
 
 def launch_rpc_http_proxy(chain_config: ChainConfig) -> None:
 
@@ -344,23 +445,30 @@ def launch_rpc_http_proxy(chain_config: ChainConfig) -> None:
     http_rpc_proxy_service = http_rpc_proxy(proxy_url, chain_config.jsonrpc_ipc_path)
     http_rpc_proxy_service.run()
 
-
 def display_launch_logs(chain_config: ChainConfig) -> None:
     logger = logging.getLogger('helios')
     logger.info(HELIOS_HEADER)
-    logger.info(construct_trinity_client_identifier())
-    
+    logger.info(construct_helios_client_identifier())
+    logger.info("Helios DEBUG log file is created at %s", str(chain_config.logfile_path))
 
 
-def run_service_until_quit(service: BaseService) -> None:
-    loop = asyncio.get_event_loop()
-    asyncio.ensure_future(exit_on_signal(service))
-    asyncio.ensure_future(service.run())
-    loop.run_forever()
-    loop.close()
+async def handle_networking_exit(service: BaseService,
+                                 plugin_manager: PluginManager,
+                                 endpoint: Endpoint) -> None:
 
+    async with exit_signal_with_service(service):
+        await plugin_manager.shutdown()
+        endpoint.stop()
+
+
+def setup_plugins(scope: BaseManagerProcessScope) -> PluginManager:
+    plugin_manager = PluginManager(scope)
+    # TODO: Implement auto-discovery of plugins based on some convention/configuration scheme
+    plugin_manager.register(ENABLED_PLUGINS)
+
+    return plugin_manager
 
 
 if __name__ == "__main__":
     __spec__ = 'None'
-    main(0)
+    main()

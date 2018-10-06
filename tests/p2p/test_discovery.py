@@ -1,6 +1,12 @@
+import asyncio
+import logging
+import os
 import random
+import socket
 import string
 import re
+
+import pytest
 
 import rlp
 
@@ -13,8 +19,20 @@ from eth_hash.auto import keccak
 
 from eth_keys import keys
 
+from cancel_token import CancelToken
+
+from hvm.chains.ropsten import ROPSTEN_GENESIS_HEADER
+
+from helios.protocol.les.proto import LESProtocol, LESProtocolV2
+
 from hp2p import discovery
 from hp2p import kademlia
+
+
+# Force our tests to fail quickly if they accidentally make network requests.
+@pytest.fixture(autouse=True)
+def short_timeout(monkeypatch):
+    monkeypatch.setattr(kademlia, 'k_request_timeout', 0.01)
 
 
 def test_ping_pong():
@@ -26,9 +44,9 @@ def test_ping_pong():
     link_transports(alice, bob)
     # Collect all pongs received by alice in a list for later inspection.
     received_pongs = []
-    alice.recv_pong = lambda node, payload, hash_: received_pongs.append((node, payload))
+    alice.recv_pong_v4 = lambda node, payload, hash_: received_pongs.append((node, payload))
 
-    token = alice.send_ping(bob.this_node)
+    token = alice.send_ping_v4(bob.this_node)
 
     assert len(received_pongs) == 1
     node, payload = received_pongs[0]
@@ -36,24 +54,27 @@ def test_ping_pong():
     assert token == payload[1]
 
 
-def test_find_node_neighbours():
+def _test_find_node_neighbours(use_v5):
     alice = get_discovery_protocol(b"alice")
     bob = get_discovery_protocol(b"bob")
     # Add some nodes to bob's routing table so that it has something to use when replying to
     # alice's find_node.
     for _ in range(kademlia.k_bucket_size * 2):
-        bob.kademlia.update_routing_table(random_node())
+        bob.update_routing_table(random_node())
 
     # Connect alice's and bob's transports directly so we don't need to deal with the complexities
     # of going over the wire.
     link_transports(alice, bob)
     # Collect all neighbours packets received by alice in a list for later inspection.
     received_neighbours = []
-    alice.recv_neighbours = lambda node, payload, hash_: received_neighbours.append((node, payload))
+    alice.recv_neighbours_v4 = lambda node, payload, hash_: received_neighbours.append((node, payload))  # noqa: E501
     # Pretend that bob and alice have already bonded, otherwise bob will ignore alice's find_node.
-    bob.kademlia.update_routing_table(alice.this_node)
+    bob.update_routing_table(alice.this_node)
 
-    alice.send_find_node(bob.this_node, alice.this_node.id)
+    if use_v5:
+        alice.send_find_node_v5(bob.this_node, alice.this_node.id)
+    else:
+        alice.send_find_node_v4(bob.this_node, alice.this_node.id)
 
     # Bob should have sent two neighbours packets in order to keep the total packet size under the
     # 1280 bytes limit.
@@ -63,8 +84,181 @@ def test_find_node_neighbours():
     for packet in [packet1, packet2]:
         node, payload = packet
         assert node == bob.this_node
-        neighbours.extend(discovery._extract_nodes_from_payload(payload[0]))
+        neighbours.extend(discovery._extract_nodes_from_payload(
+            node.address, payload[0], bob.logger))
     assert len(neighbours) == kademlia.k_bucket_size
+
+
+def test_find_node_neighbours_v4():
+    _test_find_node_neighbours(use_v5=False)
+
+
+@pytest.mark.asyncio
+async def test_protocol_bootstrap():
+    node1, node2 = [random_node(), random_node()]
+    proto = MockDiscoveryProtocol([node1, node2])
+
+    async def bond(node):
+        assert proto.routing.add_node(node) is None
+        return True
+
+    # Pretend we bonded successfully with our bootstrap nodes.
+    proto.bond = bond
+
+    await proto.bootstrap()
+
+    assert len(proto.messages) == 2
+    # We don't care in which order the bootstrap nodes are contacted, nor which node_id was used
+    # in the find_node request, so we just assert that we sent find_node msgs to both nodes.
+    assert sorted([(node, cmd) for (node, cmd, _) in proto.messages]) == sorted([
+        (node1, 'find_node'),
+        (node2, 'find_node')])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('echo', ['echo', b'echo'])
+async def test_wait_ping(echo):
+    proto = MockDiscoveryProtocol([])
+    node = random_node()
+
+    # Schedule a call to proto.recv_ping() simulating a ping from the node we expect.
+    recv_ping_coroutine = asyncio.coroutine(lambda: proto.recv_ping_v4(node, echo, b''))
+    asyncio.ensure_future(recv_ping_coroutine())
+
+    got_ping = await proto.wait_ping(node)
+
+    assert got_ping
+    # Ensure wait_ping() cleaned up after itself.
+    assert node not in proto.ping_callbacks
+
+    # If we waited for a ping from a different node, wait_ping() would timeout and thus return
+    # false.
+    recv_ping_coroutine = asyncio.coroutine(lambda: proto.recv_ping_v4(node, echo, b''))
+    asyncio.ensure_future(recv_ping_coroutine())
+
+    node2 = random_node()
+    got_ping = await proto.wait_ping(node2)
+
+    assert not got_ping
+    assert node2 not in proto.ping_callbacks
+
+
+@pytest.mark.asyncio
+async def test_wait_pong():
+    proto = MockDiscoveryProtocol([])
+    us = proto.this_node
+    node = random_node()
+
+    token = b'token'
+    # Schedule a call to proto.recv_pong() simulating a pong from the node we expect.
+    pong_msg_payload = [us.address.to_endpoint(), token, discovery._get_msg_expiration()]
+    recv_pong_coroutine = asyncio.coroutine(lambda: proto.recv_pong_v4(node, pong_msg_payload, b''))
+    asyncio.ensure_future(recv_pong_coroutine())
+
+    got_pong = await proto.wait_pong_v4(node, token)
+
+    assert got_pong
+    # Ensure wait_pong() cleaned up after itself.
+    pingid = proto._mkpingid(token, node)
+    assert pingid not in proto.pong_callbacks
+
+    # If the remote node echoed something different than what we expected, wait_pong() would
+    # timeout.
+    wrong_token = b"foo"
+    pong_msg_payload = [us.address.to_endpoint(), wrong_token, discovery._get_msg_expiration()]
+    recv_pong_coroutine = asyncio.coroutine(lambda: proto.recv_pong_v4(node, pong_msg_payload, b''))
+    asyncio.ensure_future(recv_pong_coroutine())
+
+    got_pong = await proto.wait_pong_v4(node, token)
+
+    assert not got_pong
+    assert pingid not in proto.pong_callbacks
+
+
+@pytest.mark.asyncio
+async def test_wait_neighbours():
+    proto = MockDiscoveryProtocol([])
+    node = random_node()
+
+    # Schedule a call to proto.recv_neighbours_v4() simulating a neighbours response from the node
+    # we expect.
+    neighbours = (random_node(), random_node(), random_node())
+    neighbours_msg_payload = [
+        [n.address.to_endpoint() + [n.pubkey.to_bytes()] for n in neighbours],
+        discovery._get_msg_expiration()]
+    recv_neighbours_coroutine = asyncio.coroutine(
+        lambda: proto.recv_neighbours_v4(node, neighbours_msg_payload, b''))
+    asyncio.ensure_future(recv_neighbours_coroutine())
+
+    received_neighbours = await proto.wait_neighbours(node)
+
+    assert neighbours == received_neighbours
+    # Ensure wait_neighbours() cleaned up after itself.
+    assert node not in proto.neighbours_callbacks
+
+    # If wait_neighbours() times out, we get an empty list of neighbours.
+    received_neighbours = await proto.wait_neighbours(node)
+
+    assert received_neighbours == tuple()
+    assert node not in proto.neighbours_callbacks
+
+
+@pytest.mark.asyncio
+async def test_bond():
+    proto = MockDiscoveryProtocol([])
+    node = random_node()
+
+    token = b'token'
+    # Do not send pings, instead simply return the pingid we'd expect back together with the pong.
+    proto.send_ping_v4 = lambda remote: token
+
+    # Pretend we get a pong from the node we are bonding with.
+    proto.wait_pong_v4 = asyncio.coroutine(lambda n, t: t == token and n == node)
+
+    bonded = await proto.bond(node)
+
+    assert bonded
+
+    # If we try to bond with any other nodes we'll timeout and bond() will return False.
+    node2 = random_node()
+    bonded = await proto.bond(node2)
+
+    assert not bonded
+
+
+def test_update_routing_table():
+    proto = MockDiscoveryProtocol([])
+    node = random_node()
+
+    assert proto.update_routing_table(node) is None
+
+    assert node in proto.routing
+
+
+@pytest.mark.asyncio
+async def test_update_routing_table_triggers_bond_if_eviction_candidate():
+    proto = MockDiscoveryProtocol([])
+    old_node, new_node = random_node(), random_node()
+
+    bond_called = False
+
+    def bond(node):
+        nonlocal bond_called
+        bond_called = True
+        assert node == old_node
+
+    proto.bond = asyncio.coroutine(bond)
+    # Pretend our routing table failed to add the new node by returning the least recently seen
+    # node for an eviction check.
+    proto.routing.add_node = lambda n: old_node
+
+    proto.update_routing_table(new_node)
+
+    assert new_node not in proto.routing
+    # The update_routing_table() call above will have scheduled a future call to proto.bond() so
+    # we need to yield here to give it a chance to run.
+    await asyncio.sleep(0.001)
+    assert bond_called
 
 
 def test_get_max_neighbours_per_packet():
@@ -77,12 +271,12 @@ def test_get_max_neighbours_per_packet():
 def test_pack():
     sender, recipient = random_address(), random_address()
     version = rlp.sedes.big_endian_int.serialize(discovery.PROTO_VERSION)
-    payload = [version, sender.to_endpoint(), recipient.to_endpoint()]
+    payload = (version, sender.to_endpoint(), recipient.to_endpoint())
     privkey = keys.PrivateKey(keccak(b"seed"))
 
-    message = discovery._pack(discovery.CMD_PING.id, payload, privkey)
+    message = discovery._pack_v4(discovery.CMD_PING.id, payload, privkey)
 
-    pubkey, cmd_id, payload, _ = discovery._unpack(message)
+    pubkey, cmd_id, payload, _ = discovery._unpack_v4(message)
     assert pubkey == privkey.public_key
     assert cmd_id == discovery.CMD_PING.id
     assert len(payload) == discovery.CMD_PING.elem_count
@@ -93,10 +287,134 @@ def test_unpack_eip8_packets():
     # https://github.com/ethereum/EIPs/blob/master/EIPS/eip-8.md
     for cmd, packets in eip8_packets.items():
         for _, packet in packets.items():
-            pubkey, cmd_id, payload, _ = discovery._unpack(packet)
+            pubkey, cmd_id, payload, _ = discovery._unpack_v4(packet)
             assert pubkey.to_hex() == '0xca634cae0d49acb401d8a4c6b6fe8c55b70d115bf400769cc1400f3258cd31387574077f301b421bc84df7266c44e9e6d569fc56be00812904767bf5ccd1fc7f'  # noqa: E501
             assert cmd.id == cmd_id
             assert cmd.elem_count == len(payload)
+
+
+def test_v5_handlers(monkeypatch):
+    # Ensure we dispatch v5 messages to the appropriate handlers.
+    # These are hex-encoded messages sent by geth over the wire, obtained via wireshark using the
+    # ethereum dissectors (https://github.com/ConsenSys/ethereum-dissectors).
+    v5_handlers = dict(
+        recv_topic_register='74656d706f7261727920646973636f766572792076354b1f9f999e3cf283e42270742eb3b52b1c0b63ede116ea58632517ffccc7516c794f6fc20f199b3a3a887f3e961b453bb9213eebad4581aaf9b2a60da7e5ba7b0106e2da954c455332406434653536373430663837366165663883666f6f8204d283666f6f',  # noqa: E501
+        recv_pong_v5='74656d706f7261727920646973636f766572792076356cb538da9382c022cc6d9b860b7cc7660718c731e1e6331de86a7cabfba8f01c061b5d6c09dd84de1d6c653536bb8ad31fb140d55d317dfaea5225a6907f49450102f855cb84a5a587f2827660827660a0b484b40a3712766dbbe8498f110bab968a543f9d0d57ec4cfa3b38b32ef2f237831f5ca3a0bd1ea218eaf7cddc6b068a414ae08876315f92bd134e214d5f3961d1a3e8e35b4ec13c',  # noqa: E501
+        recv_ping_v5='74656d706f7261727920646973636f76657279207635c26911f1d2a320f17fa683397028e6cc7ebe114623e28e933d870634aa6050f45960679170192ec0f133dbc3f4e627eef468dbdb48bf4a7848412938da21be8a0001f84104d79000000000000000000000000000000000827660827660cb84b0201d9282848b82848b845b7e5593d6954c4553324064346535363734306638373661656638',  # noqa: E501
+        recv_find_nodehash='74656d706f7261727920646973636f7665727920763558dc895847c5d2cc9ab6f722f25b9ff1b9c188af6ff7ed7c716a3cde2e93f3ec1e2b897acb1a33aa1d345c72ea34912287b21480c80ef99241d4bd9fd53711ee0105e6a038f7bb96e94bcd39866baa56038367ad6145de1ee8f4a8b0993ebdf8883a0ad8845b7e5593',  # noqa: E501
+        recv_topic_query='74656d706f7261727920646973636f76657279207635308621f1ed59a67613da52da3f84bac3d927d0dc1650b27552b10a0a823fb2133cebf3680f68bf88457bb0c07787031357430985d03afa1af0574e8ef0eab7fc0007d7954c455332406434653536373430663837366165663880',  # noqa: E501
+        recv_topic_nodes='74656d706f7261727920646973636f76657279207635e33166b59d20f206f0df2502be59186cb971c76ee91dba94ea9b1bbeb1308a5f4efbdf945ead9ba89d7c2c55d5d841dacdef69a455c98e1a5415e489508afa450008f87ea0cff0456ecbf2e6b0a40bc6541bd209c60ced192509470b405c256a17443674b3f85bf8599000000000000000000000ffff904c1f9c82765f82765fb840e7d624c642b86d3d48cea3e395305345c3a0226fc4c2dfdfbeb94cb6891e5e72b4467c69684ac14b072d2e4fa9c7a731cc1fdf0283abe41186d00b4c879f80ed',  # noqa: E501
+        recv_neighbours_v5='74656d706f7261727920646973636f766572792076358f6671ae9611c82c9cb04538aeed13a8b4e8eb8ad0d0dbba4b161ded52b195846c6086a0d42eef44cfcc0b793a0b9420613727958a8956139c127810b94d4e830004f90174f9016cf8599000000000000000000000ffff59401a22826597826597b840d723e264da67820fb0cedb0d03d5d975cc82bffdadd2879f3e5fa58b5525de5fdd0b90002bba44ac9232247dfbccb2a730e5ea98201bab1f1fe72422aa58143ff8599000000000000000000000ffffae6c601a82765f82765fb840779f19056e0a0486c3f6838896a931bf920cd8f551f664022a50690d4cca4730b50a97058aac11a5aa0cc55db6f9207e12a9cd389269f414a98e5b6a2f6c9f89f8599000000000000000000000ffff287603df827663827663b84085c85d7143ae8bb96924f2b54f1b3e70d8c4d367af305325d30a61385a432f247d2c75c45c6b4a60335060d072d7f5b35dd1d4c45f76941f62a4f83b6e75daaff8599000000000000000000000ffff0d4231b0820419820419b8407b46cc366b6cbaec088a7d15688a2c12bb8ba4cf7ee8e01b22ab534829f9ff13f7cc4130f10a4021f7d77e9b9c80a9777f5ddc035efb130fe3b6786434367973845b7e5569',  # noqa: E501
+    )
+
+    proto = get_discovery_protocol()
+    addr = random_address()
+    for handler, msg in v5_handlers.items():
+        mock_handler = MockHandler()
+        monkeypatch.setattr(proto, handler, mock_handler)
+        proto.datagram_received(decode_hex(msg), (addr.ip, addr.udp_port))
+        assert mock_handler.called
+
+
+def test_ping_pong_v5():
+    alice = get_discovery_protocol(b"alice")
+    bob = get_discovery_protocol(b"bob")
+
+    # Connect alice's and bob's transports directly so we don't need to deal with the complexities
+    # of going over the wire.
+    link_transports(alice, bob)
+
+    # Collect all pongs received by alice in a list for later inspection.
+    received_pongs = []
+    alice.recv_pong_v5 = lambda node, payload, hash_, _: received_pongs.append((node, payload))
+
+    topics = [b'foo', b'bar']
+    token = alice.send_ping_v5(bob.this_node, topics)
+
+    assert len(received_pongs) == 1
+    node, payload = received_pongs[0]
+    _, reply_token, _, topic_hash, _, _ = payload
+    assert node.id == bob.this_node.id
+    assert token == reply_token
+    assert topic_hash == keccak(rlp.encode(topics))
+
+
+def test_find_node_neighbours_v5():
+    _test_find_node_neighbours(use_v5=True)
+
+
+@pytest.mark.asyncio
+async def test_topic_query(event_loop):
+    bob = await get_listening_discovery_protocol(event_loop)
+    les_nodes = [random_node() for _ in range(10)]
+    topic = b'les'
+    for n in les_nodes:
+        bob.topic_table.add_node(n, topic)
+    alice = await get_listening_discovery_protocol(event_loop)
+
+    echo = alice.send_topic_query(bob.this_node, topic)
+    received_nodes = await alice.wait_topic_nodes(bob.this_node, echo)
+
+    assert len(received_nodes) == 10
+    assert sorted(received_nodes) == sorted(les_nodes)
+
+
+@pytest.mark.asyncio
+async def test_topic_register(event_loop):
+    bob = await get_listening_discovery_protocol(event_loop)
+    alice = await get_listening_discovery_protocol(event_loop)
+    topics = [b'les', b'les2']
+
+    # In order to register ourselves under a given topic we need to first get a ticket.
+    ticket = await bob.get_ticket(alice.this_node, topics)
+
+    assert ticket is not None
+    assert ticket.topics == topics
+    assert ticket.node == alice.this_node
+    assert len(ticket.registration_times) == 2
+
+    # Now we register ourselves under one of the topics for which we have a ticket.
+    topic_idx = 0
+    bob.send_topic_register(alice.this_node, ticket.topics, topic_idx, ticket.pong)
+    await asyncio.sleep(0.2)
+
+    topic_nodes = alice.topic_table.get_nodes(topics[topic_idx])
+    assert len(topic_nodes) == 1
+    assert topic_nodes[0] == bob.this_node
+
+
+def test_topic_table():
+    table = discovery.TopicTable(logging.getLogger("test"))
+    topic = b'topic'
+    node = random_node()
+
+    table.add_node(node, topic)
+    assert len(table.get_nodes(topic)) == 1
+    assert table.get_nodes(topic)[0] == node
+
+    node2 = random_node()
+    table.add_node(node2, topic)
+    assert len(table.get_nodes(topic)) == 2
+    assert table.get_nodes(topic)[1] == node2
+
+    # Adding the same node again won't cause a duplicate entry to be added.
+    table.add_node(node, topic)
+    assert len(table.get_nodes(topic)) == 2
+
+    # When we reach the max number of entries for a given topic, the first added items are evicted
+    # to make room for the new ones.
+    for _ in range(discovery.MAX_ENTRIES_PER_TOPIC + 2):
+        table.add_node(random_node(), topic)
+
+    assert node not in table.get_nodes(topic)
+    assert node2 not in table.get_nodes(topic)
+
+
+def test_get_v5_topic():
+    les_topic = discovery.get_v5_topic(LESProtocol, ROPSTEN_GENESIS_HEADER.hash)
+    assert les_topic == b'LES@41941023680923e0'
+    les2_topic = discovery.get_v5_topic(LESProtocolV2, ROPSTEN_GENESIS_HEADER.hash)
+    assert les2_topic == b'LES2@41941023680923e0'
 
 
 def remove_whitespace(s):
@@ -165,9 +483,19 @@ eip8_packets = {
 }
 
 
-def get_discovery_protocol(seed=b"seed"):
+def get_discovery_protocol(seed=b"seed", address=None):
     privkey = keys.PrivateKey(keccak(seed))
-    return discovery.DiscoveryProtocol(privkey, random_address(), bootstrap_nodes=[])
+    if address is None:
+        address = random_address()
+    return discovery.DiscoveryProtocol(privkey, address, [], CancelToken("discovery-test"))
+
+
+async def get_listening_discovery_protocol(event_loop):
+    addr = kademlia.Address('127.0.0.1', random.randint(1024, 9999))
+    proto = get_discovery_protocol(os.urandom(4), addr)
+    await event_loop.create_datagram_endpoint(
+        lambda: proto, local_addr=(addr.ip, addr.udp_port), family=socket.AF_INET)
+    return proto
 
 
 def link_transports(proto1, proto2):
@@ -194,3 +522,33 @@ def random_node():
     seed = to_bytes(text="".join(random.sample(string.ascii_lowercase, 10)))
     priv_key = keys.PrivateKey(keccak(seed))
     return kademlia.Node(priv_key.public_key, random_address())
+
+
+class MockHandler:
+    called = False
+
+    def __call__(self, node, payload, msg_hash, raw_msg):
+        self.called = True
+
+
+class MockDiscoveryProtocol(discovery.DiscoveryProtocol):
+
+    messages = []
+
+    def __init__(self, bootnodes):
+        privkey = keys.PrivateKey(keccak(b"seed"))
+        super().__init__(privkey, random_address(), bootnodes, CancelToken("discovery-test"))
+
+    def send_ping_v4(self, node):
+        echo = hex(random.randint(0, 2**256))[-32:]
+        self.messages.append((node, 'ping', echo))
+        return echo
+
+    def send_pong_v4(self, node, echo):
+        self.messages.append((node, 'pong', echo))
+
+    def send_find_node_v4(self, node, nodeid):
+        self.messages.append((node, 'find_node', nodeid))
+
+    def send_neighbours_v4(self, node, neighbours):
+        self.messages.append((node, 'neighbours', neighbours))

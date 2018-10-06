@@ -7,12 +7,9 @@ import rlp
 from eth_utils import (
     is_same_address,
     to_tuple,
-)
-
-from hvm.exceptions import (
     ValidationError,
 )
-from hvm.tools.fixture_tests import (
+from hvm.tools.fixtures import (
     generate_fixture_tests,
     load_fixture,
     normalize_transactiontest_fixture

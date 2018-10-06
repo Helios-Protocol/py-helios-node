@@ -1,12 +1,26 @@
 import json
 import logging
-from typing import Dict
+from typing import (
+    Any,
+    Dict,
+    Tuple,
+    Union,
+)
 
-from hvm.exceptions import (
+from eth_utils import (
     ValidationError,
 )
 
+from hvm.chains.base import (
+    AsyncChain,
+)
+
+from lahja import (
+    Endpoint
+)
+
 from helios.rpc.modules import (
+    Eth,
     Hls,
     EVM,
     Net,
@@ -21,13 +35,13 @@ REQUIRED_REQUEST_KEYS = {
 }
 
 
-def validate_request(request):
+def validate_request(request: Dict[str, Any]) -> None:
     missing_keys = REQUIRED_REQUEST_KEYS - set(request.keys())
     if missing_keys:
         raise ValueError("request must include the keys: %r" % missing_keys)
 
 
-def generate_response(request, result, error):
+def generate_response(request: Dict[str, Any], result: Any, error: Union[Exception, str]) -> str:
     response = {
         'id': request.get('id', -1),
         'jsonrpc': request.get('jsonrpc', "2.0"),
@@ -55,23 +69,22 @@ class RPCServer:
     '''
     chain = None
     module_classes = (
+        Eth,
         Hls,
         EVM,
         Net,
         Web3,
     )
 
-    def __init__(self, node, chain, p2p_server=None):
+    def __init__(self, chain: AsyncChain=None, event_bus: Endpoint=None) -> None:
         self.modules: Dict[str, RPCModule] = {}
         self.chain = chain
-        self.node: 'Node' = node
-
         for M in self.module_classes:
-            self.modules[M.__name__.lower()] = M(node, chain, p2p_server)
+            self.modules[M.__name__.lower()] = M(chain, event_bus)
         if len(self.modules) != len(self.module_classes):
             raise ValueError("apparent name conflict in RPC module_classes", self.module_classes)
 
-    def _lookup_method(self, rpc_method):
+    def _lookup_method(self, rpc_method: str) -> Any:
         method_pieces = rpc_method.split('_')
 
         if len(method_pieces) != 2:
@@ -90,7 +103,9 @@ class RPCServer:
         except AttributeError:
             raise ValueError("Method not implemented: %r" % rpc_method)
 
-    def _get_result(self, request, debug=False):
+    async def _get_result(self,
+                          request: Dict[str, Any],
+                          debug: bool=False) -> Tuple[Any, Union[Exception, str]]:
         '''
         :returns: (result, error) - result is None if error is provided. Error must be
             convertable to string with ``str(error)``.
@@ -103,7 +118,7 @@ class RPCServer:
 
             method = self._lookup_method(request['method'])
             params = request.get('params', [])
-            result = method(*params)
+            result = await method(*params)
 
             if request['method'] == 'evm_resetToGenesisFixture':
                 self.chain, result = result, True
@@ -122,19 +137,19 @@ class RPCServer:
         else:
             return result, None
 
-    def execute(self, request):
+    async def execute(self, request: Dict[str, Any]) -> str:
         '''
         The key entry point for all incoming requests
         '''
-        result, error = self._get_result(request)
+        result, error = await self._get_result(request)
         return generate_response(request, result, error)
 
     @property
-    def chain(self):
+    def chain(self) -> AsyncChain:
         return self.__chain
 
     @chain.setter
-    def chain(self, new_chain):
+    def chain(self, new_chain: AsyncChain) -> None:
         self.__chain = new_chain
         for module in self.modules.values():
             module.set_chain(new_chain)

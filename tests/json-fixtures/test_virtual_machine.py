@@ -2,14 +2,14 @@ import os
 
 import pytest
 
+from eth_utils import (
+    to_bytes,
+)
+
 from hvm.db import (
     get_db_backend,
 )
 from hvm.db.chain import ChainDB
-
-from eth_utils import (
-    to_bytes,
-)
 
 from eth_hash.auto import keccak
 
@@ -19,13 +19,15 @@ from hvm.exceptions import (
 from hvm.rlp.headers import (
     BlockHeader,
 )
-from hvm.tools.fixture_tests import (
-    normalize_vmtest_fixture,
+from hvm.tools.fixtures import (
+    filter_fixtures,
     generate_fixture_tests,
     load_fixture,
-    filter_fixtures,
+    normalize_vmtest_fixture,
     setup_account_db,
     verify_account_db,
+)
+from hvm.tools._utils.hashing import (
     hash_log_entries,
 )
 from hvm.vm.forks import (

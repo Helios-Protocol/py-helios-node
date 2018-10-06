@@ -1,10 +1,9 @@
-def pytest_addoption(parser):
-    parser.addoption("--integration", action="store_true", default=False)
+import pytest
 
 
 """
 # Uncomment the following lines to globally change the logging level for all
-# `hp2p` namespaced loggers.  Useful for debugging failing tests in async code
+# `p2p` namespaced loggers.  Useful for debugging failing tests in async code
 # when the only output you get is a timeout or something else which doens't
 # indicate where things failed.
 import pytest
@@ -14,7 +13,7 @@ def p2p_logger():
     import logging
     import sys
 
-    logger = logging.getLogger('hp2p')
+    logger = logging.getLogger('p2p')
 
     handler = logging.StreamHandler(sys.stdout)
 
@@ -29,3 +28,10 @@ def p2p_logger():
 
     return logger
 """
+
+
+@pytest.fixture(autouse=True)
+def _network_sim(router):
+    network = router.get_network(name='simulated')
+    with network.patch_asyncio():
+        yield network

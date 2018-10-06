@@ -1,12 +1,15 @@
 import pytest
 
+from eth_utils import (
+    ValidationError,
+)
+
 from hvm.vm.stack import (
     Stack,
 )
 from hvm.exceptions import (
     FullStack,
     InsufficientStack,
-    ValidationError,
 )
 from hvm.constants import (
     UINT256,

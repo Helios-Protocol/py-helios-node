@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 
 from eth_utils import (
@@ -8,40 +6,42 @@ from eth_utils import (
 
 from eth_keys import keys
 
+from cancel_token import CancelToken
+
 from hp2p import ecies
 from hp2p import kademlia
-from hp2p.cancel_token import CancelToken
 from hp2p.p2p_proto import Hello
 from hp2p.auth import (
     HandshakeInitiator,
     HandshakeResponder,
 )
-from hp2p.peer import BasePeer
-from hp2p.server import decode_authentication
+from hp2p.auth import decode_authentication
+from hp2p.peer import PeerConnection
+from hp2p.tools.paragon import (
+    ParagonPeer,
+    ParagonContext,
+    get_directly_connected_streams,
+)
 
-from auth_constants import (
+
+from tests.p2p.auth_constants import (
     eip8_values,
     test_values,
 )
 
 
-class DummyPeer(BasePeer):
-    def process_sub_proto_handshake(self):
-        pass
-
-    def send_sub_proto_handshake(self):
-        pass
-
-
 @pytest.mark.asyncio
 async def test_handshake():
+    # TODO: this test should be re-written to not depend on functionality in the `HLSPeer` class.
     cancel_token = CancelToken("test_handshake")
+    use_eip8 = False
     initiator_remote = kademlia.Node(
         keys.PrivateKey(test_values['receiver_private_key']).public_key,
         kademlia.Address('0.0.0.0', 0, 0))
     initiator = HandshakeInitiator(
         initiator_remote,
         keys.PrivateKey(test_values['initiator_private_key']),
+        use_eip8,
         cancel_token)
     initiator.ephemeral_privkey = keys.PrivateKey(test_values['initiator_ephemeral_private_key'])
 
@@ -51,6 +51,7 @@ async def test_handshake():
     responder = HandshakeResponder(
         responder_remote,
         keys.PrivateKey(test_values['receiver_private_key']),
+        use_eip8,
         cancel_token)
     responder.ephemeral_privkey = keys.PrivateKey(test_values['receiver_ephemeral_private_key'])
 
@@ -104,30 +105,40 @@ async def test_handshake():
 
     # Finally, check that two Peers configured with the secrets generated above understand each
     # other.
-    responder_reader = asyncio.StreamReader()
-    initiator_reader = asyncio.StreamReader()
-    # Link the initiator's writer to the responder's reader, and the responder's writer to the
-    # initiator's reader.
-    responder_writer = type(
-        "mock-streamwriter",
-        (object,),
-        {"write": initiator_reader.feed_data}
+    (
+        (responder_reader, responder_writer),
+        (initiator_reader, initiator_writer),
+    ) = get_directly_connected_streams()
+
+    initiator_connection = PeerConnection(
+        reader=initiator_reader,
+        writer=initiator_writer,
+        aes_secret=initiator_aes_secret,
+        mac_secret=initiator_mac_secret,
+        egress_mac=initiator_egress_mac,
+        ingress_mac=initiator_ingress_mac
     )
-    initiator_writer = type(
-        "mock-streamwriter",
-        (object,),
-        {"write": responder_reader.feed_data}
+    initiator_peer = ParagonPeer(
+        remote=initiator.remote,
+        privkey=initiator.privkey,
+        connection=initiator_connection,
+        context=ParagonContext(),
     )
-    initiator_peer = DummyPeer(
-        remote=initiator.remote, privkey=initiator.privkey, reader=initiator_reader,
-        writer=initiator_writer, aes_secret=initiator_aes_secret, mac_secret=initiator_mac_secret,
-        egress_mac=initiator_egress_mac, ingress_mac=initiator_ingress_mac, headerdb=None,
-        network_id=1)
     initiator_peer.base_protocol.send_handshake()
-    responder_peer = DummyPeer(
-        remote=responder.remote, privkey=responder.privkey, reader=responder_reader,
-        writer=responder_writer, aes_secret=aes_secret, mac_secret=mac_secret,
-        egress_mac=egress_mac, ingress_mac=ingress_mac, headerdb=None, network_id=1)
+    responder_connection = PeerConnection(
+        reader=responder_reader,
+        writer=responder_writer,
+        aes_secret=aes_secret,
+        mac_secret=mac_secret,
+        egress_mac=egress_mac,
+        ingress_mac=ingress_mac,
+    )
+    responder_peer = ParagonPeer(
+        remote=responder.remote,
+        privkey=responder.privkey,
+        connection=responder_connection,
+        context=ParagonContext(),
+    )
     responder_peer.base_protocol.send_handshake()
 
     # The handshake msgs sent by each peer (above) are going to be fed directly into their remote's
@@ -139,14 +150,17 @@ async def test_handshake():
     assert isinstance(initiator_hello, Hello)
 
 
-def test_handshake_eip8():
+@pytest.mark.asyncio
+async def test_handshake_eip8():
     cancel_token = CancelToken("test_handshake_eip8")
+    use_eip8 = True
     initiator_remote = kademlia.Node(
         keys.PrivateKey(eip8_values['receiver_private_key']).public_key,
         kademlia.Address('0.0.0.0', 0, 0))
     initiator = HandshakeInitiator(
         initiator_remote,
         keys.PrivateKey(eip8_values['initiator_private_key']),
+        use_eip8,
         cancel_token)
     initiator.ephemeral_privkey = keys.PrivateKey(eip8_values['initiator_ephemeral_private_key'])
 
@@ -156,6 +170,7 @@ def test_handshake_eip8():
     responder = HandshakeResponder(
         responder_remote,
         keys.PrivateKey(eip8_values['receiver_private_key']),
+        use_eip8,
         cancel_token)
     responder.ephemeral_privkey = keys.PrivateKey(eip8_values['receiver_ephemeral_private_key'])
 
@@ -170,7 +185,7 @@ def test_handshake_eip8():
 
     responder_nonce = eip8_values['receiver_nonce']
     auth_ack_ciphertext = eip8_values['auth_ack_ciphertext']
-    aes_secret, mac_secret, _, _ = responder.derive_secrets(
+    aes_secret, mac_secret, egress_mac, ingress_mac = responder.derive_secrets(
         initiator_nonce, responder_nonce, initiator_ephemeral_pubkey, auth_init_ciphertext,
         auth_ack_ciphertext)
 
@@ -178,15 +193,71 @@ def test_handshake_eip8():
     assert aes_secret == eip8_values['expected_aes_secret']
     assert mac_secret == eip8_values['expected_mac_secret']
 
+    # Also according to https://github.com/ethereum/EIPs/blob/master/EIPS/eip-8.md, running B's
+    # ingress-mac keccak state on the string "foo" yields the following hash:
+    ingress_mac_copy = ingress_mac.copy()
+    ingress_mac_copy.update(b'foo')
+    assert ingress_mac_copy.hexdigest() == (
+        '0c7ec6340062cc46f5e9f1e3cf86f8c8c403c5a0964f5df0ebd34a75ddc86db5')
+
     responder_ephemeral_pubkey, responder_nonce = initiator.decode_auth_ack_message(
         auth_ack_ciphertext)
-    initiator_aes_secret, initiator_mac_secret, _, _ = initiator.derive_secrets(
+    (initiator_aes_secret,
+     initiator_mac_secret,
+     initiator_egress_mac,
+     initiator_ingress_mac) = initiator.derive_secrets(
         initiator_nonce, responder_nonce, responder_ephemeral_pubkey, auth_init_ciphertext,
         auth_ack_ciphertext)
 
     # Check that the secrets derived by the initiator match the expected values.
     assert initiator_aes_secret == eip8_values['expected_aes_secret']
     assert initiator_mac_secret == eip8_values['expected_mac_secret']
+
+    # Finally, check that two Peers configured with the secrets generated above understand each
+    # other.
+    (
+        (responder_reader, responder_writer),
+        (initiator_reader, initiator_writer),
+    ) = get_directly_connected_streams()
+
+    initiator_connection = PeerConnection(
+        reader=initiator_reader,
+        writer=initiator_writer,
+        aes_secret=initiator_aes_secret,
+        mac_secret=initiator_mac_secret,
+        egress_mac=initiator_egress_mac,
+        ingress_mac=initiator_ingress_mac
+    )
+    initiator_peer = ParagonPeer(
+        remote=initiator.remote,
+        privkey=initiator.privkey,
+        connection=initiator_connection,
+        context=ParagonContext(),
+    )
+    initiator_peer.base_protocol.send_handshake()
+    responder_connection = PeerConnection(
+        reader=responder_reader,
+        writer=responder_writer,
+        aes_secret=aes_secret,
+        mac_secret=mac_secret,
+        egress_mac=egress_mac,
+        ingress_mac=ingress_mac,
+    )
+    responder_peer = ParagonPeer(
+        remote=responder.remote,
+        privkey=responder.privkey,
+        connection=responder_connection,
+        context=ParagonContext(),
+    )
+    responder_peer.base_protocol.send_handshake()
+
+    # The handshake msgs sent by each peer (above) are going to be fed directly into their remote's
+    # reader, and thus the read_msg() calls will return immediately.
+    responder_hello, _ = await responder_peer.read_msg()
+    initiator_hello, _ = await initiator_peer.read_msg()
+
+    assert isinstance(responder_hello, Hello)
+    assert isinstance(initiator_hello, Hello)
 
 
 def test_eip8_hello():

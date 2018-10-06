@@ -104,7 +104,6 @@ from hvm.exceptions import (
     JournalDbNotActivated,    
     AppendHistoricalRootHashTooOld,
 )
-from hp2p.sedes import HashOrNone
 from hvm.utils.rlp import make_mutable
 
 from sortedcontainers import SortedList

@@ -1,8 +1,3 @@
-from .keystore import (
-    make_keystore_json,
-    check_keystore_json,
-    decode_keystore_json,        
-)
 
 from eth_keys import keys
 

@@ -3,11 +3,96 @@
 from multiprocessing.managers import (  # type: ignore
     BaseProxy,
 )
+from typing import (
+    Dict,
+    Iterable,
+    List,
+    Tuple,
+    Type,
+    Optional,
+    Union,
+)
+from hvm.types import Timestamp
 
+from eth_typing import Hash32, BlockNumber, Address
+
+from hvm.db.chain import ChainDB
+from hvm.rlp.blocks import BaseBlock
+from hvm.rlp.headers import BlockHeader
+from hvm.rlp.receipts import Receipt
+from hvm.rlp.transactions import BaseTransaction
+
+#from helios.db.header import AsyncHeaderDB
 from helios.utils.mp import (
     async_method,
     sync_method,
 )
+
+
+class AsyncChainDB(ChainDB):
+    async def coro_get(self, key: bytes) -> bytes:
+        raise NotImplementedError()
+
+    async def coro_persist_block(self, block: BaseBlock) -> None:
+        raise NotImplementedError()
+
+    async def coro_persist_uncles(self, uncles: Tuple[BlockHeader]) -> Hash32:
+        raise NotImplementedError()
+
+    async def coro_persist_trie_data_dict(self, trie_data_dict: Dict[bytes, bytes]) -> None:
+        raise NotImplementedError()
+
+    async def coro_get_block_transactions(
+            self,
+            header: BlockHeader,
+            transaction_class: Type[BaseTransaction]) -> Iterable[BaseTransaction]:
+        raise NotImplementedError()
+
+    async def coro_get_block_uncles(self, uncles_hash: Hash32) -> List[BlockHeader]:
+        raise NotImplementedError()
+
+    async def coro_get_receipts(
+            self, header: BlockHeader, receipt_class: Type[Receipt]) -> List[Receipt]:
+        raise NotImplementedError()
+
+
+    async def coro_get_canonical_block_hash(self, block_number: BlockNumber, wallet_address: Address) -> Hash32:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    async def coro_get_canonical_block_header_by_number(self, block_number: BlockNumber) -> BlockHeader:  # noqa: E501
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    async def coro_get_canonical_head(self) -> BlockHeader:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    async def coro_get_block_header_by_hash(self, block_hash: Hash32) -> BlockHeader:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    async def coro_get_score(self, block_hash: Hash32) -> int:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    async def coro_header_exists(self, block_hash: Hash32) -> bool:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    async def coro_persist_header(self, header: BlockHeader) -> Tuple[BlockHeader, ...]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    async def coro_persist_header_chain(self,
+                                        headers: Iterable[BlockHeader]) -> Tuple[BlockHeader, ...]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    async def coro_load_historical_minimum_gas_price(self, mutable:bool = True, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
+        raise NotImplementedError()
+
+    async def coro_load_historical_network_tpc_capability(self, mutable:bool = True, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
+        raise NotImplementedError()
+
+    async def coro_save_historical_minimum_gas_price(self, historical_minimum_gas_price: List[List[Union[Timestamp, int]]]) -> None:
+        raise NotImplementedError()
+
+    async def coro_save_historical_network_tpc_capability(self, historical_tpc_capability: List[List[Union[Timestamp, int]]], de_sparse: bool = False) -> None:
+        raise NotImplementedError()
+
 
 
 class ChainDBProxy(BaseProxy):
@@ -33,10 +118,9 @@ class ChainDBProxy(BaseProxy):
     coro_save_historical_network_tpc_capability = async_method('save_historical_network_tpc_capability')
     coro_load_historical_tx_per_centisecond = async_method('load_historical_tx_per_centisecond')
     coro_get_required_block_min_gas_price = async_method('get_required_block_min_gas_price')
-    coro_initialize_historical_minimum_gas_price_at_genesis = async_method('initialize_historical_minimum_gas_price_at_genesis')
+    coro_initialize_historical_minimum_gas_price_at_genesis = async_method(
+        'initialize_historical_minimum_gas_price_at_genesis')
     coro_get_blocks_on_chain = async_method('get_blocks_on_chain')
-
-
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')
     get_canonical_head = sync_method('get_canonical_head')
@@ -57,5 +141,6 @@ class ChainDBProxy(BaseProxy):
     save_historical_network_tpc_capability = sync_method('save_historical_network_tpc_capability')
     load_historical_tx_per_centisecond = sync_method('load_historical_tx_per_centisecond')
     get_required_block_min_gas_price = sync_method('get_required_block_min_gas_price')
-    initialize_historical_minimum_gas_price_at_genesis = sync_method('initialize_historical_minimum_gas_price_at_genesis')
+    initialize_historical_minimum_gas_price_at_genesis = sync_method(
+        'initialize_historical_minimum_gas_price_at_genesis')
     get_blocks_on_chain = sync_method('get_blocks_on_chain')

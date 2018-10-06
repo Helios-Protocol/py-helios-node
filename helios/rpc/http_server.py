@@ -270,7 +270,7 @@ class Proxy(HTTPServer):
         self.serve_forever()
 
 if sys.platform == 'win32':
-    DEFAULT_BACKEND_PATH = r'\\.\pipe\geth.ipc'
+    DEFAULT_BACKEND_PATH = r'\\.\pipe\ghls.ipc'
     BACKEND_PATH_HELP = "Named Pipe of a backend RPC server"
 else:
     DEFAULT_BACKEND_PATH = '~/.ethereum/geth.ipc'

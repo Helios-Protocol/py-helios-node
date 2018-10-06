@@ -1,17 +1,17 @@
 import os
 import json
 
-from hvm.tools.test_builder.test_builder import (
-    fill_test,
-)
-from hvm.tools.test_builder.formatters import (
-    filler_formatter,
-)
-from hvm.tools.test_builder.builder_utils import (
+from eth_hash.auto import keccak
+
+from hvm.tools.fixtures.helpers import (
     get_test_name,
 )
-
-from eth_hash.auto import keccak
+from hvm.tools.fixtures.fillers import (
+    fill_test,
+)
+from hvm.tools.fixtures.fillers.formatters import (
+    filler_formatter,
+)
 
 from hvm.utils.hexadecimal import (
     encode_hex,

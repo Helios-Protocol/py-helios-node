@@ -4,6 +4,7 @@ import pytest
 
 from eth_utils import (
     to_normalized_address,
+    ValidationError,
 )
 
 from hvm.vm.message import (
@@ -11,9 +12,6 @@ from hvm.vm.message import (
 )
 from hvm.constants import (
     CREATE_CONTRACT_ADDRESS,
-)
-from hvm.exceptions import (
-    ValidationError,
 )
 
 

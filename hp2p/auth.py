@@ -17,13 +17,15 @@ from eth_keys import (
 
 from eth_hash.auto import keccak
 
+from cancel_token import CancelToken
+
 from hp2p import ecies
 from hp2p import kademlia
-from hp2p.cancel_token import CancelToken, wait_with_token
 from hp2p.constants import REPLY_TIMEOUT
 from hp2p.exceptions import (
-    DecryptionError,
     BadAckMessage,
+    DecryptionError,
+    HandshakeFailure,
 )
 from hp2p.utils import (
     sxor,
@@ -52,7 +54,8 @@ async def handshake(
     Returns the established secrets and the StreamReader/StreamWriter pair already connected to
     the remote.
     """
-    initiator = HandshakeInitiator(remote, privkey, token)
+    use_eip8 = False
+    initiator = HandshakeInitiator(remote, privkey, use_eip8, token)
     reader, writer = await initiator.connect()
     aes_secret, mac_secret, egress_mac, ingress_mac = await _handshake(
         initiator, reader, writer, token)
@@ -72,10 +75,14 @@ async def _handshake(initiator: 'HandshakeInitiator', reader: asyncio.StreamRead
     auth_init = initiator.encrypt_auth_message(auth_msg)
     writer.write(auth_init)
 
-    auth_ack = await wait_with_token(
+    auth_ack = await token.cancellable_wait(
         reader.read(ENCRYPTED_AUTH_ACK_LEN),
-        token=token,
         timeout=REPLY_TIMEOUT)
+
+    if reader.at_eof():
+        # This is what happens when Parity nodes have blacklisted us
+        # (https://github.com/ethereum/py-evm/issues/901).
+        raise HandshakeFailure("%s disconnected before sending auth ack", repr(initiator.remote))
 
     ephemeral_pubkey, responder_nonce = initiator.decode_auth_ack_message(auth_ack)
     aes_secret, mac_secret, egress_mac, ingress_mac = initiator.derive_secrets(
@@ -90,15 +97,16 @@ async def _handshake(initiator: 'HandshakeInitiator', reader: asyncio.StreamRead
 
 
 class HandshakeBase:
-    logger = logging.getLogger("hp2p.peer.Handshake")
-    got_eip8_auth = False
+    logger = logging.getLogger("p2p.peer.Handshake")
     _is_initiator = False
 
     def __init__(
-            self, remote: kademlia.Node, privkey: datatypes.PrivateKey, token: CancelToken) -> None:
+            self, remote: kademlia.Node, privkey: datatypes.PrivateKey,
+            use_eip8: bool, token: CancelToken) -> None:
         self.remote = remote
         self.privkey = privkey
         self.ephemeral_privkey = ecies.generate_privkey()
+        self.use_eip8 = use_eip8
         self.cancel_token = token
 
     @property
@@ -110,9 +118,8 @@ class HandshakeBase:
         return self.privkey.public_key
 
     async def connect(self) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        return await wait_with_token(
+        return await self.cancel_token.cancellable_wait(
             asyncio.open_connection(host=self.remote.address.ip, port=self.remote.address.tcp_port),
-            token=self.cancel_token,
             timeout=REPLY_TIMEOUT)
 
     def derive_secrets(self,
@@ -159,45 +166,49 @@ class HandshakeInitiator(HandshakeBase):
     _is_initiator = True
 
     def encrypt_auth_message(self, auth_message: bytes) -> bytes:
-        return ecies.encrypt(auth_message, self.remote.pubkey)
+        if self.use_eip8:
+            auth_msg = encrypt_eip8_msg(auth_message, self.remote.pubkey)
+        else:
+            auth_msg = ecies.encrypt(auth_message, self.remote.pubkey)
+        return auth_msg
 
     def create_auth_message(self, nonce: bytes) -> bytes:
         ecdh_shared_secret = ecies.ecdh_agree(self.privkey, self.remote.pubkey)
         secret_xor_nonce = sxor(ecdh_shared_secret, nonce)
-
-        # S(ephemeral-privk, ecdh-shared-secret ^ nonce)
         S = self.ephemeral_privkey.sign_msg_hash(secret_xor_nonce).to_bytes()
 
-        # S || H(ephemeral-pubk) || pubk || nonce || 0x0
-        return (
-            S +
-            keccak(self.ephemeral_pubkey.to_bytes()) +
-            self.pubkey.to_bytes() +
-            nonce +
-            b'\x00'
-        )
+        if self.use_eip8:
+            data = rlp.encode(
+                [S, self.pubkey.to_bytes(), nonce, SUPPORTED_RLPX_VERSION], sedes=eip8_auth_sedes)
+            return _pad_eip8_data(data)
+        else:
+            # S || H(ephemeral-pubk) || pubk || nonce || 0x0
+            return (
+                S +
+                keccak(self.ephemeral_pubkey.to_bytes()) +
+                self.pubkey.to_bytes() +
+                nonce +
+                b'\x00'
+            )
 
     def decode_auth_ack_message(self, ciphertext: bytes) -> Tuple[datatypes.PublicKey, bytes]:
         if len(ciphertext) < ENCRYPTED_AUTH_ACK_LEN:
-            raise BadAckMessage("Auth ack msg too short: {}".format(len(ciphertext)))
+            raise BadAckMessage(f"Auth ack msg too short: {len(ciphertext)}")
         elif len(ciphertext) == ENCRYPTED_AUTH_ACK_LEN:
             eph_pubkey, nonce, _ = decode_ack_plain(ciphertext, self.privkey)
         else:
             eph_pubkey, nonce, _ = decode_ack_eip8(ciphertext, self.privkey)
-            self.got_eip8_auth = True
         return eph_pubkey, nonce
 
 
 class HandshakeResponder(HandshakeBase):
 
     def create_auth_ack_message(self, nonce: bytes) -> bytes:
-        if self.got_eip8_auth:
+        if self.use_eip8:
             data = rlp.encode(
                 (self.ephemeral_pubkey.to_bytes(), nonce, SUPPORTED_RLPX_VERSION),
                 sedes=eip8_ack_sedes)
-            # Pad with random amount of data. The amount needs to be at least 100 bytes to make
-            # the message distinguishable from pre-EIP-8 handshakes.
-            msg = data + os.urandom(random.randint(100, 250))
+            msg = _pad_eip8_data(data)
         else:
             # Unused, according to EIP-8, but must be included nevertheless.
             token_flag = b'\x00'
@@ -205,12 +216,8 @@ class HandshakeResponder(HandshakeBase):
         return msg
 
     def encrypt_auth_ack_message(self, ack_message: bytes) -> bytes:
-        if self.got_eip8_auth:
-            # The EIP-8 version has an authenticated length prefix.
-            prefix = struct.pack('>H', len(ack_message) + ENCRYPT_OVERHEAD_LENGTH)
-            suffix = ecies.encrypt(
-                ack_message, self.remote.pubkey, shared_mac_data=prefix)
-            auth_ack = prefix + suffix
+        if self.use_eip8:
+            auth_ack = encrypt_eip8_msg(ack_message, self.remote.pubkey)
         else:
             auth_ack = ecies.encrypt(ack_message, self.remote.pubkey)
         return auth_ack
@@ -231,6 +238,20 @@ eip8_auth_sedes = sedes.List(
     ], strict=False)
 
 
+def _pad_eip8_data(data: bytes) -> bytes:
+    # Pad with random amount of data, as per
+    # https://github.com/ethereum/EIPs/blob/master/EIPS/eip-8.md:
+    # "Adding a random amount in range [100, 300] is recommended to vary the size of the
+    # packet"
+    return data + os.urandom(random.randint(100, 300))
+
+
+def encrypt_eip8_msg(msg: bytes, pubkey: datatypes.PublicKey) -> bytes:
+    prefix = struct.pack('>H', len(msg) + ENCRYPT_OVERHEAD_LENGTH)
+    suffix = ecies.encrypt(msg, pubkey, shared_mac_data=prefix)
+    return prefix + suffix
+
+
 def decode_ack_plain(
         ciphertext: bytes, privkey: datatypes.PrivateKey) -> Tuple[datatypes.PublicKey, bytes, int]:
     """Decrypts and decodes a legacy pre-EIP-8 auth ack message.
@@ -239,7 +260,7 @@ def decode_ack_plain(
     """
     message = ecies.decrypt(ciphertext, privkey)
     if len(message) != AUTH_ACK_LEN:
-        raise BadAckMessage("Unexpected size for ack message: {}".format(len(message)))
+        raise BadAckMessage(f"Unexpected size for ack message: {len(message)}")
     eph_pubkey = keys.PublicKey(message[:PUBKEY_LEN])
     nonce = message[PUBKEY_LEN: PUBKEY_LEN + HASH_LEN]
     return eph_pubkey, nonce, SUPPORTED_RLPX_VERSION
@@ -265,7 +286,7 @@ def decode_auth_plain(ciphertext: bytes, privkey: datatypes.PrivateKey) -> Tuple
     """Decode legacy pre-EIP-8 auth message format"""
     message = ecies.decrypt(ciphertext, privkey)
     if len(message) != AUTH_MSG_LEN:
-        raise BadAckMessage("Unexpected size for auth message: {}".format(len(message)))
+        raise BadAckMessage(f"Unexpected size for auth message: {len(message)}")
     signature = keys.Signature(signature_bytes=message[:SIGNATURE_LEN])
     pubkey_start = SIGNATURE_LEN + HASH_LEN
     pubkey = keys.PublicKey(message[pubkey_start: pubkey_start + PUBKEY_LEN])
@@ -299,7 +320,7 @@ def decode_authentication(ciphertext: bytes,
     Returns the initiator's ephemeral pubkey, nonce, and pubkey.
     """
     if len(ciphertext) < ENCRYPTED_AUTH_MSG_LEN:
-        raise DecryptionError("Auth msg too short: {}".format(len(ciphertext)))
+        raise DecryptionError(f"Auth msg too short: {len(ciphertext)}")
     elif len(ciphertext) == ENCRYPTED_AUTH_MSG_LEN:
         sig, initiator_pubkey, initiator_nonce, _ = decode_auth_plain(
             ciphertext, privkey)

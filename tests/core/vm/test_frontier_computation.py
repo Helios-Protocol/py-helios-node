@@ -1,5 +1,9 @@
 import pytest
 
+from eth_utils import (
+    to_canonical_address,
+)
+
 from hvm.vm.message import (
     Message,
 )
@@ -8,10 +12,6 @@ from hvm.vm.forks.frontier.computation import (
 )
 from hvm.vm.transaction_context import (
     BaseTransactionContext,
-)
-
-from eth_utils import (
-    to_canonical_address,
 )
 
 

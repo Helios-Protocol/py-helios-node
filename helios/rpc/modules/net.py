@@ -1,30 +1,27 @@
-# Tell mypy to ignore this import as a workaround for https://github.com/python/mypy/issues/4049
-from helios.rpc.modules import (  # type: ignore
+from hp2p.events import (
+    PeerCountRequest
+)
+from helios.rpc.modules import (
     RPCModule,
 )
 
 
 class Net(RPCModule):
-    def version(self):
+    async def version(self) -> str:
         """
         Returns the current network ID.
         """
         return str(self._chain.network_id)
 
-    def peerCount(self):
+    async def peerCount(self) -> str:
         """
         Return the number of peers that are currently connected to the node
         """
-        if self._p2p_server.peer_pool is None:
-            return '0x0'
+        response = await self._event_bus.request(PeerCountRequest())
+        return hex(response.peer_count)
 
-        return hex(len(self._p2p_server.peer_pool))
-
-    def listening(self):
+    async def listening(self) -> bool:
         """
         Return `True` if the client is actively listening for network connections
         """
-        if self._p2p_server.peer_pool is None:
-            return False
-
         return True

@@ -1,5 +1,5 @@
 import collections
-from typing import Dict, Union  # noqa: F401
+from typing import cast, Dict, Union  # noqa: F401
 import uuid
 
 from cytoolz import (
@@ -7,9 +7,11 @@ from cytoolz import (
     merge,
     last,
 )
+from eth_utils import (
+    ValidationError,
+)
 
 from hvm.db.backends.base import BaseDB
-from hvm.exceptions import ValidationError
 
 
 class DeletedEntry:
@@ -119,7 +121,7 @@ class Journal(BaseDB):
     #
     # Database API
     #
-    def __getitem__(self, key: bytes) -> bytes:
+    def __getitem__(self, key: bytes) -> Union[bytes, DeletedEntry]:
         """
         For key lookups we need to iterate through the changesets in reverse
         order, returning from the first one in which the key is present.
@@ -178,7 +180,9 @@ class JournalDB(BaseDB):
         elif val is None:
             return self.wrapped_db[key]
         else:
-            return val
+            # mypy doesn't allow custom type guards yet so we need to cast here
+            # even though we know it can only be `bytes` at this point.
+            return cast(bytes, val)
 
     def __setitem__(self, key: bytes, value: bytes) -> None:
         """

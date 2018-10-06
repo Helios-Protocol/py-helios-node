@@ -1,18 +1,18 @@
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from helios.nodes.base import Node
-    from hvm.chains.base import BaseChain
+from hvm.chains.base import (
+    AsyncChain
+)
+
+from lahja import (
+    Endpoint
+)
+
 
 class RPCModule:
-    _chain: 'BaseChain' = None
-    _node: 'Node' = None
+    _chain = None
 
-    def __init__(self, node: 'Node', chain=None, p2p_server=None):
+    def __init__(self, chain: AsyncChain, event_bus: Endpoint) -> None:
         self._chain = chain
-        self._p2p_server = p2p_server
-        self._node = node
+        self._event_bus = event_bus
 
-    def set_chain(self, chain):
+    def set_chain(self, chain: AsyncChain) -> None:
         self._chain = chain
-
-    

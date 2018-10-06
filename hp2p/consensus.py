@@ -18,6 +18,7 @@ from typing import (
     Tuple,
     Union,
     cast,
+    Iterable
 )
 
 from cytoolz import (
@@ -25,12 +26,12 @@ from cytoolz import (
     unique,
 )
 
-from eth_typing import BlockNumber, Hash32
+from eth_typing import BlockNumber, Hash32, Address
 from eth_utils import (
     encode_hex,
 )
 
-from hp2p.rlp import (
+from helios.rlp.hls import (
     BlockBody, 
     P2PTransaction,
     BlockNumberKey,
@@ -46,7 +47,8 @@ from hvm.constants import (
 )
 
 from hvm.chains import AsyncChain
-from hvm.db.chain import AsyncChainDB
+from helios.db.chain import AsyncChainDB
+#from hvm.db.chain import AsyncChainDB
 from hvm.db.trie import make_trie_root_and_nodes
 from hvm.exceptions import (
     HeaderNotFound, 
@@ -70,23 +72,36 @@ from hp2p.constants import (
     CONSENSUS_CHECK_LOCAL_TPC_CAP_PERIOD,
     MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD,
     MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG,
+    MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED,
 )
 
 from hp2p import protocol
-from hp2p import eth
-from hp2p import hls
-from hp2p.cancel_token import CancelToken
+
+from helios.protocol.hls.commands import (
+    GetChainHeadRootHashTimestamps,
+    ChainHeadRootHashTimestamps,
+    GetUnorderedBlockHeaderHash,
+    UnorderedBlockHeaderHash,
+    GetStakeForAddresses,
+    StakeForAddresses,
+    GetMinGasParameters,
+    MinGasParameters,
+)
+
+#from hp2p.cancel_token import CancelToken
+from cancel_token import CancelToken
+
 from hp2p.exceptions import (
     NoEligiblePeers, 
     OperationCancelled,
     DatabaseResyncRequired,
 )
-from hp2p.peer import BasePeer, HLSPeer, PeerPool, PeerPoolSubscriber
-from hp2p.rlp import BlockBody, P2PTransaction, TimestampRootHashKey
+from hp2p.peer import BasePeer, PeerSubscriber
+from helios.protocol.hls.peer import HLSPeerPool
+
+from helios.protocol.hls.peer import HLSPeer
 from hp2p.service import BaseService
-from hp2p.utils import (
-    get_process_pool_executor,
-)
+
 from sortedcontainers import SortedDict
 from sortedcontainers import SortedList
 
@@ -107,6 +122,8 @@ from sortedcontainers import SortedList
 
 
 class BlockConflictInfo():
+    chain_address:Address = None
+
     def __init__(self, chain_address, block_number, timestamp):
         self.chain_address = chain_address
         self.block_number = block_number
@@ -139,7 +156,7 @@ class PeerRootHashTimestamps():
             
                 
     
-class Consensus(BaseService, PeerPoolSubscriber):
+class Consensus(BaseService, PeerSubscriber):
     """
     determine if items have consensus
     get items that have consensus
@@ -163,7 +180,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
                  chain: AsyncChain,
                  chaindb: AsyncChainDB,
                  base_db,
-                 peer_pool: PeerPool,
+                 peer_pool: HLSPeerPool,
                  chain_head_db,
                  bootstrap_nodes,
                  chain_config,
@@ -176,7 +193,6 @@ class Consensus(BaseService, PeerPoolSubscriber):
         self.peer_pool = peer_pool
         self.chain_config = chain_config
         self.bootstrap_nodes = bootstrap_nodes
-        self._executor = get_process_pool_executor()
         #[BlockConflictInfo, BlockConflictInfo, ...]
         self.block_conflicts = set()
         #dont forget to include children blocks into weight
@@ -330,7 +346,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
                                 max_stake = stake
                                 max_item = item
             assert(max_item is not None), item_stakes_dict_or_list
-            return (max_item, stake)      
+            return (max_item, max_stake)
         elif isinstance(item_stakes_dict_or_list, list):
             max_stake = 0
             max_item = None
@@ -353,7 +369,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
                                 max_stake = stake
                                 max_item = item
             assert(max_item is not None)
-            return (max_item, stake)   
+            return (max_item, max_stake)
     
     def calc_stake_difference(self, prev_block_hash_keys, new_block_hash_keys):
         '''
@@ -462,17 +478,17 @@ class Consensus(BaseService, PeerPoolSubscriber):
             await asyncio.sleep(MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD)
 
     async def _run(self) -> None:
-        asyncio.ensure_future(self._handle_msg_loop())
+        self.run_task(self._handle_msg_loop())
         if self.chain_config.node_type == 4:
             self.logger.debug('re-initializing min gas system')
             self.chain.re_initialize_historical_minimum_gas_price_at_genesis()
-            
-        asyncio.ensure_future(self._sync_min_gas_price_system_loop())
+
+            self.run_task(self._sync_min_gas_price_system_loop())
         
         #first lets make sure we add our own root_hash_timestamps
         with self.subscribe(self.peer_pool):
             #await test
-            while True:
+            while self.is_operational:
 
                 
                 if self.coro_is_ready.is_set():
@@ -483,12 +499,12 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 #first lets ask the bootnode for the stake of any peers that we dont have the blockchain for
                 #this takes care of determining stake of our peers while we are still syncing our blockchain database
                 self.logger.debug("waiting for get missing stake from bootnode")
-                await self.get_missing_stake_from_bootnode()
+                await self.wait(self.get_missing_stake_from_bootnode())
                 #send sync messages, doesnt need to be async
                 self.send_sync_get_messages()
                 #it will re-loop every time it gets a new response from a single peer. this ensures that the statistics are always as up to date as possible
                 self.logger.debug("waiting for receive_sync_messages")
-                await self.receive_sync_messages()
+                await self.wait(self.receive_sync_messages())
                 
                 self.logger.debug("done syncing consensus. These are the statistics for block_choices: {}".format(
                                     self.block_choice_statistics))
@@ -508,10 +524,11 @@ class Consensus(BaseService, PeerPoolSubscriber):
 #                 self.logger.debug("tpc = {}".format(test_3))
                 
                 #here we shouldnt pause because if it returned early than thats because we got some data from peers. we want to process data asap.
+                #We removed this because we calculate consensus on the fly now.
                 #self.populate_peer_consensus()
                 #TODO. when a peer disconnects, make sure we delete their vote.
                 
-                #todo: re-enable these
+                #todo: re-enable these Actually need to re-enable
                 #self.remove_data_for_old_root_hash_timestamps()
                 #self.remove_data_for_disconnected_peers()
                 #self.remove_data_for_blocks_that_achieved_consensus()
@@ -561,11 +578,11 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 
             self._last_send_sync_message_time = int(time.time())
         
-    def send_block_conflict_sync_messages(self, block_conflicts):
+    def send_block_conflict_sync_messages(self, block_conflicts: Iterable[BlockConflictInfo]) -> None:
         
         self.logger.debug("Sending out messages to all peers asking for block conflict choices.")
-        if not isinstance(block_conflicts, list) and not isinstance(block_conflicts, set):
-            block_conflicts = set([block_conflicts])
+        # if not isinstance(block_conflicts, list) and not isinstance(block_conflicts, set):
+        #     block_conflicts = {block_conflicts}
             
         block_number_keys = []
         for conflict in block_conflicts:
@@ -617,20 +634,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
                                                        new_block_hash_key.block_number,
                                                        new_block_hash_key.block_hash,
                                                        new_peer_stake)
-                
-#                #first we subtract the previous stake
-#                for previous_block_hash_key in previous_block_hash_keys:
-#                    self.delta_block_choice_statistics(previous_block_hash_key.wallet_address,
-#                                                       previous_block_hash_key.block_number,
-#                                                       previous_block_hash_key.block_hash,
-#                                                       -1*previous_peer_stake)
-#         
-#                #now add the new stake with new choices
-#                for new_block_hash_key in new_block_hash_keys:
-#                    self.delta_block_choice_statistics(new_block_hash_key.wallet_address,
-#                                                       new_block_hash_key.block_number,
-#                                                       new_block_hash_key.block_hash,
-#                                                       new_peer_stake)
+
                 
             else:
                 #this is the first message from them, we don't have any previous choices, so lets just add the new stake
@@ -687,15 +691,16 @@ class Consensus(BaseService, PeerPoolSubscriber):
             
     async def calculate_average_network_tpc_cap(self):
         num_candidates = 0
+        all_candidate_item_stake = []
         if len(self._network_tpc_cap_statistics) >= MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG:
-            all_candidate_item_stake = []
-            
+
             for wallet_address, timestamp_max_tpc_cap_stake in self._network_tpc_cap_statistics.copy().items():
                 if timestamp_max_tpc_cap_stake[0] >= int(time.time())-5*60:
                     all_candidate_item_stake.append([timestamp_max_tpc_cap_stake[1], timestamp_max_tpc_cap_stake[2]])
                     num_candidates +=1
                 else:
                     del(self._network_tpc_cap_statistics[wallet_address])
+
         if num_candidates >= MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG:
             #add in our local tpc and stake
             local_tpc_cap = await self.local_tpc_cap
@@ -796,12 +801,12 @@ class Consensus(BaseService, PeerPoolSubscriber):
                 
         
         
-    def populate_peer_consensus(self):
-        if self._last_block_choice_consensus_calculation_time < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
-            self._populate_peer_consensus()
-            self._last_block_choice_consensus_calculation_time = int(time.time())
-            
-    def _populate_peer_consensus(self):
+    # def populate_peer_consensus(self):
+    #     if self._last_block_choice_consensus_calculation_time < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
+    #         self._populate_peer_consensus()
+    #         self._last_block_choice_consensus_calculation_time = int(time.time())
+    #
+    # def _populate_peer_consensus(self):
         '''
         Populates local consensus variables with the given consensus of the particular type. Doesnt account for local chain data
         '''
@@ -828,7 +833,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
         if self._last_check_to_remove_old_local_root_hash_timestamps_from_peer_statistics < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
             self._remove_data_for_old_root_hash_timestamps()
             self._last_check_to_remove_old_local_root_hash_timestamps_from_peer_statistics = int(time.time())
-            
+
     def _remove_data_for_old_root_hash_timestamps(self):
         #cant do it by time because if the network was down for a while, and it starts back up, all of them might be too old.
         #we have to remove ones if the length gets too long
@@ -840,8 +845,8 @@ class Consensus(BaseService, PeerPoolSubscriber):
             for i in range(num_to_remove):
                 sorted_root_hash_timestamps_statistics.popitem(0)
             self.root_hash_timestamps_statistics = dict(sorted_root_hash_timestamps_statistics)
-            
-                
+
+
 #        oldest_allowed_time = int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE*2
 #        for timestamp, root_hash_stakes in self.root_hash_timestamps_statistics.copy().items():
 #            if timestamp < oldest_allowed_time:
@@ -896,7 +901,7 @@ class Consensus(BaseService, PeerPoolSubscriber):
         self.block_conflicts.add(new_block_conflict)
         
         #lets also immediately ask peers what they have
-        self.send_block_conflict_sync_messages(new_block_conflict)
+        self.send_block_conflict_sync_messages([new_block_conflict])
         
     #for effeciency, we can assume that we are always in consensus
     async def get_correct_block_conflict_choice_where_we_differ_from_consensus(self):
@@ -1100,12 +1105,9 @@ class Consensus(BaseService, PeerPoolSubscriber):
             root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
             peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
         except KeyError:
-            peer_root_hash = None
-            
-        if peer_root_hash is None:
             return local_root_hash
         
-        elif peer_root_hash == local_root_hash or local_root_hash is None:
+        if peer_root_hash == local_root_hash or local_root_hash is None:
             return peer_root_hash
         else:
             our_stake_for_local_hash = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
@@ -1139,12 +1141,9 @@ class Consensus(BaseService, PeerPoolSubscriber):
             root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
             peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
         except KeyError:
-            peer_root_hash = None
-            
-        if peer_root_hash is None:
             return local_root_hash
         
-        elif peer_root_hash == local_root_hash or local_root_hash is None:
+        if peer_root_hash == local_root_hash or local_root_hash is None:
             return peer_root_hash
         else:
             our_stake_for_local_hash = self.chain.get_mature_stake(self.chain_config.node_wallet_address)
@@ -1228,33 +1227,30 @@ class Consensus(BaseService, PeerPoolSubscriber):
             peer_consensus_block_hash, peer_consensus_block_stake = self.determine_stake_winner(block_hash_stakes)
             #peer_consensus_block_hash, peer_consensus_block_stake = self.block_choice_consensus[chain_wallet_address][block_number]
         except KeyError:
-            peer_consensus_block_hash = None
-        
-        if peer_consensus_block_hash is None:
             return local_block_hash
         
+
+        if local_block_hash is None:
+            return peer_consensus_block_hash
         else:
-            if local_block_hash is None:
-                return peer_consensus_block_hash
-            else:
-                if local_block_hash != peer_consensus_block_hash:
-                    #the peers have chosen something different than what we have here
-                    #At this point we calculate the stake of all children blocks that come after it
-                    #However, we don't want to count any nodes that have voted here incase their vote changed
-                    exclude_chains = list(self.peer_block_choices.keys())
-                    children_stake_for_local_block = await self.chain.coro_get_block_stake_from_children(local_block_hash, exclude_chains = exclude_chains)
-                    our_stake_for_local_block = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
-                    
-                    try:
-                        peer_stake_for_local_block = self.block_choice_statistics[chain_wallet_address][block_number][local_block_hash]
-                    except KeyError:
-                        peer_stake_for_local_block = 0
-                    total_stake_for_local_block =  peer_stake_for_local_block + children_stake_for_local_block + our_stake_for_local_block
-                    
-                    return self.get_winner_stake_binary_compare(peer_consensus_block_hash, 
-                                                                peer_consensus_block_stake, 
-                                                                local_block_hash, 
-                                                                total_stake_for_local_block)
+            if local_block_hash != peer_consensus_block_hash:
+                #the peers have chosen something different than what we have here
+                #At this point we calculate the stake of all children blocks that come after it
+                #However, we don't want to count any nodes that have voted here incase their vote changed
+                exclude_chains = list(self.peer_block_choices.keys())
+                children_stake_for_local_block = await self.chain.coro_get_block_stake_from_children(local_block_hash, exclude_chains = exclude_chains)
+                our_stake_for_local_block = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
+
+                try:
+                    peer_stake_for_local_block = self.block_choice_statistics[chain_wallet_address][block_number][local_block_hash]
+                except KeyError:
+                    peer_stake_for_local_block = 0
+                total_stake_for_local_block =  peer_stake_for_local_block + children_stake_for_local_block + our_stake_for_local_block
+
+                return self.get_winner_stake_binary_compare(peer_consensus_block_hash,
+                                                            peer_consensus_block_stake,
+                                                            local_block_hash,
+                                                            total_stake_for_local_block)
                 
 
 
@@ -1265,28 +1261,28 @@ class Consensus(BaseService, PeerPoolSubscriber):
     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
 
-        if isinstance(cmd, hls.UnorderedBlockHeaderHash):
-            await self._handle_block_choices(peer, cast(List[hls.BlockHashKey], msg))
+        if isinstance(cmd, UnorderedBlockHeaderHash):
+            await self._handle_block_choices(peer, cast(List[BlockHashKey], msg))
 
-        if isinstance(cmd, hls.GetUnorderedBlockHeaderHash):
-            await self._handle_get_block_choices(peer, cast(List[hls.BlockNumberKey], msg))
+        if isinstance(cmd, GetUnorderedBlockHeaderHash):
+            await self._handle_get_block_choices(peer, cast(List[BlockNumberKey], msg))
             
-        if isinstance(cmd, hls.ChainHeadRootHashTimestamps):
+        if isinstance(cmd, ChainHeadRootHashTimestamps):
             await self._handle_chain_head_root_hash_timestamps(peer, cast(List[Any], msg))
             
-        if isinstance(cmd, hls.GetChainHeadRootHashTimestamps):
+        if isinstance(cmd, GetChainHeadRootHashTimestamps):
             await self._handle_get_chain_head_root_hash_timestamps(peer, cast(Dict[str, Any], msg))
         
-        if isinstance(cmd, hls.StakeForAddresses):
+        if isinstance(cmd, StakeForAddresses):
             await self._handle_stake_for_addresses(peer, cast(Dict[str, Any], msg))
             
-        if isinstance(cmd, hls.GetStakeForAddresses):
+        if isinstance(cmd, GetStakeForAddresses):
             await self._handle_get_stake_for_addresses(peer, cast(Dict[str, Any], msg))
             
-        if isinstance(cmd, hls.GetMinGasParameters):
+        if isinstance(cmd, GetMinGasParameters):
             await self._handle_get_min_gas_parameters(peer, cast(Dict[str, Any], msg))
             
-        if isinstance(cmd, hls.MinGasParameters):
+        if isinstance(cmd, MinGasParameters):
             await self._handle_min_gas_parameters(peer, cast(Dict[str, Any], msg))
         
         
