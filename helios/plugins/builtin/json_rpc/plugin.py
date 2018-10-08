@@ -4,15 +4,10 @@ from argparse import (
 )
 import asyncio
 
-from helios.constants import (
-    SYNC_LIGHT
-)
 from helios.extensibility import (
     BaseIsolatedPlugin,
 )
-from helios.plugins.builtin.light_peer_chain_bridge.light_peer_chain_bridge import (
-    EventBusLightPeerChain,
-)
+
 from helios.rpc.main import (
     RPCServer,
 )
@@ -52,13 +47,8 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
 
         chain_class = self.context.chain_config.node_class.chain_class
 
-        if self.context.chain_config.sync_mode == SYNC_LIGHT:
-            header_db = db_manager.get_headerdb()  # type: ignore
-            event_bus_light_peer_chain = EventBusLightPeerChain(self.context.event_bus)
-            chain = chain_class(header_db, peer_chain=event_bus_light_peer_chain)
-        else:
-            db = db_manager.get_db()  # type: ignore
-            chain = chain_class(db)
+        db = db_manager.get_db()  # type: ignore
+        chain = chain_class(db)
 
         rpc = RPCServer(chain, self.context.event_bus)
         ipc_server = IPCServer(rpc, self.context.chain_config.jsonrpc_ipc_path)

@@ -97,7 +97,7 @@ async def _handshake(initiator: 'HandshakeInitiator', reader: asyncio.StreamRead
 
 
 class HandshakeBase:
-    logger = logging.getLogger("p2p.peer.Handshake")
+    logger = logging.getLogger("hp2p.peer.Handshake")
     _is_initiator = False
 
     def __init__(

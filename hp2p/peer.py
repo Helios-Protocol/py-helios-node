@@ -307,7 +307,7 @@ class BasePeer(BaseService):
         try:
             cmd, msg = await self.read_msg()
         except rlp.DecodingError:
-            raise HandshakeFailure("Got invalid rlp data during handshake")
+            raise HandshakeFailure("Got invalid rlp_templates data during handshake")
         except MalformedMessage as e:
             raise HandshakeFailure("Got malformed message during handshake") from e
 
@@ -618,10 +618,10 @@ class PeerSubscriber(ABC):
     @abstractmethod
     def subscription_msg_types(self) -> Set[Type[protocol.Command]]:
         """
-        The `p2p.protocol.Command` types that this class subscribes to.  Any
+        The `hp2p.protocol.Command` types that this class subscribes to.  Any
         command which is not in this set will not be passed to this subscriber.
 
-        The base command class `p2p.protocol.Command` can be used to enable
+        The base command class `hp2p.protocol.Command` can be used to enable
         **all** command types.
 
         .. note: This API only applies to sub-protocol commands.  Base protocol
@@ -643,11 +643,11 @@ class PeerSubscriber(ABC):
 
     def register_peer(self, peer: BasePeer) -> None:
         """
-        Notify about each registered peer in the :class:`~p2p.peer.PeerPool`. Is called upon
-        subscription for each :class:`~p2p.peer.BasePeer` that exists in the pool at that time and
-        then for each :class:`~p2p.peer.BasePeer` that joins the pool later on.
+        Notify about each registered peer in the :class:`~hp2p.peer.PeerPool`. Is called upon
+        subscription for each :class:`~hp2p.peer.BasePeer` that exists in the pool at that time and
+        then for each :class:`~hp2p.peer.BasePeer` that joins the pool later on.
 
-        A :class:`~p2p.peer.PeerSubscriber` that wants to act upon peer registration needs to
+        A :class:`~hp2p.peer.PeerSubscriber` that wants to act upon peer registration needs to
         overwrite this method to provide an implementation.
         """
         pass
@@ -709,7 +709,7 @@ class PeerSubscriber(ABC):
 
 
 class MsgBuffer(PeerSubscriber):
-    logger = logging.getLogger('p2p.peer.MsgBuffer')
+    logger = logging.getLogger('hp2p.peer.MsgBuffer')
     msg_queue_maxsize = 500
     subscription_msg_types = {protocol.Command}
 
@@ -916,7 +916,7 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
         except expected_exceptions as e:
             self.logger.debug("Could not complete handshake with %r: %s", remote, repr(e))
         except Exception:
-            self.logger.exception("Unexpected error during auth/p2p handshake with %r", remote)
+            self.logger.exception("Unexpected error during auth/hp2p handshake with %r", remote)
         return None
 
     async def connect_to_nodes(self, nodes: Iterator[Node]) -> None:

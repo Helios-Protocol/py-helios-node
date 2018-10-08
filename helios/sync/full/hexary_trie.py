@@ -86,8 +86,8 @@ def _get_children(node: Hash32, depth: int
         if isinstance(node[1], bytes) and len(node[1]) == 32:
             references.append((depth + 1, node[1]))
         elif isinstance(node[1], list):
-            # the rlp encoding of the node is < 32 so rather than a 32-byte
-            # reference, the actual rlp encoding of the node is inlined.
+            # the rlp_templates encoding of the node is < 32 so rather than a 32-byte
+            # reference, the actual rlp_templates encoding of the node is inlined.
             sub_references, sub_leaves = _get_children(node[1], depth + 1)
             references.extend(sub_references)
             leaves.extend(sub_leaves)

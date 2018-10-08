@@ -73,6 +73,8 @@ class BaseService(ABC, CancellableMixin):
                 TraceLogger,
                 logging.getLogger(self.__module__ + '.' + self.__class__.__name__)
             )
+            # logger_name = self.__module__ + '.' + self.__class__.__name__
+            # print('setting up logger',logger_name)
         return self._logger
 
     def get_event_loop(self) -> asyncio.AbstractEventLoop:

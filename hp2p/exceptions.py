@@ -5,7 +5,7 @@ from typing import (
 
 class BaseP2PError(Exception):
     """
-    The base class for all p2p errors.
+    The base class for all hp2p errors.
     """
     pass
 
@@ -33,7 +33,7 @@ class HandshakeFailure(BaseP2PError):
 
 class MalformedMessage(BaseP2PError):
     """
-    Raised when a p2p command is received with a malformed message
+    Raised when a hp2p command is received with a malformed message
     """
     pass
 

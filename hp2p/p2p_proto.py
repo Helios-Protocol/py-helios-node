@@ -38,7 +38,7 @@ class Hello(Command):
 
 @enum.unique
 class DisconnectReason(enum.Enum):
-    """More details at https://github.com/ethereum/wiki/wiki/%C3%90%CE%9EVp2p-Wire-Protocol#p2p"""
+    """More details at https://github.com/ethereum/wiki/wiki/%C3%90%CE%9EVp2p-Wire-Protocol#hp2p"""
     disconnect_requested = 0
     tcp_sub_system_error = 1
     bad_protocol = 2
@@ -82,7 +82,7 @@ class Pong(Command):
 
 
 class P2PProtocol(Protocol):
-    name = 'p2p'
+    name = 'hp2p'
     version = 4
     _commands = [Hello, Ping, Pong, Disconnect]
     cmd_length = 16

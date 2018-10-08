@@ -1,5 +1,6 @@
 from argparse import ArgumentParser, Namespace
 import os
+import sys
 import asyncio
 import logging
 import signal
@@ -94,10 +95,10 @@ PRECONFIGURED_NETWORKS = {MAINNET_NETWORK_ID}
 HELIOS_HEADER = (
     "\n"    
     " __  __     ______     __         __     ______     ______    \n"
-    "/\ \_\ \   /\  ___\   /\ \       /\ \   /\  __ \   /\  ___\   \n"
-    "\ \  __ \  \ \  __\   \ \ \____  \ \ \  \ \ \/\ \  \ \___  \  \n"
-    " \ \_\ \_\  \ \_____\  \ \_____\  \ \_\  \ \_____\  \/\_____\ \n"
-    "  \/_/\/_/   \/_____/   \/_____/   \/_/   \/_____/   \/_____/ \n"
+    r"/\ \_\ \   /\  ___\   /\ \       /\ \   /\  __ \   /\  ___\ " + "\n"
+    r"\ \  __ \  \ \  __\   \ \ \____  \ \ \  \ \ \/\ \  \ \___  \ " + "\n"
+    r" \ \_\ \_\  \ \_____\  \ \_____\  \ \_\  \ \_____\  \/\_____\ " + "\n"
+    r"  \/_/\/_/   \/_____/   \/_____/   \/_/   \/_____/   \/_____/ " + "\n"
 )
 
 HELIOS_AMBIGIOUS_FILESYSTEM_INFO = (
@@ -136,6 +137,8 @@ def main() -> None:
         None in args.log_levels and
         args.stderr_log_level is not None
     )
+
+
     if has_ambigous_logging_config:
         parser.error(
             "\n"
@@ -146,15 +149,19 @@ def main() -> None:
 
     if is_prerelease():
         # this modifies the asyncio logger, but will be overridden by any custom settings below
-        enable_warnings_by_default()
+        enable_warnings_by_default(False)
 
     stderr_logger, formatter, handler_stream = setup_helios_stderr_logging(
         args.stderr_log_level or (args.log_levels and args.log_levels.get(None))
     )
 
+
     log_levels = {}
     log_levels['default'] = logging.INFO
 
+    log_levels['urllib3'] = logging.INFO
+    log_levels['ssdp'] = logging.INFO
+    log_levels['Service'] = logging.INFO
 
     log_levels['hvm'] = logging.INFO  #sets all of hvm
     log_levels['hvm.db.account.AccountDB'] = logging.INFO
@@ -173,12 +180,17 @@ def main() -> None:
     log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.INFO
     log_levels['hp2p.discovery.DiscoveryService'] = logging.INFO
     log_levels['hp2p.server.Server'] = logging.DEBUG
-    log_levels['hp2p.UPnPService'] = logging.INFO
+    log_levels['hp2p.nat.UPnPService'] = logging.CRITICAL
+    log_levels['connectionpool'] = logging.CRITICAL
 
+    #log_levels['helios'] = logging.INFO  # sets all of hvm
     log_levels['helios.rpc.ipc'] = logging.DEBUG
     log_levels['helios.Node'] = logging.DEBUG
 
     log_levels['hp2p.hls'] = logging.INFO
+    log_levels['helios.server.FullServer'] = logging.DEBUG
+
+
 
 
     setup_log_levels(log_levels = log_levels)
@@ -237,9 +249,11 @@ def main() -> None:
         *(args.log_levels or {}).values()
     )
 
+
     extra_kwargs = {
         'log_queue': log_queue,
         'log_level': min_configured_log_level,
+        'log_levels': log_levels,
         'profile': args.profile,
     }
 
@@ -306,17 +320,6 @@ def helios_boot(args: Namespace,
     networking_process.start()
     logger.info("Started networking process (pid=%d)", networking_process.pid)
 
-    rpc_http_proxy_process = None
-    if chain_config.do_rpc_http_server and chain_config.jsonrpc_ipc_path:
-        rpc_http_proxy_process = ctx.Process(
-            target=launch_rpc_http_proxy,
-            args=(chain_config,),
-        )
-
-        rpc_http_proxy_process.start()
-        logger.info("Started RPC HTTP proxy process (pid=%d)", networking_process.pid)
-
-
     main_endpoint.subscribe(
         ShutdownRequest,
         lambda ev: kill_helios_gracefully(
@@ -343,7 +346,6 @@ def helios_boot(args: Namespace,
             logger,
             database_server_process,
             networking_process,
-            rpc_http_proxy_process,
             plugin_manager,
             main_endpoint,
             event_bus
@@ -353,7 +355,6 @@ def helios_boot(args: Namespace,
 def kill_helios_gracefully(logger: logging.Logger,
                            database_server_process: Any,
                            networking_process: Any,
-                           rpc_http_server_process: Any,
                            plugin_manager: PluginManager,
                            main_endpoint: Endpoint,
                            event_bus: EventBus,
@@ -372,7 +373,7 @@ def kill_helios_gracefully(logger: logging.Logger,
     plugin_manager.shutdown_blocking()
     main_endpoint.stop()
     event_bus.stop()
-    for name, process in [("DB", database_server_process), ("Networking", networking_process), ("RPC http server", rpc_http_server_process)]:
+    for name, process in [("DB", database_server_process), ("Networking", networking_process)]:
         # Our sub-processes will have received a SIGINT already (see comment above), so here we
         # wait 2s for them to finish cleanly, and if they fail we kill them for real.
         if process is not None:
@@ -439,11 +440,6 @@ def launch_node(args: Namespace, chain_config: ChainConfig, endpoint: Endpoint) 
         loop.run_forever()
         loop.close()
 
-def launch_rpc_http_proxy(chain_config: ChainConfig) -> None:
-
-    proxy_url = "http://0.0.0.0:" + str(chain_config.rpc_port)
-    http_rpc_proxy_service = http_rpc_proxy(proxy_url, chain_config.jsonrpc_ipc_path)
-    http_rpc_proxy_service.run()
 
 def display_launch_logs(chain_config: ChainConfig) -> None:
     logger = logging.getLogger('helios')

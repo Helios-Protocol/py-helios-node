@@ -200,7 +200,7 @@ class AccountDB(BaseAccountDB):
         the key in _journaltrie, because the cache is only invalidated
         after a state root change.
 
-        _journaltrie is a journaling of the accounts (an address->rlp mapping,
+        _journaltrie is a journaling of the accounts (an address->rlp_templates mapping,
         rather than the nodes stored by the trie). This enables
         a squashing of all account changes before pushing them into the trie.
 

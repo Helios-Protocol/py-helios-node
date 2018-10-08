@@ -3,21 +3,24 @@ import pkg_resources
 from helios.plugins.builtin.attach.plugin import (
     AttachPlugin
 )
-from helios.plugins.builtin.ethstats.plugin import (
-    EthstatsPlugin,
-)
+# from helios.plugins.builtin.ethstats.plugin import (
+#     EthstatsPlugin,
+# )
 from helios.plugins.builtin.fix_unclean_shutdown.plugin import (
     FixUncleanShutdownPlugin
 )
 from helios.plugins.builtin.json_rpc.plugin import (
     JsonRpcServerPlugin,
 )
-from helios.plugins.builtin.tx_pool.plugin import (
-    TxPlugin,
+from helios.plugins.builtin.rpc_http_proxy.plugin import (
+    RpcHTTPProxyPlugin,
 )
-from helios.plugins.builtin.light_peer_chain_bridge.plugin import (
-    LightPeerChainBridgePlugin
-)
+# from helios.plugins.builtin.tx_pool.plugin import (
+#     TxPlugin,
+# )
+# from helios.plugins.builtin.light_peer_chain_bridge.plugin import (
+#     LightPeerChainBridgePlugin
+# )
 
 
 def is_ipython_available() -> bool:
@@ -35,9 +38,10 @@ def is_ipython_available() -> bool:
 
 ENABLED_PLUGINS = [
     AttachPlugin() if is_ipython_available() else AttachPlugin(use_ipython=False),
-    EthstatsPlugin(),
+    #EthstatsPlugin(),
     FixUncleanShutdownPlugin(),
-    JsonRpcServerPlugin(),
-    LightPeerChainBridgePlugin(),
-    TxPlugin(),
+    #JsonRpcServerPlugin(),
+    #RpcHTTPProxyPlugin,
+    #LightPeerChainBridgePlugin(),
+    #TxPlugin(),
 ]

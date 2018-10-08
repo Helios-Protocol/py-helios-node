@@ -133,7 +133,7 @@ CMD_ID_MAP_V5 = dict(
 
 class DiscoveryProtocol(asyncio.DatagramProtocol):
     """A Kademlia-like protocol to discover RLPx nodes."""
-    logger: TraceLogger = cast(TraceLogger, logging.getLogger("p2p.discovery.DiscoveryProtocol"))
+    logger: TraceLogger = cast(TraceLogger, logging.getLogger("hp2p.discovery.DiscoveryProtocol"))
     transport: asyncio.DatagramTransport = None
     use_v5 = False
     _max_neighbours_per_packet_cache = None

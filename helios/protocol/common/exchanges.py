@@ -41,8 +41,8 @@ class BaseExchange(ABC, Generic[TRequestPayload, TResponsePayload, TResult]):
      - issue the request to the ExchangeManager, with the request, normalizer, and validators
      - await the normalized & validated response, and return it
 
-    TRequestPayload is the data as passed directly to the p2p command
-    TResponsePayload is the data as received directly from the p2p command response
+    TRequestPayload is the data as passed directly to the hp2p command
+    TResponsePayload is the data as received directly from the hp2p command response
     TResult is the response data after normalization
     """
 

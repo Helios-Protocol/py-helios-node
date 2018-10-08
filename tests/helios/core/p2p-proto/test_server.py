@@ -116,7 +116,7 @@ async def test_server_incoming_connection(monkeypatch, server, event_loop):
         context=ParagonContext(),
         token=token,
     )
-    # Perform p2p/sub-proto handshake, completing the full handshake and causing a new peer to be
+    # Perform hp2p/sub-proto handshake, completing the full handshake and causing a new peer to be
     # added to the server's pool.
     await initiator_peer.do_p2p_handshake()
     await initiator_peer.do_sub_proto_handshake()

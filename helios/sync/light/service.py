@@ -68,7 +68,7 @@ from hp2p.service import (
 
 from helios.db.header import BaseAsyncHeaderDB
 from helios.protocol.les.peer import LESPeer, LESPeerPool
-from helios.rlp.block_body import BlockBody
+from helios.rlp_templates.hls import BlockBody
 from helios.utils.les import gen_request_id
 
 

@@ -153,7 +153,7 @@ helios_parser.add_argument(
     required=False,
     default=30303,
     help=(
-        "Port on which helios should listen for incoming p2p/discovery connections. Default: 30303"
+        "Port on which helios should listen for incoming hp2p/discovery connections. Default: 30303"
     ),
 )
 helios_parser.add_argument(
@@ -165,15 +165,16 @@ helios_parser.add_argument(
         "Port on which helios should listen for incoming RPC JSON connections. Default: 8545"
     ),
 )
-helios_parser.add_argument(
-    '--do_rpc_http_server',
-    type=int,
-    required=False,
-    default=1,
-    help=(
-        "Should we run the http RPC server?"
-    ),
-)
+#moved this to the plugin
+# helios_parser.add_argument(
+#     '--do_rpc_http_proxy',
+#     type=int,
+#     required=False,
+#     default=1,
+#     help=(
+#         "Should we run the RPC http proxy?"
+#     ),
+# )
 
 #
 # Logging configuration

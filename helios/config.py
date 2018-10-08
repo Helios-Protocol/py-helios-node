@@ -18,16 +18,16 @@ from hvm.chains.mainnet import (
 )
 
 from hp2p.kademlia import Node as KademliaNode
-from hp2p.constants import (
-    MAINNET_BOOTNODES,
-    ROPSTEN_BOOTNODES,
-)
+
 
 from helios.constants import (
     SYNC_FULL,
     SYNC_LIGHT,
 )
-from helios.protocol.common.constants import DEFAULT_PREFERRED_NODES
+from hp2p.constants import (
+    MAINNET_BOOTNODES,
+    LOCAL_PEER_POOL_PATH,
+)
 from helios.utils.chains import (
     construct_chain_config_params,
     get_data_dir_for_network_id,
@@ -88,7 +88,6 @@ class ChainConfig:
                  preferred_nodes: Tuple[KademliaNode, ...]=None,
                  bootstrap_nodes: Tuple[KademliaNode, ...]=None,
                  node_type=1,
-                 do_rpc_http_server=True
                  ) -> None:
         self.network_id = network_id
         self.max_peers = max_peers
@@ -97,7 +96,6 @@ class ChainConfig:
         self.rpc_port = rpc_port
         self.use_discv5 = use_discv5
         self.node_type = int(node_type)
-        self.do_rpc_http_server = do_rpc_http_server
 
         if helios_root_dir is not None:
             self.helios_root_dir = helios_root_dir
@@ -154,7 +152,7 @@ class ChainConfig:
         if "INSTANCE_NUMBER" in os.environ:
             return int(os.environ["INSTANCE_NUMBER"]) == 0
         else:
-            return True
+            return False
 
     @property
     def node_private_helios_key(self):

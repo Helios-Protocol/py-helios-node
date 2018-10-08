@@ -404,7 +404,7 @@ async def test_rpc_against_fixtures(chain, ipc_server, chain_fixture, fixture_da
 
         if should_be_good_block:
             assert block_error is None
-            assert block_result == block_fixture['rlp']
+            assert block_result == block_fixture['rlp_templates']
 
             await validate_block(rpc, block_fixture, block_fixture['blockHeader']['hash'])
         else:

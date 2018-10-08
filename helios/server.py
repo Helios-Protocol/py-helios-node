@@ -60,19 +60,16 @@ from hp2p.service import BaseService
 
 from helios.db.base import AsyncBaseDB
 from helios.db.chain import AsyncChainDB
-from helios.db.header import AsyncHeaderDB
 from helios.protocol.common.constants import DEFAULT_PREFERRED_NODES
 from helios.protocol.common.context import ChainContext
 from helios.protocol.hls.peer import HLSPeerPool
-from helios.protocol.les.peer import LESPeerPool
 from helios.sync.full.service import FullNodeSyncer
-from helios.sync.light.chain import LightChainSyncer
 from hp2p.consensus import Consensus
 
 DIAL_IN_OUT_RATIO = 0.75
 
 
-ANY_PEER_POOL = Union[HLSPeerPool, LESPeerPool]
+ANY_PEER_POOL = Union[HLSPeerPool]
 
 
 class BaseServer(BaseService):
@@ -144,6 +141,7 @@ class BaseServer(BaseService):
 
     async def _run(self) -> None:
         self.logger.info("Running server...")
+        self.logger.debug('server debug test')
         if self.chain_config.do_upnp:
             mapped_external_ip = await self.upnp_service.add_nat_portmap()
         else:
@@ -308,21 +306,26 @@ class BaseServer(BaseService):
 
 
 class FullServer(BaseServer):
-    def _make_peer_pool(self) -> HLSPeerPool:
 
-        context = ChainContext(
-            base_db = self.base_db,
+    @property
+    def chain_context(self):
+        return ChainContext(
+            base_db=self.base_db,
             chain=self.chain,
-            chaindb = self.chaindb,
-            chain_head_db = self.chain_head_db,
-            chain_config = self.chain_config,
+            chaindb=self.chaindb,
+            chain_head_db=self.chain_head_db,
+            chain_config=self.chain_config,
             network_id=self.network_id,
             vm_configuration=self.chain.get_vm_configuration(),
         )
+
+    def _make_peer_pool(self) -> HLSPeerPool:
+
+
         return HLSPeerPool(
             privkey=self.privkey,
             max_peers=self.max_peers,
-            context=context,
+            context=self.chain_context,
             token=self.cancel_token,
             event_bus=self.event_bus
         )
@@ -330,10 +333,10 @@ class FullServer(BaseServer):
 
     def _make_syncer(self) -> FullNodeSyncer:
         return FullNodeSyncer(
-            context = context,
-            cast(HLSPeerPool, self.peer_pool),
-            self.consensus,
-            self.node,
+            context = self.chain_context,
+            peer_pool = cast(HLSPeerPool, self.peer_pool),
+            consensus = self.consensus,
+            node = self.node,
             token=self.cancel_token,
         )
 
@@ -350,30 +353,6 @@ class FullServer(BaseServer):
             token = self.cancel_token
         )
 
-
-
-class LightServer(BaseServer):
-    def _make_peer_pool(self) -> LESPeerPool:
-        context = ChainContext(
-            headerdb=self.headerdb,
-            network_id=self.network_id,
-            vm_configuration=self.chain.get_vm_configuration(),
-        )
-        return LESPeerPool(
-            privkey=self.privkey,
-            max_peers=self.max_peers,
-            context=context,
-            token=self.cancel_token,
-            event_bus=self.event_bus
-        )
-
-    def _make_syncer(self) -> LightChainSyncer:
-        return LightChainSyncer(
-            self.chain,
-            self.headerdb,
-            cast(LESPeerPool, self.peer_pool),
-            self.cancel_token,
-        )
 
 
 def _test() -> None:

@@ -9,14 +9,14 @@ deps = {
         "async_lru>=0.1.0,<1.0.0",
         "cryptography>=2.0.3,<3.0.0",
         "cytoolz>=0.9.0,<1.0.0",
-        "eth-bloom>=1.0.0,<2.0.0",
-        "eth-keys>=0.2.0b3,<1.0.0",
-        "eth-typing>=1.1.0,<2.0.0",
-        "eth-utils>=1.2.0,<2.0.0",
+        "hvm-bloom>=1.0.0,<2.0.0",
+        "hvm-keys>=0.2.0b3,<1.0.0",
+        "hvm-typing>=1.1.0,<2.0.0",
+        "hvm-utils>=1.2.0,<2.0.0",
         "lru-dict>=1.1.6",
         "py-ecc>=1.4.2,<2.0.0",
         "pyethash>=0.1.27,<1.0.0",
-        "rlp>=1.0.3,<2.0.0",
+        "rlp_templates>=1.0.3,<2.0.0",
         "trie>=1.3.5,<2.0.0",
         "sortedcontainers>=2.0.4",
         "pbkdf2>=1.3"
@@ -27,15 +27,15 @@ deps = {
     # using the default fallbacks though.
     'hvm-extra': [
         "coincurve>=8.0.0,<9.0.0",
-        "eth-hash[pysha3];implementation_name=='cpython'",
-        "eth-hash[pycryptodome];implementation_name=='pypy'",
+        "hvm-hash[pysha3];implementation_name=='cpython'",
+        "hvm-hash[pycryptodome];implementation_name=='pypy'",
         "plyvel==1.0.5",
     ],
     'hp2p': [
         "asyncio-cancel-token==0.1.0a2",
         "aiohttp>=2.3.1,<3.0.0",
         "async_lru>=0.1.0,<1.0.0",
-        "eth-hash>=0.1.4,<1",
+        "hvm-hash>=0.1.4,<1",
         "netifaces>=0.10.7<1",
         "pysha3>=1.0.0,<2.0.0",
         "upnpclient>=0.0.8,<1",
@@ -61,7 +61,7 @@ deps = {
         "pytest-cov==2.5.1",
         "pytest-watch>=4.1.0,<5",
         "pytest-xdist==1.18.1",
-        # only needed for p2p
+        # only needed for hp2p
         "pytest-asyncio-network-simulator==0.1.0a2;python_version>='3.6'",
     ],
     'lint': [

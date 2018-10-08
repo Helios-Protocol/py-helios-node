@@ -15,8 +15,6 @@ from helios.protocol.hls.peer import HLSPeerPool
 from helios.protocol.common.context import ChainContext
 
 from .chain import FastChainSyncer, RegularChainSyncer
-from .constants import FAST_SYNC_CUTOFF
-from .state import StateDownloader
 
 from typing import TYPE_CHECKING
 
@@ -75,7 +73,7 @@ class FullNodeSyncer(BaseService):
         # node,
 
         # Now, loop forever, fetching missing blocks and applying them.
-        self.logger.info("Starting regular sync; latest root hash timestamp", self.chain_head_db.get_latest_timestamp())
+        self.logger.info("Starting regular sync; latest root hash timestamp = {}".format(self.chain_head_db.get_latest_timestamp()))
         regular_syncer = RegularChainSyncer(context = self.context,
                                             peer_pool = self.peer_pool,
                                             consensus = self.consensus,

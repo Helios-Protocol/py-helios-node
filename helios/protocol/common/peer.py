@@ -32,7 +32,6 @@ from helios.db.chain_head import AsyncChainHeadDB
 from helios.db.chain import AsyncChainDB
 from helios.chains.base import AsyncChain
 
-from .boot import DAOCheckBootManager
 from .context import ChainContext
 
 if TYPE_CHECKING:
@@ -51,7 +50,7 @@ class ChainInfo:
         self.chain_head_root_hashes = chain_head_root_hashes
 
 class BaseChainPeer(BasePeer):
-    boot_manager_class = DAOCheckBootManager
+    #boot_manager_class = DAOCheckBootManager
     context: ChainContext
 
     head_td: int = None

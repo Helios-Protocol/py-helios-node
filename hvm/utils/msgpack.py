@@ -61,7 +61,7 @@ def hm_encode(obj, sedes = None):
     encoded = msgpack.packb(obj, default=encoding_function, use_bin_type=True)
     return encoded
 
-#TODO: need to stop rlp from making lists immutable. need to add a switch.
+#TODO: need to stop rlp_templates from making lists immutable. need to add a switch.
 def hm_decode(obj, sedes_classes = None, include_sedes_children_classes = False):
     if sedes_classes is not None:
         decoded = msgpack.unpackb(obj, object_hook=partial(decoding_function, sede_classes_dict=make_classes_lookup_dict(sedes_classes,include_sedes_children_classes)), raw=False)

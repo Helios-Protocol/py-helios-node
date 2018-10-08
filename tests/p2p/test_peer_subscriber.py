@@ -10,7 +10,7 @@ from hp2p.tools.paragon import GetSum
 from hp2p.tools.paragon.helpers import get_directly_linked_peers
 
 
-logger = logging.getLogger('testing.p2p.PeerSubscriber')
+logger = logging.getLogger('testing.hp2p.PeerSubscriber')
 
 
 class GetSumSubscriber(PeerSubscriber):

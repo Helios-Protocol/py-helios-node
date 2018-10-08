@@ -11,7 +11,7 @@ from eth_typing import (
 from hp2p.peer import BasePeer
 from hp2p.protocol import PayloadType
 
-from helios.rlp.block_body import BlockBody
+from helios.rlp_templates.hls import BlockBody
 
 TPeer = TypeVar('TPeer', bound=BasePeer)
 

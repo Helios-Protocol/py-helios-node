@@ -13,7 +13,6 @@ from eth_typing import (
 
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.receipts import Receipt
-from hvm.rlp.transactions import BaseTransactionFields
 
 from hp2p.protocol import (
     Protocol,
@@ -24,7 +23,7 @@ from hvm.constants import (
 )
 
 from helios.protocol.common.peer import ChainInfo
-from helios.rlp.block_body import BlockBody
+from helios.rlp_templates.hls import BlockBody
 
 from .commands import (
     BlockBodies,
@@ -80,7 +79,7 @@ class HLSProtocol(Protocol):
         GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain, GetChronologicalBlockWindow,
         ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters, GetChainSegment]
     cmd_length = 40
-    logger = logging.getLogger("p2p.hls.HLSProtocol")
+    logger = logging.getLogger("hp2p.hls.HLSProtocol")
 
     peer: 'HLSPeer'
 

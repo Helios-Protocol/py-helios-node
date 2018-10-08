@@ -208,6 +208,17 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     #
     # VM API
     #
+    @classmethod
+    def get_vm_configuration(cls) -> Tuple[Tuple[int, Type['BaseVM']], ...]:
+        return cls.vm_configuration
+
+    @classmethod
+    def get_vm_class(cls, header: BlockHeader) -> Type['BaseVM']:
+        """
+        Returns the VM instance for the given block number.
+        """
+        return cls.get_vm_class_for_block_timestamp(header.timestamp)
+
     @abstractmethod
     def get_vm(self, header: BlockHeader=None) -> 'BaseVM':
         raise NotImplementedError("Chain classes must implement this method")
@@ -808,10 +819,10 @@ class Chain(BaseChain):
         #self.logger.debug("creating transaction with nonce {}".format(tx_nonce))
         transaction = self.create_and_sign_transaction(nonce = tx_nonce, *args, **kwargs)
         
-#        from hvm.utils.rlp import convert_rlp_to_correct_class
+#        from hvm.utils.rlp_templates import convert_rlp_to_correct_class
 #        
-#        from hvm.rlp.transactions import BaseTransaction
-#        class P2PSendTransaction(rlp.Serializable):
+#        from hvm.rlp_templates.transactions import BaseTransaction
+#        class P2PSendTransaction(rlp_templates.Serializable):
 #            fields = BaseTransaction._meta.fields
 #        transaction = convert_rlp_to_correct_class(P2PSendTransaction, transaction)
         
@@ -832,7 +843,7 @@ class Chain(BaseChain):
         return self.get_vm().create_receive_transaction(*args, **kwargs)
 
     def get_receivable_transactions(self, address):
-        #from hvm.rlp.accounts import TransactionKey
+        #from hvm.rlp_templates.accounts import TransactionKey
         tx_keys = self.get_vm().state.account_db.get_receivable_transactions(address)
         if len(tx_keys) == 0:
             return False, False
@@ -847,7 +858,7 @@ class Chain(BaseChain):
         if len(tx_keys) == 0:
             return []
 
-        # class TransactionKey(rlp.Serializable):
+        # class TransactionKey(rlp_templates.Serializable):
         #     fields = [
         #         ('transaction_hash', hash32),
         #         ('sender_block_hash', hash32),

@@ -35,7 +35,7 @@ from helios.protocol.hls.commands import (
 class TxPool(BaseService, PeerSubscriber):
     """
     The :class:`~helios.tx_pool.pool.TxPool` class is responsible for holding and relaying
-    of transactions, represented as :class:`~hls.rlp.transactions.BaseTransaction` among the
+    of transactions, represented as :class:`~hls.rlp_templates.transactions.BaseTransaction` among the
     connected peers.
 
       .. note::

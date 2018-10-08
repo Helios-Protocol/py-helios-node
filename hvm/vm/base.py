@@ -246,7 +246,7 @@ class VM(BaseVM):
 
         Each :class:`~hvm.vm.base.BaseVM` class must be configured with:
 
-        - ``block_class``: The :class:`~hvm.rlp.blocks.Block` class for blocks in this VM ruleset.
+        - ``block_class``: The :class:`~hvm.rlp_templates.blocks.Block` class for blocks in this VM ruleset.
         - ``_state_class``: The :class:`~hvm.vm.state.State` class used by this VM for execution.
     """
     def __init__(self, header, chaindb, wallet_address, private_key: BaseKey, network_id):
@@ -683,7 +683,7 @@ class VM(BaseVM):
     @classmethod
     def get_block_class(cls) -> Type['BaseBlock']:
         """
-        Return the :class:`~hvm.rlp.blocks.Block` class that this VM uses for blocks.
+        Return the :class:`~hvm.rlp_templates.blocks.Block` class that this VM uses for blocks.
         """
         if cls.block_class is None:
             raise AttributeError("No `block_class` has been set for this VM")
@@ -694,7 +694,7 @@ class VM(BaseVM):
     @classmethod
     def get_queue_block_class(cls) -> Type['BaseQueueBlock']:
         """
-        Return the :class:`~hvm.rlp.blocks.Block` class that this VM uses for queue blocks.
+        Return the :class:`~hvm.rlp_templates.blocks.Block` class that this VM uses for queue blocks.
         """
         if cls.queue_block_class is None:
             raise AttributeError("No `queue_block_class` has been set for this VM")
@@ -732,7 +732,7 @@ class VM(BaseVM):
     @classmethod
     def get_block_conflict_message_class(cls) -> Type['BaseBlock']:
         """
-        Return the :class:`~hvm.rlp.blocks.Block` class that this VM uses for blocks.
+        Return the :class:`~hvm.rlp_templates.blocks.Block` class that this VM uses for blocks.
         """
         if cls.block_conflict_message_class is None:
             raise AttributeError("No `block_class` has been set for this VM")
@@ -777,8 +777,8 @@ class VM(BaseVM):
         """
         Proxy for instantiating a signed transaction for this VM.
         """
-#        from hvm.rlp.transactions import BaseTransaction
-#        class P2PSendTransaction(rlp.Serializable):
+#        from hvm.rlp_templates.transactions import BaseTransaction
+#        class P2PSendTransaction(rlp_templates.Serializable):
 #            fields = BaseTransaction._meta.fields
             
         return self.get_transaction_class()(*args, **kwargs)

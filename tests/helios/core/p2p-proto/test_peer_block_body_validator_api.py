@@ -17,7 +17,7 @@ from hvm.db.trie import make_trie_root_and_nodes
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.transactions import BaseTransactionFields
 
-from helios.rlp.block_body import BlockBody
+from helios.rlp_templates.hls import BlockBody
 
 from tests.helios.core.peer_helpers import (
     get_directly_linked_peers,

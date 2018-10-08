@@ -14,9 +14,6 @@ from hp2p.service import (
     BaseService,
 )
 
-from helios.db.header import (
-    AsyncHeaderDB,
-)
 from helios.config import (
     ChainConfig,
 )
@@ -40,15 +37,22 @@ class Node(BaseService):
 
     def __init__(self, plugin_manager: PluginManager, chain_config: ChainConfig) -> None:
         super().__init__()
+        self.chain_config = chain_config
+        self.private_helios_key = chain_config.node_private_helios_key
+        self.wallet_address = chain_config.node_wallet_address
         self._plugin_manager = plugin_manager
         self._db_manager = create_db_manager(chain_config.database_ipc_path)
         self._db_manager.connect()  # type: ignore
-        self._headerdb = self._db_manager.get_headerdb()  # type: ignore
 
+        self._chain_head_db = self._db_manager.get_chain_head_db()  # type: ignore
         self._jsonrpc_ipc_path: Path = chain_config.jsonrpc_ipc_path
 
     @abstractmethod
     def get_chain(self) -> BaseChain:
+        raise NotImplementedError("Node classes must implement this method")
+
+    @abstractmethod
+    def get_new_chain(self, chain_address: bytes) -> BaseChain:
         raise NotImplementedError("Node classes must implement this method")
 
     @abstractmethod
@@ -71,8 +75,8 @@ class Node(BaseService):
         return self._db_manager
 
     @property
-    def headerdb(self) -> AsyncHeaderDB:
-        return self._headerdb
+    def chain_head_db(self):
+        return self._chain_head_db
 
     def notify_resource_available(self) -> None:
 

@@ -4,6 +4,8 @@ import math
 import operator
 import time
 
+from helios.protocol.hls import commands
+
 from hvm.utils.numeric import (
     effecient_diff,
     stake_weighted_average,
@@ -18,8 +20,11 @@ from typing import (
     Tuple,
     Union,
     cast,
-    Iterable
+    Iterable,
+    Set,
+    Type,
 )
+from hp2p.protocol import Command
 
 from cytoolz import (
     partition_all,
@@ -31,7 +36,7 @@ from eth_utils import (
     encode_hex,
 )
 
-from helios.rlp.hls import (
+from helios.rlp_templates.hls import (
     BlockBody, 
     P2PTransaction,
     BlockNumberKey,
@@ -161,6 +166,19 @@ class Consensus(BaseService, PeerSubscriber):
     determine if items have consensus
     get items that have consensus
     """
+    msg_queue_maxsize = 500
+    subscription_msg_types: Set[Type[Command]] = {
+        commands.UnorderedBlockHeaderHash,
+        commands.GetUnorderedBlockHeaderHash,
+        commands.ChainHeadRootHashTimestamps,
+        commands.GetChainHeadRootHashTimestamps,
+        commands.StakeForAddresses,
+        commands.GetStakeForAddresses,
+        commands.GetMinGasParameters,
+        commands.MinGasParameters,
+    }
+
+
     logger = logging.getLogger("hp2p.consensus.Consensus")
     # We'll only sync if we are connected to at least min_peers_to_sync.
     min_peers_to_sync = 1
@@ -175,7 +193,8 @@ class Consensus(BaseService, PeerSubscriber):
     _last_check_local_tpc_cap_time = 0
     _local_tpc_cap = 0
     _last_check_if_min_gas_system_ready_time = 0
-    
+
+
     def __init__(self,
                  chain: AsyncChain,
                  chaindb: AsyncChainDB,
@@ -242,6 +261,8 @@ class Consensus(BaseService, PeerSubscriber):
     '''
     Properties and utils
     '''
+
+
     #TODO. check to make sure the peers also have stake that is not equal to None
     @property
     def has_enough_peers(self):

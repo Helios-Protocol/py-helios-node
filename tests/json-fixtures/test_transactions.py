@@ -39,7 +39,7 @@ BASE_FIXTURE_PATH = os.path.join(ROOT_PROJECT_DIR, 'fixtures', 'TransactionTests
 
 
 # Fixtures have an `_info` key at their root which we need to skip over.
-FIXTURE_FORK_SKIPS = {'_info', 'rlp'}
+FIXTURE_FORK_SKIPS = {'_info', 'rlp_templates'}
 
 
 @to_tuple
@@ -102,7 +102,7 @@ def test_transaction_fixtures(fixture, fixture_transaction_class):
     TransactionClass = fixture_transaction_class
 
     try:
-        txn = rlp.decode(fixture['rlp'], sedes=TransactionClass)
+        txn = rlp.decode(fixture['rlp_templates'], sedes=TransactionClass)
     except (rlp.DeserializationError, rlp.exceptions.DecodingError):
         assert 'hash' not in fixture, "Transaction was supposed to be valid"
     except TypeError as err:
@@ -111,7 +111,7 @@ def test_transaction_fixtures(fixture, fixture_transaction_class):
         # (see: /TransactionTests/ttWrongRLP/RLPElementIsListWhenItShouldntBe.json)
         assert err.args == ("'bytes' object cannot be interpreted as an integer",)
         assert 'hash' not in fixture, "Transaction was supposed to be valid"
-    # fixture normalization changes the fixture key from rlp to rlpHex
+    # fixture normalization changes the fixture key from rlp_templates to rlpHex
     except KeyError:
         assert fixture['rlpHex']
         assert 'hash' not in fixture, "Transaction was supposed to be valid"

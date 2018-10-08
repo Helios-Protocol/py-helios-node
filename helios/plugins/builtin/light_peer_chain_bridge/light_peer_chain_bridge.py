@@ -36,7 +36,7 @@ from hp2p.service import (
 from helios.utils.async_errors import (
     await_and_wrap_errors,
 )
-from helios.rlp.hls import BlockBody
+from helios.rlp_templates.hls import BlockBody
 from helios.sync.light.service import (
     BaseLightPeerChain,
 )

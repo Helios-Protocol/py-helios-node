@@ -117,7 +117,7 @@ class ConsensusDB():
 
     # lookup key holds peer wallet address and previous reward block number
     #
-    # rlp encoded object holds:
+    # rlp_templates encoded object holds:
     # average response time
     # num requests sent
     # num failed replies

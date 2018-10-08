@@ -13,7 +13,7 @@ from helios.db.chain import AsyncChainDB
 from helios.db.chain_head import AsyncChainHeadDB
 from hvm.chains import AsyncChain
 
-if TYPE_CHECKING
+if TYPE_CHECKING:
     from helios.config import ChainConfig
 
 

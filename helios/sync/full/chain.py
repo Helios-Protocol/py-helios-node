@@ -26,12 +26,11 @@ from hp2p.constants import (
     MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED,
 )
 
-from hp2p import hls
 from hp2p.exceptions import (
     OperationCancelled,
     DatabaseResyncRequired,
 )
-from helios.rlp.hls import (
+from helios.rlp_templates.hls import (
     BlockBody,
     P2PTransaction,
     P2PBlock
@@ -67,36 +66,17 @@ from hvm.constants import (
 )
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.receipts import Receipt
-from hvm.rlp.transactions import BaseTransaction
 
 from hp2p import protocol
-from hp2p.p2p_proto import DisconnectReason
-from hp2p.exceptions import BaseP2PError, PeerConnectionLost
-from hp2p.peer import BasePeer
 from hp2p.protocol import Command
 
-from helios.db.chain import AsyncChainDB
-from helios.db.header import AsyncHeaderDB
 from helios.protocol.hls import commands
-from helios.protocol.hls.constants import (
-    MAX_BODIES_FETCH,
-    MAX_RECEIPTS_FETCH,
-    MAX_STATE_FETCH,
-    MAX_HEADERS_FETCH,
-)
 from helios.protocol.hls.peer import HLSPeer, HLSPeerPool
-from helios.protocol.hls.requests import HeaderRequest
 from helios.protocol.les.peer import LESPeer
-from helios.rlp.block_body import BlockBody
-from helios.sync.common.chain import BaseHeaderChainSyncer
+from helios.rlp_templates.hls import BlockBody
 from helios.utils.datastructures import (
-    DuplicateTasks,
     SortableTask,
-    MissingDependency,
-    OrderedTaskPreparation,
-    TaskQueue,
 )
-from helios.utils.timer import Timer
 
 HeaderRequestingPeer = Union[LESPeer, HLSPeer]
 # (ReceiptBundle, (Receipt, (root_hash, receipt_trie_data))
@@ -188,17 +168,18 @@ class FastChainSyncer(BaseService, PeerSubscriber):
     with the highest TD announced by any of our peers.
     """
 
-    # subscription_msg_types: Set[Type[Command]] = {
-    #     commands.NewBlock,
-    #     commands.GetBlockHeaders,
-    #     commands.GetBlockBodies,
-    #     commands.GetReceipts,
-    #     commands.GetNodeData,
-    #     # TODO: all of the following are here to quiet warning logging output
-    #     # until the messages are properly handled.
-    #     commands.Transactions,
-    #     commands.NewBlockHashes,
-    # }
+    subscription_msg_types: Set[Type[Command]] = {
+        commands.NewBlock,
+        commands.GetBlockHeaders,
+        commands.GetBlockBodies,
+        commands.GetReceipts,
+        commands.GetNodeData,
+        # TODO: all of the following are here to quiet warning logging output
+        # until the messages are properly handled.
+        commands.Transactions,
+        commands.NewBlockHashes,
+    }
+    msg_queue_maxsize = 500
 
     # We'll only sync if we are connected to at least min_peers_to_sync.
     min_peers_to_sync = 1
@@ -914,12 +895,6 @@ class RegularChainSyncer(FastChainSyncer):
                           msg: protocol._DecodedMsgType) -> None:
         if isinstance(cmd, commands.NewBlock):
             await self._handle_new_block(peer, cast(Dict[str, Any], msg))
-        elif isinstance(cmd, commands.GetBlockBodies):
-            await self._handle_get_block_bodies(peer, cast(List[Hash32], msg))
-        elif isinstance(cmd, commands.GetReceipts):
-            await self._handle_get_receipts(peer, cast(List[Hash32], msg))
-        elif isinstance(cmd, commands.GetNodeData):
-            self._handle_get_node_data(peer, cast(List[Hash32], msg))
         elif isinstance(cmd, commands.GetChronologicalBlockWindow):
             await self._handle_get_chronological_block_window(peer, cast(Dict[str, Any], msg))
         elif isinstance(cmd, commands.ChronologicalBlockWindow):
@@ -929,23 +904,7 @@ class RegularChainSyncer(FastChainSyncer):
         elif isinstance(cmd, commands.Chain):
             await self._handle_chain(peer, cast(Dict[str, Any], msg))
 
-        #    async def re_queue_timeout_peers(self):
 
-    #        while not self._sync_complete.is_set() and self.is_running:
-    #            with await self.writing_chain_request_vars:
-    #                for chain_request_wallet_address, chain_request_info in self.pending_chain_requests.copy().items():
-    #                    self.logger.debug("checking peer timeouts, chain_request_timestamp = {}, timeout time = {}".format(chain_request_info.timestamp_sent, (int(time.time()) - REPLY_TIMEOUT)))
-    #                    if chain_request_info.timestamp_sent < int(time.time()) - REPLY_TIMEOUT:
-    #
-    #                        #delete the request
-    #                        self.failed_chain_requests[chain_request_wallet_address] = chain_request_info
-    #                        del(self.pending_chain_requests[chain_request_wallet_address])
-    #                        #re-queue peer
-    #                        self.register_peer(chain_request_info.peer)
-    #                        self.logger.debug("Requeuing a peer")
-    #
-    #
-    #            await asyncio.sleep(REPLY_TIMEOUT)
 
     async def _handle_get_chronological_block_window(self, peer: HLSPeer, msg: Dict[str, Any]) -> None:
         self.logger.debug("_handle_get_chronological_block_window")
@@ -968,34 +927,6 @@ class RegularChainSyncer(FastChainSyncer):
         self._new_chronological_block_window.put_nowait((msg['blocks'], msg['final_root_hash']))
 
 
-    async def _handle_get_block_bodies(self, peer: HLSPeer, msg: List[Hash32]) -> None:
-        bodies = []
-        # Only serve up to hls.MAX_BODIES_FETCH items in every request.
-        hashes = msg[:hls.MAX_BODIES_FETCH]
-        for block_hash in hashes:
-            header = await self.wait(self.chaindb.coro_get_block_header_by_hash(block_hash))
-            transactions = await self.wait(
-                self.chaindb.coro_get_block_transactions(header, P2PTransaction))
-            uncles = await self.wait(self.chaindb.coro_get_block_uncles(header.uncles_hash))
-            bodies.append(BlockBody(transactions, uncles))
-        peer.sub_proto.send_block_bodies(bodies)
-
-    async def _handle_get_receipts(self, peer: HLSPeer, msg: List[Hash32]) -> None:
-        receipts = []
-        # Only serve up to hls.MAX_RECEIPTS_FETCH items in every request.
-        hashes = msg[:hls.MAX_RECEIPTS_FETCH]
-        for block_hash in hashes:
-            header = await self.wait(self.chaindb.coro_get_block_header_by_hash(block_hash))
-            receipts.append(await self.wait(self.chaindb.coro_get_receipts(header, Receipt)))
-        peer.sub_proto.send_receipts(receipts)
-
-    def _handle_get_node_data(self, peer: HLSPeer, msg: List[Hash32]) -> None:
-        nodes = []
-        for node_hash in msg:
-            # FIXME: Need to use an async API here as well? chaindb.coro_get()?
-            node = self.chaindb.db[node_hash]
-            nodes.append(node)
-        peer.sub_proto.send_node_data(nodes)
 
 
     async def _handle_get_chain_segment(self,
@@ -1210,7 +1141,7 @@ class RegularChainSyncer(FastChainSyncer):
 
 
 class DownloadedBlockPart(NamedTuple):
-    part: Union[hls.BlockBody, List[Receipt]]
+    part: Union[commands.BlockBody, List[Receipt]]
     unique_key: Union[bytes, Tuple[bytes, bytes]]
 
 

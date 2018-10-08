@@ -37,7 +37,7 @@ PayloadType = Union[
 # A payload to be delivered with a request
 TRequestPayload = TypeVar('TRequestPayload', bound=PayloadType, covariant=True)
 
-# for backwards compatibility for internal references in p2p:
+# for backwards compatibility for internal references in hp2p:
 _DecodedMsgType = PayloadType
 
 
@@ -55,7 +55,7 @@ class Command:
     @property
     def logger(self) -> logging.Logger:
         if self._logger is None:
-            self._logger = logging.getLogger(f"p2p.protocol.{type(self).__name__}")
+            self._logger = logging.getLogger(f"hp2p.protocol.{type(self).__name__}")
         return self._logger
 
     @property
@@ -144,7 +144,7 @@ class BaseRequest(ABC, Generic[TRequestPayload]):
 
 class Protocol:
     peer: 'BasePeer'
-    logger = logging.getLogger("p2p.protocol.Protocol")
+    logger = logging.getLogger("hp2p.protocol.Protocol")
     name: str = None
     version: int = None
     cmd_length: int = None

@@ -25,7 +25,7 @@ from helios.protocol.common.types import (
     ReceiptsByBlock,
     ReceiptsBundles,
 )
-from helios.rlp.block_body import BlockBody
+from helios.rlp_templates.hls import BlockBody
 
 from .normalizers import (
     GetBlockBodiesNormalizer,

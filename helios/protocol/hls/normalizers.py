@@ -18,7 +18,7 @@ from helios.protocol.common.types import (
     ReceiptsBundles,
     ReceiptsByBlock,
 )
-from helios.rlp.block_body import BlockBody
+from helios.rlp_templates.hls import BlockBody
 
 
 class GetNodeDataNormalizer(BaseNormalizer[Tuple[bytes, ...], NodeDataBundles]):

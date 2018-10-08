@@ -147,9 +147,6 @@ def construct_chain_config_params(
     if args.sync_mode is not None:
         yield 'sync_mode', args.sync_mode
 
-    if args.do_rpc_http_server is not None:
-        yield 'do_rpc_http_server', args.do_rpc_http_server
-
     if args.max_peers is not None:
         yield 'max_peers', args.max_peers
     else:

@@ -226,7 +226,7 @@ class KBucket(Sized):
 
 
 class RoutingTable:
-    logger = logging.getLogger("p2p.kademlia.RoutingTable")
+    logger = logging.getLogger("hp2p.kademlia.RoutingTable")
 
     def __init__(self, node: Node) -> None:
         self._initialized_at = time.monotonic()

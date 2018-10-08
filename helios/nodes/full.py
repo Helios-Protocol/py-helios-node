@@ -1,3 +1,4 @@
+import json
 from hvm.chains.base import (
     BaseChain
 )
@@ -28,7 +29,7 @@ class FullNode(Node):
 
     def get_chain(self) -> BaseChain:
         if self._chain is None:
-            self._chain = self.chain_class(self.db_manager.get_db())  # type: ignore
+            self._chain = self.chain_class(self.db_manager.get_db(), self.wallet_address)  # type: ignore
 
         return self._chain
 

@@ -4,14 +4,11 @@ from multiprocessing.managers import (
 import pathlib
 
 from helios.chains import (
-    AsyncHeaderChainProxy,
     ChainProxy,
 )
 from helios.db.chain import ChainDBProxy
+from helios.db.chain_head import ChainHeadDBProxy
 from helios.db.base import DBProxy
-from helios.db.header import (
-    AsyncHeaderDBProxy
-)
 
 
 def create_db_manager(ipc_path: pathlib.Path) -> BaseManager:
@@ -27,8 +24,7 @@ def create_db_manager(ipc_path: pathlib.Path) -> BaseManager:
     DBManager.register('get_db', proxytype=DBProxy)  # type: ignore
     DBManager.register('get_chaindb', proxytype=ChainDBProxy)  # type: ignore
     DBManager.register('get_chain', proxytype=ChainProxy)  # type: ignore
-    DBManager.register('get_headerdb', proxytype=AsyncHeaderDBProxy)  # type: ignore
-    DBManager.register('get_header_chain', proxytype=AsyncHeaderChainProxy)  # type: ignore
+    DBManager.register('get_chain_head_db', proxytype=ChainHeadDBProxy)  # type: ignore
 
     manager = DBManager(address=str(ipc_path))  # type: ignore
     return manager

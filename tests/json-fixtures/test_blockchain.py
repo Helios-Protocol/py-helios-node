@@ -98,7 +98,7 @@ def test_blockchain_fixtures(fixture_data, fixture):
 
     # TODO: find out if this is supposed to pass?
     # if 'genesisRLP' in fixture:
-    #     assert rlp.encode(genesis_header) == fixture['genesisRLP']
+    #     assert rlp_templates.encode(genesis_header) == fixture['genesisRLP']
 
     genesis_block = chain.get_canonical_block_by_number(0)
     genesis_header = genesis_block.header

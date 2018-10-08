@@ -71,7 +71,7 @@ def setup_log_levels(log_levels: Dict[str, int]) -> None:
 def setup_helios_stderr_logging(level: int=None,
                                 ) -> Tuple[Logger, Formatter, StreamHandler]:
     if level is None:
-        level = logging.INFO
+        level = logging.DEBUG
     logger = logging.getLogger('helios')
     logger.setLevel(logging.DEBUG)
 
@@ -80,7 +80,8 @@ def setup_helios_stderr_logging(level: int=None,
 
     # TODO: allow configuring `detailed` logging
     formatter = HeliosLogFormatter(
-        fmt='%(levelname)8s  %(asctime)s  %(shortname)20s  %(message)s',
+        #fmt='%(levelname)8s  %(asctime)s  %(shortname)20s  %(message)s',
+        fmt='%(levelname)8s  %(asctime)s  %(name)20s  %(message)s',
         datefmt='%m-%d %H:%M:%S'
     )
 
@@ -127,13 +128,16 @@ def setup_helios_file_and_queue_logging(
     return logger, log_queue, listener
 
 
-def setup_queue_logging(log_queue: 'Queue[str]', level: int) -> None:
+def setup_queue_logging(log_queue: 'Queue[str]', level: int, log_levels = None) -> None:
     queue_handler = QueueHandler(log_queue)
     queue_handler.setLevel(level)
 
     logger = cast(TraceLogger, logging.getLogger())
     logger.addHandler(queue_handler)
     logger.setLevel(level)
+
+    if log_levels is not None:
+        setup_log_levels(log_levels=log_levels)
 
     logger.debug('Logging initialized: PID=%s', os.getpid())
 
@@ -149,9 +153,10 @@ def with_queued_logging(fn: Callable[..., Any]) -> Callable[..., Any]:
             ))
         else:
             level = kwargs.get('log_level', logging.INFO)
-            setup_queue_logging(log_queue, level)
+            log_levels = kwargs.get('log_levels', None)
+            setup_queue_logging(log_queue, level, log_levels)
 
-            inner_kwargs = dissoc(kwargs, 'log_queue', 'log_level')
+            inner_kwargs = dissoc(kwargs, 'log_queue', 'log_level', 'log_levels')
 
             return fn(*args, **inner_kwargs)
     return inner
@@ -165,11 +170,12 @@ def _set_environ_if_missing(name: str, val: str) -> None:
         os.environ[name] = val
 
 
-def enable_warnings_by_default() -> None:
+def enable_warnings_by_default(python_warnings = True) -> None:
     """
     This turns on some python and asyncio warnings, unless
     the related environment variables are already set.
     """
-    _set_environ_if_missing('PYTHONWARNINGS', 'default')
+    if python_warnings:
+        _set_environ_if_missing('PYTHONWARNINGS', 'default')
     # PYTHONASYNCIODEBUG is not turned on by default because it slows down sync a *lot*
     logging.getLogger('asyncio').setLevel(logging.DEBUG)

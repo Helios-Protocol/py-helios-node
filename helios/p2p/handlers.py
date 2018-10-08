@@ -23,7 +23,7 @@ from helios.db.chain import AsyncChainDB
 from helios.db.header import AsyncHeaderDB
 from helios.protocol.hls.peer import HLSPeer
 from helios.protocol.common.requests import BaseHeaderRequest
-from helios.rlp.block_body import BlockBody
+from helios.rlp_templates.hls import BlockBody
 
 
 class PeerRequestHandler(CancellableMixin):

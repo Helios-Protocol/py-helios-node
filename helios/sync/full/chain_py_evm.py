@@ -58,7 +58,7 @@ from helios.protocol.hls.constants import (
 from helios.protocol.hls.peer import HLSPeer, HLSPeerPool
 from helios.protocol.hls.requests import HeaderRequest
 from helios.protocol.les.peer import LESPeer
-from helios.rlp.block_body import BlockBody
+from helios.rlp_templates.hls import BlockBody
 from helios.sync.common.chain import BaseHeaderChainSyncer
 from helios.utils.datastructures import (
     DuplicateTasks,
@@ -224,7 +224,7 @@ class BaseBodyChainSyncer(BaseHeaderChainSyncer):
                 completed_headers = trivial_headers + received_headers
 
         except BaseP2PError as exc:
-            self.logger.info("Unexpected p2p perror while downloading body from peer: %s", exc)
+            self.logger.info("Unexpected hp2p perror while downloading body from peer: %s", exc)
             self.logger.debug("Problem downloading body from peer, dropping...", exc_info=True)
         else:
             if len(non_trivial_headers) == 0:
@@ -612,7 +612,7 @@ class FastChainSyncer(BaseBodyChainSyncer):
                 completed_headers,
             )
         except BaseP2PError as exc:
-            self.logger.info("Unexpected p2p perror while downloading receipt from peer: %s", exc)
+            self.logger.info("Unexpected hp2p perror while downloading receipt from peer: %s", exc)
             self.logger.debug("Problem downloading receipt from peer, dropping...", exc_info=True)
         else:
             # peer completed successfully, so have it get back in line for processing

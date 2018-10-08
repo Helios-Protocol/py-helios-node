@@ -9,7 +9,7 @@ from hp2p.tools.paragon.helpers import (
 )
 
 
-logger = logging.getLogger('testing.p2p.PeerSubscriber')
+logger = logging.getLogger('testing.hp2p.PeerSubscriber')
 
 
 @pytest.mark.asyncio

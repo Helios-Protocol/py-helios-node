@@ -130,7 +130,7 @@ class UPnPService(BaseService):
         internal_ip = find_internal_ip_on_device_network(upnp_dev)
 
         external_ip = upnp_dev.WANIPConn1.GetExternalIPAddress()['NewExternalIPAddress']
-        for protocol, description, port in [('TCP', 'helios p2p', self.port), ('UDP', 'helios discovery', self.port), ('TCP', 'helios rpc', self.rpc_port)]:
+        for protocol, description, port in [('TCP', 'helios hp2p', self.port), ('UDP', 'helios discovery', self.port), ('TCP', 'helios rpc', self.rpc_port)]:
             upnp_dev.WANIPConn1.AddPortMapping(
                 NewRemoteHost=external_ip,
                 NewExternalPort=port,

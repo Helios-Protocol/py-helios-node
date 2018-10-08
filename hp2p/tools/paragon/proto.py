@@ -19,7 +19,7 @@ class ParagonProtocol(Protocol):
         GetSum, Sum,
     ]
     cmd_length = 3
-    logger = logging.getLogger("p2p.tools.paragon.proto.ParagonProtocol")
+    logger = logging.getLogger("hp2p.tools.paragon.proto.ParagonProtocol")
 
     #
     # Broadcast

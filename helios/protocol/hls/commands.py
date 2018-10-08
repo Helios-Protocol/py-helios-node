@@ -19,10 +19,10 @@ from hp2p.protocol import (
 )
 
 from helios.protocol.common.commands import BaseBlockHeaders
-from helios.rlp.block_body import BlockBody
-from helios.rlp.sedes import HashOrNumber
+from helios.rlp_templates.hls import BlockBody
+from helios.rlp_templates.sedes import HashOrNumber
 
-from helios.rlp.hls import (
+from helios.rlp_templates.hls import (
     BlockBody,
     P2PSendTransaction,
     P2PReceiveTransaction,
@@ -31,7 +31,7 @@ from helios.rlp.hls import (
     TimestampRootHashKey,
     P2PBlock
 )
-from helios.rlp.sedes import (
+from helios.rlp_templates.sedes import (
     HashOrNumber,
     AddressOrNone,
     HashOrNone,
