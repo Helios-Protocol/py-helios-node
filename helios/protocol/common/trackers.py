@@ -62,7 +62,7 @@ class BasePerformanceTracker(ABC, HasTraceLogger, Generic[TRequest, TResult]):
         self.total_items = 0
         self.total_timeouts = 0
         self.total_response_time = 0.0
-
+        self.latest_response_time = float('inf')
         # a percentage between 0-100 for how much of the requested
         # data the peer typically returns with 100 meaning they consistently
         # return all of the data we request and 0 meaning they only return
@@ -143,6 +143,7 @@ class BasePerformanceTracker(ABC, HasTraceLogger, Generic[TRequest, TResult]):
         self.response_quality_ema.update(0)
         self.items_per_second_ema.update(0)
         self.round_trip_ema.update(timeout)
+        self.latest_response_time = float('inf')
 
     def record_response(self,
                         elapsed: float,
@@ -183,6 +184,7 @@ class BasePerformanceTracker(ABC, HasTraceLogger, Generic[TRequest, TResult]):
         self.total_items += num_items
         self.total_response_time += elapsed
         self.round_trip_ema.update(elapsed)
+        self.latest_response_time = elapsed
 
         if elapsed > 0:
             throughput = num_items / elapsed

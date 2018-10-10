@@ -115,9 +115,10 @@ class BaseChainPeerPool(BasePeerPool):
         max_td = max(peers_by_td.keys())
         return random.choice(peers_by_td[max_td])
 
-    def get_peers(self, min_td: int) -> List[BaseChainPeer]:
+    def get_peers(self, min_stake: int = 0) -> List[BaseChainPeer]:
         # TODO: Consider turning this into a method that returns an AsyncIterator, to make it
         # harder for callsites to get a list of peers while making blocking calls, as those peers
         # might disconnect in the meantime.
         peers = tuple(self.connected_nodes.values())
-        return [peer for peer in peers if peer.head_td >= min_td]
+        return [peer for peer in peers if peer.stake >= min_stake]
+

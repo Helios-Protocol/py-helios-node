@@ -48,12 +48,14 @@ from typing import (
     cast,
     Optional,
     NamedTuple,
+    Iterable,
 )
 
 from cancel_token import CancelToken, OperationCancelled
 from eth_typing import Hash32, BlockNumber
 from eth_utils import (
     ValidationError,
+    encode_hex,
 )
 
 from hvm.constants import (
@@ -78,15 +80,7 @@ from helios.utils.datastructures import (
     SortableTask,
 )
 
-HeaderRequestingPeer = Union[LESPeer, HLSPeer]
-# (ReceiptBundle, (Receipt, (root_hash, receipt_trie_data))
-ReceiptBundle = Tuple[Tuple[Receipt, ...], Tuple[Hash32, Dict[Hash32, bytes]]]
-# (BlockBody, (txn_root, txn_trie_data), uncles_hash)
-BlockBodyBundle = Tuple[
-    BlockBody,
-    Tuple[Hash32, Dict[Hash32, bytes]],
-    Hash32,
-]
+from hp2p.consensus import Consensus
 
 from hp2p.peer import BasePeer, PeerSubscriber
 from hp2p.service import BaseService
@@ -97,6 +91,21 @@ from sortedcontainers import (
     SortedDict,
     SortedList
 )
+
+from helios.db.base import AsyncBaseDB
+from helios.db.chain import AsyncChainDB
+from helios.db.chain_head import AsyncChainHeadDB
+from hvm.chains import AsyncChain
+
+HeaderRequestingPeer = Union[LESPeer, HLSPeer]
+# (ReceiptBundle, (Receipt, (root_hash, receipt_trie_data))
+ReceiptBundle = Tuple[Tuple[Receipt, ...], Tuple[Hash32, Dict[Hash32, bytes]]]
+# (BlockBody, (txn_root, txn_trie_data), uncles_hash)
+BlockBodyBundle = Tuple[
+    BlockBody,
+    Tuple[Hash32, Dict[Hash32, bytes]],
+    Hash32,
+]
 
 # How big should the pending request queue get, as a multiple of the largest request size
 REQUEST_BUFFER_MULTIPLIER = 8
@@ -169,16 +178,16 @@ class FastChainSyncer(BaseService, PeerSubscriber):
     """
 
     subscription_msg_types: Set[Type[Command]] = {
+        commands.GetChainsSyncing,
+        commands.Chain,
         commands.NewBlock,
-        commands.GetBlockHeaders,
-        commands.GetBlockBodies,
-        commands.GetReceipts,
-        commands.GetNodeData,
-        # TODO: all of the following are here to quiet warning logging output
-        # until the messages are properly handled.
-        commands.Transactions,
-        commands.NewBlockHashes,
+        commands.GetChronologicalBlockWindow,
+        commands.ChronologicalBlockWindow,
+        commands.GetChainSegment,
     }
+
+
+
     msg_queue_maxsize = 500
 
     # We'll only sync if we are connected to at least min_peers_to_sync.
@@ -191,11 +200,16 @@ class FastChainSyncer(BaseService, PeerSubscriber):
     head_hash_of_last_chain = ZERO_HASH32
     last_window_start = 0
     last_window_length = 0
+    base_db: AsyncBaseDB
+    chain: AsyncChain
+    chaindb: AsyncChainDB
+    chain_head_db: AsyncChainHeadDB
+
 
     def __init__(self,
                  context: ChainContext,
                  peer_pool: HLSPeerPool,
-                 consensus,
+                 consensus: Consensus,
                  node,
                  token: CancelToken = None) -> None:
         super().__init__(token)
@@ -238,6 +252,15 @@ class FastChainSyncer(BaseService, PeerSubscriber):
         self.writing_chain_request_vars = asyncio.Lock()
 
         self.logger.debug('this node wallet address = {}'.format(self.consensus.chain_config.node_wallet_address))
+
+    @property
+    def is_ready_for_regular_syncer(self):
+        '''
+        Returns true if we are synced enough to go into regular chain syncer
+        :return:
+        '''
+        latest_synced_timestamp = self.chain_head_db.get_latest_timestamp()
+        return latest_synced_timestamp > (int(time.time()) - NUMBER_OF_HEAD_HASH_TO_SAVE * TIME_BETWEEN_HEAD_HASH_SAVE)
 
     def register_peer(self, peer: HLSPeer) -> None:
         #        self.logger.debug("Registering peer. Their root_hash_timestamps: {}, our current root hash: {}, and timestamp {}".format(peer.chain_head_root_hashes,
@@ -577,25 +600,32 @@ class RegularChainSyncer(FastChainSyncer):
         self.chain_head_db.load_saved_root_hash()
 
     async def _run(self) -> None:
-        self.logger.debug("Starting regular chainsyncer. waiting for consensus and chain config to initialize.")
+        if self.is_ready_for_regular_syncer:
 
-        consensus_ready = await self.consensus.coro_is_ready.wait()
-        if consensus_ready:
-            self.logger.debug('waiting for consensus min gas system ready')
-            min_gas_system_ready = await self.consensus.coro_min_gas_system_ready.wait()
-            if min_gas_system_ready:
-                self.logger.debug("consensus ready")
-                with self.subscribe(self.peer_pool):
+            self.logger.debug("Starting regular chainsyncer. waiting for consensus and chain config to initialize.")
 
-                    self.logger.debug("syncing chronological blocks")
-                    # await self.sync_chronological_blocks()
-                    self.run_daemon_task(self._handle_msg_loop())
-                    self.run_daemon_task(self._handle_import_block_loop())
+            consensus_ready = await self.consensus.coro_is_ready.wait()
+            if consensus_ready:
+                self.logger.debug('waiting for consensus min gas system ready')
+                min_gas_system_ready = await self.consensus.coro_min_gas_system_ready.wait()
+                if min_gas_system_ready:
+                    self.logger.debug("consensus ready")
+                    with self.subscribe(self.peer_pool):
 
-                    # this runs forever
-                    self.run_daemon_task(self.sync_historical_root_hash_with_consensus())
-                    # asyncio.ensure_future(self.re_queue_timeout_peers())
-                    await self.sync_block_conflict_with_consensus()
+                        self.logger.debug("syncing chronological blocks")
+                        # await self.sync_chronological_blocks()
+                        self.run_daemon_task(self._handle_msg_loop())
+                        self.run_daemon_task(self._handle_import_block_loop())
+
+                        # this runs forever
+                        self.run_daemon_task(self.sync_historical_root_hash_with_consensus())
+                        # asyncio.ensure_future(self.re_queue_timeout_peers())
+                        await self.sync_block_conflict_with_consensus()
+
+        else:
+            self.logger.error(
+                'We are not synced enough for regular chain syncer to start. Need to run fastchainsyncer first. '
+                'If this is the genesis node, make sure the genesis block timestamp is within the regular syncer range.')
 
     async def _handle_msg_loop(self) -> None:
         while self.is_running:
@@ -697,7 +727,7 @@ class RegularChainSyncer(FastChainSyncer):
                     "Our database has been offline for too long. Need to perform fast sync again. Database should be deleted and program should be restarted. ")
                 input("Press Enter to continue if you would like to do this, otherwise force close the program.")
                 # self.base_db.destroy_db()
-                sys.exit()
+                #sys.exit()
 
             # this is the latest one where we actually do match consensus. Now we re-sync up to the next one
 
@@ -851,11 +881,6 @@ class RegularChainSyncer(FastChainSyncer):
             token=peer.cancel_token,
             timeout=self._reply_timeout)
 
-        # as long as these blocks are all newer than self.current_syncing_root_timestamp, then we dont need to worry about conflicts because
-        # we cant have any blocks in this range of time yet.
-        #        window_start_timestamp, save_block_head_hash_timestamp = True, allow_unprocessed=False):
-        #        if len(new_chronological_blocks) > 0:
-        #            self.logger.debug("AAAAAAAAAAAA importing chronological window  {}".format(window_start_timestamp))
 
         chain = self.node.get_new_chain()
 
@@ -863,25 +888,7 @@ class RegularChainSyncer(FastChainSyncer):
                                                 window_start_timestamp=window_start_timestamp,
                                                 save_block_head_hash_timestamp=True,
                                                 allow_unprocessed=True)
-        #        for block in new_chronological_blocks:
-        #            wallet_address = self.chaindb.get_chain_wallet_address_for_block(block)
-        #            await self.chain.coro_import_block(block, wallet_address = wallet_address, save_block_head_hash_timestamp = save_block_head_hash_timestamp, allow_unprocessed=False)
 
-        #        if new_window:
-        #            #if it is a new window, our chain head hash should match the expected one, and if so, we can save it to chain head db.
-        #            #we need to chainheaddb because the database was modified by the chain process.
-        #            self.chain_head_db.load_saved_root_hash()
-        #            local_head_root_hash = self.chain_head_db.get_root_hash()
-        #            if local_head_root_hash != final_root_hash:
-        #                self.logger.debug("root hash is not as expected after importing chronological block window. will re-request window. local: {}, expected: {}".format(local_head_root_hash,final_root_hash))
-        #                raise LocalRootHashNotAsExpected()
-        #
-        #            else:
-        #                self.logger.debug('sync_chronological_blocks saving new root hash, root_hash = {}, timestamp = {}'.format(local_head_root_hash,window_start_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE))
-        #                self.chain_head_db.save_single_historical_root_hash(local_head_root_hash, window_start_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE)
-        #        else:
-        # we need to chainheaddb because the database was modified by the chain process.
-        # self.chain_head_db.load_saved_root_hash()
         local_head_root_hash = self.chain_head_db.get_historical_root_hash(self.current_syncing_root_timestamp)
         #        full_root_hash_list = self.chain_head_db.get_historical_root_hashes(after_timestamp = self.current_syncing_root_timestamp-10000)
         #        self.logger.debug("here are the root hashes around that time {}".format(full_root_hash_list))
@@ -903,6 +910,8 @@ class RegularChainSyncer(FastChainSyncer):
             await self._handle_get_chain_segment(peer, cast(Dict[str, Any], msg))
         elif isinstance(cmd, commands.Chain):
             await self._handle_chain(peer, cast(Dict[str, Any], msg))
+        elif isinstance(cmd, commands.GetBlocks):
+            await self._handle_get_blocks(peer, cast(Iterable, msg))
 
 
 
@@ -939,7 +948,7 @@ class RegularChainSyncer(FastChainSyncer):
         #            'block_number_end': block_number_end,
         #            }
 
-        self.logger.debug("Peer %s made chains segment request: %s", peer.wallet_address, msg)
+        self.logger.debug("Peer %s made chains segment request", encode_hex(peer.wallet_address))
 
         chain_address = msg['chain_address']
 
@@ -950,6 +959,23 @@ class RegularChainSyncer(FastChainSyncer):
         peer.sub_proto.send_chain(chain_segment, True)
 
         self.logger.debug("sending chain with chain address {}".format(chain_address))
+
+    async def _handle_get_blocks(self,
+                                        peer: HLSPeer,
+                                        msg: Iterable) -> None:
+
+
+        self.logger.debug("Peer %s made get_blocks request", encode_hex(peer.wallet_address))
+
+        hashes = msg
+        blocks_to_return = []
+        for hash in hashes:
+            new_block = await self.chaindb.get_block_by_hash(hash, P2PBlock)
+            blocks_to_return.append(new_block)
+
+        peer.sub_proto.send_blocks(blocks_to_return)
+
+        self.logger.debug("Sent peer {} the blocks they requested".format(encode_hex(peer.wallet_address)))
 
     async def _handle_chain(self,
                             peer: HLSPeer,

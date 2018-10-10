@@ -171,8 +171,7 @@ def main() -> None:
     log_levels['hvm.db.chain_db.ChainDB'] = logging.DEBUG
 
     log_levels['hp2p'] = logging.INFO
-    log_levels['hp2p.chain'] = logging.DEBUG
-    log_levels['hp2p.chain.ChainSyncer'] = logging.DEBUG
+
     log_levels['hp2p.peer'] = logging.INFO
     log_levels['hp2p.peer.PeerPool'] = logging.INFO
     log_levels['hp2p.consensus.Consensus'] = logging.DEBUG
@@ -186,6 +185,7 @@ def main() -> None:
     #log_levels['helios'] = logging.INFO  # sets all of hvm
     log_levels['helios.rpc.ipc'] = logging.DEBUG
     log_levels['helios.Node'] = logging.DEBUG
+    log_levels['helios.sync.full.chain'] = logging.DEBUG
 
     log_levels['hp2p.hls'] = logging.INFO
     log_levels['helios.server.FullServer'] = logging.DEBUG
@@ -200,10 +200,14 @@ def main() -> None:
     if args.rand_db == 1:
         os.environ["GENERATE_RANDOM_DATABASE"] = 'true'
     if args.instance is not None:
+        from helios.utils.xdg import get_xdg_helios_root
         args.port = args.port + args.instance*2
         if args.instance != 0:
             args.do_rpc_http_server = False
-        os.environ["XDG_TRINITY_SUBDIRECTORY"] = 'instance_'+str(args.instance)
+        subdir = 'instance_'+str(args.instance)
+        absolute_path = get_xdg_helios_root() / subdir
+
+        os.environ["HELIOS_DATA_DIR"] = str(absolute_path.resolve())
         os.environ["INSTANCE_NUMBER"] = str(args.instance)
 
 
@@ -394,7 +398,7 @@ def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> N
         base_db = db_class(db_path=chain_config.database_dir)
 
         # TODO:remove
-        #base_db = JournalDB(base_db)
+        base_db = JournalDB(base_db)
 
         manager = get_chaindb_manager(chain_config, base_db)
         server = manager.get_server()  # type: ignore

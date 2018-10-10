@@ -12,6 +12,8 @@ from eth_typing import (
     Address,
 )
 
+from hvm.types import Timestamp
+
 import rlp
 
 from trie import (
@@ -135,7 +137,7 @@ class ConsensusDB():
     # note: when reverting blocks, if one has a reward transaction then need to update get_latest_reward_block_number
     # also need to add all of the new health request statistics to the previous health request for the previous after_block_number
 
-    def save_health_request(self, peer_wallet_address: Address, response_time: int = float('inf')):
+    def save_health_request(self, peer_wallet_address: Address, response_time: int = float('inf')) -> None:
 
         after_block_number = self.get_latest_reward_block_number(peer_wallet_address)
         peer_node_health = self._get_peer_node_health(peer_wallet_address, after_block_number)
@@ -158,6 +160,18 @@ class ConsensusDB():
                                                                                                   failed_requests = new_failed_requests,
                                                                                                   average_response_time = new_average_response_time))
 
+        #save this time as the latest timestamp for save health request
+        lookup_key = SchemaV1.make_latest_peer_node_health_timestamp_lookup_key()
+        timestamp_rounded_peer_node_health_check = int(int(time.time()/(TIME_BETWEEN_PEER_NODE_HEALTH_CHECK))*(TIME_BETWEEN_PEER_NODE_HEALTH_CHECK))
+        rlp_encoded = rlp.encode(timestamp_rounded_peer_node_health_check, sedes=f_big_endian_int)
+        self.db[lookup_key] = rlp_encoded
+
+    def get_timestamp_of_last_health_request(self) -> Timestamp:
+        lookup_key = SchemaV1.make_latest_peer_node_health_timestamp_lookup_key()
+        try:
+            return rlp.decode(self.db[lookup_key], sedes=f_big_endian_int)
+        except KeyError:
+            return 0
 
     def get_latest_reward_block_number(self, peer_wallet_address: Address) -> int:
         validate_canonical_address(peer_wallet_address, title="peer_wallet_address")

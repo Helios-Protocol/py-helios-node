@@ -77,6 +77,7 @@ class FullNode(Node):
                 manager.get_chain(),  # type: ignore
                 manager.get_chaindb(),  # type: ignore
                 manager.get_chain_head_db(),
+                manager.get_consensus_db(),
                 manager.get_db(),  # type: ignore
                 self._network_id,
                 chain_config = self.chain_config,

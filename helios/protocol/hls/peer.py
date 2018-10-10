@@ -13,7 +13,7 @@ from hvm.exceptions import (
 )
 
 from hp2p.exceptions import HandshakeFailure
-from hp2p.p2p_proto import DisconnectReason
+from hp2p.p2p_proto import DisconnectReason, Disconnect
 from hp2p.protocol import (
     Command,
     _DecodedMsgType,
@@ -127,6 +127,16 @@ class HLSPeer(BaseChainPeer):
         self.chain_head_root_hashes = msg['chain_head_root_hashes']
         self.send_wallet_address_verification(msg['salt'])
 
+        # After the sub_proto handshake, the peer will send back a signed message containing the wallet address
+        cmd, msg = await self.read_msg()
+        if isinstance(cmd, Disconnect):
+            # Peers sometimes send a disconnect msg before they send the sub-proto handshake.
+            raise HandshakeFailure(
+                "{} disconnected before completing wallet address verification: {}".format(
+                    self, msg['reason_name']))
+        await self.process_sub_proto_wallet_address_verification(cmd, msg)
+
+
     async def process_sub_proto_wallet_address_verification(
             self, cmd: Command, msg: _DecodedMsgType) -> None:
         if not isinstance(cmd, WalletAddressVerification):
@@ -165,5 +175,5 @@ class HLSPeerPool(BaseChainPeerPool):
     peer_factory_class = HLSPeerFactory
 
     @property
-    def peers(self) -> List[HLSPeer]:
-        return list(self.connected_nodes.values())
+    def peers(self, min_stake: int = 0) -> List[HLSPeer]:
+        return cast(List[HLSPeer], self.get_peers(min_stake))

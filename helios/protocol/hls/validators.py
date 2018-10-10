@@ -2,6 +2,7 @@ from typing import (
     Tuple,
 )
 
+from helios.rlp_templates.hls import P2PBlock
 from hvm.rlp.headers import BlockHeader
 from eth_typing import (
     Hash32,
@@ -92,4 +93,27 @@ class GetBlockBodiesValidator(BaseValidator[BlockBodyBundles]):
         if unexpected_keys:
             raise ValidationError(
                 "Got {0} unexpected block bodies".format(len(unexpected_keys))
+            )
+
+
+class GetBlocksValidator(BaseValidator[Tuple[P2PBlock, ...]]):
+    def __init__(self, block_hashes: Tuple[Hash32, ...]) -> None:
+        self.block_hashes = block_hashes
+
+    def validate_result(self, response: Tuple[P2PBlock, ...]) -> None:
+        if not response:
+            # an empty response is always valid
+            return
+
+        received_block_hashes = tuple(block.header.hash for block in response)
+        received_block_hashes_set = set(received_block_hashes)
+
+        if len(received_block_hashes) != len(received_block_hashes_set):
+            raise ValidationError("Response may not contain duplicate blocks")
+
+        unexpected_hashes = received_block_hashes_set.difference(self.block_hashes)
+
+        if unexpected_hashes:
+            raise ValidationError(
+                "Response contains {0} unexpected blocks".format(len(unexpected_hashes))
             )

@@ -89,6 +89,7 @@ from hvm.rlp.sedes import(
 
 from rlp.sedes import (
     big_endian_int,
+    f_big_endian_int,
     CountableList,
     binary,
     List
@@ -824,7 +825,7 @@ class ChainHeadDB():
             raise InvalidHeadRootTimestamp("Can only save or load chronological block for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
         
         chronological_window_lookup_key = SchemaV1.make_chronological_window_lookup_key(timestamp)
-        encoded_data = rlp.encode(data,sedes=CountableList(List([big_endian_int, hash32])))
+        encoded_data = rlp.encode(data,sedes=CountableList(List([f_big_endian_int, hash32])))
         self.db.set(
             chronological_window_lookup_key,
             encoded_data,
@@ -837,8 +838,8 @@ class ChainHeadDB():
         
         chronological_window_lookup_key = SchemaV1.make_chronological_window_lookup_key(timestamp)
         try:
-            data = rlp.decode(self.db[chronological_window_lookup_key], sedes=CountableList(List([big_endian_int, hash32])))
-            return make_mutable(data)
+            data = rlp.decode(self.db[chronological_window_lookup_key], sedes=CountableList(List([f_big_endian_int, hash32])), use_list = True)
+            return data
         except KeyError:
             return None
         
@@ -855,7 +856,7 @@ class ChainHeadDB():
             del(self.db[chronological_window_lookup_key])
         except KeyError:
             pass
-    
+
     
     
 

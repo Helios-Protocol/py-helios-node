@@ -91,6 +91,8 @@ from hvm.exceptions import (
     HistoricalMinGasPriceError,
     UnprocessedBlockChildIsProcessed,
     ParentNotFound,
+    NoChronologicalBlocks,
+
 )
 from eth_keys.exceptions import (
     BadSignature,
@@ -346,6 +348,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def get_mature_stake(self, wallet_address: Address = None) -> int:
         raise NotImplementedError("Chain classes must implement this method")
 
+    @abstractmethod
+    def get_new_block_hash_to_test_peer_node_health(self) -> Hash32:
+        raise NotImplementedError("Chain classes must implement this method")
+
     #
     # Min Block Gas API used for throttling the network
     #
@@ -382,6 +388,8 @@ class Chain(BaseChain):
     chaindb_class = ChainDB  # type: Type[BaseChainDB]
     chain_head_db_class = ChainHeadDB
     consensus_db_class = ConsensusDB
+    chain_head_db: ChainHeadDB = None
+    chaindb: ChainDB = None
 
     def __init__(self, base_db: BaseDB, wallet_address: Address, private_key: BaseKey=None) -> None:
         if not self.vm_configuration:
@@ -480,19 +488,19 @@ class Chain(BaseChain):
         return cls.chaindb_class
 
     @classmethod
-    def get_chain_head_db_class(cls) -> Type[BaseChainDB]:
+    def get_chain_head_db_class(cls) -> Type[ChainHeadDB]:
         if cls.chain_head_db_class is None:
             raise AttributeError("`chaindb_class` not set")
         return cls.chain_head_db_class
 
     @classmethod
-    def get_consensus_db_class(cls) -> Type[BaseChainDB]:
+    def get_consensus_db_class(cls) -> Type[ConsensusDB]:
         if cls.consensus_db_class is None:
             raise AttributeError("`chaindb_class` not set")
         return cls.consensus_db_class
     
     @classmethod
-    def get_genesus_wallet_address(cls) -> Type[BaseChainDB]:
+    def get_genesus_wallet_address(cls) -> Address:
         if cls.genesis_wallet_address is None:
             raise AttributeError("`genesis_wallet_address` not set")
         return cls.genesis_wallet_address
@@ -1576,6 +1584,28 @@ class Chain(BaseChain):
             previous_header = parent_header
         
         return total
+
+    def get_new_block_hash_to_test_peer_node_health(self) -> Hash32:
+        '''
+        returns one of the newest blocks we have seen.
+        :return:
+        '''
+        before_this_timestamp = int(time.time()) - 60 # ask the peer for a block that was received at before 1 minute ago
+        current_historical_window = int(time.time() / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+
+        for timestamp in range(current_historical_window,
+                               current_historical_window-NUMBER_OF_HEAD_HASH_TO_SAVE*TIME_BETWEEN_HEAD_HASH_SAVE,
+                               -1* TIME_BETWEEN_HEAD_HASH_SAVE):
+            chronological_window = self.chain_head_db.load_chronological_block_window(timestamp)
+            if chronological_window is not None:
+                chronological_window.sort(key=lambda x: -1*x[0])
+                for timestamp_hash in chronological_window:
+                    if timestamp_hash[0] < before_this_timestamp:
+                        return timestamp_hash[1]
+
+
+        #if we get to here then we don't have any blocks within all chronological block windows...
+        raise NoChronologicalBlocks()
     
     #
     # Min Block Gas API used for throttling the network
@@ -1735,26 +1765,7 @@ class Chain(BaseChain):
         tx_per_centisecond = 100/duration
         return tx_per_centisecond
         
-#    def group_into_centiseconds(self, time_item_data):
-#        if not (isinstance(time_item_data, list) or isinstance(time_item_data, tuple)):
-#            raise ValidationError("cant group into centiseconds because it isnt a list or tuple")
-#        
-#        if len(time_item_data) == 0:
-#            return time_item_data
-#        
-        
-    
-        
-#    def get_required_block_gas_price(self, timestamp, average_max_transaction_rate):
-#        #needs to be based on a time where we are gauranteed to have consensus. 
-#        #needs a very low probability of being modified by new blocks.
-#        #this will also give someone a 15 minute window to hammer the network with
-#        #a huge number of transactions. So should be conservative at first.
-#        
-#        
-#        #only calculate each minute. If it has already been calculated this minute, look up in db
-#        historical_
-        
+
         
 
     

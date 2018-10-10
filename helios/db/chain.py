@@ -144,3 +144,5 @@ class ChainDBProxy(BaseProxy):
     initialize_historical_minimum_gas_price_at_genesis = sync_method(
         'initialize_historical_minimum_gas_price_at_genesis')
     get_blocks_on_chain = sync_method('get_blocks_on_chain')
+
+    get_block_by_hash = sync_method('get_blocks_on_chain')

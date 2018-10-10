@@ -18,8 +18,10 @@ from .requests import (
     GetBlockHeadersRequest,
     GetNodeDataRequest,
     GetReceiptsRequest,
+    GetBlocksRequest,
 )
 
+from helios.rlp_templates.hls import P2PBlock
 
 BaseGetBlockHeadersTracker = BasePerformanceTracker[
     GetBlockHeadersRequest,
@@ -85,4 +87,20 @@ class GetNodeDataTracker(BasePerformanceTracker[GetNodeDataRequest, NodeDataBund
         return len(result)
 
     def _get_result_item_count(self, result: NodeDataBundles) -> int:
+        return len(result)
+
+
+BaseGetBlockHeadersTracker = BasePerformanceTracker[
+    GetBlocksRequest,
+    Tuple[P2PBlock, ...],
+]
+
+class GetBlocksTracker(BaseGetBlockHeadersTracker):
+    def _get_request_size(self, request: GetBlocksRequest) -> Optional[int]:
+        return len(request.command_payload)
+
+    def _get_result_size(self, result: Tuple[P2PBlock, ...]) -> int:
+        return len(result)
+
+    def _get_result_item_count(self, result: Tuple[P2PBlock, ...]) -> int:
         return len(result)

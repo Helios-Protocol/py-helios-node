@@ -236,3 +236,13 @@ class GetChainSegment(Command):
         ('block_number_start', sedes.big_endian_int),
         ('block_number_end', sedes.big_endian_int)
     ]
+
+class GetBlocks(Command):
+    _cmd_id = 34
+    structure = sedes.CountableList(hash32)
+
+class Blocks(Command):
+    _cmd_id = 35
+    structure = [
+        ('blocks', sedes.CountableList(P2PBlock))
+        ]

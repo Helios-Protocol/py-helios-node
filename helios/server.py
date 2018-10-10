@@ -60,6 +60,8 @@ from hp2p.service import BaseService
 
 from helios.db.base import AsyncBaseDB
 from helios.db.chain import AsyncChainDB
+from helios.db.chain_head import AsyncChainHeadDB
+from helios.db.consensus import AsyncConsensusDB
 from helios.protocol.common.constants import DEFAULT_PREFERRED_NODES
 from helios.protocol.common.context import ChainContext
 from helios.protocol.hls.peer import HLSPeerPool
@@ -81,7 +83,8 @@ class BaseServer(BaseService):
                  node,
                  chain: AsyncChain,
                  chaindb: AsyncChainDB,
-                 chain_head_db,
+                 chain_head_db: AsyncChainHeadDB,
+                 consensus_db: AsyncConsensusDB,
                  base_db: AsyncBaseDB,
                  network_id: int,
                  chain_config,
@@ -102,6 +105,7 @@ class BaseServer(BaseService):
         self.chaindb = chaindb
         self.chain = chain
         self.chain_head_db = chain_head_db
+        self.consensus_db = consensus_db
         self.base_db = base_db
         self.network_id = network_id
         self.max_peers = max_peers
@@ -141,7 +145,6 @@ class BaseServer(BaseService):
 
     async def _run(self) -> None:
         self.logger.info("Running server...")
-        self.logger.debug('server debug test')
         if self.chain_config.do_upnp:
             mapped_external_ip = await self.upnp_service.add_nat_portmap()
         else:
@@ -314,6 +317,7 @@ class FullServer(BaseServer):
             chain=self.chain,
             chaindb=self.chaindb,
             chain_head_db=self.chain_head_db,
+            consensus_db=self.consensus_db,
             chain_config=self.chain_config,
             network_id=self.network_id,
             vm_configuration=self.chain.get_vm_configuration(),
@@ -343,13 +347,9 @@ class FullServer(BaseServer):
     def _make_consensus(self) -> BaseService:
 
         return Consensus(
-            self.chain,
-            self.chaindb,
-            self.base_db,
+            context=self.chain_context,
             peer_pool = cast(HLSPeerPool, self.peer_pool),
-            chain_head_db = self.chain_head_db,
             bootstrap_nodes = self.bootstrap_nodes,
-            chain_config = self.chain_config,
             token = self.cancel_token
         )
 

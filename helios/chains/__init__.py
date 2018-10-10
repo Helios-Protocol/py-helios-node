@@ -37,6 +37,7 @@ from helios.exceptions import (
 from helios.config import ChainConfig
 from helios.db.base import DBProxy
 from helios.db.chain import AsyncChainDB, ChainDBProxy
+from helios.db.consensus import AsyncConsensusDB, ConsensusDBProxy
 from .base import ChainProxy
 from helios.db.chain_head import (
     ChainHeadDBProxy,
@@ -220,6 +221,7 @@ def rebuild_exc(exc, tb):  # type: ignore
 def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> BaseManager:
     chaindb = AsyncChainDB(base_db, chain_config.node_wallet_address)
     chain_head_db = AsyncChainHeadDB.load_from_saved_root_hash(base_db)
+    consensus_db = AsyncConsensusDB(base_db, chaindb)
     chain_class: Type[BaseChain]
     if not is_database_initialized(chaindb):
         if 'GENERATE_RANDOM_DATABASE' in os.environ:
@@ -262,16 +264,12 @@ def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> Bas
         proxytype=ChainHeadDBProxy,
     )
 
-    # DBManager.register(  # type: ignore
-    #     'get_headerdb',
-    #     callable=lambda: TracebackRecorder(headerdb),
-    #     proxytype=AsyncHeaderDBProxy,
-    # )
-    # DBManager.register(  # type: ignore
-    #     'get_header_chain',
-    #     callable=lambda: TracebackRecorder(header_chain),
-    #     proxytype=AsyncHeaderChainProxy,
-    # )
+    DBManager.register(  # type: ignore
+        'get_consensus_db',
+        callable=lambda: TracebackRecorder(consensus_db),
+        proxytype=ConsensusDBProxy,
+    )
+
 
     manager = DBManager(address=str(chain_config.database_ipc_path))  # type: ignore
     return manager

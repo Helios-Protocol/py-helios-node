@@ -37,8 +37,12 @@ class ChainProxy(BaseProxy):
     get_local_tpc_cap = sync_method('get_local_tpc_cap')
     validate_block_specification = sync_method('validate_block_specification')
     re_initialize_historical_minimum_gas_price_at_genesis = sync_method('re_initialize_historical_minimum_gas_price_at_genesis')
-    import_block_with_profiler = sync_method('import_block_with_profiler')
+    get_new_block_hash_to_test_peer_node_health = sync_method('get_new_block_hash_to_test_peer_node_health')
+
+
 
     get_vm_configuration = sync_method('get_vm_configuration')
     get_vm_class = sync_method('get_vm_class')
     get_vm_class_for_timestamp = sync_method('get_vm_class_for_block_number')
+
+    import_block_with_profiler = sync_method('import_block_with_profiler')

@@ -24,6 +24,8 @@ from .commands import (
     GetReceipts,
     NodeData,
     Receipts,
+    GetBlocks,
+    Blocks,
 )
 
 
@@ -82,6 +84,14 @@ class GetNodeDataRequest(BaseRequest[Tuple[Hash32, ...]]):
 class GetBlockBodiesRequest(BaseRequest[Tuple[Hash32, ...]]):
     cmd_type = GetBlockBodies
     response_type = BlockBodies
+
+    def __init__(self, block_hashes: Tuple[Hash32, ...]) -> None:
+        self.command_payload = block_hashes
+
+
+class GetBlocksRequest(BaseRequest[Tuple[Hash32, ...]]):
+    cmd_type = GetBlocks
+    response_type = Blocks
 
     def __init__(self, block_hashes: Tuple[Hash32, ...]) -> None:
         self.command_payload = block_hashes

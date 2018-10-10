@@ -111,6 +111,12 @@ class InvalidHeadRootTimestamp(PyEVMError):
     """
     pass
 
+class NoChronologicalBlocks(PyEVMError):
+    """
+    Raised When there are no new blocks within the chronological block windows
+    """
+    pass
+
 class ParentNotFound(HeaderNotFound):
     """
     Raised when the parent of a given block does not exist.

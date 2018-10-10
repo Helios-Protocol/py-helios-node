@@ -25,7 +25,10 @@ from helios.protocol.common.types import (
     ReceiptsByBlock,
     ReceiptsBundles,
 )
-from helios.rlp_templates.hls import BlockBody
+from helios.rlp_templates.hls import (
+    BlockBody,
+    P2PBlock,
+)
 
 from .normalizers import (
     GetBlockBodiesNormalizer,
@@ -37,26 +40,31 @@ from .requests import (
     GetBlockHeadersRequest,
     GetNodeDataRequest,
     GetReceiptsRequest,
+    GetBlocksRequest,
+
 )
 from .trackers import (
     GetBlockHeadersTracker,
     GetBlockBodiesTracker,
     GetNodeDataTracker,
-    GetReceiptsTracker
+    GetReceiptsTracker,
+    GetBlocksTracker
 )
 from .validators import (
     GetBlockBodiesValidator,
     GetBlockHeadersValidator,
     GetNodeDataValidator,
     ReceiptsValidator,
+    GetBlocksValidator,
 )
+
+
 
 BaseGetBlockHeadersExchange = BaseExchange[
     Dict[str, Any],
     Tuple[BlockHeader, ...],
     Tuple[BlockHeader, ...],
 ]
-
 
 class GetBlockHeadersExchange(BaseGetBlockHeadersExchange):
     _normalizer = NoopNormalizer[Tuple[BlockHeader, ...]]()
@@ -155,3 +163,37 @@ class GetBlockBodiesExchange(BaseGetBlockBodiesExchange):
             noop_payload_validator,
             timeout,
         )
+
+
+
+BaseGetBlocksExchange = BaseExchange[
+    Tuple[Hash32, ...], #parameter types for request_class
+    Tuple[P2PBlock, ...], #type that rlp returns
+    Tuple[P2PBlock, ...], #type that the normalizer returns
+]
+
+#if rlp and normalizer return same type, use NoobNormalizer. It does nothing.
+
+
+class GetBlocksExchange(BaseGetBlocksExchange):
+    _normalizer = NoopNormalizer[Tuple[P2PBlock, ...]]()
+    request_class = GetBlocksRequest
+    tracker_class = GetBlocksTracker
+
+    async def __call__(  # type: ignore
+            self,
+            block_hashes: Tuple[Hash32, ...],
+            timeout: float = None) -> Tuple[P2PBlock, ...]:
+
+        validator = GetBlocksValidator(block_hashes)
+        request = self.request_class(block_hashes)
+
+        return await self.get_result(
+            request,
+            self._normalizer,
+            validator,
+            noop_payload_validator,
+            timeout,
+        )
+
+

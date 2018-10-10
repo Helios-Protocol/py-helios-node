@@ -23,7 +23,10 @@ from hvm.constants import (
 )
 
 from helios.protocol.common.peer import ChainInfo
-from helios.rlp_templates.hls import BlockBody
+from helios.rlp_templates.hls import (
+    BlockBody,
+    P2PBlock,
+)
 
 from .commands import (
     BlockBodies,
@@ -54,8 +57,9 @@ from .commands import (
     ChronologicalBlockWindow,
     GetMinGasParameters,
     MinGasParameters,
-    GetChainSegment
-
+    GetChainSegment,
+    GetBlocks,
+    Blocks,
 )
 from .constants import (
     MAX_HEADERS_FETCH,
@@ -77,7 +81,8 @@ class HLSProtocol(Protocol):
         ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash,
         GetWalletAddressVerification, WalletAddressVerification,
         GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain, GetChronologicalBlockWindow,
-        ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters, GetChainSegment]
+        ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters, GetChainSegment, GetBlocks,
+        Blocks]
     cmd_length = 40
     logger = logging.getLogger("hp2p.hls.HLSProtocol")
 
@@ -296,3 +301,10 @@ class HLSProtocol(Protocol):
             'hist_min_allowed_gas_price': hist_min_allowed_gas_price}
         header, body = cmd.encode(data)
         self.send(header, body)
+
+    def send_blocks(self, list_of_blocks: List[P2PBlock]) -> None:
+        cmd = Blocks(self.cmd_id_offset)
+        data = list_of_blocks
+        header, body = cmd.encode(data)
+        self.send(header, body)
+
