@@ -78,8 +78,7 @@ class HLSProtocol(Protocol):
         GetBlockBodies, BlockBodies, NewBlock, NewBlock, NewBlock,
         NewBlock, NewBlock, NewBlock, GetNodeData, NodeData,
         GetReceipts, Receipts, GetChainHeadTrieBranch, ChainHeadTrieBranch, GetChainHeadRootHashTimestamps,
-        ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash,
-        GetWalletAddressVerification, WalletAddressVerification,
+        ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification,
         GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain, GetChronologicalBlockWindow,
         ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters, GetChainSegment, GetBlocks,
         Blocks]

@@ -21,6 +21,7 @@ from eth_bloom import (
 
 from eth_utils import (
     to_tuple,
+    encode_hex,
 )
 
 from eth_hash.auto import keccak
@@ -30,6 +31,7 @@ from hvm.constants import (
     MAX_PREV_HEADER_DEPTH,
     MAX_UNCLES,
     MIN_TIME_BETWEEN_BLOCKS,
+    ZERO_HASH32,
 )
 from hvm.db.trie import make_trie_root_and_nodes
 from hvm.db.chain import BaseChainDB  # noqa: F401
@@ -72,6 +74,7 @@ from hvm.vm.message import (
 from hvm.vm.state import BaseState  # noqa: F401
 from eth_typing import (
     Hash32,
+    Address,
 )
 from eth_keys.datatypes import(
         BaseKey,
@@ -79,6 +82,9 @@ from eth_keys.datatypes import(
         PrivateKey
 )
 from hvm.utils.rlp import convert_rlp_to_correct_class
+from hvm.rlp.consensus import StakeRewardBundle
+from hvm.db.consensus import ConsensusDB
+from hvm.types import Timestamp
 
 class BaseVM(Configurable, metaclass=ABCMeta):
     block = None  # type: BaseBlock
@@ -249,8 +255,12 @@ class VM(BaseVM):
         - ``block_class``: The :class:`~hvm.rlp_templates.blocks.Block` class for blocks in this VM ruleset.
         - ``_state_class``: The :class:`~hvm.vm.state.State` class used by this VM for execution.
     """
-    def __init__(self, header, chaindb, wallet_address, private_key: BaseKey, network_id):
+    state: BaseState = None
+
+
+    def __init__(self, header:BlockHeader, chaindb: BaseChainDB, consensus_db: ConsensusDB, wallet_address:Address, private_key: BaseKey, network_id: int):
         self.chaindb = chaindb
+        self.consensus_db = consensus_db
         self.wallet_address = wallet_address
         self.private_key = private_key
         self.network_id = network_id
@@ -330,10 +340,6 @@ class VM(BaseVM):
                     raise ReceivableTransactionNotFound()
 
 
-        # print("todo, separate send and receive and send the correct parameters.")
-        # print("TODO HERE: If receive tx: need to check if the transaction is in account. if it does, then continue. If not, (check if tx exists in chaindb. If does, then raise "
-        #       "error. Then check if the send block hash exists, if it does then error.)")
-
         #we assume past this point that, if it is a receive transaction, the send transaction exists in account
         computation = self.state.apply_transaction(send_transaction, caller_chain_address, receive_transaction, validate = validate)
         if validate:
@@ -347,7 +353,19 @@ class VM(BaseVM):
             return new_header, receipt, computation
         else:
             return None, None, computation
-        
+
+    def _apply_reward_bundle(self, reward_bundle: StakeRewardBundle, block_timestamp: Timestamp, wallet_address: Address = None) -> None:
+
+        if wallet_address is None:
+            wallet_address = self.wallet_address
+
+        self.consensus_db.validate_reward_bundle(reward_bundle, chain_address=wallet_address, block_timestamp = block_timestamp)
+
+        self.state.apply_reward_bundle(reward_bundle, wallet_address)
+
+
+
+
     def execute_bytecode(self,
                          origin,
                          gas_price,
@@ -443,12 +461,16 @@ class VM(BaseVM):
     # Mining
     #
 
-
     def import_block(self, block, *args, **kwargs):
         """
         Import the given block to the chain.
         """
-        if not isinstance(block, self.get_queue_block_class()):
+        if isinstance(block, self.get_queue_block_class()):
+            is_queue_block = True
+            block_timestamp = int(time.time())
+        else:
+            is_queue_block = False
+            block_timestamp = block.header.timestamp
             if block.sender != self.wallet_address:
                 raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
             
@@ -476,7 +498,11 @@ class VM(BaseVM):
         
         #then run all receive transactions
         last_header, receive_receipts = self._apply_all_transactions(block.receive_transactions, last_header, self.wallet_address)
-        
+
+        if block.reward_bundle is not None:
+            self._apply_reward_bundle(block.reward_bundle, block_timestamp, self.wallet_address)
+
+
         #then combine
         receipts.extend(receive_receipts)
         
@@ -492,10 +518,13 @@ class VM(BaseVM):
             self.block.header,
             block.receive_transactions
         )
-        
-        
 
-        
+        self.block = self.set_block_reward_hash(
+            self.block,
+            self.block.header,
+            block.reward_bundle
+        )
+
         
         #TODO: find out if this packing is nessisary
         packed_block = self.pack_block(self.block, *args, **kwargs)
@@ -509,9 +538,12 @@ class VM(BaseVM):
             """
             #update timestamp now.
             self.logger.debug("setting timestamp of block to {}".format(int(time.time())))
+            account_balance = self.state.account_db.get_balance(self.wallet_address)
+            self.logger.debug("setting account_balance of block to {}".format(account_balance))
             packed_block = packed_block.copy(
                 header=packed_block.header.copy(
-                    timestamp=int(time.time())
+                    timestamp=block_timestamp,
+                    account_balance=account_balance,
                 ),
             )
             if self.private_key is None:
@@ -519,8 +551,7 @@ class VM(BaseVM):
             self.logger.debug("signing block")
             packed_block = packed_block.as_complete_block(self.private_key, self.network_id)
             
-        
-        
+
         #save all send transactions in the state as receivable
         self.save_transactions_as_receivable(packed_block.header.hash, self.block.transactions)
         
@@ -528,7 +559,7 @@ class VM(BaseVM):
         # Perform validation
         self.validate_block(packed_block)
         
-        self.state.account_db.persist(save_account_hash = True, wallet_address = self.wallet_address)
+        #state is persisted from chain after ensurign block unchanged
         
         return packed_block
     
@@ -590,7 +621,22 @@ class VM(BaseVM):
                 
         self.chaindb.persist_trie_data_dict(kv_nodes)
         return root_hash, kv_nodes
-    
+
+
+    def set_block_reward_hash(self, block: BaseBlock, header:BlockHeader, reward_bundle: StakeRewardBundle) -> BaseBlock:
+        if reward_bundle is None:
+            reward_hash = ZERO_HASH32
+        else:
+            reward_hash = reward_bundle.hash
+
+        return block.copy(
+            reward_bundle=reward_bundle,
+            header=header.copy(
+                reward_hash=reward_hash
+            ),
+        )
+
+
     def set_block_transactions(self, base_block, new_header, transactions, receipts):
         tx_root_hash, tx_kv_nodes = self.save_items_to_db_as_trie(transactions)
         receipt_root_hash, receipt_kv_nodes = self.save_items_to_db_as_trie(receipts)
@@ -739,7 +785,7 @@ class VM(BaseVM):
         else:
             return cls.block_conflict_message_class
     
-    @classmethod    
+    @classmethod
     def create_genesis_block(cls):
         block = cls.get_queue_block_class()
         genesis_block = block.make_genesis_block()
@@ -870,6 +916,22 @@ class VM(BaseVM):
             raise ValidationError(
                 "Block's receive transaction_root ({0}) does not match expected value: {1}".format(
                     block.header.receive_transaction_root, re_tx_root_hash))
+
+        if block.reward_bundle is None:
+            reward_bundle_hash = ZERO_HASH32
+        else:
+            reward_bundle_hash = block.reward_bundle.hash
+
+        if reward_bundle_hash != block.header.reward_hash:
+            raise ValidationError(
+                "Block's reward hash ({0}) does not match expected value: {1}".format(
+                    encode_hex(block.header.reward_hash), encode_hex(reward_bundle_hash)))
+
+
+        # check that the block header balance is correct
+        actual_balance = self.state.account_db.get_balance(block.sender)
+        if block.header.account_balance != actual_balance:
+            raise ValidationError("Block header balance is incorrect. Got {}, expected {}".format(block.header.account_balance, actual_balance))
 
     #
     # State

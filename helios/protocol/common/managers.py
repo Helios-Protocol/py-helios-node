@@ -97,6 +97,7 @@ class ResponseCandidateStream(
             )
 
         try:
+
             self._request(request)
             while self._is_pending():
                 timeout_remaining = max(0, timeout - (time.perf_counter() - start_at))
@@ -169,6 +170,7 @@ class ResponseCandidateStream(
             # linkage between the lock and this method are loose this sanity
             # check seems appropriate.
             raise Exception("Invariant: cannot issue a request without an acquired lock")
+
 
         self._peer.sub_proto.send_request(request)
 
@@ -256,6 +258,7 @@ class ExchangeManager(Generic[TRequestPayload, TResponsePayload, TResult]):
                 raise PeerConnectionLost(
                     f"Response stream closed before sending request to {self._peer}"
                 )
+
 
         stream = self._response_stream
 

@@ -243,6 +243,4 @@ class GetBlocks(Command):
 
 class Blocks(Command):
     _cmd_id = 35
-    structure = [
-        ('blocks', sedes.CountableList(P2PBlock))
-        ]
+    structure = sedes.CountableList(P2PBlock)

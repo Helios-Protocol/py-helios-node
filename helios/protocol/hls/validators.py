@@ -98,6 +98,9 @@ class GetBlockBodiesValidator(BaseValidator[BlockBodyBundles]):
 
 class GetBlocksValidator(BaseValidator[Tuple[P2PBlock, ...]]):
     def __init__(self, block_hashes: Tuple[Hash32, ...]) -> None:
+        #todo remove this  to optimize speed later
+        if not isinstance(block_hashes, tuple):
+            raise ValueError("GetBlocks requires a tuple for block_hashes")
         self.block_hashes = block_hashes
 
     def validate_result(self, response: Tuple[P2PBlock, ...]) -> None:

@@ -37,6 +37,14 @@ class BlockOnWrongChain(PyEVMError):
     """
     pass
 
+
+class RewardProofSenderBlockMissing(PyEVMError):
+    """
+    Raised when a reward block is imported with provided proof from peers, but we don't have an up to date peer chain yet
+    so we cannot verify the proof. Need to safe the block as unprocessed until we download the peer chain.
+    """
+    pass
+
 class NoLocalRootHashTimestamps(PyEVMError):
     """
     Raised when there are no local root hash timestamps
@@ -89,6 +97,18 @@ class ReceivableTransactionNotFound(PyEVMError):
 class HistoricalNetworkTPCMissing(PyEVMError):
     """
     Raised when a historical network tpc is missing for a certain timestamp
+    """
+    pass
+
+class NotEnoughProofsOrStakeForRewardType2Proof(PyEVMError):
+    """
+    Raised when all of the proof we have for a reward type 2 does not meet the minimum requirement
+    """
+    pass
+
+class NotEnoughDataForHistoricalMinGasPriceCalculation(PyEVMError):
+    """
+    Raised when there is not enough historical TPC to perform a calculation. Can occur when the genesis node just starts
     """
     pass
 

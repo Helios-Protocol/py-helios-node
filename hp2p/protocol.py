@@ -152,6 +152,7 @@ class Protocol:
     _commands: List[Type[Command]] = []
 
     def __init__(self, peer: 'BasePeer', cmd_id_offset: int) -> None:
+        self.logger.debug('Starting Protocol')
         self.peer = peer
         self.cmd_id_offset = cmd_id_offset
         self.commands = [cmd_class(cmd_id_offset) for cmd_class in self._commands]

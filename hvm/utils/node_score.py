@@ -33,13 +33,20 @@ EIP155_CHAIN_ID_OFFSET = 35
 V_OFFSET = 27
 
 
+# def get_message_from_node_staking_score(node_staking_score: 'NodeStakingScore', chain_id:int = None) -> bytes:
+#     if chain_id is None:
+#         chain_id = node_staking_score.chain_id
+#
+#     transaction_parts = rlp.decode(rlp.encode(node_staking_score), use_list=True)
+#
+#     transaction_parts_for_signature = transaction_parts[:-3] + [int_to_big_endian(chain_id), b'', b'']
+#
+#     message = rlp.encode(transaction_parts_for_signature)
+#     return message
+
 
 def create_node_staking_score_signature(node_staking_score: 'NodeStakingScore', private_key, chain_id):
-    transaction_parts = rlp.decode(rlp.encode(node_staking_score), use_list = True)
-
-    transaction_parts_for_signature = transaction_parts[:-3] + [int_to_big_endian(chain_id), b'', b'']
-
-    message = rlp.encode(transaction_parts_for_signature)
+    message = node_staking_score.get_message_for_signing(chain_id)
     signature = private_key.sign_msg(message)
 
     canonical_v, r, s = signature.vrs
@@ -56,12 +63,8 @@ def validate_node_staking_score_signature(node_staking_score: 'NodeStakingScore'
     canonical_v = v - 27
     vrs = (canonical_v, node_staking_score.r, node_staking_score.s)
     signature = keys.Signature(vrs=vrs)
-    
-    transaction_parts = rlp.decode(rlp.encode(node_staking_score), use_list = True)
-    transaction_parts_for_signature = (
-        transaction_parts[:-3] + [int_to_big_endian(node_staking_score.chain_id), b'', b'']
-    )
-    message = rlp.encode(transaction_parts_for_signature)
+
+    message = node_staking_score.get_message_for_signing()
     
     try:
         public_key = signature.recover_public_key_from_msg(message)
@@ -82,12 +85,8 @@ def extract_node_staking_score_sender(node_staking_score: 'NodeStakingScore') ->
     canonical_v = v - 27
     vrs = (canonical_v, node_staking_score.r, node_staking_score.s)
     signature = keys.Signature(vrs=vrs)
-    
-    transaction_parts = rlp.decode(rlp.encode(node_staking_score))
-    transaction_parts_for_signature = (
-        transaction_parts[:-3] + [int_to_big_endian(node_staking_score.chain_id), b'', b'']
-    )
-    message = rlp.encode(transaction_parts_for_signature)
+
+    message = node_staking_score.get_message_for_signing()
     
     public_key = signature.recover_public_key_from_msg(message)
     sender = public_key.to_canonical_address()

@@ -9,17 +9,29 @@ from helios.utils.mp import (
     async_method,
     sync_method,
 )
+from hvm.rlp.consensus import NodeStakingScore
+
+from eth_typing import Address, BlockNumber
+
+from eth_keys.datatypes import PrivateKey
 
 class AsyncConsensusDB(ConsensusDB):
-    pass
+
+    async def coro_get_signed_peer_score(self, private_key: PrivateKey,
+                              peer_wallet_address: Address,
+                              after_block_number: BlockNumber = None,
+                              ) -> NodeStakingScore:
+        raise NotImplementedError()
+
     
     
 
 class ConsensusDBProxy(BaseProxy):
 
-    # coro_get_historical_root_hashes = async_method('get_historical_root_hashes')
-    #
-    #
+    coro_get_signed_peer_score = async_method('get_signed_peer_score')
+
     save_health_request = sync_method('save_health_request')
+    get_current_peer_node_health = sync_method('get_current_peer_node_health')
+    get_signed_peer_score = sync_method('get_signed_peer_score')
 
     get_timestamp_of_last_health_request = sync_method('get_timestamp_of_last_health_request')

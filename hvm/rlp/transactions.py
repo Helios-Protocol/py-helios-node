@@ -9,6 +9,7 @@ from typing import (
 import rlp
 from rlp.sedes import (
     big_endian_int,
+    f_big_endian_int,
     binary,
 )
 
@@ -63,7 +64,7 @@ class BaseTransactionCommonMethods:
 
 class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
     fields = [
-        ('nonce', big_endian_int),
+        ('nonce', f_big_endian_int),
         ('gas_price', big_endian_int),
         ('gas', big_endian_int),
         ('to', address),
@@ -77,6 +78,8 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
     @classmethod
     def from_base_transaction(cls, transaction: 'BaseTransaction') -> 'BaseTransaction':
         return rlp.decode(rlp.encode(transaction), sedes=cls)
+
+
 
     @property
     def hash(self) -> bytes:

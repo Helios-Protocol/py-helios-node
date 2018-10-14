@@ -166,11 +166,12 @@ def main() -> None:
     log_levels['hvm'] = logging.INFO  #sets all of hvm
     log_levels['hvm.db.account.AccountDB'] = logging.INFO
     log_levels['hvm.chain'] = logging.DEBUG
-    log_levels['hvm.chain.chain.Chain'] = logging.DEBUG
+    #log_levels['hvm.chain.chain.Chain'] = logging.DEBUG
     log_levels['hvm.db.chain_head.ChainHeadDB'] = logging.INFO
-    log_levels['hvm.db.chain_db.ChainDB'] = logging.DEBUG
+    log_levels['hvm.db.chain_db.ChainDB'] = logging.INFO
+    log_levels['hvm.db.consensus'] = logging.DEBUG
 
-    log_levels['hp2p'] = logging.INFO
+    #log_levels['hp2p'] = logging.INFO
 
     log_levels['hp2p.peer'] = logging.INFO
     log_levels['hp2p.peer.PeerPool'] = logging.INFO
@@ -178,17 +179,23 @@ def main() -> None:
     log_levels['hp2p.kademlia.KademliaProtocol'] = logging.INFO
     log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.INFO
     log_levels['hp2p.discovery.DiscoveryService'] = logging.INFO
-    log_levels['hp2p.server.Server'] = logging.DEBUG
     log_levels['hp2p.nat.UPnPService'] = logging.CRITICAL
     log_levels['connectionpool'] = logging.CRITICAL
+    log_levels['hp2p.protocol'] = logging.DEBUG
 
-    #log_levels['helios'] = logging.INFO  # sets all of hvm
-    log_levels['helios.rpc.ipc'] = logging.DEBUG
-    log_levels['helios.Node'] = logging.DEBUG
-    log_levels['helios.sync.full.chain'] = logging.DEBUG
+    #log_levels['helios'] = logging.INFO
+    log_levels['helios.rpc.ipc'] = logging.INFO
+    log_levels['helios.Node'] = logging.INFO
+    log_levels['helios.sync'] = logging.DEBUG
+    log_levels['helios.protocol'] = logging.INFO
+    log_levels['helios.protocol.common'] = logging.DEBUG
 
     log_levels['hp2p.hls'] = logging.INFO
     log_levels['helios.server.FullServer'] = logging.DEBUG
+
+    log_levels['Action'] = logging.INFO
+    log_levels['Device'] = logging.INFO
+    log_levels['helios.extensibility'] = logging.INFO
 
 
 

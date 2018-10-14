@@ -56,13 +56,14 @@ from hvm.constants import (
 
 from hvm.chains import AsyncChain
 from helios.db.chain import AsyncChainDB
-#from hvm.db.chain import AsyncChainDB
+from helios.db.consensus import AsyncConsensusDB
 from hvm.db.trie import make_trie_root_and_nodes
 from hvm.exceptions import (
     HeaderNotFound, 
     NoLocalRootHashTimestamps, 
     LocalRootHashNotInConsensus,
     NoChronologicalBlocks,
+    NotEnoughDataForHistoricalMinGasPriceCalculation,
 )
 
 from hvm.rlp.headers import BlockHeader
@@ -207,10 +208,10 @@ class Consensus(BaseService, PeerSubscriber):
                  bootstrap_nodes,
                  token: CancelToken = None) -> None:
         super().__init__(token)
-        self.chain = context.chain
+        self.chain: AsyncChain = context.chain
         self.chaindb = context.chaindb
         self.base_db = context.base_db
-        self.consensus_db = context.consensus_db
+        self.consensus_db: AsyncConsensusDB = context.consensus_db
         self.chain_head_db = context.chain_head_db
         self.peer_pool = peer_pool
         self.chain_config = context.chain_config
@@ -593,6 +594,7 @@ class Consensus(BaseService, PeerSubscriber):
         It provides a measure of how well the node is doing in terms of adding to the health of the network
         :return:
         '''
+        await asyncio.sleep(5)
         self.logger.debug("Running peer node health syncer")
         while self.is_operational:
             #make sure we havent don't a request within the past TIME_BETWEEN_PEER_NODE_HEALTH_CHECK
@@ -601,20 +603,32 @@ class Consensus(BaseService, PeerSubscriber):
             timestamp_rounded = int(int((time.time()+ROUND_TRIP_TIMEOUT) / (TIME_BETWEEN_PEER_NODE_HEALTH_CHECK)) * (TIME_BETWEEN_PEER_NODE_HEALTH_CHECK))
             time_of_last_request = self.consensus_db.get_timestamp_of_last_health_request()
 
-            if timestamp_rounded >= time_of_last_request + TIME_BETWEEN_PEER_NODE_HEALTH_CHECK:
+            #todo remove: remove the true here when done testing
+            if True or timestamp_rounded >= time_of_last_request + TIME_BETWEEN_PEER_NODE_HEALTH_CHECK:
                 # choose random new block to ask all peers for
                 try:
                     newish_block_hash = self.chain.get_new_block_hash_to_test_peer_node_health()
                 except NoChronologicalBlocks:
                     self.logger.debug("Skipping this round of peer node health checks because we have no blocks to ask for")
                 else:
-                    for peer in self.peer_pool.peers:
-                        #this will sync will all peers at the same time
-                        self.run_task(self.sync_peer_node_health(peer, newish_block_hash))
+                    if len(self.peer_pool) > 0:
+                        #make sure we have some peers to ask
+                        for peer in self.peer_pool.peers:
+                            #this will sync will all peers at the same time
+                            self.run_task(self.sync_peer_node_health(peer, newish_block_hash))
+
+                        #todo remove: change this to TIME_BETWEEN_PEER_NODE_HEALTH_CHECK after testing
+                        await asyncio.sleep(5)
+                        continue
+                    else:
+                        #we didn't have any connected nodes. This will occur if we just started. Lets wait a few seconds and try again.
+                        self.logger.debug("No nodes to send peer node health request to. Will retry in a few seconds")
+                        await asyncio.sleep(5)
+                        continue
             else:
                 self.logger.debug("Already did a peer node health check recently. Skipping this health check period.")
 
-            await asyncio.sleep(TIME_BETWEEN_PEER_NODE_HEALTH_CHECK)
+
 
 
     async def sync_peer_node_health(self, peer: HLSPeer, block_hash: Hash32) -> None:
@@ -625,18 +639,27 @@ class Consensus(BaseService, PeerSubscriber):
         :param block_hash:
         :return:
         '''
+        self.logger.debug("Starting syncing peer node health with peer {}.".format(encode_hex(peer.wallet_address)))
         while True:
             try:
-                await peer.requests.get_blocks(
-                    block_hashes=(block_hash),
+                received_blocks = await peer.requests.get_blocks(
+                    block_hashes=(block_hash,),
                 )
-                self.consensus_db.save_health_request(peer.wallet_address,
-                                                      peer.requests.get_blocks.tracker.latest_response_time)
+
+                if len(received_blocks) > 0:
+                    self.logger.debug('request hash = {}, received hash = {}'.format(block_hash, received_blocks[0].header.hash))
+                    self.consensus_db.save_health_request(peer.wallet_address,
+                                                          response_time_in_micros = peer.requests.get_blocks.tracker.latest_response_time*1000*1000)
+                else:
+                    self.logger.debug('Peer health request didnt send back any blocks')
+                    self.consensus_db.save_health_request(peer.wallet_address)
                 break
             except PeerConnectionLost:
+                self.logger.debug('Peer health request PeerConnectionLost error')
                 self.consensus_db.save_health_request(peer.wallet_address)
                 break
             except TimeoutError:
+                self.logger.debug('Peer health request TimeoutError error')
                 self.consensus_db.save_health_request(peer.wallet_address)
                 break
             except ValidationError as e:
@@ -647,6 +670,9 @@ class Consensus(BaseService, PeerSubscriber):
                 continue
             except Exception as e:
                 raise e
+
+        self.logger.debug("Finished syncing peer node health with peer {}.".format(encode_hex(peer.wallet_address)))
+        self.logger.debug(self.consensus_db.get_current_peer_node_health(peer.wallet_address))
 
 
 
@@ -828,7 +854,16 @@ class Consensus(BaseService, PeerSubscriber):
             self.logger.debug("sync_min_gas_price_system, min_gas_system_ready = True")
             average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
             if average_network_tpc_cap is not None:
-                self.chain.update_current_network_tpc_capability(average_network_tpc_cap, update_min_gas_price = True)
+                try:
+                    self.chain.update_current_network_tpc_capability(average_network_tpc_cap, update_min_gas_price = True)
+                except NotEnoughDataForHistoricalMinGasPriceCalculation:
+                    self.logger.debug("We do not have enough data to calculate min allowed gas. This will occur if our database is not synced yet.")
+                    test_1 = self.chaindb.load_historical_network_tpc_capability()
+                    test_2 = self.chaindb.load_historical_minimum_gas_price()
+                    test_3 = self.chaindb.load_historical_tx_per_centisecond()
+                    self.logger.debug("net_tpc_cap = {}".format(test_1))
+                    self.logger.debug("min_gas_price = {}".format(test_2))
+                    self.logger.debug("tpc = {}".format(test_3))
 
             #TODO. here we just ask for the last centisecond.
             for peer in self.peer_pool.peers:

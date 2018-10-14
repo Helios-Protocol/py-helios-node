@@ -184,6 +184,7 @@ class FastChainSyncer(BaseService, PeerSubscriber):
         commands.GetChronologicalBlockWindow,
         commands.ChronologicalBlockWindow,
         commands.GetChainSegment,
+        commands.GetBlocks,
     }
 
 
@@ -970,7 +971,7 @@ class RegularChainSyncer(FastChainSyncer):
         hashes = msg
         blocks_to_return = []
         for hash in hashes:
-            new_block = await self.chaindb.get_block_by_hash(hash, P2PBlock)
+            new_block = cast(P2PBlock, await self.chaindb.coro_get_block_by_hash(hash, P2PBlock))
             blocks_to_return.append(new_block)
 
         peer.sub_proto.send_blocks(blocks_to_return)

@@ -19,6 +19,7 @@ from hvm.constants import (
     CREATE_CONTRACT_ADDRESS,
 )
 
+from hvm.exceptions import ValidationError
 
 from hvm.validation import (
     validate_lt_secpk1n2,
@@ -54,10 +55,22 @@ class HeliosTestnetTransaction(BaseTransaction):
     _sender = None
     _valid_transaction = None
 
+    def get_message_for_signing(self, chain_id: int = None) -> bytes:
+        if chain_id is None:
+            chain_id = self.chain_id
+
+        transaction_parts = rlp.decode(rlp.encode(self), use_list=True)
+
+        transaction_parts_for_signature = transaction_parts[:-3] + [int_to_big_endian(chain_id), b'', b'']
+
+        message = rlp.encode(transaction_parts_for_signature)
+        return message
+
     def check_signature_validity(self):
         if self._cache:
             if self._valid_transaction is not None:
-                return self._valid_transaction
+                if not self._valid_transaction:
+                    raise ValidationError()
             else:
                 self._valid_transaction = False
                 self._sender = validate_transaction_signature(self, return_sender = True)

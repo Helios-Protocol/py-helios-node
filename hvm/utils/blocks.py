@@ -42,20 +42,20 @@ def extract_signature_v(v: int) -> int:
     else:
         return V_OFFSET
 
-def get_message_from_block_header(block_header: BaseBlockHeader, chain_id:int = None) -> bytes:
-    if chain_id is None:
-        chain_id = block_header.chain_id
-
-    header_parts = rlp.decode(rlp.encode(block_header, sedes = block_header.__class__), use_list=True)
-    header_parts_for_signature = (
-            header_parts[:3] + [header_parts[5]] + header_parts[8:10] + [int_to_big_endian(chain_id), b'', b'']
-    )
-    message = rlp.encode(header_parts_for_signature)
-    return message
+# def get_message_from_block_header(block_header: BaseBlockHeader, chain_id:int = None) -> bytes:
+#     if chain_id is None:
+#         chain_id = block_header.chain_id
+#
+#     header_parts = rlp.decode(rlp.encode(block_header, sedes = block_header.__class__), use_list=True)
+#     header_parts_for_signature = (
+#             header_parts[:3] + [header_parts[5]] + header_parts[8:11] + [header_parts[12]] + [int_to_big_endian(chain_id), b'', b'']
+#     )
+#     message = rlp.encode(header_parts_for_signature)
+#     return message
 
 
 def create_block_header_signature(block_header: BaseBlockHeader, private_key, chain_id):
-    message = get_message_from_block_header(block_header, chain_id)
+    message = block_header.get_message_for_signing(chain_id)
     
     signature = private_key.sign_msg(message)
 
@@ -67,16 +67,14 @@ def create_block_header_signature(block_header: BaseBlockHeader, private_key, ch
 
 
 def validate_block_header_signature(block_header: BaseBlockHeader) -> None:
-    if is_eip_155_signed_block_header(block_header):
-        v = extract_signature_v(block_header.v)
-    else:
-        v = block_header.v
+    v = extract_signature_v(block_header.v)
 
     canonical_v = v - 27
+
     vrs = (canonical_v, block_header.r, block_header.s)
     signature = keys.Signature(vrs=vrs)
 
-    message = get_message_from_block_header(block_header)
+    message = block_header.get_message_for_signing()
     
     try:
         public_key = signature.recover_public_key_from_msg(message)
@@ -88,13 +86,10 @@ def validate_block_header_signature(block_header: BaseBlockHeader) -> None:
 
 
 def extract_block_header_sender(block_header: BaseBlockHeader) -> bytes:
-    if is_eip_155_signed_block_header(block_header):
-        if is_even(block_header.v):
-            v = 28
-        else:
-            v = 27
+    if is_even(block_header.v):
+        v = 28
     else:
-        v = block_header.v
+        v = 27
 
     r, s = block_header.r, block_header.s
 
@@ -102,7 +97,7 @@ def extract_block_header_sender(block_header: BaseBlockHeader) -> bytes:
     vrs = (canonical_v, r, s)
     signature = keys.Signature(vrs=vrs)
 
-    message = get_message_from_block_header(block_header)
+    message = block_header.get_message_for_signing()
     
     public_key = signature.recover_public_key_from_msg(message)
     sender = public_key.to_canonical_address()

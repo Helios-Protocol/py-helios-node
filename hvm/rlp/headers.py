@@ -19,6 +19,7 @@ from rlp.sedes import (
     binary,
 )
 
+
 from cytoolz import (
     accumulate,
     sliding_window,
@@ -29,6 +30,7 @@ from eth_typing import (
 )
 from eth_utils import (
     to_dict,
+    int_to_big_endian,
 )
 
 from eth_hash.auto import keccak
@@ -91,7 +93,9 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
         ('gas_used', big_endian_int),
         ('timestamp', big_endian_int),
         ('extra_data', binary),
+        ('reward_hash', hash32),
         ('account_hash', hash32),
+        ('account_balance', big_endian_int), #balance of account after transactions have occurred
         ('v', big_endian_int),
         ('r', big_endian_int),
         ('s', big_endian_int),
@@ -106,6 +110,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
                  block_number: int,
                  gas_limit: int,
                  account_hash: Hash32=ZERO_HASH32,
+                 account_balance: int = 0,
                  timestamp: int=None,
                  parent_hash: Hash32=ZERO_HASH32,
                  transaction_root: Hash32=BLANK_ROOT_HASH,
@@ -114,6 +119,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
                  bloom: int=0,
                  gas_used: int=0,
                  extra_data: bytes=b'',
+                 reward_hash: bytes = ZERO_HASH32,
                  v: int=0,
                  r: int=0,
                  s: int=0) -> None:
@@ -123,6 +129,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
                  block_number,
                  gas_limit,
                  account_hash = ZERO_HASH32,
+                 account_balance = 0,
                  timestamp=None,
                  parent_hash=ZERO_HASH32,
                  transaction_root=BLANK_ROOT_HASH,
@@ -131,6 +138,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
                  bloom=0,
                  gas_used=0,
                  extra_data=b'',
+                 reward_hash = ZERO_HASH32,
                  v=0,
                  r=0,
                  s=0):
@@ -147,7 +155,9 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
             gas_used=gas_used,
             timestamp=timestamp,
             extra_data=extra_data,
+            reward_hash=reward_hash,
             account_hash=account_hash,
+            account_balance = account_balance,
             v=v,
             r=r,
             s=s,
@@ -173,7 +183,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
         if self._micro_header_hash is None:
             header_parts = rlp.decode(rlp.encode(self), use_list=True)
             header_parts_for_hash = (
-                    header_parts[:3] + [header_parts[5]] + header_parts[8:10] + header_parts[-3:]
+                    header_parts[:3] + [header_parts[5]] + header_parts[8:11] + [header_parts[12]] + header_parts[-3:]
             )
             self._micro_header_hash = keccak(rlp.encode(header_parts_for_hash))
         return self._micro_header_hash
@@ -191,7 +201,8 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
                     transaction_root: bytes=None,
                     receive_transaction_root: bytes=None,
                     receipt_root: bytes=None,
-                    account_hash: bytes=ZERO_HASH32) -> 'BaseBlockHeader':
+                    account_hash: bytes=ZERO_HASH32,
+                    reward_hash: bytes = None) -> 'BaseBlockHeader':
         """
         Initialize a new block header with the `parent` header as the block's
         parent hash.
@@ -208,6 +219,8 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
             header_kwargs['account_hash'] = account_hash
         if extra_data is not None:
             header_kwargs['extra_data'] = extra_data
+        if reward_hash is not None:
+            header_kwargs['reward_hash'] = reward_hash
         if transaction_root is not None:
             header_kwargs['transaction_root'] = transaction_root
         if receive_transaction_root is not None:
@@ -231,6 +244,19 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
     #
     # Signature and Sender
     #
+
+    def get_message_for_signing(self, chain_id: int = None) -> bytes:
+        if chain_id is None:
+            chain_id = self.chain_id
+
+        header_parts = rlp.decode(rlp.encode(self, sedes=self.__class__), use_list=True)
+        header_parts_for_signature = (
+                header_parts[:3] + [header_parts[5]] + header_parts[8:11] + [header_parts[12]] + [
+            int_to_big_endian(chain_id), b'', b'']
+        )
+        message = rlp.encode(header_parts_for_signature)
+        return message
+
     @property
     def is_signature_valid(self) -> bool:
         try:

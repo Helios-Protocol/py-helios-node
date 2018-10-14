@@ -22,25 +22,30 @@ from hvm.rlp.receipts import (
 from hvm import constants
 import time
 
+from hvm.rlp.consensus import stake_reward_bundle_or_none, StakeRewardBundle
+
 class HeliosTestnetBlock(BaseBlock):
     transaction_class = HeliosTestnetTransaction
     receive_transaction_class = HeliosTestnetReceiveTransaction
     header_class = BlockHeader
+    reward_bundle_class = StakeRewardBundle
 
     fields = [
         ('header', BlockHeader),
         ('transactions', CountableList(transaction_class)),
-        ('receive_transactions', CountableList(receive_transaction_class))
+        ('receive_transactions', CountableList(receive_transaction_class)),
+        ('reward_bundle', stake_reward_bundle_or_none),
     ]
 
     bloom_filter = None
 
-    def __init__(self, header, transactions=None, receive_transactions=None):
+    def __init__(self, header, transactions=None, receive_transactions=None, reward_bundle = None):
         if transactions is None:
             transactions = []
             
         if receive_transactions is None:
             receive_transactions = []
+
 
         self.bloom_filter = BloomFilter(header.bloom)
 
@@ -48,6 +53,7 @@ class HeliosTestnetBlock(BaseBlock):
             header=header,
             transactions=transactions,
             receive_transactions=receive_transactions,
+            reward_bundle = reward_bundle,
         )
         # TODO: should perform block validation at this point?
 
@@ -70,11 +76,18 @@ class HeliosTestnetBlock(BaseBlock):
         return cls.transaction_class
     
     #
-    # Transaction class for this block class
+    # Receive transaction class for this block class
     #
     @classmethod
     def get_receive_transaction_class(cls):
         return cls.receive_transaction_class
+
+    #
+    # Reward bundle class for this block class
+    #
+    @classmethod
+    def get_reward_bundle_class(cls):
+        return cls.reward_bundle_class
 
     #
     # Receipts API
@@ -106,7 +119,8 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
     fields = [
         ('header', BlockHeader),
         ('transactions', CountableList(transaction_class)),
-        ('receive_transactions', CountableList(receive_transaction_class))
+        ('receive_transactions', CountableList(receive_transaction_class)),
+        ('reward_bundle', stake_reward_bundle_or_none),
     ]
     #
     # Header API
@@ -132,6 +146,7 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
                     ),
             transactions=transactions,
             receive_transactions=receive_transactions,
+            reward_bundle=None,
         )
     
     @classmethod
@@ -163,7 +178,7 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
         
         signed_header = self.header.get_signed(private_key, chain_id)
 
-        return HeliosTestnetBlock(signed_header, self.transactions, self.receive_transactions)
+        return HeliosTestnetBlock(signed_header, self.transactions, self.receive_transactions, self.reward_bundle)
 
             
            

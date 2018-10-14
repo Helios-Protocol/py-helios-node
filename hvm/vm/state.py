@@ -24,8 +24,10 @@ from hvm.utils.datatypes import (
 from hvm.constants import (
     BLANK_ROOT_HASH,
 )
-
+from hvm.rlp.consensus import StakeRewardBundle
 from typing import Union  # noqa: F401
+
+from eth_typing import Address
 
 if TYPE_CHECKING:
     from hvm.computation import (  # noqa: F401
@@ -222,6 +224,13 @@ class BaseState(Configurable, metaclass=ABCMeta):
         computation = self.execute_transaction(send_transaction, caller_chain_address, receive_transaction, validate = validate)
         
         return computation
+
+    def apply_reward_bundle(self, reward_bundle:StakeRewardBundle, wallet_address: Address) -> None:
+        total_amount = (reward_bundle.reward_type_1.amount +
+                        reward_bundle.reward_type_2.amount)
+
+        self.account_db.delta_balance(wallet_address, total_amount)
+
 
     def get_transaction_executor(self):
         return self.transaction_executor(self)

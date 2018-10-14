@@ -117,9 +117,13 @@ class SchemaV1(BaseSchema):
 
     @staticmethod
     def make_latest_reward_block_number_lookup(wallet_address: Address) -> bytes:
-        key = b'latest_reward_block_number:%b-%d' % (wallet_address)
+        key = b'latest_reward_block_number:%b' % (wallet_address)
         return key
 
     @staticmethod
     def make_latest_peer_node_health_timestamp_lookup_key() -> bytes:
         return b'latest_peer_node_health_timestamp'
+
+    @staticmethod
+    def make_reward_bundle_hash_lookup_key(reward_bundle_hash: Hash32) -> bytes:
+        return b'reward_bundle_lookup:%b' % reward_bundle_hash

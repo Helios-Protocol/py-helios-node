@@ -48,6 +48,7 @@ from hvm.constants import (
     MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH,
     MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE,
     MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP,
+    ZERO_HASH32,
 )
 from hvm.exceptions import (
     CanonicalHeadNotFound,
@@ -57,6 +58,7 @@ from hvm.exceptions import (
     JournalDbNotActivated,
     HistoricalNetworkTPCMissing,
     HistoricalMinGasPriceError,
+    NotEnoughDataForHistoricalMinGasPriceCalculation,
 )
 from hvm.db.backends.base import (
     BaseDB
@@ -77,8 +79,10 @@ from hvm.validation import (
     validate_word,
     validate_canonical_address,
     validate_centisecond_timestamp,
+    validate_is_bytes,
 )
 
+from hvm.rlp.consensus import StakeRewardBundle
 from hvm.rlp import sedes as evm_rlp_sedes
 from hvm.rlp.sedes import(
     trie_root,
@@ -146,7 +150,11 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_canonical_head(self) -> BlockHeader:
+    def get_canonical_head(self, wallet_address: Optional[Address]) -> BlockHeader:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_canonical_head_hash(self, wallet_address: Address = None) -> Hash32:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     #
@@ -171,6 +179,9 @@ class BaseChainDB(metaclass=ABCMeta):
     def persist_block(self, block: 'BaseBlock') -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
+    @abstractmethod
+    def get_block_by_hash(self, block_hash: Hash32, block_class: type('BaseBlock')) -> 'BaseBlock':
+        raise NotImplementedError("ChainDB classes must implement this method")
     #
     # Transaction API
     #
@@ -230,6 +241,20 @@ class BaseChainDB(metaclass=ABCMeta):
 
     @abstractmethod
     def get_transaction_index(self, transaction_hash: Hash32) -> Tuple[BlockNumber, int]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    #
+    # Unprocessed block API
+    #
+    @abstractmethod
+    def is_block_unprocessed(self, block_hash: Hash32) -> bool:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    #
+    # Staking and staking system related functions
+    #
+    @abstractmethod
+    def get_block_number_of_latest_reward_block(self, wallet_address: Address = None) -> BlockNumber:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     #
@@ -303,7 +328,7 @@ class ChainDB(BaseChainDB):
             cast(Hash32, canonical_head_hash),
         )
 
-    def get_canonical_head_hash(self, wallet_address = None):
+    def get_canonical_head_hash(self, wallet_address: Address = None) -> Hash32:
         if wallet_address is None:
             wallet_address = self.wallet_address
         try:
@@ -311,7 +336,7 @@ class ChainDB(BaseChainDB):
         except KeyError:
             raise CanonicalHeadNotFound("No canonical head set for this chain")
 
-    def get_block_by_hash(self, block_hash, block_class):
+    def get_block_by_hash(self, block_hash: Hash32, block_class) -> 'BaseBlock':
 
         block_header = self.get_block_header_by_hash(block_hash)
 
@@ -319,23 +344,19 @@ class ChainDB(BaseChainDB):
 
         receive_transactions = self.get_block_receive_transactions(block_header, block_class.receive_transaction_class)
 
-        output_block = block_class(block_header, send_transactions, receive_transactions)
+        reward_bundle = self.get_reward_bundle(block_header.reward_hash)
+
+        output_block = block_class(block_header, send_transactions, receive_transactions, reward_bundle)
 
         return output_block
 
-    def get_block_by_number(self, block_number, block_class, wallet_address = None):
+    def get_block_by_number(self, block_number: BlockNumber, block_class, wallet_address = None) -> 'BaseBlock':
         if wallet_address is None:
             wallet_address = self.wallet_address
 
-        block_header = self.get_canonical_block_header_by_number(block_number, wallet_address)
+        block_hash = self.get_canonical_block_hash(block_number, wallet_address)
+        return self.get_block_by_hash(block_hash, block_class)
 
-        send_transactions = self.get_block_transactions(block_header, block_class.transaction_class)
-
-        receive_transactions = self.get_block_receive_transactions(block_header, block_class.receive_transaction_class)
-
-        output_block = block_class(block_header, send_transactions, receive_transactions)
-
-        return output_block
 
 
     def get_blocks_on_chain(self, block_class,  start, end, wallet_address = None):
@@ -591,7 +612,9 @@ class ChainDB(BaseChainDB):
         '''
         new_canonical_headers = self.persist_header(block.header)
 
-
+        if block.reward_bundle is not None:
+            self.persist_reward_bundle(block.reward_bundle)
+            self.set_latest_reward_block_number(block.sender, block.number)
 
         for header in new_canonical_headers:
             for index, transaction_hash in enumerate(self.get_block_transaction_hashes(header)):
@@ -608,6 +631,9 @@ class ChainDB(BaseChainDB):
 
     def persist_non_canonical_block(self, block, wallet_address):
         self.save_header_to_db(block.header)
+
+        if block.reward_bundle is not None:
+            self.persist_reward_bundle(block.reward_bundle)
 
         self.save_block_hash_to_chain_wallet_address(block.hash, wallet_address)
 
@@ -631,7 +657,7 @@ class ChainDB(BaseChainDB):
             self.save_unprocessed_children_block_lookup(block.header.parent_hash)
 
         self.save_unprocessed_children_block_lookup_to_transaction_parents(block)
-
+        self.save_unprocessed_children_block_lookup_to_reward_proof_parents(block)
 
     def remove_block_from_unprocessed(self, block):
         '''
@@ -673,6 +699,14 @@ class ChainDB(BaseChainDB):
                 self.logger.debug("saving parent children unprocessed block lookup for block hash {}".format(encode_hex(receive_transaction.sender_block_hash)))
                 self.save_unprocessed_children_block_lookup(receive_transaction.sender_block_hash)
 
+    def save_unprocessed_children_block_lookup_to_reward_proof_parents(self, block: 'BaseBlock') -> None:
+        if block.reward_bundle is not None:
+            if block.reward_bundle.reward_type_2.amount != 0:
+                for node_staking_score in block.reward_bundle.reward_type_2.proof:
+                    if self.is_block_unprocessed(node_staking_score.head_hash_of_sender_chain) or not self.db.exists(node_staking_score.head_hash_of_sender_chain):
+                        self.logger.debug("saving parent children unprocessed block lookup for block hash {}".format(encode_hex(node_staking_score.head_hash_of_sender_chain)))
+                        self.save_unprocessed_children_block_lookup(node_staking_score.head_hash_of_sender_chain)
+
     def delete_unprocessed_children_block_lookup_to_transaction_parents_if_nessissary(self, block):
 
         for receive_transaction in block.receive_transactions:
@@ -693,7 +727,7 @@ class ChainDB(BaseChainDB):
         except KeyError:
             return False
 
-    def is_block_unprocessed(self, block_hash):
+    def is_block_unprocessed(self, block_hash: Hash32) -> bool:
         '''
         Returns True if the block is unprocessed
         '''
@@ -1228,6 +1262,26 @@ class ChainDB(BaseChainDB):
                     child_chains.update(sub_children_chain_wallet_addresses)
             return child_chains
 
+    def get_block_number_of_latest_reward_block(self, wallet_address: Address = None) -> BlockNumber:
+        if wallet_address is None:
+            wallet_address = self.wallet_address
+        validate_canonical_address(wallet_address, title="Wallet Address")
+
+        canonical_head = self.get_canonical_head(wallet_address)
+        canonical_block_number = canonical_head.block_number
+
+        if canonical_head.reward != b'':
+            return canonical_block_number
+
+        if canonical_block_number == 0:
+            return BlockNumber(0)
+
+        for i in range(canonical_block_number, -1, -1):
+            header = self.get_canonical_block_header_by_number(BlockNumber(i), wallet_address)
+            if header.reward != b'':
+                return BlockNumber(i)
+
+
     #
     # Historical minimum allowed gas price API for throttling the network
     #
@@ -1355,9 +1409,9 @@ class ChainDB(BaseChainDB):
         min_centisecond_time_between_change_in_minimum_gas = MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE
 
         if not len(historical_minimum_allowed_gas) >= min_centisecond_time_between_change_in_minimum_gas:
-            raise HistoricalMinGasPriceError('historical_minimum_allowed_gas too short. it is a lenght of {}, but should be a length of {}'.format(len(historical_minimum_allowed_gas),min_centisecond_time_between_change_in_minimum_gas))
+            raise NotEnoughDataForHistoricalMinGasPriceCalculation('historical_minimum_allowed_gas too short. it is a lenght of {}, but should be a length of {}'.format(len(historical_minimum_allowed_gas),min_centisecond_time_between_change_in_minimum_gas))
         if not len(historical_tx_per_centisecond) > average_centisecond_delay+average_centisecond_window_length:
-            raise HistoricalMinGasPriceError('historical_tx_per_centisecond too short. it is a length of {}, but should be a length of {}'.format(len(historical_tx_per_centisecond),average_centisecond_delay+average_centisecond_window_length))
+            raise NotEnoughDataForHistoricalMinGasPriceCalculation('historical_tx_per_centisecond too short. it is a length of {}, but should be a length of {}'.format(len(historical_tx_per_centisecond),average_centisecond_delay+average_centisecond_window_length))
 
 
         if not are_items_in_list_equal(historical_minimum_allowed_gas[-1*min_centisecond_time_between_change_in_minimum_gas:]):
@@ -1464,7 +1518,7 @@ class ChainDB(BaseChainDB):
         if (hist_min_gas_price is None
             or len(hist_min_gas_price) < MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE):
             #there is no data for calculating min gas price
-            raise HistoricalMinGasPriceError("tried to update historical minimum gas price but historical minimum gas price has not been initialized")
+            raise NotEnoughDataForHistoricalMinGasPriceCalculation("tried to update historical minimum gas price but historical minimum gas price has not been initialized")
 
         sorted_hist_min_gas_price = SortedList(hist_min_gas_price)
 
@@ -1475,10 +1529,10 @@ class ChainDB(BaseChainDB):
             hist_tx_per_centi = self.load_historical_tx_per_centisecond()
             if hist_tx_per_centi is None:
                 #there is no data for calculating min gas price
-                raise HistoricalMinGasPriceError("tried to update historical minimum gas price but historical transactions per centisecond is empty")
+                raise NotEnoughDataForHistoricalMinGasPriceCalculation("tried to update historical minimum gas price but historical transactions per centisecond is empty")
 
             if len(hist_tx_per_centi) < (MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY + MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH + 1):
-                raise HistoricalMinGasPriceError("tried to update historical minimum gas price but historical transactions per centisecond is empty")
+                raise NotEnoughDataForHistoricalMinGasPriceCalculation("tried to update historical minimum gas price but there are not enough entries of historical tx per centisecond")
 
             sorted_hist_tx_per_centi = SortedList(hist_tx_per_centi)
 
@@ -1490,7 +1544,7 @@ class ChainDB(BaseChainDB):
             hist_network_tpc_cap = self.load_historical_network_tpc_capability()
             if hist_network_tpc_cap is None:
                 #there is no data for calculating min gas price
-                raise HistoricalMinGasPriceError("tried to update historical minimum gas price but historical network tpc capability is empty")
+                raise NotEnoughDataForHistoricalMinGasPriceCalculation("tried to update historical minimum gas price but historical network tpc capability is empty")
 
 
             hist_network_tpc_cap = dict(hist_network_tpc_cap)
@@ -1587,9 +1641,56 @@ class ChainDB(BaseChainDB):
 
         return False
 
+    #
+    # Reward bundle persisting
+    #
 
+    def persist_reward_bundle(self, reward_bundle: StakeRewardBundle) -> None:
+        lookup_key = SchemaV1.make_reward_bundle_hash_lookup_key(reward_bundle.hash)
+        self.db[lookup_key] = rlp.encode(reward_bundle, sedes=StakeRewardBundle)
 
+    def get_reward_bundle(self, reward_bundle_hash: Hash32) -> StakeRewardBundle:
+        validate_is_bytes(reward_bundle_hash, 'reward_bundle_hash')
+        lookup_key = SchemaV1.make_reward_bundle_hash_lookup_key(reward_bundle_hash)
+        try:
+            encoded = self.db[lookup_key]
+            return rlp.decode(encoded, sedes=StakeRewardBundle)
+        except KeyError:
+            return None
 
+    def get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:
+        validate_canonical_address(wallet_address, title="wallet_address")
+
+        key = SchemaV1.make_latest_reward_block_number_lookup(wallet_address)
+        rlp_latest_block_number = self.db.get(key, b'')
+        if rlp_latest_block_number:
+            # in order to save some headache elsewhere, if a block is deleted for any reason, we won't reset this number
+            # so lets also check to make sure the block with this number has a reward
+            block_number = rlp.decode(rlp_latest_block_number, sedes=rlp.sedes.f_big_endian_int)
+            try:
+                block_header = self.get_canonical_block_header_by_number(block_number)
+            except HeaderNotFound:
+                # need to find previous reward block and save new one
+                latest_reward_block_number = self.get_block_number_of_latest_reward_block(wallet_address)
+                self.set_latest_reward_block_number(wallet_address, latest_reward_block_number)
+                return latest_reward_block_number
+
+            if block_header.reward_hash == ZERO_HASH32:
+                # need to find previous reward block and save new one
+                latest_reward_block_number = self.get_block_number_of_latest_reward_block(wallet_address)
+                self.set_latest_reward_block_number(wallet_address, latest_reward_block_number)
+                return latest_reward_block_number
+
+            return block_number
+        else:
+            return BlockNumber(0)
+
+    def set_latest_reward_block_number(self, wallet_address: Address, block_number: BlockNumber) -> None:
+        validate_canonical_address(wallet_address, title="wallet_address")
+
+        key = SchemaV1.make_latest_reward_block_number_lookup(wallet_address)
+
+        self.db[key] = rlp.encode(block_number, sedes=rlp.sedes.f_big_endian_int)
 
 
     #

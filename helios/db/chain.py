@@ -93,6 +93,9 @@ class AsyncChainDB(ChainDB):
     async def coro_save_historical_network_tpc_capability(self, historical_tpc_capability: List[List[Union[Timestamp, int]]], de_sparse: bool = False) -> None:
         raise NotImplementedError()
 
+    async def coro_get_block_by_hash(self, block_hash: Hash32, block_class: type(BaseBlock)) -> BaseBlock:
+        raise NotImplementedError()
+
 
 
 class ChainDBProxy(BaseProxy):
@@ -121,6 +124,8 @@ class ChainDBProxy(BaseProxy):
     coro_initialize_historical_minimum_gas_price_at_genesis = async_method(
         'initialize_historical_minimum_gas_price_at_genesis')
     coro_get_blocks_on_chain = async_method('get_blocks_on_chain')
+    coro_get_block_by_hash = async_method('get_block_by_hash')
+
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')
     get_canonical_head = sync_method('get_canonical_head')
@@ -145,4 +150,4 @@ class ChainDBProxy(BaseProxy):
         'initialize_historical_minimum_gas_price_at_genesis')
     get_blocks_on_chain = sync_method('get_blocks_on_chain')
 
-    get_block_by_hash = sync_method('get_blocks_on_chain')
+    get_block_by_hash = sync_method('get_block_by_hash')
