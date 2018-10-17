@@ -1693,6 +1693,7 @@ class ChainDB(BaseChainDB):
         self.db[key] = rlp.encode(block_number, sedes=rlp.sedes.f_big_endian_int)
 
 
+
     #
     # Raw Database API
     #

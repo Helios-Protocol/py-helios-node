@@ -7,6 +7,7 @@ from typing import (
 from eth_typing import (
     BlockIdentifier,
     Hash32,
+    BlockNumber,
 )
 from hp2p.protocol import BaseRequest
 
@@ -26,6 +27,8 @@ from .commands import (
     Receipts,
     GetBlocks,
     Blocks,
+    GetNodeStakingScore,
+    SendNodeStakingScore
 )
 
 
@@ -95,3 +98,10 @@ class GetBlocksRequest(BaseRequest[Tuple[Hash32, ...]]):
 
     def __init__(self, block_hashes: Tuple[Hash32, ...]) -> None:
         self.command_payload = block_hashes
+
+class GetNodeStakingScoreRequest(BaseRequest[BlockNumber]):
+    cmd_type = GetNodeStakingScore
+    response_type = SendNodeStakingScore
+
+    def __init__(self, since_block: BlockNumber) -> None:
+        self.command_payload = since_block

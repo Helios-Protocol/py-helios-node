@@ -154,6 +154,7 @@ class ChainConfig:
         else:
             return False
 
+    #todo: add encrypted keyfile usage instead of this
     @property
     def node_private_helios_key(self):
         if self._node_private_helios_key is None:

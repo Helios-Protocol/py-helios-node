@@ -7,6 +7,7 @@ from rlp import sedes
 
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.receipts import Receipt
+from hvm.rlp.consensus import NodeStakingScore
 
 from hvm.rlp.sedes import (
     address,
@@ -244,3 +245,17 @@ class GetBlocks(Command):
 class Blocks(Command):
     _cmd_id = 35
     structure = sedes.CountableList(P2PBlock)
+
+class GetNodeStakingScore(Command):
+    _cmd_id = 36
+    structure = [
+        ('since_block', sedes.f_big_endian_int)
+    ]
+
+class SendNodeStakingScore(Command):
+    _cmd_id = 37
+    structure = NodeStakingScore
+
+
+
+

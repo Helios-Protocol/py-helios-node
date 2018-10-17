@@ -288,6 +288,9 @@ class ConsensusDB():
         :param node_staking_score_list:
         :return:
         '''
+
+        node_staking_score_list = list(node_staking_score_list)
+
         if at_timestamp is None:
             at_timestamp = int(time.time())
 
@@ -310,8 +313,6 @@ class ConsensusDB():
                 break
 
         if total_stake < REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF or num_proofs < REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
-            print(final_list)
-            print(total_stake, num_proofs)
             raise NotEnoughProofsOrStakeForRewardType2Proof()
 
         final_score = int(stake_weighted_average(item_stake_list))
@@ -320,8 +321,10 @@ class ConsensusDB():
         fractional_interest = REWARD_TYPE_2_AMOUNT_FACTOR * final_score / 1000000
 
         amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp)
-
-        return amount, final_list
+        if amount != 0:
+            return amount, final_list
+        else:
+            return 0, []
 
     def calculate_final_reward_type_1_amount(self, wallet_address: Address, at_timestamp: Timestamp = None) -> int:
         '''
@@ -346,7 +349,10 @@ class ConsensusDB():
     # Reward creation and verification
     #
 
-    def create_reward_bundle_for_block(self, wallet_address: Address, node_staking_score_list: List[NodeStakingScore] = None, at_timestamp: Timestamp = None) -> StakeRewardBundle:
+    def create_reward_bundle_for_block(self,
+                                       wallet_address: Address,
+                                       node_staking_score_list: List[NodeStakingScore] = None,
+                                       at_timestamp: Timestamp = None) -> StakeRewardBundle:
 
         wallet_address = wallet_address
 
@@ -363,6 +369,39 @@ class ConsensusDB():
         reward_bundle = StakeRewardBundle(reward_type_1, reward_type_2)
 
         return reward_bundle
+
+    def validate_node_staking_score(self, node_staking_score: NodeStakingScore, chain_address: Address, block_timestamp: Timestamp, latest_reward_block_number: BlockNumber) -> None:
+
+        if (node_staking_score.timestamp > (block_timestamp + REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE)
+                or node_staking_score.timestamp < (block_timestamp - REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE)):
+            raise ValidationError('Reward type 2 proof isnt within acceptable range of block timestamp')
+
+        # make sure recipient node wlalet address is this node
+        if node_staking_score.recipient_node_wallet_address != chain_address:
+            raise ValidationError("Reward type 2 proof recipient_node_wallet_address doesnt match this chain address")
+
+        node_staking_score.validate()
+
+        # make sure all proof's have valid signatures
+        node_staking_score.check_signature_validity()
+
+        # need to make sure we have the up-to-date peer chain so that our stake calculation is correct.
+        # RewardProofSenderBlockMissing
+        if not self.chaindb.exists(node_staking_score.head_hash_of_sender_chain) or self.chaindb.is_block_unprocessed(
+                node_staking_score.head_hash_of_sender_chain):
+            raise RewardProofSenderBlockMissing("Our chain for chain_address {} appears to be out of date".format(
+                encode_hex(node_staking_score.sender)))
+
+        # We need to validate that the previous reward block in proof equals the latest reward block
+        if node_staking_score.since_block_number != latest_reward_block_number:
+            raise ValidationError("Reward proof has incorrect since_block_number. Got {}, but should be {}".format(
+                node_staking_score.since_block_number,
+                latest_reward_block_number))
+
+        if node_staking_score.score < 0 or node_staking_score.score > 1000000:
+            raise ValidationError(
+                'Node staking score is out of allowed range of 0 to 1,000,000. Got {}'.format(node_staking_score.score))
+
 
     def validate_reward_bundle(self, reward_bundle:StakeRewardBundle, chain_address:Address, block_timestamp: Timestamp) -> None:
 
@@ -392,36 +431,20 @@ class ConsensusDB():
             # need to create function that validates the reward.
             # check timestamps are all near the block timestamp. leave wiggle room for network latency
             for node_staking_score in reward_bundle.reward_type_2.proof:
-                if (node_staking_score.timestamp > (block_timestamp + REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE)
-                    or node_staking_score.timestamp < (block_timestamp - REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE)):
-                    raise ValidationError('Reward type 2 proof isnt within acceptable range of block timestamp')
+                stake = self.validate_node_staking_score(node_staking_score,
+                                                 chain_address = chain_address,
+                                                 block_timestamp = block_timestamp,
+                                                 latest_reward_block_number = latest_reward_block_number)
 
-                # make sure recipient node wlalet address is this node
-                if node_staking_score.recipient_node_wallet_address != chain_address:
-                    raise ValidationError("Reward type 2 proof recipient_node_wallet_address doesnt match this chain address")
-
-                node_staking_score.validate()
-
-                # make sure all proof's have valid signatures
-                node_staking_score.check_signature_validity()
-
-                #need to make sure we have the up-to-date peer chain so that our stake calculation is correct.
-                #RewardProofSenderBlockMissing
-                if not self.chaindb.exists(node_staking_score.head_hash_of_sender_chain) or self.chaindb.is_block_unprocessed(node_staking_score.head_hash_of_sender_chain):
-                    raise RewardProofSenderBlockMissing("Our chain for chain_address {} appears to be out of date".format(encode_hex(node_staking_score.sender)))
-
-                # We need to validate that the previous reward block in proof equals the latest reward block
-                if node_staking_score.since_block_number != latest_reward_block_number:
-                    raise ValidationError("Reward proof has incorrect since_block_number. Got {}, but should be {}".format(node_staking_score.since_block_number,
-                                                                                                                           latest_reward_block_number))
-
-                if node_staking_score.score < 0 or node_staking_score.score > 1000000:
-                    raise ValidationError('Node staking score is out of allowed range of 0 to 1,000,000. Got {}'.format(node_staking_score.score))
-
+            #These functions will check for minimum required stake, and minimum number of proofs.
             reward_type_2_max_amount, _ = self.calculate_final_reward_type_2_amount(list(reward_bundle.reward_type_2.proof),
                                                                                  block_timestamp + REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE)
-            reward_type_2_min_amount, _ = self.calculate_final_reward_type_2_amount(list(reward_bundle.reward_type_2.proof),
+            reward_type_2_min_amount, proof_list = self.calculate_final_reward_type_2_amount(list(reward_bundle.reward_type_2.proof),
                                                                                  block_timestamp - REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE)
+
+            #make sure they aren't including more proof then nessisary
+            if len(proof_list) != len(reward_bundle.reward_type_2.proof):
+                raise ValidationError("The reward type 2 contains to many entries for proof. Expected {}, but got {}".format(len(proof_list), len(reward_bundle.reward_type_2.proof)))
 
 
             if reward_bundle.reward_type_2.amount > reward_type_2_max_amount or reward_bundle.reward_type_2.amount < reward_type_2_min_amount:
@@ -430,6 +453,10 @@ class ConsensusDB():
                         reward_type_2_min_amount,
                         reward_type_2_max_amount,
                         reward_bundle.reward_type_2.amount))
+        else:
+            #if the value is 0, lets make sure there are no proofs
+            if len(reward_bundle.reward_type_2.proof) > 0:
+                raise ValidationError("Reward type 2 has a value of 0, but there is proof given. Don't need proof if there is no amount.")
 
 
 

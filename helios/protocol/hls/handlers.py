@@ -8,6 +8,7 @@ from .exchanges import (
     # GetNodeDataExchange,
     # GetReceiptsExchange,
     GetBlocksExchange,
+    GetNodeStakingScoreExchange,
 )
 
 
@@ -28,7 +29,9 @@ class HLSExchangeHandler(BaseExchangeHandler):
 
     _exchange_config = {
         'get_blocks': GetBlocksExchange,
+        'get_node_staking_score': GetNodeStakingScoreExchange,
     }
 
     # These are needed only to please mypy.
     get_blocks: GetBlocksExchange
+    get_node_staking_score: GetNodeStakingScoreExchange

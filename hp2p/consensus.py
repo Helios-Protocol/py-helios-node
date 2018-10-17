@@ -5,6 +5,7 @@ import operator
 import time
 
 from helios.protocol.hls import commands
+from hvm.rlp.consensus import NodeStakingScore
 
 from hvm.utils.numeric import (
     effecient_diff,
@@ -46,13 +47,14 @@ from helios.rlp_templates.hls import (
 )
 
 from hvm.constants import (
-    BLANK_ROOT_HASH, 
-    EMPTY_UNCLE_HASH, 
-    GENESIS_PARENT_HASH, 
-    NUMBER_OF_HEAD_HASH_TO_SAVE, 
+    BLANK_ROOT_HASH,
+    EMPTY_UNCLE_HASH,
+    GENESIS_PARENT_HASH,
+    NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
     TIME_BETWEEN_PEER_NODE_HEALTH_CHECK,
-)
+    REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY, MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS,
+    REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF, REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF)
 
 from hvm.chains import AsyncChain
 from helios.db.chain import AsyncChainDB
@@ -96,7 +98,7 @@ from helios.protocol.hls.commands import (
     StakeForAddresses,
     GetMinGasParameters,
     MinGasParameters,
-)
+    GetNodeStakingScore)
 from helios.protocol.common.context import ChainContext
 
 #from hp2p.cancel_token import CancelToken
@@ -238,7 +240,9 @@ class Consensus(BaseService, PeerSubscriber):
         self._new_peer_block_choices = asyncio.Queue()
         #PeerRootHashTimestamps, PeerRootHashTimestamps, PeerRootHashTimestamps
         self._new_peer_chain_head_root_hash_timestamps = asyncio.Queue()
-        
+
+        #NodeStakingScore, NodeStakingScore, ...
+        self._new_node_staking_scores = asyncio.Queue()
         
         self._last_send_sync_message_time = 0
         self._last_block_choice_consensus_calculation_time = 0
@@ -509,7 +513,8 @@ class Consensus(BaseService, PeerSubscriber):
             self.chain.re_initialize_historical_minimum_gas_price_at_genesis()
 
         self.run_daemon_task(self._sync_min_gas_price_system_loop())
-        self.run_daemon_task(self.peer_node_health_syncer())
+        self.run_daemon_task(self.peer_node_health_syncer_loop())
+        self.run_daemon_task(self.staking_reward_loop())
 
         #first lets make sure we add our own root_hash_timestamps
         with self.subscribe(self.peer_pool):
@@ -586,14 +591,85 @@ class Consensus(BaseService, PeerSubscriber):
     ###
     ###Core functionality
     ###
+    async def staking_reward_loop(self) -> None:
+        await self.coro_is_ready.wait()
 
-    async def peer_node_health_syncer(self) -> None:
+        await asyncio.sleep(5)
+        self.logger.debug("Running staking_reward_loop")
+        while self.is_operational:
+            latest_reward_block_number = await self.chaindb.coro_get_latest_reward_block_number(self.chain_config.node_wallet_address)
+            latest_reward_block_timestamp = await self.chaindb.coro_get_canonical_block_header_by_number(latest_reward_block_number, self.chain_config.node_wallet_address).timestamp
+
+            if (int(time.time()) - latest_reward_block_timestamp) > MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS:
+                num_requests_sent = 0
+                for peer in self.peer_pool.peers:
+                    self.run_task(self._get_node_staking_score_from_peer(peer, latest_reward_block_number))
+                    num_requests_sent += 1
+
+                await asyncio.sleep(ROUND_TRIP_TIMEOUT)
+
+                while True:
+                    q_size = self._new_node_staking_scores.qsize()
+                    #make sure we got enough responses
+                    if q_size > 0.51*num_requests_sent and q_size >= REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
+                        peer_node_staking_scores = [self._new_node_staking_scores.get_nowait() for _ in range(q_size)]
+                        #make sure we have enough stake
+                        total_stake = 0
+                        for node_staking_score in peer_node_staking_scores:
+                            total_stake += await self.chain.coro_get_mature_stake(node_staking_score.sender)
+
+                        if total_stake > REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF:
+
+
+
+
+            await asyncio.sleep(REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY)
+
+    async def import_reward_block(self, node_staking_score_list: List[NodeStakingScore]) -> None:
+        try:
+            new_block = await self.chain.coro_import_current_queue_block_with_reward(node_staking_score_list)
+        except Exception as e:
+            raise e
+
+        self.sy
+
+
+    async def _get_node_staking_score_from_peer(self, peer: HLSPeer, since_block: BlockNumber):
+        self.logger.debug("Asing peer for our node staking score. peer = {}.".format(encode_hex(peer.wallet_address)))
+        while True:
+            try:
+                node_staking_score = await peer.requests.get_node_staking_score(since_block=since_block)
+
+                if node_staking_score is not None:
+                    self._new_node_staking_scores.put_nowait(node_staking_score)
+                else:
+                    self.logger.debug("get_node_staking_score_from_peer didn't send anything back")
+                break
+            except PeerConnectionLost:
+                self.logger.debug('get_node_staking_score_from_peer PeerConnectionLost error')
+                break
+            except TimeoutError:
+                self.logger.debug('get_node_staking_score_from_peer TimeoutError error')
+                break
+            except ValidationError as e:
+                raise e
+            except AlreadyWaiting:
+                # we already have a pending request to this peer. Pause and then try again
+                await asyncio.sleep(ROUND_TRIP_TIMEOUT)
+                continue
+            except Exception as e:
+                raise e
+
+
+    async def peer_node_health_syncer_loop(self) -> None:
         '''
         This function will continue to contact peers every TIME_BETWEEN_PEER_NODE_HEALTH_CHECK and ask them for a
         relatively new block. It will monitor the response and save the statistics to the database.
         It provides a measure of how well the node is doing in terms of adding to the health of the network
         :return:
         '''
+        await self.coro_is_ready.wait()
+
         await asyncio.sleep(5)
         self.logger.debug("Running peer node health syncer")
         while self.is_operational:
@@ -603,8 +679,7 @@ class Consensus(BaseService, PeerSubscriber):
             timestamp_rounded = int(int((time.time()+ROUND_TRIP_TIMEOUT) / (TIME_BETWEEN_PEER_NODE_HEALTH_CHECK)) * (TIME_BETWEEN_PEER_NODE_HEALTH_CHECK))
             time_of_last_request = self.consensus_db.get_timestamp_of_last_health_request()
 
-            #todo remove: remove the true here when done testing
-            if True or timestamp_rounded >= time_of_last_request + TIME_BETWEEN_PEER_NODE_HEALTH_CHECK:
+            if timestamp_rounded >= time_of_last_request + TIME_BETWEEN_PEER_NODE_HEALTH_CHECK:
                 # choose random new block to ask all peers for
                 try:
                     newish_block_hash = self.chain.get_new_block_hash_to_test_peer_node_health()
@@ -615,10 +690,9 @@ class Consensus(BaseService, PeerSubscriber):
                         #make sure we have some peers to ask
                         for peer in self.peer_pool.peers:
                             #this will sync will all peers at the same time
-                            self.run_task(self.sync_peer_node_health(peer, newish_block_hash))
+                            self.run_task(self._sync_peer_node_health(peer, newish_block_hash))
 
-                        #todo remove: change this to TIME_BETWEEN_PEER_NODE_HEALTH_CHECK after testing
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(TIME_BETWEEN_PEER_NODE_HEALTH_CHECK)
                         continue
                     else:
                         #we didn't have any connected nodes. This will occur if we just started. Lets wait a few seconds and try again.
@@ -631,7 +705,7 @@ class Consensus(BaseService, PeerSubscriber):
 
 
 
-    async def sync_peer_node_health(self, peer: HLSPeer, block_hash: Hash32) -> None:
+    async def _sync_peer_node_health(self, peer: HLSPeer, block_hash: Hash32) -> None:
         '''
         This will try to sync with an individual peer. If their is already a request pending, it will retry until
         the request goes through or fails.
@@ -647,7 +721,6 @@ class Consensus(BaseService, PeerSubscriber):
                 )
 
                 if len(received_blocks) > 0:
-                    self.logger.debug('request hash = {}, received hash = {}'.format(block_hash, received_blocks[0].header.hash))
                     self.consensus_db.save_health_request(peer.wallet_address,
                                                           response_time_in_micros = peer.requests.get_blocks.tracker.latest_response_time*1000*1000)
                 else:
@@ -1387,30 +1460,33 @@ class Consensus(BaseService, PeerSubscriber):
     '''
     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
-
+        #TODO: change these to use something else other than isinstance. Check the command id and offset maybe?
         if isinstance(cmd, UnorderedBlockHeaderHash):
             await self._handle_block_choices(peer, cast(List[BlockHashKey], msg))
 
-        if isinstance(cmd, GetUnorderedBlockHeaderHash):
+        elif isinstance(cmd, GetUnorderedBlockHeaderHash):
             await self._handle_get_block_choices(peer, cast(List[BlockNumberKey], msg))
-            
-        if isinstance(cmd, ChainHeadRootHashTimestamps):
+
+        elif isinstance(cmd, ChainHeadRootHashTimestamps):
             await self._handle_chain_head_root_hash_timestamps(peer, cast(List[Any], msg))
             
-        if isinstance(cmd, GetChainHeadRootHashTimestamps):
+        elif isinstance(cmd, GetChainHeadRootHashTimestamps):
             await self._handle_get_chain_head_root_hash_timestamps(peer, cast(Dict[str, Any], msg))
         
-        if isinstance(cmd, StakeForAddresses):
+        elif isinstance(cmd, StakeForAddresses):
             await self._handle_stake_for_addresses(peer, cast(Dict[str, Any], msg))
             
-        if isinstance(cmd, GetStakeForAddresses):
+        elif isinstance(cmd, GetStakeForAddresses):
             await self._handle_get_stake_for_addresses(peer, cast(Dict[str, Any], msg))
             
-        if isinstance(cmd, GetMinGasParameters):
+        elif isinstance(cmd, GetMinGasParameters):
             await self._handle_get_min_gas_parameters(peer, cast(Dict[str, Any], msg))
             
-        if isinstance(cmd, MinGasParameters):
+        elif isinstance(cmd, MinGasParameters):
             await self._handle_min_gas_parameters(peer, cast(Dict[str, Any], msg))
+
+        elif isinstance(cmd, GetNodeStakingScore):
+            await self._handle_get_node_staking_score(peer, cast(NodeStakingScore, msg))
         
         
 
@@ -1508,6 +1584,15 @@ class Consensus(BaseService, PeerSubscriber):
             if not self.coro_min_gas_system_ready.is_set():
                 await self.chaindb.coro_save_historical_minimum_gas_price(hist_min_allowed_gas_price)
                 await self.chaindb.coro_save_historical_network_tpc_capability(hist_net_tpc_capability)
+
+    async def _handle_get_node_staking_score(self, peer: HLSPeer, msg) -> None:
+        try:
+            node_staking_score = self.consensus_db.get_signed_peer_score(peer.wallet_address, self.chain_config.node_private_helios_key)
+        except ValueError as e:
+            self.logger.warning("Failed to create node staking score. Error: {}".format(e))
+        else:
+            peer.sub_proto.send_node_staking_score(node_staking_score)
+
                 
             
             

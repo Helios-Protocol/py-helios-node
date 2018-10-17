@@ -331,6 +331,8 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
 
+
+
     #
     # Validation API
     #
@@ -1457,6 +1459,9 @@ class Chain(BaseChain):
 
     def import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
         reward_bundle = self.consensus_db.create_reward_bundle_for_block(self.wallet_address, node_staking_score_list, at_timestamp=Timestamp(int(time.time())))
+
+        # #testing
+        # reward_bundle = reward_bundle.copy(reward_type_2 = reward_bundle.reward_type_2.copy(amount=0))
 
         self.queue_block = self.queue_block.copy(reward_bundle = reward_bundle)
 

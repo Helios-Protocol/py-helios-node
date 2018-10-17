@@ -13,6 +13,7 @@ from eth_typing import (
 
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.receipts import Receipt
+from hvm.rlp.consensus import NodeStakingScore
 
 from hp2p.protocol import (
     Protocol,
@@ -60,6 +61,8 @@ from .commands import (
     GetChainSegment,
     GetBlocks,
     Blocks,
+    GetNodeStakingScore,
+    SendNodeStakingScore
 )
 from .constants import (
     MAX_HEADERS_FETCH,
@@ -81,8 +84,8 @@ class HLSProtocol(Protocol):
         ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification,
         GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain, GetChronologicalBlockWindow,
         ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters, GetChainSegment, GetBlocks,
-        Blocks]
-    cmd_length = 40
+        Blocks, GetNodeStakingScore, SendNodeStakingScore]
+    cmd_length = 60
     logger = logging.getLogger("hp2p.hls.HLSProtocol")
 
     peer: 'HLSPeer'
@@ -304,6 +307,12 @@ class HLSProtocol(Protocol):
     def send_blocks(self, list_of_blocks: List[P2PBlock]) -> None:
         cmd = Blocks(self.cmd_id_offset)
         data = list_of_blocks
+        header, body = cmd.encode(data)
+        self.send(header, body)
+
+    def send_node_staking_score(self, node_staking_score: NodeStakingScore) -> None:
+        cmd = SendNodeStakingScore(self.cmd_id_offset)
+        data = node_staking_score
         header, body = cmd.encode(data)
         self.send(header, body)
 

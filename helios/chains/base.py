@@ -25,7 +25,8 @@ class ChainProxy(BaseProxy):
     coro_update_current_network_tpc_capability = async_method('update_current_network_tpc_capability')
     coro_get_local_tpc_cap = async_method('get_local_tpc_cap')
     coro_re_initialize_historical_minimum_gas_price_at_genesis = async_method('re_initialize_historical_minimum_gas_price_at_genesis')
-    
+    coro_import_current_queue_block_with_reward = async_method('import_current_queue_block_with_reward')
+
     import_block = sync_method('import_block')
     import_chain = sync_method('import_chain')
     get_block_stake_from_children = sync_method('get_block_stake_from_children')
@@ -38,6 +39,7 @@ class ChainProxy(BaseProxy):
     validate_block_specification = sync_method('validate_block_specification')
     re_initialize_historical_minimum_gas_price_at_genesis = sync_method('re_initialize_historical_minimum_gas_price_at_genesis')
     get_new_block_hash_to_test_peer_node_health = sync_method('get_new_block_hash_to_test_peer_node_health')
+
 
 
 

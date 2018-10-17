@@ -4,6 +4,7 @@ from typing import (
 )
 
 from hvm.rlp.headers import BlockHeader
+from hvm.rlp.consensus import NodeStakingScore
 
 from helios.protocol.common.trackers import BasePerformanceTracker
 from helios.protocol.common.types import (
@@ -19,6 +20,7 @@ from .requests import (
     GetNodeDataRequest,
     GetReceiptsRequest,
     GetBlocksRequest,
+    GetNodeStakingScoreRequest,
 )
 
 from helios.rlp_templates.hls import P2PBlock
@@ -103,4 +105,20 @@ class GetBlocksTracker(BaseGetBlockHeadersTracker):
         return len(result)
 
     def _get_result_item_count(self, result: Tuple[P2PBlock, ...]) -> int:
+        return len(result)
+
+
+BaseGetNodeStakingScoreTracker = BasePerformanceTracker[
+    GetNodeStakingScoreRequest,
+    NodeStakingScore,
+]
+
+class GetNodeStakingScoreTracker(BaseGetNodeStakingScoreTracker):
+    def _get_request_size(self, request: GetNodeStakingScoreRequest) -> Optional[int]:
+        return 1
+
+    def _get_result_size(self, result: NodeStakingScore) -> int:
+        return len(result)
+
+    def _get_result_item_count(self, result: NodeStakingScore) -> int:
         return len(result)

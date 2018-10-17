@@ -3,10 +3,11 @@ from typing import (
 )
 
 from helios.rlp_templates.hls import P2PBlock
+from hvm.rlp.consensus import NodeStakingScore
 from hvm.rlp.headers import BlockHeader
 from eth_typing import (
     Hash32,
-)
+    BlockNumber)
 from eth_utils import (
     ValidationError,
 )
@@ -20,6 +21,8 @@ from helios.protocol.common.types import (
     NodeDataBundles,
     ReceiptsBundles,
 )
+
+from hvm.db.consensus import validate_node_staking_score
 
 from . import constants
 
@@ -120,3 +123,20 @@ class GetBlocksValidator(BaseValidator[Tuple[P2PBlock, ...]]):
             raise ValidationError(
                 "Response contains {0} unexpected blocks".format(len(unexpected_hashes))
             )
+
+
+class GetNodeStakingScoreValidator(BaseValidator[NodeStakingScore]):
+    def __init__(self, since_block: BlockNumber) -> None:
+        self.since_block = since_block
+
+    def validate_result(self, response: NodeStakingScore) -> None:
+        if not response:
+            # an empty response is always valid
+            return
+
+        #Since this function shouldn't be called very often, we can run this expensive validation. It will make sure
+        #the node doesn't accidentally include any invalid node staking scores which will invalidate the entire
+        #reward bundle and they will have to re-create it.
+        validate_node_staking_score(response)
+
+

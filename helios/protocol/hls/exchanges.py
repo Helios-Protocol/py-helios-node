@@ -7,8 +7,10 @@ from typing import (
 from eth_typing import (
     BlockIdentifier,
     Hash32,
+    BlockNumber,
 )
 from hvm.rlp.headers import BlockHeader
+from hvm.rlp.consensus import NodeStakingScore
 
 from helios.protocol.common.exchanges import (
     BaseExchange,
@@ -41,6 +43,7 @@ from .requests import (
     GetNodeDataRequest,
     GetReceiptsRequest,
     GetBlocksRequest,
+    GetNodeStakingScoreRequest,
 
 )
 from .trackers import (
@@ -48,7 +51,8 @@ from .trackers import (
     GetBlockBodiesTracker,
     GetNodeDataTracker,
     GetReceiptsTracker,
-    GetBlocksTracker
+    GetBlocksTracker,
+    GetNodeStakingScoreTracker,
 )
 from .validators import (
     GetBlockBodiesValidator,
@@ -56,6 +60,7 @@ from .validators import (
     GetNodeDataValidator,
     ReceiptsValidator,
     GetBlocksValidator,
+    GetNodeStakingScoreValidator,
 )
 
 
@@ -187,6 +192,34 @@ class GetBlocksExchange(BaseGetBlocksExchange):
 
         validator = GetBlocksValidator(block_hashes)
         request = self.request_class(block_hashes)
+
+        return await self.get_result(
+            request,
+            self._normalizer,
+            validator,
+            noop_payload_validator,
+            timeout,
+        )
+
+
+BaseGetNodeStakingScoreExchange = BaseExchange[
+    BlockNumber, #parameter types for request_class
+    NodeStakingScore, #type that rlp returns
+    NodeStakingScore, #type that the normalizer returns
+]
+
+class GetNodeStakingScoreExchange(BaseGetNodeStakingScoreExchange):
+    _normalizer = NoopNormalizer[Tuple[P2PBlock, ...]]()
+    request_class = GetNodeStakingScoreRequest
+    tracker_class = GetNodeStakingScoreTracker
+
+    async def __call__(  # type: ignore
+            self,
+            since_block: BlockNumber,
+            timeout: float = None) -> NodeStakingScore:
+
+        validator = GetNodeStakingScoreValidator(since_block)
+        request = self.request_class(since_block)
 
         return await self.get_result(
             request,

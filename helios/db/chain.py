@@ -96,6 +96,9 @@ class AsyncChainDB(ChainDB):
     async def coro_get_block_by_hash(self, block_hash: Hash32, block_class: type(BaseBlock)) -> BaseBlock:
         raise NotImplementedError()
 
+    async def coro_get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:
+        raise NotImplementedError()
+
 
 
 class ChainDBProxy(BaseProxy):
@@ -125,6 +128,7 @@ class ChainDBProxy(BaseProxy):
         'initialize_historical_minimum_gas_price_at_genesis')
     coro_get_blocks_on_chain = async_method('get_blocks_on_chain')
     coro_get_block_by_hash = async_method('get_block_by_hash')
+    coro_get_latest_reward_block_number = async_method('get_latest_reward_block_number')
 
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')
@@ -149,5 +153,9 @@ class ChainDBProxy(BaseProxy):
     initialize_historical_minimum_gas_price_at_genesis = sync_method(
         'initialize_historical_minimum_gas_price_at_genesis')
     get_blocks_on_chain = sync_method('get_blocks_on_chain')
+    get_latest_reward_block_number = sync_method('get_latest_reward_block_number')
+    get_canonical_block_header_by_number = sync_method('get_canonical_block_header_by_number')
+
+
 
     get_block_by_hash = sync_method('get_block_by_hash')
