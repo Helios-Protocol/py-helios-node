@@ -1613,8 +1613,11 @@ class Chain(BaseChain):
         if timestamp is None:
             return self.get_vm().state.account_db.get_balance(wallet_address)
         else:
+            try:
+                canonical_head = self.chaindb.get_canonical_head(wallet_address=wallet_address)
+            except CanonicalHeadNotFound:
+                return 0
 
-            canonical_head = self.chaindb.get_canonical_head(wallet_address=wallet_address)
             if canonical_head.timestamp <= timestamp:
                 return canonical_head.account_balance
             else:

@@ -12,6 +12,8 @@ from eth_typing import (
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.consensus import NodeStakingScore
 
+from hvm.db.consensus import ConsensusDB
+
 from helios.protocol.common.exchanges import (
     BaseExchange,
 )
@@ -216,9 +218,10 @@ class GetNodeStakingScoreExchange(BaseGetNodeStakingScoreExchange):
     async def __call__(  # type: ignore
             self,
             since_block: BlockNumber,
+            consensus_db: ConsensusDB,
             timeout: float = None) -> NodeStakingScore:
 
-        validator = GetNodeStakingScoreValidator(since_block)
+        validator = GetNodeStakingScoreValidator(since_block, consensus_db)
         request = self.request_class(since_block)
 
         return await self.get_result(

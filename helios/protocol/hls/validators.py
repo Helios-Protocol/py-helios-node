@@ -22,7 +22,7 @@ from helios.protocol.common.types import (
     ReceiptsBundles,
 )
 
-from hvm.db.consensus import validate_node_staking_score
+from hvm.db.consensus import ConsensusDB
 
 from . import constants
 
@@ -126,17 +126,19 @@ class GetBlocksValidator(BaseValidator[Tuple[P2PBlock, ...]]):
 
 
 class GetNodeStakingScoreValidator(BaseValidator[NodeStakingScore]):
-    def __init__(self, since_block: BlockNumber) -> None:
+    def __init__(self, since_block: BlockNumber, consensus_db:ConsensusDB) -> None:
         self.since_block = since_block
+        self.consensus_db = consensus_db
 
     def validate_result(self, response: NodeStakingScore) -> None:
         if not response:
             # an empty response is always valid
             return
 
+
         #Since this function shouldn't be called very often, we can run this expensive validation. It will make sure
         #the node doesn't accidentally include any invalid node staking scores which will invalidate the entire
         #reward bundle and they will have to re-create it.
-        validate_node_staking_score(response)
+        self.consensus_db.validate_node_staking_score(response)
 
 

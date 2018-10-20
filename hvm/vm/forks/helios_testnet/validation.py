@@ -52,7 +52,7 @@ def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransa
         total_cost = send_transaction.value + gas_cost
     
         if sender_balance < total_cost:
-            raise ValidationError("Sender account balance cannot afford txn")
+            raise ValidationError("Sender account balance cannot afford txn. Sender balance = {}, total cost = {}".format(sender_balance, total_cost))
     
         if account_db.get_nonce(send_transaction.sender) != send_transaction.nonce:
             raise ValidationError("Invalid send_transaction nonce. got: {0}, expected: {1}".format(send_transaction.nonce, account_db.get_nonce(send_transaction.sender)))

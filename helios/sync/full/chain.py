@@ -6,6 +6,10 @@ from asyncio import (
 import time
 from random import shuffle
 
+from lahja import Endpoint
+
+from hp2p.events import NewBlockEvent
+
 from hvm.utils.blocks import get_block_average_transaction_gas_price
 
 from hvm.exceptions import (
@@ -52,7 +56,7 @@ from typing import (
 )
 
 from cancel_token import CancelToken, OperationCancelled
-from eth_typing import Hash32, BlockNumber
+from eth_typing import Hash32, BlockNumber, Address
 from eth_utils import (
     ValidationError,
     encode_hex,
@@ -212,11 +216,13 @@ class FastChainSyncer(BaseService, PeerSubscriber):
                  peer_pool: HLSPeerPool,
                  consensus: Consensus,
                  node,
+                 event_bus: Endpoint = None,
                  token: CancelToken = None) -> None:
         super().__init__(token)
         self.node = node
         self.consensus = consensus
 
+        self.event_bus = event_bus
         self.chain = context.chain
         self.chaindb = context.chaindb
         self.chain_head_db = context.chain_head_db
@@ -229,7 +235,6 @@ class FastChainSyncer(BaseService, PeerSubscriber):
         self._idle_peers_in_consensus: asyncio.Queue[HLSPeer] = asyncio.Queue()
         self._new_headers: asyncio.Queue[List[BlockHeader]] = asyncio.Queue()
         self._new_blocks_to_import: asyncio.Queue[List[NewBlockQueueItem]] = asyncio.Queue()
-        self.rpc_queue: asyncio.Queue[HLSPeer] = asyncio.Queue()
         # Those are used by our msg handlers and _download_block_parts() in order to track missing
         # bodies/receipts for a given chain segment.
         self._downloaded_receipts: asyncio.Queue[
@@ -617,6 +622,8 @@ class RegularChainSyncer(FastChainSyncer):
                         # await self.sync_chronological_blocks()
                         self.run_daemon_task(self._handle_msg_loop())
                         self.run_daemon_task(self._handle_import_block_loop())
+                        if self.event_bus is not None:
+                            self.run_task(self.handle_new_block_events())
 
                         # this runs forever
                         self.run_daemon_task(self.sync_historical_root_hash_with_consensus())
@@ -971,12 +978,16 @@ class RegularChainSyncer(FastChainSyncer):
         hashes = msg
         blocks_to_return = []
         for hash in hashes:
-            new_block = cast(P2PBlock, await self.chaindb.coro_get_block_by_hash(hash, P2PBlock))
-            blocks_to_return.append(new_block)
+            try:
+                new_block = cast(P2PBlock, await self.chaindb.coro_get_block_by_hash(hash, P2PBlock))
+                blocks_to_return.append(new_block)
+            except HeaderNotFound:
+                pass
 
-        peer.sub_proto.send_blocks(blocks_to_return)
+        if len(blocks_to_return) > 0:
+            peer.sub_proto.send_blocks(blocks_to_return)
 
-        self.logger.debug("Sent peer {} the blocks they requested".format(encode_hex(peer.wallet_address)))
+            self.logger.debug("Sent peer {} the blocks they requested".format(encode_hex(peer.wallet_address)))
 
     async def _handle_chain(self,
                             peer: HLSPeer,
@@ -1035,6 +1046,7 @@ class RegularChainSyncer(FastChainSyncer):
         This returns true if the block is imported successfully, False otherwise
         If the block comes from RPC, we need to treat it differently. If it is invalid for any reason whatsoever, we just delete.
         '''
+
         self.logger.debug("handling new block")
         chain = self.node.get_new_chain()
         required_min_gas_price = self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)
@@ -1157,11 +1169,37 @@ class RegularChainSyncer(FastChainSyncer):
         return True
 
 
-    ####################
-    ###Testing functions
-    ####################
+    #
+    # Event bus functions
+    #
+    async def handle_new_block_events(self) -> None:
+        async def f() -> None:
+            # FIXME: There must be a way to cancel event_bus.stream() when our token is triggered,
+            # but for the time being we just wrap everything in self.wait().
+            async for req in self.event_bus.stream(NewBlockEvent):
+                # We are listening for all `PeerCountRequest` events but we ensure to only send a
+                # `PeerCountResponse` to the callsite that made the request.  We do that by
+                # retrieving a `BroadcastConfig` from the request via the
+                # `event.broadcast_config()` API.
+                #self.event_bus.broadcast(PeerCountResponse(len(self)), req.broadcast_config())
+                self.logger.debug("Got a new block from the event bus.")
+                block = req.block
+                chain_address = req.chain_address
+                only_propogate_to_network = req.only_propogate_to_network
+                if only_propogate_to_network:
+                    # in this case, we shouldn't import the block, we just send it to the network
+                    # this if for blocks that have already been imported elsewhere but need to be sent to network.
+                    self.logger.debug("Sending new block to network")
+                    self.propogate_block_to_network(block, chain_address)
+                else:
+                    self.logger.debug("Adding new block to queue")
+                    new_block_queue_item = NewBlockQueueItem(block, chain_address)
+                    self._new_blocks_to_import.put_nowait(new_block_queue_item)
 
-    def propogate_block_to_network(self, block, chain_address):
+        await self.wait(f())
+
+
+    def propogate_block_to_network(self, block: P2PBlock, chain_address: Address):
         for peer in self.peer_pool.peers:
             self.logger.debug('sending test block to peer {}'.format(peer))
             peer.sub_proto.send_new_block(block, chain_address)

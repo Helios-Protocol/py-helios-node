@@ -331,7 +331,7 @@ class FullServer(BaseServer):
             max_peers=self.max_peers,
             context=self.chain_context,
             token=self.cancel_token,
-            event_bus=self.event_bus
+            event_bus=self.event_bus,
         )
 
 
@@ -342,6 +342,7 @@ class FullServer(BaseServer):
             consensus = self.consensus,
             node = self.node,
             token=self.cancel_token,
+            event_bus=self.event_bus,
         )
 
     def _make_consensus(self) -> BaseService:
@@ -350,7 +351,9 @@ class FullServer(BaseServer):
             context=self.chain_context,
             peer_pool = cast(HLSPeerPool, self.peer_pool),
             bootstrap_nodes = self.bootstrap_nodes,
-            token = self.cancel_token
+            node=self.node,
+            token = self.cancel_token,
+            event_bus=self.event_bus,
         )
 
 

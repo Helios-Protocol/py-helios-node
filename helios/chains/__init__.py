@@ -221,7 +221,7 @@ def rebuild_exc(exc, tb):  # type: ignore
 def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> BaseManager:
     chaindb = AsyncChainDB(base_db, chain_config.node_wallet_address)
     chain_head_db = AsyncChainHeadDB.load_from_saved_root_hash(base_db)
-    consensus_db = AsyncConsensusDB(base_db, chaindb)
+
     chain_class: Type[BaseChain]
     if not is_database_initialized(chaindb):
         if 'GENERATE_RANDOM_DATABASE' in os.environ:
@@ -239,6 +239,7 @@ def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> Bas
 
     chain = chain_class(base_db, chain_config.node_wallet_address, chain_config.node_private_helios_key)  # type: ignore
 
+    consensus_db = AsyncConsensusDB(base_db, chain, chaindb)
     # headerdb = AsyncHeaderDB(base_db)
     # header_chain = AsyncHeaderChain(base_db)
 

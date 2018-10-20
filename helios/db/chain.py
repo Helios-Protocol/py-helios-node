@@ -59,10 +59,10 @@ class AsyncChainDB(ChainDB):
     async def coro_get_canonical_block_hash(self, block_number: BlockNumber, wallet_address: Address) -> Hash32:
         raise NotImplementedError("ChainDB classes must implement this method")
 
-    async def coro_get_canonical_block_header_by_number(self, block_number: BlockNumber) -> BlockHeader:  # noqa: E501
+    async def coro_get_canonical_block_header_by_number(self, block_number: BlockNumber, wallet_address:Address) -> BlockHeader:  # noqa: E501
         raise NotImplementedError("ChainDB classes must implement this method")
 
-    async def coro_get_canonical_head(self) -> BlockHeader:
+    async def coro_get_canonical_head(self, wallet_address: Address) -> BlockHeader:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     async def coro_get_block_header_by_hash(self, block_hash: Hash32) -> BlockHeader:

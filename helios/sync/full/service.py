@@ -3,6 +3,8 @@ import time
 
 from cancel_token import CancelToken
 
+from lahja import Endpoint
+
 from hvm.chains import AsyncChain
 from hvm.constants import BLANK_ROOT_HASH
 
@@ -35,8 +37,10 @@ class FullNodeSyncer(BaseService):
                  peer_pool: HLSPeerPool,
                  consensus: 'Consensus',
                  node: 'FullNode',
+                 event_bus: Endpoint,
                  token: CancelToken = None) -> None:
         super().__init__(token)
+        self.event_bus = event_bus
         self.context = context
         self.node = node
         self.consensus = consensus
@@ -77,7 +81,8 @@ class FullNodeSyncer(BaseService):
         regular_syncer = RegularChainSyncer(context = self.context,
                                             peer_pool = self.peer_pool,
                                             consensus = self.consensus,
-                                            node = self.node)
+                                            node = self.node,
+                                            event_bus = self.event_bus)
         await regular_syncer.run()
 
 

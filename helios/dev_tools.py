@@ -113,7 +113,7 @@ def create_dev_test_random_blockchain_database(base_db):
                     gas_price=0x01,
                     gas=0x0c3500,
                     to=receiver_privkey.public_key.to_canonical_address(),
-                    value=100000000*10**18-i*1000000*10**18-random.randint(0,1000),
+                    value=10000000*10**18-i*100000*10**18-random.randint(0,1000),
                     data=b"",
                     v=0,
                     r=0,

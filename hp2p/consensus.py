@@ -5,7 +5,10 @@ import operator
 import time
 
 from helios.protocol.hls import commands
+from hp2p.events import NewBlockEvent
 from hvm.rlp.consensus import NodeStakingScore
+
+from lahja import Endpoint
 
 from hvm.utils.numeric import (
     effecient_diff,
@@ -40,11 +43,11 @@ from eth_utils import (
 )
 
 from helios.rlp_templates.hls import (
-    BlockBody, 
+    BlockBody,
     P2PTransaction,
     BlockNumberKey,
     BlockHashKey,
-)
+    P2PBlock)
 
 from hvm.constants import (
     BLANK_ROOT_HASH,
@@ -61,12 +64,12 @@ from helios.db.chain import AsyncChainDB
 from helios.db.consensus import AsyncConsensusDB
 from hvm.db.trie import make_trie_root_and_nodes
 from hvm.exceptions import (
-    HeaderNotFound, 
-    NoLocalRootHashTimestamps, 
+    HeaderNotFound,
+    NoLocalRootHashTimestamps,
     LocalRootHashNotInConsensus,
     NoChronologicalBlocks,
     NotEnoughDataForHistoricalMinGasPriceCalculation,
-)
+    CanonicalHeadNotFound)
 
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.receipts import Receipt
@@ -208,8 +211,12 @@ class Consensus(BaseService, PeerSubscriber):
                  context: ChainContext,
                  peer_pool: HLSPeerPool,
                  bootstrap_nodes,
+                 node,
+                 event_bus: Endpoint = None,
                  token: CancelToken = None) -> None:
         super().__init__(token)
+        self.node = node
+        self.event_bus = event_bus
         self.chain: AsyncChain = context.chain
         self.chaindb = context.chaindb
         self.base_db = context.base_db
@@ -543,8 +550,8 @@ class Consensus(BaseService, PeerSubscriber):
                 #sorted_root_hash_timestamps_statistics = list(SortedDict(self.root_hash_timestamps_statistics).items())
                 #self.logger.debug("done syncing consensus. These are the statistics for root_hashes: {}".format(
                 #                    sorted_root_hash_timestamps_statistics[-10:]))
-                blocks_to_change = await self.get_correct_block_conflict_choice_where_we_differ_from_consensus()
-                self.logger.debug('get_correct_block_conflict_hashes_where_we_differ_from_consensus = {}'.format(blocks_to_change))
+                #blocks_to_change = await self.get_correct_block_conflict_choice_where_we_differ_from_consensus()
+                #self.logger.debug('get_correct_block_conflict_hashes_where_we_differ_from_consensus = {}'.format(blocks_to_change))
 #                if blocks_to_change is not None:
 #                    self.logger.debug('get_peers_who_have_conflict_block {}'.format(self.get_peers_who_have_conflict_block(blocks_to_change[0])))
 #                 test_1 = self.chaindb.load_historical_network_tpc_capability()
@@ -592,53 +599,69 @@ class Consensus(BaseService, PeerSubscriber):
     ###Core functionality
     ###
     async def staking_reward_loop(self) -> None:
+        # TODO: Look at all the peers we are connected to, check the score that we have for them, and require that we get
+        # responses from those node. If we have a high score for them, they should have a high score for us.
         await self.coro_is_ready.wait()
 
         await asyncio.sleep(5)
-        self.logger.debug("Running staking_reward_loop")
+
         while self.is_operational:
-            latest_reward_block_number = await self.chaindb.coro_get_latest_reward_block_number(self.chain_config.node_wallet_address)
-            latest_reward_block_timestamp = await self.chaindb.coro_get_canonical_block_header_by_number(latest_reward_block_number, self.chain_config.node_wallet_address).timestamp
+            self.logger.debug("Running staking_reward_loop")
+            if await self.is_syncing:
+                self.logger.debug("Skipping reward block loop because we are still syncing")
+            else:
+                #We don't want the first block on the chain to be a reward block, because it is just a waste and will be 0 reward.
+                #So lets make sure our canonical head is greater than 0
+                try:
+                    canonical_head_hash = await self.chaindb.coro_get_canonical_head_hash(self.chain_config.node_wallet_address)
+                except CanonicalHeadNotFound:
+                    self.logger.debug("There are no blocks on the chain for this node's wallet address. Skipping reward block loop until we have at least 1 block.")
+                else:
+                    latest_reward_block_number = await self.chaindb.coro_get_latest_reward_block_number(self.chain_config.node_wallet_address)
+                    latest_reward_block_header = await self.chaindb.coro_get_canonical_block_header_by_number(latest_reward_block_number, self.chain_config.node_wallet_address)
+                    latest_reward_block_timestamp = latest_reward_block_header.timestamp
 
-            if (int(time.time()) - latest_reward_block_timestamp) > MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS:
-                num_requests_sent = 0
-                for peer in self.peer_pool.peers:
-                    self.run_task(self._get_node_staking_score_from_peer(peer, latest_reward_block_number))
-                    num_requests_sent += 1
+                    if (int(time.time()) - latest_reward_block_timestamp) > MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS:
+                        num_requests_sent = 0
+                        for peer in self.peer_pool.peers:
+                            self.run_task(self._get_node_staking_score_from_peer(peer, latest_reward_block_number))
+                            num_requests_sent += 1
 
-                await asyncio.sleep(ROUND_TRIP_TIMEOUT)
+                        await asyncio.sleep(ROUND_TRIP_TIMEOUT)
 
-                while True:
-                    q_size = self._new_node_staking_scores.qsize()
-                    #make sure we got enough responses
-                    if q_size > 0.51*num_requests_sent and q_size >= REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
-                        peer_node_staking_scores = [self._new_node_staking_scores.get_nowait() for _ in range(q_size)]
-                        #make sure we have enough stake
-                        total_stake = 0
-                        for node_staking_score in peer_node_staking_scores:
-                            total_stake += await self.chain.coro_get_mature_stake(node_staking_score.sender)
+                        while True:
+                            q_size = self._new_node_staking_scores.qsize()
+                            #make sure we got enough responses
+                            if q_size > 0.51*num_requests_sent and q_size >= REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
+                                peer_node_staking_scores = [self._new_node_staking_scores.get_nowait() for _ in range(q_size)]
+                                #make sure we have enough stake
+                                total_stake = 0
+                                for node_staking_score in peer_node_staking_scores:
+                                    total_stake += await self.chain.coro_get_mature_stake(node_staking_score.sender)
 
-                        if total_stake > REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF:
-
-
+                                if total_stake > REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF:
+                                    await self.process_reward_block(peer_node_staking_scores)
 
 
             await asyncio.sleep(REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY)
 
-    async def import_reward_block(self, node_staking_score_list: List[NodeStakingScore]) -> None:
+    async def process_reward_block(self, node_staking_score_list: List[NodeStakingScore]) -> None:
+        self.logger.debug("Processing reward block")
         try:
-            new_block = await self.chain.coro_import_current_queue_block_with_reward(node_staking_score_list)
+            chain = self.node.get_new_chain()
+            new_block = await chain.coro_import_current_queue_block_with_reward(node_staking_score_list)
+            await self.event_bus.request(
+                NewBlockEvent(block = cast(P2PBlock, new_block), chain_address = self.chain_config.node_wallet_address, only_propogate_to_network=True)
+            )
         except Exception as e:
             raise e
-
-        self.sy
 
 
     async def _get_node_staking_score_from_peer(self, peer: HLSPeer, since_block: BlockNumber):
         self.logger.debug("Asing peer for our node staking score. peer = {}.".format(encode_hex(peer.wallet_address)))
         while True:
             try:
-                node_staking_score = await peer.requests.get_node_staking_score(since_block=since_block)
+                node_staking_score = await peer.requests.get_node_staking_score(since_block=since_block, consensus_db = self.consensus_db)
 
                 if node_staking_score is not None:
                     self._new_node_staking_scores.put_nowait(node_staking_score)
@@ -685,6 +708,7 @@ class Consensus(BaseService, PeerSubscriber):
                     newish_block_hash = self.chain.get_new_block_hash_to_test_peer_node_health()
                 except NoChronologicalBlocks:
                     self.logger.debug("Skipping this round of peer node health checks because we have no blocks to ask for")
+                    await asyncio.sleep(5)
                 else:
                     if len(self.peer_pool) > 0:
                         #make sure we have some peers to ask
@@ -895,7 +919,10 @@ class Consensus(BaseService, PeerSubscriber):
         if num_candidates >= MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG:
             #add in our local tpc and stake
             local_tpc_cap = await self.local_tpc_cap
+
             local_stake = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
+
+
             
             if local_stake != 0:
                 all_candidate_item_stake.append([local_tpc_cap, local_stake])
@@ -976,7 +1003,7 @@ class Consensus(BaseService, PeerSubscriber):
                 #no need to refresh.
                 if peer.wallet_address not in self.peer_stake_from_bootstrap_node:
                     addresses_needing_stake.append(peer.wallet_address)
-                        
+            addresses_needing_stake.append(self.chain_config.node_wallet_address)
         else:
         
             for peer in self.peer_pool.peers:
@@ -1594,9 +1621,6 @@ class Consensus(BaseService, PeerSubscriber):
             peer.sub_proto.send_node_staking_score(node_staking_score)
 
                 
-            
-            
-            
             
             
 

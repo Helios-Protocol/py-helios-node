@@ -473,7 +473,9 @@ class VM(BaseVM):
             block_timestamp = block.header.timestamp
             if block.sender != self.wallet_address:
                 raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
-            
+
+
+
         #TODO: if importing queueblock, verify it here first before trying to import.
         self.block = block.copy(
             header=self.configure_header(
@@ -486,8 +488,9 @@ class VM(BaseVM):
                 s=block.header.s,
             )
         )
-        
-        
+
+
+
         # we need to re-initialize the `state` to update the execution context.
         #this also removes and unpersisted state changes.
         self.refresh_state()
@@ -512,7 +515,7 @@ class VM(BaseVM):
             block.transactions,
             receipts,
         )
-         
+
         self.block = self.set_block_receive_transactions(
             self.block,
             self.block.header,
