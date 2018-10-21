@@ -755,7 +755,7 @@ class RegularChainSyncer(FastChainSyncer):
 
                     # if it is none, then we have no conflicts
                     self.logger.debug("no conflicts found")
-                    await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
+                await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
             else:
                 # We have conflicts, lets sync up one window, and let the loop continue to go through all windows
                 # self.current_syncing_root_timestamp, self.current_syncing_root_hash = self.consensus.get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(latest_good_timestamp)

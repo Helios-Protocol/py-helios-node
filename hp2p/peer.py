@@ -955,8 +955,10 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
                 raise NoConnectedPeers()
             peers = self.peers
 
-        sorted_peers = SortedList(key=lambda x: x.stake, iterable=peers)
-        return sorted_peers
+        peers_with_stake = [peer for peer in peers if peer._stake is not None]
+        peers_with_stake.sort(key=lambda x: x._stake)
+        #sorted_peers = SortedList(key=lambda x: x.stake, iterable=peers)
+        return peers_with_stake
 
 
     async def _periodically_report_stats(self) -> None:
@@ -989,6 +991,7 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
                     self.logger.debug("    %s", line)
             self.logger.debug("== End peer details == ")
             await self.sleep(self._report_interval)
+
 
 
 class ConnectedPeersIterator(AsyncIterator[BasePeer]):

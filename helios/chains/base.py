@@ -12,8 +12,10 @@ from helios.utils.mp import (
 from hvm.chains.base import Chain
 
 
-class AsyncChain(Chain):
-    coro_import_block = async_method('import_block')
+# class AsyncChain(Chain):
+#     #coro_import_block = async_method('import_block')
+#
+#     coro_get_mature_stake
 
 class ChainProxy(BaseProxy):
     coro_import_block = async_method('import_block')

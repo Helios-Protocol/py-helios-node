@@ -104,4 +104,4 @@ class GetNodeStakingScoreRequest(BaseRequest[BlockNumber]):
     response_type = SendNodeStakingScore
 
     def __init__(self, since_block: BlockNumber) -> None:
-        self.command_payload = since_block
+        self.command_payload = {'since_block': since_block}

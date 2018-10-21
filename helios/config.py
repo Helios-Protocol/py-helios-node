@@ -170,7 +170,7 @@ class ChainConfig:
             self._node_wallet_address = self.node_private_helios_key.public_key.to_canonical_address()
         return self._node_wallet_address
 
-    #0 is master, 1 is fullnode, 2 is micronode, 4 is network launch node
+    #0 is master, 1 is fullnode, 2 is micronode, 4 is bootstrap_node
     @property
     def node_type(self):
         return self._node_type

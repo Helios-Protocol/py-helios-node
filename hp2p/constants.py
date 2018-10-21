@@ -89,7 +89,8 @@ MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG = 0 #This can only be set higher once
 MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED = 60*5 #This is the amount of time we allow the network to sync new blocks between nodes.
                                                            #After this time, the nodes will take the copy of the database that has the most stake.
 
-
+PEER_STAKE_GONE_STALE_TIME_PERIOD = 60 # The amount of time that needs to pass before we re-update the peer stake from the
+                                        # blockchain database.
 
 #DEVELOPMENT HELPERS
 LOCAL_PEER_POOL_PATH = '/home/tommy/.local/share/helios/local_peer_pool'

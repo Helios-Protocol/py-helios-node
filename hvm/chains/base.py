@@ -353,7 +353,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
-    def get_mature_stake(self, wallet_address: Address = None, timestamp: Timestamp = None) -> int:
+    def get_mature_stake(self, wallet_address: Address = None, timestamp: Timestamp = None, raise_canonical_head_not_found_error: bool = False):
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -1589,7 +1589,7 @@ class Chain(BaseChain):
     #
     #     return mature_stake
 
-    def get_mature_stake(self, wallet_address: Address = None, timestamp: Timestamp = None) -> int:
+    def get_mature_stake(self, wallet_address: Address = None, timestamp: Timestamp = None, raise_canonical_head_not_found_error: bool = False) -> int:
         if wallet_address is None:
             wallet_address = self.wallet_address
 
@@ -1600,10 +1600,12 @@ class Chain(BaseChain):
 
 
         #get account balance
-        return self.get_balance_at_time(wallet_address, timestamp - COIN_MATURE_TIME_FOR_STAKING)
+        return self.get_balance_at_time(wallet_address,
+                                        timestamp - COIN_MATURE_TIME_FOR_STAKING,
+                                        raise_canonical_head_not_found_error = raise_canonical_head_not_found_error)
 
 
-    def get_balance_at_time(self, wallet_address: Address = None, timestamp: Timestamp = None) -> int:
+    def get_balance_at_time(self, wallet_address: Address = None, timestamp: Timestamp = None, raise_canonical_head_not_found_error: bool = False) -> int:
         if wallet_address is None:
             wallet_address = self.wallet_address
 
@@ -1615,8 +1617,11 @@ class Chain(BaseChain):
         else:
             try:
                 canonical_head = self.chaindb.get_canonical_head(wallet_address=wallet_address)
-            except CanonicalHeadNotFound:
-                return 0
+            except CanonicalHeadNotFound as e:
+                if raise_canonical_head_not_found_error:
+                    raise e
+                else:
+                    return 0
 
             if canonical_head.timestamp <= timestamp:
                 return canonical_head.account_balance
@@ -1869,7 +1874,7 @@ class AsyncChain(Chain):
     async def coro_get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
         raise NotImplementedError()
 
-    async def coro_get_mature_stake(self, wallet_address: Address = None) -> int:
+    async def coro_get_mature_stake(self, wallet_address: Address = None, timestamp: Timestamp = None, raise_canonical_head_not_found_error: bool = False):
         raise NotImplementedError()
 
     async def coro_get_all_chronological_blocks_for_window(self, window_timestamp: Timestamp) -> List[BaseBlock]:

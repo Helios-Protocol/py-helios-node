@@ -6,9 +6,14 @@ from abc import (
 from uuid import UUID
 import logging
 from lru import LRU
-from typing import Set, Tuple  # noqa: F401
+from typing import (
+    List,
+    Union,
+    Set,
+    Tuple,
+)
 
-from eth_typing import Hash32
+from eth_typing import Hash32, Address, BlockNumber
 
 import rlp
 from hvm.utils.pickle import (
@@ -62,6 +67,8 @@ from hvm.rlp.accounts import (
     TransactionKey,
 )
 
+from hvm.types import Timestamp
+
 
 from hvm.validation import (
     validate_is_bytes,
@@ -90,9 +97,7 @@ from hvm.rlp.sedes import(
 from rlp.sedes import (
     big_endian_int,
     f_big_endian_int,
-    CountableList,
     binary,
-    List
 )
 from eth_utils import (
     int_to_big_endian,
@@ -685,7 +690,7 @@ class ChainHeadDB():
             root_hashes = root_hashes[-1000:]
 
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
-        data = rlp.encode(root_hashes, sedes=CountableList(List([big_endian_int, hash32])))
+        data = rlp.encode(root_hashes, sedes=rlp.sedes.CountableList(rlp.sedes.List([big_endian_int, hash32])))
         #data = hp_encode(root_hashes)
         #data = hm_encode(root_hashes)
         self.db.set(
@@ -693,7 +698,7 @@ class ChainHeadDB():
             data,
         )
         
-    def get_historical_root_hash(self, timestamp, return_timestamp = False):
+    def get_historical_root_hash(self, timestamp: Timestamp, return_timestamp: bool = False) -> List[Union[Timestamp, Hash32]]:
         '''
         This returns the historical root hash for a given timestamp.
         If no root hash exists for this timestamp, it will return the latest root hash prior to this timestamp
@@ -727,10 +732,10 @@ class ChainHeadDB():
         else:
             return root_hash_to_return
         
-    def get_historical_root_hashes(self, after_timestamp = None):
+    def get_historical_root_hashes(self, after_timestamp: Timestamp = None) -> List[List[Union[Timestamp, Hash32]]]:
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
         try:
-            data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=CountableList(List([big_endian_int, hash32])))
+            data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=rlp.sedes.CountableList(rlp.sedes.List([big_endian_int, hash32])))
             #data = hp_decode(self.db[historical_head_root_lookup_key])
             #data = hm_decode(self.db[historical_head_root_lookup_key])
             if after_timestamp is None:
@@ -825,7 +830,7 @@ class ChainHeadDB():
             raise InvalidHeadRootTimestamp("Can only save or load chronological block for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
         
         chronological_window_lookup_key = SchemaV1.make_chronological_window_lookup_key(timestamp)
-        encoded_data = rlp.encode(data,sedes=CountableList(List([f_big_endian_int, hash32])))
+        encoded_data = rlp.encode(data,sedes=rlp.sedes.CountableList(rlp.sedes.List([f_big_endian_int, hash32])))
         self.db.set(
             chronological_window_lookup_key,
             encoded_data,
@@ -838,7 +843,7 @@ class ChainHeadDB():
         
         chronological_window_lookup_key = SchemaV1.make_chronological_window_lookup_key(timestamp)
         try:
-            data = rlp.decode(self.db[chronological_window_lookup_key], sedes=CountableList(List([f_big_endian_int, hash32])), use_list = True)
+            data = rlp.decode(self.db[chronological_window_lookup_key], sedes=rlp.sedes.CountableList(rlp.sedes.List([f_big_endian_int, hash32])), use_list = True)
             return data
         except KeyError:
             return None

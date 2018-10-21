@@ -62,6 +62,9 @@ class AsyncChainDB(ChainDB):
     async def coro_get_canonical_block_header_by_number(self, block_number: BlockNumber, wallet_address:Address) -> BlockHeader:  # noqa: E501
         raise NotImplementedError("ChainDB classes must implement this method")
 
+    async def coro_get_canonical_head_hash(self, wallet_address: Address = None) -> Hash32:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
     async def coro_get_canonical_head(self, wallet_address: Address) -> BlockHeader:
         raise NotImplementedError("ChainDB classes must implement this method")
 
@@ -104,6 +107,7 @@ class AsyncChainDB(ChainDB):
 class ChainDBProxy(BaseProxy):
     coro_get_block_header_by_hash = async_method('get_block_header_by_hash')
     coro_get_canonical_head = async_method('get_canonical_head')
+    coro_get_canonical_head_hash = async_method('get_canonical_head_hash')
     coro_get_score = async_method('get_score')
     coro_header_exists = async_method('header_exists')
     coro_get_canonical_block_hash = async_method('get_canonical_block_hash')
@@ -129,6 +133,7 @@ class ChainDBProxy(BaseProxy):
     coro_get_blocks_on_chain = async_method('get_blocks_on_chain')
     coro_get_block_by_hash = async_method('get_block_by_hash')
     coro_get_latest_reward_block_number = async_method('get_latest_reward_block_number')
+
 
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')

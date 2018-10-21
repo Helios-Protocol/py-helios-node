@@ -9,15 +9,26 @@ from helios.utils.mp import (
     async_method,
     sync_method,
 )
+from typing import (
+    List,
+    Union,
+)
+
+from eth_typing import Hash32
+
+from hvm.types import Timestamp
 
 class AsyncChainHeadDB(ChainHeadDB):
-    pass
-    
-    
+    async def coro_get_historical_root_hashes(self, after_timestamp: Timestamp = None) -> List[List[Union[Timestamp, Hash32]]]:
+        raise NotImplementedError("ChainHeadDB classes must implement this method")
+
+    async def coro_get_historical_root_hash(self, timestamp: Timestamp, return_timestamp: bool = False) -> List[Union[Timestamp, Hash32]]:
+        raise NotImplementedError("ChainHeadDB classes must implement this method")
 
 class ChainHeadDBProxy(BaseProxy):
 
     coro_get_historical_root_hashes = async_method('get_historical_root_hashes')
+    coro_get_historical_root_hash = async_method('get_historical_root_hash')
     coro_set_current_syncing_info = async_method('set_current_syncing_info')
     coro_get_current_syncing_info = async_method('get_current_syncing_info')
     coro_get_next_head_block_hash = async_method('get_next_head_block_hash')
@@ -28,7 +39,7 @@ class ChainHeadDBProxy(BaseProxy):
     coro_get_last_complete_historical_root_hash = async_method('get_last_complete_historical_root_hash')
     coro_get_root_hash = async_method('get_root_hash')
     coro_save_single_historical_root_hash = async_method('save_single_historical_root_hash')
-    coro_get_historical_root_hash = async_method('get_historical_root_hash')
+
     coro_get_latest_historical_root_hash = async_method('get_latest_historical_root_hash')
     coro_get_chain_head_hash = async_method('get_chain_head_hash')
     

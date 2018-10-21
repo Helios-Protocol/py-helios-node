@@ -186,3 +186,9 @@ class UnableToGetDiscV5Ticket(BaseP2PError):
     Raised when we're unable to get a discv5 ticket from a remote peer.
     """
     pass
+
+class UnknownPeerStake(BaseP2PError):
+    """
+    Raised when we don't reliably know the stake of a peer. This can happen if our blockchain is still syncing.
+    """
+    pass

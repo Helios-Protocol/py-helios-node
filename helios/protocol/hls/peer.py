@@ -1,4 +1,6 @@
 import secrets
+import time
+import asyncio
 
 from typing import (
     Any,
@@ -7,7 +9,7 @@ from typing import (
     List,
 )
 
-
+from hp2p.constants import PEER_STAKE_GONE_STALE_TIME_PERIOD
 from hvm.exceptions import (
     CanonicalHeadNotFound,
 )
@@ -31,6 +33,7 @@ from helios.protocol.common.peer import (
     BaseChainPeerPool,
 )
 
+from hvm.types import Timestamp
 
 from .commands import (
     Status,
@@ -41,6 +44,7 @@ from .constants import MAX_HEADERS_FETCH
 from .proto import HLSProtocol
 from .handlers import HLSExchangeHandler
 
+from eth_typing import Address
 
 class HLSPeer(BaseChainPeer):
     max_headers_fetch = MAX_HEADERS_FETCH
@@ -50,7 +54,8 @@ class HLSPeer(BaseChainPeer):
 
     _requests: HLSExchangeHandler = None
 
-    stake: int = 0  # testing
+    _last_stake_check_time: Timestamp = 0
+    _stake: int = None
     wallet_address = None
     local_salt = None
     peer_salt = None
@@ -60,6 +65,17 @@ class HLSPeer(BaseChainPeer):
     def get_extra_stats(self) -> List[str]:
         stats_pairs = self.requests.get_stats().items()
         return ['%s: %s' % (cmd_name, stats) for cmd_name, stats in stats_pairs]
+
+    @property
+    async def stake(self) -> int:
+        if self._last_stake_check_time < (int(time.time()) - PEER_STAKE_GONE_STALE_TIME_PERIOD):
+            try:
+                self._stake = await self.chain.coro_get_mature_stake(Address(self.wallet_address), raise_canonical_head_not_found_error = True)
+            except CanonicalHeadNotFound:
+                self._stake = None
+
+            self._last_stake_check_time = int(time.time())
+        return self._stake
 
     @property
     def requests(self) -> HLSExchangeHandler:
@@ -151,10 +167,7 @@ class HLSPeer(BaseChainPeer):
         validate_transaction_signature(msg['salt'], msg['v'], msg['r'], msg['s'])
 
         self.wallet_address = extract_wallet_verification_sender(msg['salt'], msg['v'], msg['r'], msg['s'])
-        try:
-            self.stake = await self.chain.coro_get_mature_stake(self.wallet_address)
-        except CanonicalHeadNotFound:
-            self.stake = 0  # give it the lowest possible stake
+
         # self.logger.debug("Recieved valid wallet address verification for wallet address {}".format(self.wallet_address))
 
         # note, when we receive an address verification message, we have to verify that the salt they send back equals local salt

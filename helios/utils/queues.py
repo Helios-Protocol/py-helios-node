@@ -1,5 +1,6 @@
 from asyncio import (  # noqa: F401
     Queue,
+    QueueEmpty,
 )
 from typing import (
     Tuple,
@@ -50,3 +51,10 @@ def queue_get_nowait(queue: 'Queue[TQueueItem]', max_results: int = None) -> Tup
         num_items = min((available, max_results))
 
     return tuple(queue.get_nowait() for _ in range(num_items))
+
+def empty_queue(queue: Queue) -> None:
+    while True:
+        try:
+            queue.get_nowait()
+        except QueueEmpty:
+            break

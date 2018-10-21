@@ -30,7 +30,7 @@ from hp2p.peer import (
 
 from helios.db.chain_head import AsyncChainHeadDB
 from helios.db.chain import AsyncChainDB
-from helios.chains.base import AsyncChain
+from hvm.chains.base import AsyncChain
 
 from .context import ChainContext
 
@@ -120,5 +120,6 @@ class BaseChainPeerPool(BasePeerPool):
         # harder for callsites to get a list of peers while making blocking calls, as those peers
         # might disconnect in the meantime.
         peers = tuple(self.connected_nodes.values())
-        return [peer for peer in peers if peer.stake >= min_stake]
+        peers_with_stake = [peer for peer in peers if peer._stake is not None]
+        return [peer for peer in peers_with_stake if peer._stake >= min_stake]
 

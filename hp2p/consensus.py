@@ -4,7 +4,9 @@ import math
 import operator
 import time
 
+from helios.db.chain_head import AsyncChainHeadDB
 from helios.protocol.hls import commands
+from helios.utils.queues import empty_queue
 from hp2p.events import NewBlockEvent
 from hvm.rlp.consensus import NodeStakingScore
 
@@ -88,7 +90,7 @@ from hp2p.constants import (
     MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD,
     MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG,
     MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED,
-)
+    PEER_STAKE_GONE_STALE_TIME_PERIOD)
 
 from hp2p import protocol
 
@@ -108,11 +110,11 @@ from helios.protocol.common.context import ChainContext
 from cancel_token import CancelToken
 
 from hp2p.exceptions import (
-    NoEligiblePeers, 
+    NoEligiblePeers,
     OperationCancelled,
     DatabaseResyncRequired,
     PeerConnectionLost,
-)
+    UnknownPeerStake)
 from hp2p.peer import BasePeer, PeerSubscriber
 from helios.protocol.hls.peer import HLSPeerPool
 
@@ -206,7 +208,6 @@ class Consensus(BaseService, PeerSubscriber):
     _local_tpc_cap = 0
     _last_check_if_min_gas_system_ready_time = 0
 
-
     def __init__(self,
                  context: ChainContext,
                  peer_pool: HLSPeerPool,
@@ -221,7 +222,7 @@ class Consensus(BaseService, PeerSubscriber):
         self.chaindb = context.chaindb
         self.base_db = context.base_db
         self.consensus_db: AsyncConsensusDB = context.consensus_db
-        self.chain_head_db = context.chain_head_db
+        self.chain_head_db: AsyncChainHeadDB = context.chain_head_db
         self.peer_pool = peer_pool
         self.chain_config = context.chain_config
         self.bootstrap_nodes = bootstrap_nodes
@@ -250,10 +251,8 @@ class Consensus(BaseService, PeerSubscriber):
 
         #NodeStakingScore, NodeStakingScore, ...
         self._new_node_staking_scores = asyncio.Queue()
-        
-        self._last_send_sync_message_time = 0
+
         self._last_block_choice_consensus_calculation_time = 0
-        self._last_get_stake_from_bootnode_time = 0
         self._last_check_if_syncing_time = 0
         self._last_check_to_remove_blocks_that_acheived_consensus = 0
         self._last_check_to_remove_disconnected_peer_data = 0
@@ -284,43 +283,53 @@ class Consensus(BaseService, PeerSubscriber):
         if len(self.peer_pool.connected_nodes) >= MIN_SAFE_PEERS:
             self.logger.debug("Has enough peers. connected peers: {}".format(self.peer_pool.connected_nodes.keys()))
         else:
-            #self.logger.debug("doesnt have enough peers. connected peers: {}".format(self.peer_pool.connected_nodes.keys()))
+            self.logger.debug("doesnt have enough peers. connected peers: {}".format(self.peer_pool.connected_nodes.keys()))
             pass
         return len(self.peer_pool.connected_nodes) >= MIN_SAFE_PEERS
     
     @property
     def is_bootnode(self):
-        if self._is_bootnode is None:
-            self._is_bootnode = self.chain_config.nodekey_public in [x.pubkey for x in self.chain_config.bootstrap_nodes]
-        return self._is_bootnode
+        return self.chain_config.node_type == 4
     
     @property
     def has_enough_consensus_participants(self):
         if len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_bootnode:
             self.logger.debug("has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
         else:
-            #self.logger.debug("doesnt has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
+            self.logger.debug("doesnt has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
             pass
+
+        #we don't want to count any peers who we don't have stake for.
         return len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_bootnode
     
     @property
     async def is_syncing(self):
         '''
-        This determines if our local blockchain database is still syncing. 
-        If this is the case, then we cannot trust the stake we have here, 
-        and we temporarily give all peers equal stake
+        This determines if our local blockchain database is still syncing.
+
+        It does this by checking for local root hashes that differ from consensus. If we have any that differ that is before the
+        MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED, then we are still syncing.
         '''
-        #1) if our newest root_hash timestamp is older than 1000*1000 seconds, we are syncing
-        #this can be the only requirement. Therefore, we must make sure that we don't ever save the 
-        #root hash timestamp unless sync is complete. So we cannot do a normal import until sync is complete
+
         if self._last_check_if_syncing_time < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
-            local_root_hash_timestamps = await self.chain_head_db.coro_get_historical_root_hashes(after_timestamp=(int(time.time())-ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD))
-            if local_root_hash_timestamps == None:
+            #we can't tell if we are syncing if consensus is not ready. So if consensus is not ready, lets say we are syncing to be safe.
+            if not self.coro_is_ready.is_set():
                 self._is_syncing = True
+                self.logger.debug("IS_SYNCING = True because consensus is not ready.")
             else:
-                self._is_syncing = False
-        
-            #self.logger.debug("IS_SYNCING: {}, local_root_hash_timestamps: {}".format(self._is_syncing, local_root_hash_timestamps))
+                try:
+                    root_hash, timestamp = await self.get_latest_root_hash_before_conflict()
+                except (NoLocalRootHashTimestamps, DatabaseResyncRequired):
+                    self._is_syncing = True
+                    self.logger.debug("IS_SYNCING = True. This node likely just started.")
+                else:
+                    if timestamp is None or timestamp > (int(time.time()) - MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED - TIME_BETWEEN_HEAD_HASH_SAVE):
+                        self._is_syncing = False
+                    else:
+                        self._is_syncing = True
+
+                    self.logger.debug("IS_SYNCING: {}. Timestamp of latest root hash before conflict = {}".format(self._is_syncing, timestamp))
+
         return self._is_syncing
     
 #    @property 
@@ -348,13 +357,13 @@ class Consensus(BaseService, PeerSubscriber):
         return self._local_tpc_cap
     
         
-    async def get_accurate_stake(self, wallet_address, local_stake):
-        if local_stake == 0 or await self.is_syncing:
+    async def get_accurate_stake(self, peer: HLSPeer):
+        if await self.is_syncing or await peer.stake == None:
             try:
-                return self.peer_stake_from_bootstrap_node[wallet_address]
+                return self.peer_stake_from_bootstrap_node[peer.wallet_address]
             except KeyError:
-                return local_stake
-        return local_stake  
+                raise UnknownPeerStake()
+        return await peer.stake
 
  
     def determine_stake_winner(self, item_stakes_dict_or_list):
@@ -514,36 +523,30 @@ class Consensus(BaseService, PeerSubscriber):
             await asyncio.sleep(MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD)
 
     async def _run(self) -> None:
-        self.run_daemon_task(self._handle_msg_loop())
         if self.chain_config.node_type == 4:
             self.logger.debug('re-initializing min gas system')
             self.chain.re_initialize_historical_minimum_gas_price_at_genesis()
 
-        self.run_daemon_task(self._sync_min_gas_price_system_loop())
-        self.run_daemon_task(self.peer_node_health_syncer_loop())
-        self.run_daemon_task(self.staking_reward_loop())
+        self.run_daemon_task(self._handle_msg_loop())
 
-        #first lets make sure we add our own root_hash_timestamps
         with self.subscribe(self.peer_pool):
-            #await test
+            self.run_daemon_task(self.get_missing_stake_from_bootnode_loop())
+            self.run_daemon_task(self._sync_min_gas_price_system_loop())
+            self.run_daemon_task(self.peer_node_health_syncer_loop())
+            self.run_daemon_task(self.staking_reward_loop())
+            self.run_daemon_task(self.receive_peer_block_choices_loop())
+            self.run_daemon_task(self.receive_peer_chain_head_root_hash_timestamps_loop())
+            self.run_daemon_task(self.send_get_consensus_statistics_loop())
             while self.is_operational:
 
-                
-                if self.coro_is_ready.is_set():
-                    ready = 'true'
-                else:
-                    ready = 'false'
-                self.logger.debug("self.coro_is_ready = {}".format(ready))
                 #first lets ask the bootnode for the stake of any peers that we dont have the blockchain for
                 #this takes care of determining stake of our peers while we are still syncing our blockchain database
-                self.logger.debug("waiting for get missing stake from bootnode")
-                await self.wait(self.get_missing_stake_from_bootnode())
+                #self.logger.debug("waiting for get missing stake from bootnode")
+                #await self.wait(self.get_missing_stake_from_bootnode())
                 #send sync messages, doesnt need to be async
-                self.send_sync_get_messages()
+                #self.send_sync_get_messages()
                 #it will re-loop every time it gets a new response from a single peer. this ensures that the statistics are always as up to date as possible
-                self.logger.debug("waiting for receive_sync_messages")
-                await self.wait(self.receive_sync_messages())
-                
+
                 self.logger.debug("done syncing consensus. These are the statistics for block_choices: {}".format(
                                     self.block_choice_statistics))
                 
@@ -575,7 +578,7 @@ class Consensus(BaseService, PeerSubscriber):
                 self.check_if_ready()
                 
                 #yeild control to other coroutines after each loop
-                #await asyncio.sleep(0)
+                await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
             
 
 
@@ -586,14 +589,13 @@ class Consensus(BaseService, PeerSubscriber):
         await asyncio.sleep(0)
         
     def check_if_ready(self):
-        #if self._last_check_to_see_if_consensus_ready < (int(time.time()) - CONSENSUS_CHECK_READY_TIME_PERIOD):
         if self.has_enough_consensus_participants and self.has_enough_peers:
-            #await asyncio.sleep()
-            
             self.coro_is_ready.set()
+            self.logger.debug("Coro_is_ready.set()")
         else:
             self.coro_is_ready.clear()
-            #self._last_check_to_see_if_consensus_ready = int(time.time())
+            self.logger.debug("Coro_is_ready.clear()")
+
 
     ###
     ###Core functionality
@@ -606,6 +608,8 @@ class Consensus(BaseService, PeerSubscriber):
         await asyncio.sleep(5)
 
         while self.is_operational:
+            empty_queue(self._new_node_staking_scores)
+
             self.logger.debug("Running staking_reward_loop")
             if await self.is_syncing:
                 self.logger.debug("Skipping reward block loop because we are still syncing")
@@ -622,6 +626,7 @@ class Consensus(BaseService, PeerSubscriber):
                     latest_reward_block_timestamp = latest_reward_block_header.timestamp
 
                     if (int(time.time()) - latest_reward_block_timestamp) > MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS:
+                        #send out all of the requests
                         num_requests_sent = 0
                         for peer in self.peer_pool.peers:
                             self.run_task(self._get_node_staking_score_from_peer(peer, latest_reward_block_number))
@@ -629,21 +634,31 @@ class Consensus(BaseService, PeerSubscriber):
 
                         await asyncio.sleep(ROUND_TRIP_TIMEOUT)
 
-                        while True:
-                            q_size = self._new_node_staking_scores.qsize()
-                            #make sure we got enough responses
-                            if q_size > 0.51*num_requests_sent and q_size >= REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
-                                peer_node_staking_scores = [self._new_node_staking_scores.get_nowait() for _ in range(q_size)]
-                                #make sure we have enough stake
-                                total_stake = 0
-                                for node_staking_score in peer_node_staking_scores:
-                                    total_stake += await self.chain.coro_get_mature_stake(node_staking_score.sender)
-
-                                if total_stake > REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF:
-                                    await self.process_reward_block(peer_node_staking_scores)
+                        #here lets have a timeout. But lets make it generous to account for uncertainties in block
+                        #import times with the chain syncer.
+                        await self.wait(self.receive_node_staking_scores(num_requests_sent = num_requests_sent),
+                                  token=self.cancel_token,
+                                  timeout = ROUND_TRIP_TIMEOUT*10)
 
 
             await asyncio.sleep(REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY)
+
+    async def receive_node_staking_scores(self, num_requests_sent: int) -> None:
+        # receive all of the requests
+        while True:
+            q_size = self._new_node_staking_scores.qsize()
+            # make sure we got enough responses
+            if q_size > 0.51 * num_requests_sent and q_size >= REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
+                peer_node_staking_scores = [self._new_node_staking_scores.get_nowait() for _ in range(q_size)]
+                # make sure we have enough stake
+                total_stake = 0
+                for node_staking_score in peer_node_staking_scores:
+                    total_stake += await self.chain.coro_get_mature_stake(node_staking_score.sender)
+
+                if total_stake > REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF:
+                    await self.process_reward_block(peer_node_staking_scores)
+
+            await asyncio.sleep(ROUND_TRIP_TIMEOUT)
 
     async def process_reward_block(self, node_staking_score_list: List[NodeStakingScore]) -> None:
         self.logger.debug("Processing reward block")
@@ -708,7 +723,7 @@ class Consensus(BaseService, PeerSubscriber):
                     newish_block_hash = self.chain.get_new_block_hash_to_test_peer_node_health()
                 except NoChronologicalBlocks:
                     self.logger.debug("Skipping this round of peer node health checks because we have no blocks to ask for")
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(10)
                 else:
                     if len(self.peer_pool) > 0:
                         #make sure we have some peers to ask
@@ -721,11 +736,11 @@ class Consensus(BaseService, PeerSubscriber):
                     else:
                         #we didn't have any connected nodes. This will occur if we just started. Lets wait a few seconds and try again.
                         self.logger.debug("No nodes to send peer node health request to. Will retry in a few seconds")
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(10)
                         continue
             else:
                 self.logger.debug("Already did a peer node health check recently. Skipping this health check period.")
-
+                await asyncio.sleep(10)
 
 
 
@@ -772,28 +787,27 @@ class Consensus(BaseService, PeerSubscriber):
         self.logger.debug(self.consensus_db.get_current_peer_node_health(peer.wallet_address))
 
 
+    async def get_missing_stake_from_bootnode_loop(self):
+        self.logger.debug("Running get_missing_stake_from_bootnode_loop")
+        while self.is_operational:
+            await self._get_missing_stake_from_bootnode()
+            await asyncio.sleep(PEER_STAKE_GONE_STALE_TIME_PERIOD)
 
-
-    def send_sync_get_messages(self) -> None:
-        if self._last_send_sync_message_time < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
+    async def send_get_consensus_statistics_loop(self) -> None:
+        self.logger.debug("Running send_get_consensus_statistics_loop")
+        while self.is_operational:
             #sync peer block choices and chain head root hashes
             self.logger.info("Sending syncing consensus messages to all connected peers")
-            
-            self.send_block_conflict_sync_messages(self.block_conflicts)
-#            block_number_keys = []
-#            for conflict in self.block_conflicts:
-#                block_number_keys.append(BlockNumberKey(wallet_address = conflict.wallet_address, block_number = conflict.block_number))
-                
+
+            self.send_block_conflict_messages(self.block_conflicts)
+
             for peer in self.peer_pool.peers:
                 #send message , and log time that message was sent. Be sure not to send a message to any node that we have a pending response for
-                #TODO: delete pending responses longer than 60 seconds, and resend.
-#                if len(block_number_keys) > 0:
-#                    peer.sub_proto.send_get_unordered_block_header_hash(block_number_keys)
                 peer.sub_proto.send_get_chain_head_root_hash_timestamps(0)
-                
-            self._last_send_sync_message_time = int(time.time())
+
+            await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
         
-    def send_block_conflict_sync_messages(self, block_conflicts: Iterable[BlockConflictInfo]) -> None:
+    def send_block_conflict_messages(self, block_conflicts: Iterable[BlockConflictInfo]) -> None:
         
         self.logger.debug("Sending out messages to all peers asking for block conflict choices.")
         # if not isinstance(block_conflicts, list) and not isinstance(block_conflicts, set):
@@ -809,101 +823,189 @@ class Consensus(BaseService, PeerSubscriber):
             if len(block_number_keys) > 0:
                 peer.sub_proto.send_get_unordered_block_header_hash(block_number_keys)
         
-    async def receive_sync_messages(self):
-        try:
-            block_choices_or_chain_head_root_hash_timestamps = await self.wait_first(
-                self._new_peer_block_choices.get(),
-                self._new_peer_chain_head_root_hash_timestamps.get(),
-                token=self.cancel_token,
-                timeout=CONSENSUS_SYNC_TIME_PERIOD)
-        except TimeoutError:
-            self.logger.warn("Timeout waiting for block choices or chain head root hash timestamps")
-            return
-        
-        
-        #here we need to check the instance to determine which it is.
-        #we will also be receiving blocks that syncer requests, so make sure we check that it is one of the blocks we asked for.
-        if isinstance(block_choices_or_chain_head_root_hash_timestamps, PeerBlockChoice):
-            block_choices = block_choices_or_chain_head_root_hash_timestamps
+    async def receive_peer_block_choices_loop(self):
+        self.logger.debug("Starting receive_peer_block_choices_loop")
+        while self.is_operational:
+            block_choices = await self.wait(self._new_peer_block_choices.get(), token=self.cancel_token)
+
             peer_wallet_address = block_choices.peer_wallet_address
             new_peer_stake = block_choices.stake
             new_block_hash_keys = block_choices.msg
-            
-            #lets only update diff for this peer to reduce overhead.
+
+            # lets only update diff for this peer to reduce overhead.
             if peer_wallet_address in self.peer_block_choices:
                 previous_peer_stake = self.peer_block_choices[peer_wallet_address][0]
                 previous_block_hash_keys = self.peer_block_choices[peer_wallet_address][1]
-                
-                #lets just find the difference this way. should be more effectient. hopefully.
+
+                # lets just find the difference this way. should be more effectient. hopefully.
                 stake_sub, stake_add = self.calc_stake_difference(previous_block_hash_keys, new_block_hash_keys)
-                #first we subtract the previous stake
+                # first we subtract the previous stake
                 for previous_block_hash_key in stake_sub:
                     self.delta_block_choice_statistics(previous_block_hash_key.wallet_address,
                                                        previous_block_hash_key.block_number,
                                                        previous_block_hash_key.block_hash,
-                                                       -1*previous_peer_stake)
-         
-                #now add the new stake with new choices
+                                                       -1 * previous_peer_stake)
+
+                # now add the new stake with new choices
                 for new_block_hash_key in stake_add:
                     self.delta_block_choice_statistics(new_block_hash_key.wallet_address,
                                                        new_block_hash_key.block_number,
                                                        new_block_hash_key.block_hash,
                                                        new_peer_stake)
 
-                
+
             else:
-                #this is the first message from them, we don't have any previous choices, so lets just add the new stake
+                # this is the first message from them, we don't have any previous choices, so lets just add the new stake
                 for new_block_hash_key in new_block_hash_keys:
                     self.delta_block_choice_statistics(new_block_hash_key.wallet_address,
                                                        new_block_hash_key.block_number,
                                                        new_block_hash_key.block_hash,
                                                        new_peer_stake)
-                    
-            #finally, update the peer block choices
+
+            # finally, update the peer block choices
             self.peer_block_choices[peer_wallet_address] = [new_peer_stake, new_block_hash_keys]
-            
-            #TODO: calculate consensus, and remove all data for anything that has reached consensus.
-        else:
-            root_hash_timestamp_item = block_choices_or_chain_head_root_hash_timestamps
+
+
+    async def receive_peer_chain_head_root_hash_timestamps_loop(self):
+        self.logger.debug("Starting receive_peer_chain_head_root_hash_timestamps_loop")
+        while self.is_operational:
+            root_hash_timestamp_item = await self.wait(self._new_peer_chain_head_root_hash_timestamps.get(), token=self.cancel_token)
             peer_wallet_address = root_hash_timestamp_item.peer_wallet_address
             new_peer_stake = root_hash_timestamp_item.stake
             new_root_hash_timestamps = root_hash_timestamp_item.msg
-            #self.logger.debug("dealing with new root_hash_timestamps {}".format(new_root_hash_timestamps))
-            
-            #first we check to see if we have an entry for this peer:
+            # self.logger.debug("dealing with new root_hash_timestamps {}".format(new_root_hash_timestamps))
+
+            # first we check to see if we have an entry for this peer:
             if peer_wallet_address in self.peer_root_hash_timestamps:
                 previous_peer_stake = self.peer_root_hash_timestamps[peer_wallet_address][0]
                 previous_root_hash_timestamps = self.peer_root_hash_timestamps[peer_wallet_address][1]
-                
-                #lets just find the difference this way. should be more effectient. hopefully.
-                stake_sub, stake_add = self.calc_stake_difference(previous_root_hash_timestamps, new_root_hash_timestamps)
-                
-                #self.logger.debug("subtracting stake {} from timestamps {}".format(previous_peer_stake, [x[0] for x in stake_sub]))
-                #self.logger.debug("adding stake {} from timestamps {}".format(new_peer_stake, [x[0] for x in stake_add]))
-                #first we subtract the previous stake
+
+                # lets just find the difference this way. should be more effectient. hopefully.
+                stake_sub, stake_add = self.calc_stake_difference(previous_root_hash_timestamps,
+                                                                  new_root_hash_timestamps)
+
+                # self.logger.debug("subtracting stake {} from timestamps {}".format(previous_peer_stake, [x[0] for x in stake_sub]))
+                # self.logger.debug("adding stake {} from timestamps {}".format(new_peer_stake, [x[0] for x in stake_add]))
+                # first we subtract the previous stake
                 for previous_root_hash_timestamp in stake_sub:
                     self.delta_root_hash_timestamp_statistics(
-                                                       previous_root_hash_timestamp[0], #timestamp
-                                                       previous_root_hash_timestamp[1], #root_hash
-                                                       -1*previous_peer_stake)
-         
-                #now add the new stake with new choices
+                        previous_root_hash_timestamp[0],  # timestamp
+                        previous_root_hash_timestamp[1],  # root_hash
+                        -1 * previous_peer_stake)
+
+                # now add the new stake with new choices
                 for new_root_hash_timestamp in stake_add:
                     self.delta_root_hash_timestamp_statistics(
-                                                       new_root_hash_timestamp[0], #timestamp
-                                                       new_root_hash_timestamp[1], #root_hash
-                                                       new_peer_stake)
+                        new_root_hash_timestamp[0],  # timestamp
+                        new_root_hash_timestamp[1],  # root_hash
+                        new_peer_stake)
             else:
-                #now add the new stake with new choices
+                # now add the new stake with new choices
                 for new_root_hash_timestamp in new_root_hash_timestamps:
                     self.delta_root_hash_timestamp_statistics(
-                                                       new_root_hash_timestamp[0], #timestamp
-                                                       new_root_hash_timestamp[1], #root_hash
-                                                       new_peer_stake)
-            #finally, update the peer block choices
-            self.peer_root_hash_timestamps[peer_wallet_address] = [new_peer_stake, new_root_hash_timestamps]   
+                        new_root_hash_timestamp[0],  # timestamp
+                        new_root_hash_timestamp[1],  # root_hash
+                        new_peer_stake)
+            # finally, update the peer block choices
+            self.peer_root_hash_timestamps[peer_wallet_address] = [new_peer_stake, new_root_hash_timestamps]
+
+    # async def receive_sync_messages(self):
+    #     try:
+    #         block_choices_or_chain_head_root_hash_timestamps = await self.wait_first(
+    #             self._new_peer_block_choices.get(),
+    #             self._new_peer_chain_head_root_hash_timestamps.get(),
+    #             token=self.cancel_token,
+    #             timeout=CONSENSUS_SYNC_TIME_PERIOD)
+    #     except TimeoutError:
+    #         self.logger.warn("Timeout waiting for block choices or chain head root hash timestamps")
+    #         return
+    #
+    #
+    #     #here we need to check the instance to determine which it is.
+    #     #we will also be receiving blocks that syncer requests, so make sure we check that it is one of the blocks we asked for.
+    #     if isinstance(block_choices_or_chain_head_root_hash_timestamps, PeerBlockChoice):
+    #         block_choices = block_choices_or_chain_head_root_hash_timestamps
+    #         peer_wallet_address = block_choices.peer_wallet_address
+    #         new_peer_stake = block_choices.stake
+    #         new_block_hash_keys = block_choices.msg
+    #
+    #         #lets only update diff for this peer to reduce overhead.
+    #         if peer_wallet_address in self.peer_block_choices:
+    #             previous_peer_stake = self.peer_block_choices[peer_wallet_address][0]
+    #             previous_block_hash_keys = self.peer_block_choices[peer_wallet_address][1]
+    #
+    #             #lets just find the difference this way. should be more effectient. hopefully.
+    #             stake_sub, stake_add = self.calc_stake_difference(previous_block_hash_keys, new_block_hash_keys)
+    #             #first we subtract the previous stake
+    #             for previous_block_hash_key in stake_sub:
+    #                 self.delta_block_choice_statistics(previous_block_hash_key.wallet_address,
+    #                                                    previous_block_hash_key.block_number,
+    #                                                    previous_block_hash_key.block_hash,
+    #                                                    -1*previous_peer_stake)
+    #
+    #             #now add the new stake with new choices
+    #             for new_block_hash_key in stake_add:
+    #                 self.delta_block_choice_statistics(new_block_hash_key.wallet_address,
+    #                                                    new_block_hash_key.block_number,
+    #                                                    new_block_hash_key.block_hash,
+    #                                                    new_peer_stake)
+    #
+    #
+    #         else:
+    #             #this is the first message from them, we don't have any previous choices, so lets just add the new stake
+    #             for new_block_hash_key in new_block_hash_keys:
+    #                 self.delta_block_choice_statistics(new_block_hash_key.wallet_address,
+    #                                                    new_block_hash_key.block_number,
+    #                                                    new_block_hash_key.block_hash,
+    #                                                    new_peer_stake)
+    #
+    #         #finally, update the peer block choices
+    #         self.peer_block_choices[peer_wallet_address] = [new_peer_stake, new_block_hash_keys]
+    #
+    #         #TODO: calculate consensus, and remove all data for anything that has reached consensus.
+    #     else:
+    #         root_hash_timestamp_item = block_choices_or_chain_head_root_hash_timestamps
+    #         peer_wallet_address = root_hash_timestamp_item.peer_wallet_address
+    #         new_peer_stake = root_hash_timestamp_item.stake
+    #         new_root_hash_timestamps = root_hash_timestamp_item.msg
+    #         #self.logger.debug("dealing with new root_hash_timestamps {}".format(new_root_hash_timestamps))
+    #
+    #         #first we check to see if we have an entry for this peer:
+    #         if peer_wallet_address in self.peer_root_hash_timestamps:
+    #             previous_peer_stake = self.peer_root_hash_timestamps[peer_wallet_address][0]
+    #             previous_root_hash_timestamps = self.peer_root_hash_timestamps[peer_wallet_address][1]
+    #
+    #             #lets just find the difference this way. should be more effectient. hopefully.
+    #             stake_sub, stake_add = self.calc_stake_difference(previous_root_hash_timestamps, new_root_hash_timestamps)
+    #
+    #             #self.logger.debug("subtracting stake {} from timestamps {}".format(previous_peer_stake, [x[0] for x in stake_sub]))
+    #             #self.logger.debug("adding stake {} from timestamps {}".format(new_peer_stake, [x[0] for x in stake_add]))
+    #             #first we subtract the previous stake
+    #             for previous_root_hash_timestamp in stake_sub:
+    #                 self.delta_root_hash_timestamp_statistics(
+    #                                                    previous_root_hash_timestamp[0], #timestamp
+    #                                                    previous_root_hash_timestamp[1], #root_hash
+    #                                                    -1*previous_peer_stake)
+    #
+    #             #now add the new stake with new choices
+    #             for new_root_hash_timestamp in stake_add:
+    #                 self.delta_root_hash_timestamp_statistics(
+    #                                                    new_root_hash_timestamp[0], #timestamp
+    #                                                    new_root_hash_timestamp[1], #root_hash
+    #                                                    new_peer_stake)
+    #         else:
+    #             #now add the new stake with new choices
+    #             for new_root_hash_timestamp in new_root_hash_timestamps:
+    #                 self.delta_root_hash_timestamp_statistics(
+    #                                                    new_root_hash_timestamp[0], #timestamp
+    #                                                    new_root_hash_timestamp[1], #root_hash
+    #                                                    new_peer_stake)
+    #         #finally, update the peer block choices
+    #         self.peer_root_hash_timestamps[peer_wallet_address] = [new_peer_stake, new_root_hash_timestamps]
                 
-            
+
+
+
     async def calculate_average_network_tpc_cap(self):
         num_candidates = 0
         all_candidate_item_stake = []
@@ -988,10 +1090,7 @@ class Consensus(BaseService, PeerSubscriber):
                     pass
             
         
-    async def get_missing_stake_from_bootnode(self):
-        if self._last_get_stake_from_bootnode_time < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
-            await self._get_missing_stake_from_bootnode()
-            self._last_get_stake_from_bootnode_time = int(time.time())
+
        
     async def _get_missing_stake_from_bootnode(self):
         addresses_needing_stake = []
@@ -1007,7 +1106,7 @@ class Consensus(BaseService, PeerSubscriber):
         else:
         
             for peer in self.peer_pool.peers:
-                if peer.stake == 0:
+                if await peer.stake == None:
                     if peer.wallet_address not in self.peer_stake_from_bootstrap_node:
                         addresses_needing_stake.append(peer.wallet_address)
                         
@@ -1025,9 +1124,7 @@ class Consensus(BaseService, PeerSubscriber):
             
         #if it gets to here, then we arent connected to any boot nodes. Or we have no bootnodes. Nothing we can do right now. Try again later.
                
-                
-        
-        
+
     # def populate_peer_consensus(self):
     #     if self._last_block_choice_consensus_calculation_time < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
     #         self._populate_peer_consensus()
@@ -1391,6 +1488,8 @@ class Consensus(BaseService, PeerSubscriber):
         '''
         If one of our root hash timestamps is in conflict with consensus, then this returns the root hash and timestamp for the 
         latest one before that where we were still in consensus
+
+        Returns None, None if no conflicts are found
         
         if before_timestamp is set, it only looks at root hashes with timestamp earlier than before_timestamp
         '''
@@ -1521,9 +1620,14 @@ class Consensus(BaseService, PeerSubscriber):
     async def _handle_block_choices(self, peer: HLSPeer, msg) -> None:
         peer_wallet_address = peer.wallet_address
         #self.logger.debug("handle_block_chioces msg = {}".format(msg))
-        stake = await self.get_accurate_stake(peer_wallet_address, peer.stake)
-        new_peer_block_choice = PeerBlockChoice(peer_wallet_address, stake, msg)
-        self._new_peer_block_choices.put_nowait(new_peer_block_choice)
+        try:
+            stake = await self.get_accurate_stake(peer)
+
+            new_peer_block_choice = PeerBlockChoice(peer_wallet_address, stake, msg)
+            self._new_peer_block_choices.put_nowait(new_peer_block_choice)
+        except UnknownPeerStake:
+            #If we don't know their stake yet. Don't add it to the statistics.
+            pass
             
     async def _handle_get_block_choices(self, peer: HLSPeer, msg) -> None:
         #self.logger.debug("_handle_get_block_choices msg = {}".format(msg))        
@@ -1544,13 +1648,18 @@ class Consensus(BaseService, PeerSubscriber):
     async def _handle_chain_head_root_hash_timestamps(self, peer: HLSPeer, msg) -> None:
         peer_wallet_address = peer.wallet_address
         #self.logger.debug("_handle_chain_head_root_hash_timestamps msg = {}".format(msg))
-        
-        stake = await self.get_accurate_stake(peer_wallet_address, peer.stake)
-        new_root_hash_timestamps = msg
-        #lets save it to the peer
-        peer.chain_head_root_hashes = new_root_hash_timestamps
-        new_peer_data = PeerRootHashTimestamps(peer_wallet_address, stake, new_root_hash_timestamps)
-        self._new_peer_chain_head_root_hash_timestamps.put_nowait(new_peer_data)
+
+        try:
+            stake = await self.get_accurate_stake(peer)
+
+            new_root_hash_timestamps = msg
+            #lets save it to the peer
+            peer.chain_head_root_hashes = new_root_hash_timestamps
+            new_peer_data = PeerRootHashTimestamps(peer_wallet_address, stake, new_root_hash_timestamps)
+            self._new_peer_chain_head_root_hash_timestamps.put_nowait(new_peer_data)
+        except UnknownPeerStake:
+            # If we don't know their stake yet. Don't add it to the statistics.
+            pass
             
     async def _handle_get_chain_head_root_hash_timestamps(self, peer: HLSPeer, msg) -> None:
         #peer_wallet_address = peer.wallet_address
@@ -1568,6 +1677,7 @@ class Consensus(BaseService, PeerSubscriber):
                 address = address_stake[0]
                 stake = address_stake[1]
                 self.peer_stake_from_bootstrap_node[address] = stake
+
             
     async def _handle_get_stake_for_addresses(self, peer: HLSPeer, msg) -> None:
         address_stakes = []
@@ -1602,15 +1712,19 @@ class Consensus(BaseService, PeerSubscriber):
             #require that the timestamp is set to 0 for the most recent average. Otherwise we shouldn't be receiving just 1.
             if hist_net_tpc_capability[0][0] == 0:
                 #We are just receiving the last minute. this can be from any node. Lets keep track of it and average it.
-                peer_wallet_address = peer.wallet_address
-                stake = await self.get_accurate_stake(peer_wallet_address, peer.stake)
-                self._network_tpc_cap_statistics[peer_wallet_address] = [time.time(),hist_net_tpc_capability[0][1], stake]
-            
-        #make sure they are a bootnode
-        if peer.remote in self.bootstrap_nodes:
-            if not self.coro_min_gas_system_ready.is_set():
-                await self.chaindb.coro_save_historical_minimum_gas_price(hist_min_allowed_gas_price)
-                await self.chaindb.coro_save_historical_network_tpc_capability(hist_net_tpc_capability)
+                try:
+                    stake = await self.get_accurate_stake(peer)
+                    self._network_tpc_cap_statistics[peer.wallet_address] = [time.time(),hist_net_tpc_capability[0][1], stake]
+                except UnknownPeerStake:
+                    # If we don't know their stake yet. Don't add it to the statistics.
+                    pass
+
+        else:
+            #we are receiving an entire list of historical tpc data. This can only come from a bootnode.
+            if peer.remote in self.bootstrap_nodes:
+                if not self.coro_min_gas_system_ready.is_set():
+                    await self.chaindb.coro_save_historical_minimum_gas_price(hist_min_allowed_gas_price)
+                    await self.chaindb.coro_save_historical_network_tpc_capability(hist_net_tpc_capability)
 
     async def _handle_get_node_staking_score(self, peer: HLSPeer, msg) -> None:
         try:
