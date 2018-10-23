@@ -292,6 +292,13 @@ chain_parser.add_argument(
 )
 
 chain_parser.add_argument(
+    '--network_startup_node',
+    action='store_true',
+    dest='network_startup_node',
+    help="Use this if this is one of the initial nodes at the startup of the network. It will initially assume that this blockchain database has consensus even if there are no other connected nodes.",
+)
+
+chain_parser.add_argument(
     '--instance',
     type=int,
     help=(

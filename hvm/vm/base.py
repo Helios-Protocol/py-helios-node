@@ -32,7 +32,7 @@ from hvm.constants import (
     MAX_UNCLES,
     MIN_TIME_BETWEEN_BLOCKS,
     ZERO_HASH32,
-)
+    BLANK_REWARD_HASH)
 from hvm.db.trie import make_trie_root_and_nodes
 from hvm.db.chain import BaseChainDB  # noqa: F401
 from hvm.exceptions import (
@@ -502,7 +502,7 @@ class VM(BaseVM):
         #then run all receive transactions
         last_header, receive_receipts = self._apply_all_transactions(block.receive_transactions, last_header, self.wallet_address)
 
-        if block.reward_bundle is not None:
+        if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
             self._apply_reward_bundle(block.reward_bundle, block_timestamp, self.wallet_address)
 
 
@@ -628,7 +628,7 @@ class VM(BaseVM):
 
     def set_block_reward_hash(self, block: BaseBlock, header:BlockHeader, reward_bundle: StakeRewardBundle) -> BaseBlock:
         if reward_bundle is None:
-            reward_hash = ZERO_HASH32
+            reward_hash = BLANK_REWARD_HASH
         else:
             reward_hash = reward_bundle.hash
 
@@ -921,7 +921,7 @@ class VM(BaseVM):
                     block.header.receive_transaction_root, re_tx_root_hash))
 
         if block.reward_bundle is None:
-            reward_bundle_hash = ZERO_HASH32
+            reward_bundle_hash = BLANK_REWARD_HASH
         else:
             reward_bundle_hash = block.reward_bundle.hash
 

@@ -52,7 +52,7 @@ from hvm.validation import (
 
 from eth_hash.auto import keccak
 
-from typing import Iterable, Any
+from typing import Iterable, Any, List
 
 
 
@@ -208,11 +208,25 @@ class StakeRewardType1(rlp.Serializable, metaclass=ABCMeta):
         ('amount', big_endian_int),
     ]
 
+    def __init__(self,
+                 amount: int = 0,
+                 **kwargs: Any) -> None:
+
+        super(StakeRewardType1, self).__init__(amount, **kwargs)
+
 class StakeRewardType2(rlp.Serializable, metaclass=ABCMeta):
+    proof_class = NodeStakingScore
     fields = [
         ('amount', big_endian_int),
         ('proof', CountableList(NodeStakingScore)),
     ]
+
+    def __init__(self,
+                 amount: int = 0,
+                 proof: List[NodeStakingScore] = [],
+                 **kwargs: Any) -> None:
+
+        super(StakeRewardType2, self).__init__(amount, proof, **kwargs)
 
     @property
     def hash(self) -> bytes:
@@ -228,10 +242,26 @@ class StakeRewardType2(rlp.Serializable, metaclass=ABCMeta):
 
 
 class StakeRewardBundle(rlp.Serializable, metaclass=ABCMeta):
+    reward_type_1_class = StakeRewardType1
+    reward_type_2_class = StakeRewardType2
+
     fields = [
         ('reward_type_1', StakeRewardType1),
         ('reward_type_2', StakeRewardType2),
     ]
+
+    def __init__(self,
+                 reward_type_1: StakeRewardType1=None,
+                 reward_type_2: StakeRewardType2 = None,
+                 **kwargs: Any) -> None:
+
+        if reward_type_1 is None:
+            reward_type_1 = StakeRewardType1()
+
+        if reward_type_2 is None:
+            reward_type_2 = StakeRewardType2()
+
+        super(StakeRewardBundle, self).__init__(reward_type_1, reward_type_2, **kwargs)
 
     @property
     def hash(self) -> bytes:

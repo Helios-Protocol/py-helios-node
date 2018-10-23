@@ -58,7 +58,7 @@ def create_new_genesis_params_and_state(private_key, total_supply = 100000000 * 
         'gas_used': 0,
         'timestamp': timestamp,
         'extra_data': constants.GENESIS_EXTRA_DATA,
-        'reward_hash': constants.GENESIS_REWARD_DATA,
+        'reward_hash': constants.GENESIS_REWARD_HASH,
         'account_balance': total_supply,
     }
 
@@ -128,7 +128,7 @@ def create_dev_test_random_blockchain_database(base_db):
         
         order_of_chains.append(encode_hex(privkey.public_key.to_canonical_address()))
         
-        logger.debug("Receiving ")
+        #logger.debug("Receiving ")
         
         #then receive the transactions
         receiver_chain = MainnetChain(base_db, receiver_privkey.public_key.to_canonical_address(), receiver_privkey)
@@ -137,7 +137,7 @@ def create_dev_test_random_blockchain_database(base_db):
         
         imported_block_from_db = receiver_chain.chaindb.get_block_by_number(imported_block.header.block_number, receiver_chain.get_vm().get_block_class(),receiver_privkey.public_key.to_canonical_address())
 
-        logger.debug("finished creating block group {}".format(i))
+        #logger.debug("finished creating block group {}".format(i))
     
     order_of_chains.append(encode_hex(receiver_privkey.public_key.to_canonical_address()))
     
@@ -147,7 +147,7 @@ def create_dev_test_random_blockchain_database(base_db):
     
 
 #key_balance_dict = {priv_key: (balance, timestamp)}
-def create_dev_fixed_blockchain_database(base_db, key_balance_dict):
+def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_genesis = False):
     logger.debug("generating test fixed blockchain db")
 
     earliest_timestamp = int(time.time())
@@ -160,8 +160,13 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict):
     required_total_supply = required_total_supply*2
 
     #initialize db
-    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply, earliest_timestamp - 100000)
-    sender_chain = MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
+    if use_real_genesis:
+        sender_chain = import_genesis_block(base_db)
+    else:
+        genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply, earliest_timestamp - 100000)
+        sender_chain = MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
+
+    sender_chain.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=5)
 
     privkey = GENESIS_PRIVATE_KEY
     sender_chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), privkey)
@@ -197,7 +202,7 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict):
         timestamp_modified_imported_block = imported_block.copy(header = imported_block.header.copy(timestamp = timestamp).get_signed(GENESIS_PRIVATE_KEY,dummy_sender_chain.network_id))
         sender_chain.import_block(timestamp_modified_imported_block, allow_unprocessed = False)
 
-        logger.debug("Receiving ")
+        #logger.debug("Receiving ")
 
         #then receive the transactions
         receiver_chain = MainnetChain(base_db, receiver_privkey.public_key.to_canonical_address(), receiver_privkey)
@@ -210,7 +215,13 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict):
         receiver_chain.import_block(timestamp_modified_imported_block, allow_unprocessed=False)
 
     logger.debug("finished creating fixed blockchain")
-    
+
+    # sender_chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), privkey)
+    # latest_historical_timestamp = sender_chain.chain_head_db.get_historical_root_hashes()[-1][0]
+    # chronological_block_window = sender_chain.chain_head_db.load_chronological_block_window(latest_historical_timestamp)
+    # print("AAAAAAAAAAAA")
+    # print(latest_historical_timestamp)
+    # print(chronological_block_window)
 
     
     
@@ -257,4 +268,47 @@ def load_local_nodes(local_private_key = None):
     return peer_pool
         
 
-    
+
+def create_predefined_blockchain_database(db, genesis_block_timestamp = None):
+    if genesis_block_timestamp is None:
+        genesis_block_timestamp = MAINNET_GENESIS_PARAMS['timestamp']
+
+    from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE
+    def get_primary_node_private_helios_key(instance_number=0):
+        return keys.PrivateKey(random_private_keys[instance_number])
+
+    private_keys = []
+    for i in range(10):
+        private_keys.append(keys.PrivateKey(random_private_keys[i]))
+
+    # key_balance_dict = {
+    #     private_keys[0]: (1000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS),
+    #     private_keys[1]: (20000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*2),
+    #     private_keys[2]: (34000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*3),
+    #     private_keys[3]: (100000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*4),
+    #     private_keys[4]: (140000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*5),
+    #     private_keys[5]: (240000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*6),
+    #     private_keys[6]: (300000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*7),
+    #     private_keys[7]: (400000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*8),
+    #     private_keys[8]: (100000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*9),
+    #     private_keys[9]: (1000000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*10),
+    #   }
+
+    key_balance_dict = {
+        private_keys[0]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+        private_keys[1]: (2000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*2),
+        private_keys[2]: (3400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*3),
+        private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),
+        private_keys[4]: (14000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*5),
+        private_keys[5]: (2400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*6),
+        private_keys[6]: (30000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*7),
+        private_keys[7]: (40000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*8),
+        private_keys[8]: (10000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*9),
+        private_keys[9]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
+
+    }
+    if genesis_block_timestamp == MAINNET_GENESIS_PARAMS['timestamp']:
+        create_dev_fixed_blockchain_database(db, key_balance_dict, True)
+    else:
+        create_dev_fixed_blockchain_database(db, key_balance_dict)
+

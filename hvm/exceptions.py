@@ -106,6 +106,12 @@ class NotEnoughProofsOrStakeForRewardType2Proof(PyEVMError):
     """
     pass
 
+class RewardAmountRoundsToZero(PyEVMError):
+    """
+    Raised when a node attempts to create a reward block that has amount = 0 for all kinds of rewards. This will occur if not enough time has passed since the last reward.
+    """
+    pass
+
 class NotEnoughDataForHistoricalMinGasPriceCalculation(PyEVMError):
     """
     Raised when there is not enough historical TPC to perform a calculation. Can occur when the genesis node just starts

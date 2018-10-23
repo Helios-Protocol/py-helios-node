@@ -9,6 +9,8 @@ from typing import (
     List,
 )
 
+from eth_utils import encode_hex
+
 from hp2p.constants import PEER_STAKE_GONE_STALE_TIME_PERIOD
 from hvm.exceptions import (
     CanonicalHeadNotFound,
@@ -90,8 +92,6 @@ class HLSPeer(BaseChainPeer):
         else:
             super().handle_sub_proto_msg(cmd, msg)
 
-    # async def send_sub_proto_handshake(self) -> None:
-    #     self.sub_proto.send_handshake(await self._local_chain_info)
 
     async def send_sub_proto_handshake(self) -> None:
         local_salt = secrets.token_bytes(32)
@@ -99,26 +99,6 @@ class HLSPeer(BaseChainPeer):
         self.sub_proto.send_handshake(chain_info, local_salt)
         self.local_salt = local_salt
 
-    # async def process_sub_proto_handshake(
-    #         self, cmd: Command, msg: _DecodedMsgType) -> None:
-    #     if not isinstance(cmd, Status):
-    #         await self.disconnect(DisconnectReason.subprotocol_error)
-    #         raise HandshakeFailure(
-    #             "Expected a ETH Status msg, got {}, disconnecting".format(cmd))
-    #     msg = cast(Dict[str, Any], msg)
-    #     if msg['network_id'] != self.network_id:
-    #         await self.disconnect(DisconnectReason.useless_peer)
-    #         raise HandshakeFailure(
-    #             "{} network ({}) does not match ours ({}), disconnecting".format(
-    #                 self, msg['network_id'], self.network_id))
-    #     genesis = await self.genesis
-    #     if msg['genesis_hash'] != genesis.hash:
-    #         await self.disconnect(DisconnectReason.useless_peer)
-    #         raise HandshakeFailure(
-    #             "{} genesis ({}) does not match ours ({}), disconnecting".format(
-    #                 self, encode_hex(msg['genesis_hash']), genesis.hex_hash))
-    #     self.head_td = msg['td']
-    #     self.head_hash = msg['best_hash']
 
     async def process_sub_proto_handshake(
             self, cmd: Command, msg: _DecodedMsgType) -> None:
@@ -126,21 +106,22 @@ class HLSPeer(BaseChainPeer):
             await self.disconnect(DisconnectReason.other)
             raise HandshakeFailure(
                 "Expected a HLS Status msg, got {}, disconnecting".format(cmd))
+
         msg = cast(Dict[str, Any], msg)
         if msg['network_id'] != self.network_id:
             await self.disconnect(DisconnectReason.useless_peer)
             raise HandshakeFailure(
                 "{} network ({}) does not match ours ({}), disconnecting".format(
                     self, msg['network_id'], self.network_id))
-        # genesis = await self.genesis
-        # if msg['genesis_hash'] != genesis.hash:
-        #     await self.disconnect(DisconnectReason.useless_peer)
-        #     raise HandshakeFailure(
-        #         "{} genesis ({}) does not match ours ({}), disconnecting".format(
-        #             self, encode_hex(msg['genesis_hash']), genesis.hex_hash))
+
+        genesis_block_hash = self.chain.get_genesis_block_hash()
+        if msg['genesis_block_hash'] != genesis_block_hash:
+            await self.disconnect(DisconnectReason.useless_peer)
+            raise HandshakeFailure(
+                "{} genesis ({}) does not match ours ({}), disconnecting".format(
+                    self, encode_hex(msg['genesis_block_hash']), encode_hex(genesis_block_hash)))
+
         self.node_type = msg['node_type']
-        #self.wallet_address = msg['wallet_address']
-        self.chain_head_root_hashes = msg['chain_head_root_hashes']
         self.send_wallet_address_verification(msg['salt'])
 
         # After the sub_proto handshake, the peer will send back a signed message containing the wallet address
@@ -160,6 +141,7 @@ class HLSPeer(BaseChainPeer):
             raise HandshakeFailure(
                 "Expected a HLS WalletAddressVerification msg, got {}, disconnecting".format(cmd))
         msg = cast(Dict[str, Any], msg)
+
         # make sure the salt they replied with is the salt we sent:
         if msg['salt'] != self.local_salt:
             raise HandshakeFailure("The peer replied with a signed message using the wrong salt")
@@ -167,10 +149,6 @@ class HLSPeer(BaseChainPeer):
         validate_transaction_signature(msg['salt'], msg['v'], msg['r'], msg['s'])
 
         self.wallet_address = extract_wallet_verification_sender(msg['salt'], msg['v'], msg['r'], msg['s'])
-
-        # self.logger.debug("Recieved valid wallet address verification for wallet address {}".format(self.wallet_address))
-
-        # note, when we receive an address verification message, we have to verify that the salt they send back equals local salt
 
     def send_wallet_address_verification(self, salt):
         v, r, s = create_wallet_verification_signature(salt, self.chain_config.node_private_helios_key)

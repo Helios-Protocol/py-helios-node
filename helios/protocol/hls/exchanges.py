@@ -38,7 +38,7 @@ from .normalizers import (
     GetBlockBodiesNormalizer,
     GetNodeDataNormalizer,
     ReceiptsNormalizer,
-)
+    GetNodeStakingScoreNormalizer)
 from .requests import (
     GetBlockBodiesRequest,
     GetBlockHeadersRequest,
@@ -211,7 +211,7 @@ BaseGetNodeStakingScoreExchange = BaseExchange[
 ]
 
 class GetNodeStakingScoreExchange(BaseGetNodeStakingScoreExchange):
-    _normalizer = NoopNormalizer[Tuple[P2PBlock, ...]]()
+    _normalizer = GetNodeStakingScoreNormalizer()
     request_class = GetNodeStakingScoreRequest
     tracker_class = GetNodeStakingScoreTracker
 

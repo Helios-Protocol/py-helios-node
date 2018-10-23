@@ -6,7 +6,7 @@ from .constants import (
 )
 from hvm import constants
 
-from hvm.chains.base import Chain
+from hvm.chains.base import Chain, AsyncChain
 from hvm.rlp.headers import BlockHeader
 from hvm.vm.base import BaseVM  # noqa: F401
 from hvm.vm.forks import (
@@ -35,14 +35,7 @@ MAINNET_NETWORK_ID = 1
 GENESIS_PRIVATE_KEY = keys.PrivateKey(b'p.Oids\xedb\xa3\x93\xc5\xad\xb9\x8d\x92\x94\x00\x06\xb9\x82\xde\xb9\xbdBg\\\x82\xd4\x90W\xd0\xd5')
 GENESIS_WALLET_ADDRESS = b"\xdbL\xa4&\xd5;Y\xf6\x03p'O\xfb\x19\xf2&\x8d\xc3=\xdf"
 
-class BaseMainnetChain:
-    vm_configuration = MAINNET_VM_CONFIGURATION  # type: Tuple[Tuple[int, Type[BaseVM]], ...]  # noqa: E501
-    network_id = MAINNET_NETWORK_ID  # type: int
-    genesis_wallet_address = GENESIS_WALLET_ADDRESS
 
-
-class MainnetChain(BaseMainnetChain, Chain):
-    pass
 
 
 #RECEIVER = keys.PrivateKey(b'\x16\xc3\xb37\xb8\x8aG`\xdf\xad\xe3},\x9a\xb4~\xff7&?\xab\x80\x03\xf8\x9fo/:c\x18\xaa>')
@@ -104,8 +97,17 @@ MAINNET_GENESIS_STATE = {
     }
 }
 
-MAINNET_GENESIS_PARAMS = {'parent_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receive_transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receipt_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'bloom': 0, 'block_number': 0, 'gas_limit': 3141592, 'gas_used': 0, 'timestamp': 1539113000, 'extra_data': b'', 'reward_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'account_hash': b'\x19\xfc\x94\x8d\x95\xacs\x06Db\x80\xf4\x9e\x94\x823\xa1\xe2#\x03t\x0f\x8d\\\xe9\x7f&;\xc9d\xc67', 'account_balance': 100000000000000000000000000, 'v': 37, 'r': 1482458420355231765239647824018591169881327671443418493840869182334891450427, 's': 34479400595774486036637745068350197431698266513187255415469503891226762935563}
+MAINNET_GENESIS_PARAMS = {'parent_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receive_transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receipt_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'bloom': 0, 'block_number': 0, 'gas_limit': 3141592, 'gas_used': 0, 'timestamp': 1540153000, 'extra_data': b'', 'reward_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'account_hash': b'\x19\xfc\x94\x8d\x95\xacs\x06Db\x80\xf4\x9e\x94\x823\xa1\xe2#\x03t\x0f\x8d\\\xe9\x7f&;\xc9d\xc67', 'account_balance': 100000000000000000000000000, 'v': 37, 'r': 105622321071541956240484089282585887803051956700960739456437226940393414116516, 's': 43189925834359231508532422353840122376436685429343597688868886391708567688322}
 
+
+class BaseMainnetChain:
+    vm_configuration = MAINNET_VM_CONFIGURATION  # type: Tuple[Tuple[int, Type[BaseVM]], ...]  # noqa: E501
+    network_id = MAINNET_NETWORK_ID  # type: int
+    genesis_wallet_address = GENESIS_WALLET_ADDRESS
+    genesis_block_timestamp = MAINNET_GENESIS_PARAMS['timestamp']
+
+class MainnetChain(BaseMainnetChain, AsyncChain):
+    pass
 
 
 ############
@@ -127,5 +129,5 @@ MAINNET_TPC_CAP_TEST_GENESIS_STATE = {
 MAINNET_TPC_CAP_TEST_GENESIS_PARAMS =  {'parent_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receive_transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receipt_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'bloom': 0, 'block_number': 0, 'gas_limit': 3141592, 'gas_used': 0, 'timestamp': 1539113000, 'extra_data': b'', 'reward_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'account_hash': b'\x19\xfc\x94\x8d\x95\xacs\x06Db\x80\xf4\x9e\x94\x823\xa1\xe2#\x03t\x0f\x8d\\\xe9\x7f&;\xc9d\xc67', 'account_balance': 100000000000000000000000000, 'v': 37, 'r': 1482458420355231765239647824018591169881327671443418493840869182334891450427, 's': 34479400595774486036637745068350197431698266513187255415469503891226762935563}
 
 
-MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT = {'header': {'parent_hash': b'\xb1&\xbb\x01\xf9\x98_\xe5(\x1d3\x83\xe2Q\xfb\x86f\x9f~rW\xc7\xe4\xca\xccsgu\xe1q\xc2*', 'transaction_root': b"v\x07\xda\xceF0\x1cX9\xec\x99\x07H\xe1I\xf7\xa5\x9a\x1b\x11\x91\x99\xdb'J_\xf1\x00#\x8e\x114", 'receive_transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receipt_root': b'\x05k#\xfb\xbaH\x06\x96\xb6_\xe5\xa5\x9b\x8f!H\xa1)\x91\x03\xc4\xf5}\xf89#:\xf2\xcfL\xa2\xd2', 'bloom': 0, 'block_number': 1, 'gas_limit': 4141592, 'gas_used': 21000, 'timestamp': 1539913210, 'extra_data': b'', 'reward_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'account_hash': b'\xf0~$\xc18\xb4*S\xadVf\x03\xcc\x0e\xd7\x1f\xa3\xf4\xa7\x9b\x80\xfd\x1fsCi\x1cu3Ta\x8d', 'account_balance': 999999999999999999978000, 'v': 38, 'r': 38963931928536301243486746617459464340413216094664660795278572164461677761747, 's': 51597051539539291792599575888457553288929277319669449890674927476588477719336}, 'transactions': [{'nonce': 0, 'gas_price': 1, 'gas': 800000, 'to': b'\x9c\x8b \xe80\xc0\xdb\x83\x86(\x92\xfc\x14\x18\x08\xeajQ\xfe\xa2', 'value': 1000, 'data': b'', 'v': 38, 'r': 98743013014740787644240047029149136866906684773826702147617977984628568592109, 's': 1208800992104991308302459350187967474776647629430124146847787105720875640181}], 'receive_transactions': []}
+MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT = {'header': {'parent_hash': b'\xb1&\xbb\x01\xf9\x98_\xe5(\x1d3\x83\xe2Q\xfb\x86f\x9f~rW\xc7\xe4\xca\xccsgu\xe1q\xc2*', 'transaction_root': b"v\x07\xda\xceF0\x1cX9\xec\x99\x07H\xe1I\xf7\xa5\x9a\x1b\x11\x91\x99\xdb'J_\xf1\x00#\x8e\x114", 'receive_transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receipt_root': b'\x05k#\xfb\xbaH\x06\x96\xb6_\xe5\xa5\x9b\x8f!H\xa1)\x91\x03\xc4\xf5}\xf89#:\xf2\xcfL\xa2\xd2', 'bloom': 0, 'block_number': 1, 'gas_limit': 4141592, 'gas_used': 21000, 'timestamp': 1540270483, 'extra_data': b'', 'reward_hash': b'\xb4\xbd\xc8\xf9\xbaD\xf5z$\xde\x84\xca@\x07\xa5\xec\x03T\x18\xfa\xb7\x1bE\x89,j5\x85\xee\xf59\xbb', 'account_hash': b'\xf0~$\xc18\xb4*S\xadVf\x03\xcc\x0e\xd7\x1f\xa3\xf4\xa7\x9b\x80\xfd\x1fsCi\x1cu3Ta\x8d', 'account_balance': 999999999999999999978000, 'v': 38, 'r': 77204705403621605490682356460320893283166825530584645533709369939351197321867, 's': 28462040913508534346847567774993052909170623760758907940239617203256932323894}, 'transactions': [{'nonce': 0, 'gas_price': 1, 'gas': 800000, 'to': b'\x9c\x8b \xe80\xc0\xdb\x83\x86(\x92\xfc\x14\x18\x08\xeajQ\xfe\xa2', 'value': 1000, 'data': b'', 'v': 38, 'r': 98743013014740787644240047029149136866906684773826702147617977984628568592109, 's': 1208800992104991308302459350187967474776647629430124146847787105720875640181}], 'receive_transactions': [], 'reward_bundle': {'reward_type_1': {'amount': 0}, 'reward_type_2': {'amount': 0, 'proof': []}}}
 

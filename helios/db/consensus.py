@@ -23,15 +23,24 @@ class AsyncConsensusDB(ConsensusDB):
                               ) -> NodeStakingScore:
         raise NotImplementedError()
 
-    
-    
+    async def coro_get_signed_peer_score_string_private_key(self, private_key_string: bytes,
+                            peer_wallet_address: Address,
+                            after_block_number: BlockNumber = None,
+                            ) -> NodeStakingScore:
+        raise NotImplementedError()
 
 class ConsensusDBProxy(BaseProxy):
 
     coro_get_signed_peer_score = async_method('get_signed_peer_score')
+    coro_get_signed_peer_score_string_private_key = async_method('get_signed_peer_score_string_private_key')
+    coro_validate_node_staking_score = async_method('validate_node_staking_score')
+
+
 
     save_health_request = sync_method('save_health_request')
     get_current_peer_node_health = sync_method('get_current_peer_node_health')
     get_signed_peer_score = sync_method('get_signed_peer_score')
+    get_signed_peer_score_string_private_key = sync_method('get_signed_peer_score_string_private_key')
+    validate_node_staking_score = sync_method('validate_node_staking_score')
 
     get_timestamp_of_last_health_request = sync_method('get_timestamp_of_last_health_request')

@@ -139,6 +139,6 @@ class GetNodeStakingScoreValidator(BaseValidator[NodeStakingScore]):
         #Since this function shouldn't be called very often, we can run this expensive validation. It will make sure
         #the node doesn't accidentally include any invalid node staking scores which will invalidate the entire
         #reward bundle and they will have to re-create it.
-        self.consensus_db.validate_node_staking_score(response)
+        self.consensus_db.validate_node_staking_score(response, self.since_block)
 
 

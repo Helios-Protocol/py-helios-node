@@ -158,6 +158,9 @@ def construct_chain_config_params(
     if args.rpc_port is not None:
         yield 'rpc_port', args.rpc_port
 
+    if args.network_startup_node is not None:
+        yield 'network_startup_node', args.network_startup_node
+
     if args.preferred_nodes is None:
         yield 'preferred_nodes', tuple()
     else:

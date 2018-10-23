@@ -44,10 +44,9 @@ if TYPE_CHECKING:
 #     genesis_hash: Hash32
 
 class ChainInfo:
-    def __init__(self, node_type, node_wallet_address, chain_head_root_hashes):
+    def __init__(self, node_type, genesis_block_hash):
         self.node_type=node_type
-        self.node_wallet_address=node_wallet_address
-        self.chain_head_root_hashes = chain_head_root_hashes
+        self.genesis_block_hash = genesis_block_hash
 
 class BaseChainPeer(BasePeer):
     #boot_manager_class = DAOCheckBootManager
@@ -89,13 +88,11 @@ class BaseChainPeer(BasePeer):
     @property
     async def _local_chain_info(self) -> 'ChainInfo':
         node_type = self.chain_config.node_type
-        node_wallet_address = self.chain_config.node_wallet_address
-        chain_head_root_hashes = await self.chain_head_db.coro_get_historical_root_hashes()
+        genesis_block_hash = self.chain.get_genesis_block_hash()
 
         return ChainInfo(
             node_type=node_type,
-            node_wallet_address=node_wallet_address,
-            chain_head_root_hashes=chain_head_root_hashes
+            genesis_block_hash=genesis_block_hash
         )
 
 
@@ -119,7 +116,12 @@ class BaseChainPeerPool(BasePeerPool):
         # TODO: Consider turning this into a method that returns an AsyncIterator, to make it
         # harder for callsites to get a list of peers while making blocking calls, as those peers
         # might disconnect in the meantime.
-        peers = tuple(self.connected_nodes.values())
-        peers_with_stake = [peer for peer in peers if peer._stake is not None]
-        return [peer for peer in peers_with_stake if peer._stake >= min_stake]
+        if min_stake == 0:
+            #if we have no minimum stake, return all peers, even ones where we don't know the stake.
+            peers = tuple(self.connected_nodes.values())
+            return peers
+        else:
+            peers = tuple(self.connected_nodes.values())
+            peers_with_stake = [peer for peer in peers if peer._stake is not None]
+            return [peer for peer in peers_with_stake if peer._stake >= min_stake]
 

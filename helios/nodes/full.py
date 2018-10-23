@@ -11,6 +11,8 @@ from helios.server import FullServer
 
 from .base import Node
 
+from eth_keys.datatypes import PrivateKey
+from eth_typing import Address
 
 class FullNode(Node):
     _chain: BaseChain = None
@@ -33,10 +35,13 @@ class FullNode(Node):
 
         return self._chain
 
-    def get_new_chain(self, chain_address=None):
+    def get_new_private_chain(self):
+        return self.get_new_chain(private_key = self.chain_config.node_private_helios_key)
+
+    def get_new_chain(self, chain_address: Address=None, private_key:PrivateKey = None):
         if chain_address is None:
             chain_address = self.wallet_address
-        return self.chain_class(self.db_manager.get_db(), chain_address)
+        return self.chain_class(self.db_manager.get_db(), chain_address, private_key)
 
     # save as [public_key,ip,udp_port,tcp_port]
     def save_node_address_to_local_peer_pool_file(self):

@@ -1,7 +1,7 @@
 import rlp
 from rlp import sedes
 
-from hvm.rlp.consensus import stake_reward_bundle_or_none
+from hvm.rlp.consensus import StakeRewardBundle
 from hvm.rlp.sedes import (
     address,
     hash32,
@@ -37,7 +37,7 @@ class P2PBlock(rlp.Serializable):
         ('header', BlockHeader),
         ('transactions', sedes.CountableList(P2PSendTransaction)),
         ('receive_transactions', sedes.CountableList(P2PReceiveTransaction)),
-        ('reward_bundle', stake_reward_bundle_or_none),
+        ('reward_bundle', StakeRewardBundle),
     ]
 
 

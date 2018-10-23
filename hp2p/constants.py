@@ -96,3 +96,7 @@ PEER_STAKE_GONE_STALE_TIME_PERIOD = 60 # The amount of time that needs to pass b
 LOCAL_PEER_POOL_PATH = '/home/tommy/.local/share/helios/local_peer_pool'
 
 
+#TESTING
+PEER_STAKE_GONE_STALE_TIME_PERIOD = 5
+
+

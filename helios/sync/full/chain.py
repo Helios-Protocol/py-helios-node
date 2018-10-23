@@ -357,6 +357,7 @@ class FastChainSyncer(BaseService, PeerSubscriber):
     async def _run(self) -> None:
         self.logger.debug("Starting chain. waiting for consensus and chain config to initialize.")
         self.run_task(self._handle_msg_loop())
+
         consensus_ready = await self.consensus.coro_is_ready.wait()
         if consensus_ready:
             self.logger.debug("consensus ready")
@@ -609,7 +610,7 @@ class RegularChainSyncer(FastChainSyncer):
         if self.is_ready_for_regular_syncer:
 
             self.logger.debug("Starting regular chainsyncer. waiting for consensus and chain config to initialize.")
-
+            self.run_daemon_task(self._handle_msg_loop())
             consensus_ready = await self.consensus.coro_is_ready.wait()
             if consensus_ready:
                 self.logger.debug('waiting for consensus min gas system ready')
@@ -620,7 +621,7 @@ class RegularChainSyncer(FastChainSyncer):
 
                         self.logger.debug("syncing chronological blocks")
                         # await self.sync_chronological_blocks()
-                        self.run_daemon_task(self._handle_msg_loop())
+
                         self.run_daemon_task(self._handle_import_block_loop())
                         if self.event_bus is not None:
                             self.run_task(self.handle_new_block_events())
@@ -682,18 +683,6 @@ class RegularChainSyncer(FastChainSyncer):
             except Exception:
                 self.logger.exception("Unexpected error when importing block from %s", new_block_queue_item.peer)
 
-    async def does_local_blockchain_database_match_consensus(self):
-        try:
-            consensus_root_hash, latest_good_timestamp_before_conflict = await self.consensus.get_latest_root_hash_before_conflict()
-            if latest_good_timestamp_before_conflict is None:
-                return True
-            else:
-                return False
-        except DatabaseResyncRequired:
-            self.logger.debug(
-                "Our database has been offline for too long. Need to perform fast sync again. Database should be deleted and program should be restarted. ")
-            # input("Press Enter to continue if you would like to do this, otherwise force close the program.")
-            # self.base_db.destroy_db()
 
     async def sync_block_conflict_with_consensus(self):
         self.logger.debug("sync_block_conflict_with_consensus starting")
@@ -730,12 +719,17 @@ class RegularChainSyncer(FastChainSyncer):
                 consensus_root_hash, latest_good_timestamp = await self.consensus.get_latest_root_hash_before_conflict(
                     before_timestamp=time.time() - MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED)
             except DatabaseResyncRequired:
+                # genesis_header = self.chaindb.get_canonical_block_header_by_number(BlockNumber(0), Address(self.chain.get_genesis_wallet_address()))
+                # if genesis_header.timestamp > int(time.time()) - TIME_BETWEEN_HEAD_HASH_SAVE * NUMBER_OF_HEAD_HASH_TO_SAVE:
+                #     #None of our root hashes match, but the genesis is within regularsync window. So proceed with normal sync.
+                #     self.logger.debug("Genesis block appears to be within regularsync window. Proceeding to sync.")
+                #     consensus_root_hash = 'genesis'
+                #     latest_good_timestamp = 0
+                #     pass
+                # else:
                 # this means none of our root hashes match consensus. We need to delete our entire database and do fast sync again
-                self.logger.debug(
-                    "Our database has been offline for too long. Need to perform fast sync again. Database should be deleted and program should be restarted. ")
-                input("Press Enter to continue if you would like to do this, otherwise force close the program.")
-                # self.base_db.destroy_db()
-                #sys.exit()
+                self.logger.error("Our database has been offline for too long. Need to perform fast sync again. Database should be deleted and program should be restarted. ")
+                sys.exit()
 
             # this is the latest one where we actually do match consensus. Now we re-sync up to the next one
 
@@ -925,7 +919,9 @@ class RegularChainSyncer(FastChainSyncer):
 
     async def _handle_get_chronological_block_window(self, peer: HLSPeer, msg: Dict[str, Any]) -> None:
         self.logger.debug("_handle_get_chronological_block_window")
+
         start_timestamp = msg['start_timestamp']
+        self.logger.debug("start_timestamp = {}".format(start_timestamp))
         final_root_hash = self.chain_head_db.get_historical_root_hash(start_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE)
         blocks_for_window = await self.chain.coro_get_all_chronological_blocks_for_window(start_timestamp)
         if blocks_for_window is None:
@@ -1201,7 +1197,7 @@ class RegularChainSyncer(FastChainSyncer):
 
     def propogate_block_to_network(self, block: P2PBlock, chain_address: Address):
         for peer in self.peer_pool.peers:
-            self.logger.debug('sending test block to peer {}'.format(peer))
+            self.logger.debug('Sending block {} on chain {} to peer {}'.format(block, encode_hex(chain_address), peer))
             peer.sub_proto.send_new_block(block, chain_address)
 
 

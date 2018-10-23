@@ -94,7 +94,7 @@ from hvm.exceptions import (
     NoChronologicalBlocks,
     RewardProofSenderBlockMissing,
 
-)
+    RewardAmountRoundsToZero)
 from eth_keys.exceptions import (
     BadSignature,
 )
@@ -178,7 +178,9 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     chaindb = None  # type: BaseChainDB
     chaindb_class = None  # type: Type[BaseChainDB]
     vm_configuration = None  # type: Tuple[Tuple[int, Type[BaseVM]], ...]
-    
+    genesis_wallet_address: Address = None
+    genesis_block_timestamp: Timestamp = None
+
     #
     # Helpers
     #
@@ -512,12 +514,12 @@ class Chain(BaseChain):
         return cls.consensus_db_class
     
     @classmethod
-    def get_genesus_wallet_address(cls) -> Address:
+    def get_genesis_wallet_address(cls) -> Address:
         if cls.genesis_wallet_address is None:
             raise AttributeError("`genesis_wallet_address` not set")
         return cls.genesis_wallet_address
-    
-        
+
+
     #
     # Chain API
     #
@@ -595,7 +597,8 @@ class Chain(BaseChain):
         
         chain_head_db = cls.get_chain_head_db_class()(base_db)
         
-        window_for_this_block = math.ceil(genesis_header.timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+        #window_for_this_block = math.ceil((genesis_header.timestamp+1)/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+        window_for_this_block = int(genesis_header.timestamp / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE + TIME_BETWEEN_HEAD_HASH_SAVE
         chain_head_db.set_chain_head_hash(cls.genesis_wallet_address, genesis_header.hash)
         chain_head_db.initialize_historical_root_hashes(chain_head_db.root_hash, window_for_this_block)
         chain_head_db.persist(save_current_root_hash = True, append_current_root_hash_to_historical = False)
@@ -680,6 +683,10 @@ class Chain(BaseChain):
     #
     # Block API
     #
+    def get_genesis_block_hash(self) -> Hash32:
+        return self.chaindb.get_canonical_block_hash(block_number = BlockNumber(0),
+                                                     wallet_address = self.genesis_wallet_address)
+
     @to_tuple
     def get_ancestors(self, limit: int, header: BlockHeader=None) -> Iterator[BaseBlock]:
         """
@@ -741,7 +748,8 @@ class Chain(BaseChain):
         if timestamp <= currently_saving_window:
             #we have to go back and put it into the correct window, and update all windows after that
             #lets only keep the past NUMBER_OF_HEAD_HASH_TO_SAVE block_head_root_hash
-            window_for_this_block = math.ceil(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+            window_for_this_block = int(timestamp / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE + TIME_BETWEEN_HEAD_HASH_SAVE
+            #window_for_this_block = math.ceil((timestamp + 1)/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
 #            if propogate_to_present:
             self.chain_head_db.add_block_hash_to_timestamp(self.wallet_address, block_header.hash, window_for_this_block)
 #            else:
@@ -937,6 +945,11 @@ class Chain(BaseChain):
 
     def validate_time_between_blocks(self,block):
         if not block.is_genesis:
+            #first make sure enough time has passed since genesis. We need at least TIME_BETWEEN_HEAD_HASH_SAVE since genesis so that the
+            # genesis historical root hash only contains the genesis chain.
+            if block.header.timestamp < (self.genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE):
+                raise NotEnoughTimeBetweenBlocks("Not enough time has passed since the genesis block. Must wait at least {} seconds after genesis block.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
+
             time_wait = self.get_vm(refresh=False).check_wait_before_new_block(block)
             if time_wait > 0:
                 if isinstance(block, self.get_vm(refresh=False).get_queue_block_class()):
@@ -1175,9 +1188,10 @@ class Chain(BaseChain):
         
 
         if len(block.transactions) == 0 and len(block.receive_transactions) == 0:
-            if block.reward_bundle is None or (block.reward_bundle.reward_type_1.amount == 0 and
-                                               block.reward_bundle.reward_type_2.amount == 0):
-                raise ValidationError('The block must have at least 1 transaction, or a non-zero reward bundle')
+            # if block.reward_bundle is None:
+            #     raise ValidationError('The block must have at least 1 transaction, or a non-zero reward bundle. Reward bundle = None')
+            if (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
+                raise RewardAmountRoundsToZero('The reward bundle has amount = 0 for all types of rewards. This usually means more time needs to pass before creating reward bundle.')
 
         #if we are adding to the top of the chain, or beyond, we need to check for unprocessed blocks
         #handle deleting any unprocessed blocks that will be replaced.
@@ -1897,4 +1911,13 @@ class AsyncChain(Chain):
 
     async def coro_import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
         raise NotImplementedError()
+
+
+    async def coro_import_current_queue_block_with_reward(self, *args, **kwargs):
+        loop = asyncio.get_event_loop()
+
+        return await loop.run_in_executor(
+            None,
+            partial(self.import_current_queue_block_with_reward, *args, **kwargs)
+        )
 

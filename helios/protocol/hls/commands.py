@@ -44,7 +44,7 @@ class Status(Command):
         ('protocol_version', sedes.big_endian_int),
         ('network_id', sedes.big_endian_int),
         ('node_type', sedes.big_endian_int),
-        ('chain_head_root_hashes', sedes.CountableList(sedes.List([sedes.big_endian_int, sedes.binary]))),
+        ('genesis_block_hash', hash32),
         ('salt', sedes.binary),
     ]
 
@@ -254,7 +254,9 @@ class GetNodeStakingScore(Command):
 
 class SendNodeStakingScore(Command):
     _cmd_id = 37
-    structure = NodeStakingScore
+    structure = [
+        ('node_staking_score', NodeStakingScore)
+    ]
 
 
 

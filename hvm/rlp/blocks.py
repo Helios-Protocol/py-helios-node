@@ -12,6 +12,7 @@ from eth_typing import (
     Hash32
 )
 
+
 from hvm.utils.datatypes import (
     Configurable,
 )
@@ -92,16 +93,28 @@ class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
                 transaction[parameter_name] = getattr(tx, parameter_name)
             receive_transactions.append(transaction)
 
+
+        reward_type_2_proof = []
+        for proof in self.reward_bundle.reward_type_2.proof:
+            reward_type_2_proof.append(proof.as_dict())
+
+
         block['header'] = header
         block['transactions'] = transactions
         block['receive_transactions'] = receive_transactions
 
+        block['reward_bundle'] = {'reward_type_1': {'amount': self.reward_bundle.reward_type_1.amount},
+                                  'reward_type_2': {'amount': self.reward_bundle.reward_type_1.amount,
+                                                    'proof': reward_type_2_proof}}
         return block
 
     @classmethod
     def from_dict(cls, block_as_dict):
+
+
         transaction_class = cls.transaction_class
         receive_transaction_class = cls.receive_transaction_class
+        reward_bundle_class = cls.reward_bundle_class
         header_class = cls.header_class
         #block_class = cls.__class__()
 
@@ -117,7 +130,19 @@ class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
             transaction = receive_transaction_class(**tx)
             receive_transactions.append(transaction)
 
-        new_block = cls(header = header, transactions = transactions, receive_transactions = receive_transactions)
+        reward_type_2_proof = []
+        for proof in block_as_dict['reward_bundle']['reward_type_2']['proof']:
+            proof = reward_bundle_class.reward_type_2_class.proof_class(**proof)
+            reward_type_2_proof.append(proof)
+
+        reward_type_1 = reward_bundle_class.reward_type_1_class(block_as_dict['reward_bundle']['reward_type_1']['amount'])
+        reward_type_2 = reward_bundle_class.reward_type_2_class(block_as_dict['reward_bundle']['reward_type_1']['amount'],
+                                         reward_type_2_proof)
+        reward_bundle = reward_bundle_class(reward_type_1, reward_type_2)
+        new_block = cls(header = header,
+                        transactions = transactions,
+                        receive_transactions = receive_transactions,
+                        reward_bundle = reward_bundle)
 
         return new_block
 

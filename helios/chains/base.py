@@ -12,11 +12,6 @@ from helios.utils.mp import (
 from hvm.chains.base import Chain
 
 
-# class AsyncChain(Chain):
-#     #coro_import_block = async_method('import_block')
-#
-#     coro_get_mature_stake
-
 class ChainProxy(BaseProxy):
     coro_import_block = async_method('import_block')
     coro_import_chain = async_method('import_chain')
@@ -41,7 +36,8 @@ class ChainProxy(BaseProxy):
     validate_block_specification = sync_method('validate_block_specification')
     re_initialize_historical_minimum_gas_price_at_genesis = sync_method('re_initialize_historical_minimum_gas_price_at_genesis')
     get_new_block_hash_to_test_peer_node_health = sync_method('get_new_block_hash_to_test_peer_node_health')
-
+    get_genesis_block_hash = sync_method('get_genesis_block_hash')
+    get_genesis_wallet_address = sync_method('get_genesis_wallet_address')
 
 
 

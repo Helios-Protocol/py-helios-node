@@ -4,6 +4,7 @@ from multiprocessing.managers import (  # type: ignore
     BaseManager,
     BaseProxy,
 )
+import time
 import inspect
 import os
 import traceback
@@ -43,6 +44,7 @@ from helios.db.chain_head import (
     ChainHeadDBProxy,
     AsyncChainHeadDB,
 )
+from hvm.constants import TIME_BETWEEN_HEAD_HASH_SAVE
 
 # from helios.db.header import (
 #     AsyncHeaderDB,
@@ -60,6 +62,7 @@ from helios.utils.mp import (
 from helios.dev_tools import (
     create_dev_test_random_blockchain_database,
     import_genesis_block,
+    create_predefined_blockchain_database,
 )
 
 
@@ -226,7 +229,8 @@ def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> Bas
     if not is_database_initialized(chaindb):
         if 'GENERATE_RANDOM_DATABASE' in os.environ:
             #this is for testing, we neeed to build an initial blockchain database
-            create_dev_test_random_blockchain_database(base_db)
+            #create_dev_test_random_blockchain_database(base_db)
+            create_predefined_blockchain_database(base_db)
         else:
             initialize_database(chain_config = chain_config, chaindb = chaindb)
 

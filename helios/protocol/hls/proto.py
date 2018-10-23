@@ -91,17 +91,12 @@ class HLSProtocol(Protocol):
     peer: 'HLSPeer'
 
     def send_handshake(self, chain_info: ChainInfo, salt):
-        if chain_info.chain_head_root_hashes is None:
-            chain_head_root_hashes = []
-        else:
-            chain_head_root_hashes = chain_info.chain_head_root_hashes
-
         # create salt for them to sign and send back
         resp = {
             'protocol_version': self.version,
             'network_id': self.peer.network_id,
             'node_type': chain_info.node_type,
-            'chain_head_root_hashes': chain_head_root_hashes,
+            'genesis_block_hash': chain_info.genesis_block_hash,
             'salt': salt,
         }
         # self.logger.debug("sending handshake with {}{}{}{}".format(self.version, self.peer.network_id, chain_info.node_type, chain_info.node_wallet_address))
@@ -312,7 +307,7 @@ class HLSProtocol(Protocol):
 
     def send_node_staking_score(self, node_staking_score: NodeStakingScore) -> None:
         cmd = SendNodeStakingScore(self.cmd_id_offset)
-        data = node_staking_score
+        data = {'node_staking_score': node_staking_score}
         header, body = cmd.encode(data)
         self.send(header, body)
 

@@ -1,5 +1,6 @@
 from typing import (
     Tuple,
+    Dict,
 )
 
 from cytoolz import (
@@ -19,6 +20,7 @@ from helios.protocol.common.types import (
     ReceiptsByBlock,
 )
 from helios.rlp_templates.hls import BlockBody
+from hvm.rlp.consensus import NodeStakingScore
 
 
 class GetNodeDataNormalizer(BaseNormalizer[Tuple[bytes, ...], NodeDataBundles]):
@@ -56,3 +58,12 @@ class GetBlockBodiesNormalizer(BaseNormalizer[Tuple[BlockBody, ...], BlockBodyBu
 
         body_bundles = tuple(zip(msg, transaction_roots_and_trie_data, uncles_hashes))
         return body_bundles
+
+
+class GetNodeStakingScoreNormalizer(BaseNormalizer[Dict[str, NodeStakingScore], NodeStakingScore]):
+    is_normalization_slow = False
+
+    @staticmethod
+    def normalize_result(msg: Dict[str, NodeStakingScore]) -> NodeStakingScore:
+        result = msg['node_staking_score']
+        return result

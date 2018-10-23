@@ -49,7 +49,7 @@ from hvm.constants import (
     MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE,
     MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP,
     ZERO_HASH32,
-)
+    BLANK_REWARD_HASH)
 from hvm.exceptions import (
     CanonicalHeadNotFound,
     HeaderNotFound,
@@ -266,6 +266,13 @@ class BaseChainDB(metaclass=ABCMeta):
 
     @abstractmethod
     def persist_trie_data_dict(self, trie_data_dict: Dict[bytes, bytes]) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    #
+    # Reward bundle processing
+    #
+    @abstractmethod
+    def get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:
         raise NotImplementedError("ChainDB classes must implement this method")
 
 
@@ -612,7 +619,7 @@ class ChainDB(BaseChainDB):
         '''
         new_canonical_headers = self.persist_header(block.header)
 
-        if block.reward_bundle is not None:
+        if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
             self.persist_reward_bundle(block.reward_bundle)
             self.set_latest_reward_block_number(block.sender, block.number)
 
@@ -632,7 +639,7 @@ class ChainDB(BaseChainDB):
     def persist_non_canonical_block(self, block, wallet_address):
         self.save_header_to_db(block.header)
 
-        if block.reward_bundle is not None:
+        if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
             self.persist_reward_bundle(block.reward_bundle)
 
         self.save_block_hash_to_chain_wallet_address(block.hash, wallet_address)
@@ -700,7 +707,7 @@ class ChainDB(BaseChainDB):
                 self.save_unprocessed_children_block_lookup(receive_transaction.sender_block_hash)
 
     def save_unprocessed_children_block_lookup_to_reward_proof_parents(self, block: 'BaseBlock') -> None:
-        if block.reward_bundle is not None:
+        if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
             if block.reward_bundle.reward_type_2.amount != 0:
                 for node_staking_score in block.reward_bundle.reward_type_2.proof:
                     if self.is_block_unprocessed(node_staking_score.head_hash_of_sender_chain) or not self.db.exists(node_staking_score.head_hash_of_sender_chain):
@@ -1270,7 +1277,7 @@ class ChainDB(BaseChainDB):
         canonical_head = self.get_canonical_head(wallet_address)
         canonical_block_number = canonical_head.block_number
 
-        if canonical_head.reward != b'':
+        if canonical_head.reward_hash != BLANK_REWARD_HASH:
             return canonical_block_number
 
         if canonical_block_number == 0:
@@ -1278,7 +1285,7 @@ class ChainDB(BaseChainDB):
 
         for i in range(canonical_block_number, -1, -1):
             header = self.get_canonical_block_header_by_number(BlockNumber(i), wallet_address)
-            if header.reward != b'':
+            if header.reward_hash != BLANK_REWARD_HASH:
                 return BlockNumber(i)
 
 
@@ -1656,14 +1663,18 @@ class ChainDB(BaseChainDB):
             encoded = self.db[lookup_key]
             return rlp.decode(encoded, sedes=StakeRewardBundle)
         except KeyError:
-            return None
+            return StakeRewardBundle()
 
     def get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:
         validate_canonical_address(wallet_address, title="wallet_address")
 
         key = SchemaV1.make_latest_reward_block_number_lookup(wallet_address)
-        rlp_latest_block_number = self.db.get(key, b'')
-        if rlp_latest_block_number:
+        try:
+            rlp_latest_block_number = self.db.get(key)
+        except KeyError:
+            rlp_latest_block_number = None
+
+        if rlp_latest_block_number is not None:
             # in order to save some headache elsewhere, if a block is deleted for any reason, we won't reset this number
             # so lets also check to make sure the block with this number has a reward
             block_number = rlp.decode(rlp_latest_block_number, sedes=rlp.sedes.f_big_endian_int)
@@ -1675,7 +1686,7 @@ class ChainDB(BaseChainDB):
                 self.set_latest_reward_block_number(wallet_address, latest_reward_block_number)
                 return latest_reward_block_number
 
-            if block_header.reward_hash == ZERO_HASH32:
+            if block_header.reward_hash == BLANK_REWARD_HASH:
                 # need to find previous reward block and save new one
                 latest_reward_block_number = self.get_block_number_of_latest_reward_block(wallet_address)
                 self.set_latest_reward_block_number(wallet_address, latest_reward_block_number)

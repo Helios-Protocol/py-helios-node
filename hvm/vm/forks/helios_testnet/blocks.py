@@ -22,7 +22,7 @@ from hvm.rlp.receipts import (
 from hvm import constants
 import time
 
-from hvm.rlp.consensus import stake_reward_bundle_or_none, StakeRewardBundle
+from hvm.rlp.consensus import StakeRewardBundle
 
 class HeliosTestnetBlock(BaseBlock):
     transaction_class = HeliosTestnetTransaction
@@ -34,7 +34,7 @@ class HeliosTestnetBlock(BaseBlock):
         ('header', BlockHeader),
         ('transactions', CountableList(transaction_class)),
         ('receive_transactions', CountableList(receive_transaction_class)),
-        ('reward_bundle', stake_reward_bundle_or_none),
+        ('reward_bundle', reward_bundle_class),
     ]
 
     bloom_filter = None
@@ -45,6 +45,9 @@ class HeliosTestnetBlock(BaseBlock):
             
         if receive_transactions is None:
             receive_transactions = []
+
+        if reward_bundle is None:
+            reward_bundle = StakeRewardBundle()
 
 
         self.bloom_filter = BloomFilter(header.bloom)
@@ -116,11 +119,12 @@ class HeliosTestnetBlock(BaseBlock):
 class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
     transaction_class = HeliosTestnetTransaction
     receive_transaction_class = HeliosTestnetReceiveTransaction
+    reward_bundle_class = StakeRewardBundle
     fields = [
         ('header', BlockHeader),
         ('transactions', CountableList(transaction_class)),
         ('receive_transactions', CountableList(receive_transaction_class)),
-        ('reward_bundle', stake_reward_bundle_or_none),
+        ('reward_bundle', StakeRewardBundle),
     ]
     #
     # Header API
@@ -146,7 +150,7 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
                     ),
             transactions=transactions,
             receive_transactions=receive_transactions,
-            reward_bundle=None,
+            reward_bundle=StakeRewardBundle(),
         )
     
     @classmethod

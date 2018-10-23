@@ -71,7 +71,7 @@ from hvm.exceptions import (
     LocalRootHashNotInConsensus,
     NoChronologicalBlocks,
     NotEnoughDataForHistoricalMinGasPriceCalculation,
-    CanonicalHeadNotFound)
+    CanonicalHeadNotFound, RewardAmountRoundsToZero)
 
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.receipts import Receipt
@@ -190,6 +190,7 @@ class Consensus(BaseService, PeerSubscriber):
         commands.GetStakeForAddresses,
         commands.GetMinGasParameters,
         commands.MinGasParameters,
+        commands.GetNodeStakingScore
     }
 
 
@@ -199,7 +200,6 @@ class Consensus(BaseService, PeerSubscriber):
     # TODO: Instead of a fixed timeout, we should use a variable one that gets adjusted based on
     # the round-trip times from our download requests.
     _reply_timeout = 60
-    _is_bootnode = None
     _local_root_hash_timestamps = None
     _min_gas_system_ready = False
     #this is {peer_wallet_address: [timestamp_received, network_tpc_cap, stake]}
@@ -288,19 +288,23 @@ class Consensus(BaseService, PeerSubscriber):
         return len(self.peer_pool.connected_nodes) >= MIN_SAFE_PEERS
     
     @property
-    def is_bootnode(self):
+    def is_bootnode(self) -> bool:
         return self.chain_config.node_type == 4
-    
+
+    @property
+    def is_network_startup_node(self) -> bool:
+        return self.chain_config.network_startup_node
+
     @property
     def has_enough_consensus_participants(self):
-        if len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_bootnode:
+        if len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_network_startup_node:
             self.logger.debug("has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
         else:
             self.logger.debug("doesnt has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
             pass
 
         #we don't want to count any peers who we don't have stake for.
-        return len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_bootnode
+        return len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_network_startup_node
     
     @property
     async def is_syncing(self):
@@ -516,7 +520,10 @@ class Consensus(BaseService, PeerSubscriber):
     async def _sync_min_gas_price_system_loop(self):
         while self.is_running:
             try:
-                await self.sync_min_gas_price_system()
+                #await self.sync_min_gas_price_system()
+                await self.wait(self.sync_min_gas_price_system(), token = self.cancel_token)
+            except OperationCancelled:
+                break
             except Exception as e:
                 self.logger.exception("Unexpected error when syncing minimum gas system. Error: {}".format(e))
 
@@ -538,7 +545,12 @@ class Consensus(BaseService, PeerSubscriber):
             self.run_daemon_task(self.receive_peer_chain_head_root_hash_timestamps_loop())
             self.run_daemon_task(self.send_get_consensus_statistics_loop())
             while self.is_operational:
+                #self.logger.debug("Our historical root hashes = {}".format(self.chain_head_db.get_historical_root_hashes()))
 
+                self.logger.debug("This node's stake = {}".format(self.chain.get_mature_stake(self.chain_config.node_wallet_address)))
+                self.logger.debug("Number of connected peers = {}".format(len(self.peer_pool)))
+                wallet_stake = [(peer.wallet_address, await peer.stake) for peer in self.peer_pool.peers]
+                self.logger.debug("{}".format(wallet_stake))
                 #first lets ask the bootnode for the stake of any peers that we dont have the blockchain for
                 #this takes care of determining stake of our peers while we are still syncing our blockchain database
                 #self.logger.debug("waiting for get missing stake from bootnode")
@@ -550,9 +562,9 @@ class Consensus(BaseService, PeerSubscriber):
                 self.logger.debug("done syncing consensus. These are the statistics for block_choices: {}".format(
                                     self.block_choice_statistics))
                 
-                #sorted_root_hash_timestamps_statistics = list(SortedDict(self.root_hash_timestamps_statistics).items())
-                #self.logger.debug("done syncing consensus. These are the statistics for root_hashes: {}".format(
-                #                    sorted_root_hash_timestamps_statistics[-10:]))
+                sorted_root_hash_timestamps_statistics = list(SortedDict(self.root_hash_timestamps_statistics).items())
+                self.logger.debug("done syncing consensus. These are the statistics for root_hashes: {}".format(
+                                   sorted_root_hash_timestamps_statistics[-10:]))
                 #blocks_to_change = await self.get_correct_block_conflict_choice_where_we_differ_from_consensus()
                 #self.logger.debug('get_correct_block_conflict_hashes_where_we_differ_from_consensus = {}'.format(blocks_to_change))
 #                if blocks_to_change is not None:
@@ -636,9 +648,13 @@ class Consensus(BaseService, PeerSubscriber):
 
                         #here lets have a timeout. But lets make it generous to account for uncertainties in block
                         #import times with the chain syncer.
-                        await self.wait(self.receive_node_staking_scores(num_requests_sent = num_requests_sent),
-                                  token=self.cancel_token,
-                                  timeout = ROUND_TRIP_TIMEOUT*10)
+                        try:
+                            await self.wait(self.receive_node_staking_scores(num_requests_sent = num_requests_sent),
+                                      token=self.cancel_token,
+                                      timeout = ROUND_TRIP_TIMEOUT*10)
+                        except TimeoutError:
+                            self.logger.warning("Attempted to create reward block, but not enough peers replied with a score. Will re-attempt later.")
+                            pass
 
 
             await asyncio.sleep(REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY)
@@ -646,15 +662,21 @@ class Consensus(BaseService, PeerSubscriber):
     async def receive_node_staking_scores(self, num_requests_sent: int) -> None:
         # receive all of the requests
         while True:
+
             q_size = self._new_node_staking_scores.qsize()
+
             # make sure we got enough responses
-            if q_size > 0.51 * num_requests_sent and q_size >= REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
+            required_responses = max((0.51 * num_requests_sent), REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF)
+            self.logger.debug("waiting for node_staking_scores to fill queue. Queue size = {}, required responses = {}".format(q_size, required_responses))
+            if q_size >= required_responses:
+                self.logger.debug("got enough node_staking_scores responses")
                 peer_node_staking_scores = [self._new_node_staking_scores.get_nowait() for _ in range(q_size)]
                 # make sure we have enough stake
                 total_stake = 0
                 for node_staking_score in peer_node_staking_scores:
                     total_stake += await self.chain.coro_get_mature_stake(node_staking_score.sender)
 
+                self.logger.debug("total stake = {}, required stake = {}".format(total_stake, REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF))
                 if total_stake > REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF:
                     await self.process_reward_block(peer_node_staking_scores)
 
@@ -663,11 +685,13 @@ class Consensus(BaseService, PeerSubscriber):
     async def process_reward_block(self, node_staking_score_list: List[NodeStakingScore]) -> None:
         self.logger.debug("Processing reward block")
         try:
-            chain = self.node.get_new_chain()
+            chain = self.node.get_new_private_chain()
             new_block = await chain.coro_import_current_queue_block_with_reward(node_staking_score_list)
             await self.event_bus.request(
                 NewBlockEvent(block = cast(P2PBlock, new_block), chain_address = self.chain_config.node_wallet_address, only_propogate_to_network=True)
             )
+        except RewardAmountRoundsToZero:
+            self.logger.warning("Tried to import a reward block, but the reward amounts rounded to 0. More time needs to pass before importing a reward block.")
         except Exception as e:
             raise e
 
@@ -679,6 +703,7 @@ class Consensus(BaseService, PeerSubscriber):
                 node_staking_score = await peer.requests.get_node_staking_score(since_block=since_block, consensus_db = self.consensus_db)
 
                 if node_staking_score is not None:
+                    self.logger.debug("Received node staking score from peer {}".format(encode_hex(peer.wallet_address)))
                     self._new_node_staking_scores.put_nowait(node_staking_score)
                 else:
                     self.logger.debug("get_node_staking_score_from_peer didn't send anything back")
@@ -802,7 +827,6 @@ class Consensus(BaseService, PeerSubscriber):
             self.send_block_conflict_messages(self.block_conflicts)
 
             for peer in self.peer_pool.peers:
-                #send message , and log time that message was sent. Be sure not to send a message to any node that we have a pending response for
                 peer.sub_proto.send_get_chain_head_root_hash_timestamps(0)
 
             await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
@@ -1031,8 +1055,7 @@ class Consensus(BaseService, PeerSubscriber):
             
             if len(all_candidate_item_stake) == 0:
                 return None
-            
-            #self.logger.debug('AAAAAAAAAAAA {}'.format(all_candidate_item_stake))
+
             average_network_tpc_cap = int(stake_weighted_average(all_candidate_item_stake))
             return average_network_tpc_cap
         else:
@@ -1091,10 +1114,10 @@ class Consensus(BaseService, PeerSubscriber):
             
         
 
-       
     async def _get_missing_stake_from_bootnode(self):
         addresses_needing_stake = []
         if await self.is_syncing:
+
             #in this case, lets ask for the stake of all peers because ours is inaccurate
             for peer in self.peer_pool.peers:
                 #if they already exist in peer_stake_from_bootstrap_node, then we already received a reply from the bootnode.
@@ -1319,7 +1342,7 @@ class Consensus(BaseService, PeerSubscriber):
                 to_return =  available_timestamp, await self.coro_get_root_hash_consensus(available_timestamp)
                 return to_return
         
-        if self.is_bootnode:
+        if self.is_network_startup_node:
             self.logger.debug("using local root hash timestamps for get_closest_root_hash_consensus because am bootnode")
             local_root_hash_timestamps = self.local_root_hash_timestamps
             sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x)*-1, local_root_hash_timestamps)
@@ -1347,7 +1370,7 @@ class Consensus(BaseService, PeerSubscriber):
                 if to_return[1] != initial_local_root_hash_at_timestamp:
                     return to_return
                 
-        if self.is_bootnode:
+        if self.is_network_startup_node:
             self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
             local_root_hash_timestamps = self.local_root_hash_timestamps
             sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
@@ -1373,7 +1396,7 @@ class Consensus(BaseService, PeerSubscriber):
                 to_return =  available_timestamp, self.get_root_hash_consensus(available_timestamp)
                 return to_return
         
-        if self.is_bootnode:
+        if self.is_network_startup_node:
             self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
             local_root_hash_timestamps = self.local_root_hash_timestamps
             sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
@@ -1499,7 +1522,7 @@ class Consensus(BaseService, PeerSubscriber):
            
         sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x)*-1, local_root_hash_timestamps)
         #sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
-         
+
         disagreement_found = False
         #it now goes from newest to oldest
         for timestamp, local_root_hash in sorted_local_root_hash_timestamps.items():
@@ -1672,6 +1695,7 @@ class Consensus(BaseService, PeerSubscriber):
             
     async def _handle_stake_for_addresses(self, peer: HLSPeer, msg) -> None:
         #make sure it is a bootstrap node
+        self.logger.debug("Received missing stake from bootnode")
         if peer.remote in self.bootstrap_nodes:
             for address_stake in msg['stakes']:
                 address = address_stake[0]
@@ -1727,11 +1751,13 @@ class Consensus(BaseService, PeerSubscriber):
                     await self.chaindb.coro_save_historical_network_tpc_capability(hist_net_tpc_capability)
 
     async def _handle_get_node_staking_score(self, peer: HLSPeer, msg) -> None:
+        self.logger.debug("Received request to send node staking score.")
         try:
-            node_staking_score = self.consensus_db.get_signed_peer_score(peer.wallet_address, self.chain_config.node_private_helios_key)
-        except ValueError as e:
-            self.logger.warning("Failed to create node staking score. Error: {}".format(e))
+            node_staking_score = await self.consensus_db.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), peer.wallet_address)
+        except (ValueError, CanonicalHeadNotFound) as e:
+            self.logger.warning("Failed to create node staking score for peer {}. Error: {}".format(encode_hex(peer.wallet_address), e))
         else:
+            self.logger.debug("Sending node staking score.")
             peer.sub_proto.send_node_staking_score(node_staking_score)
 
                 

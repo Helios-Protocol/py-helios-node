@@ -88,14 +88,21 @@ class ChainConfig:
                  preferred_nodes: Tuple[KademliaNode, ...]=None,
                  bootstrap_nodes: Tuple[KademliaNode, ...]=None,
                  node_type=1,
+                 network_startup_node = False,
                  ) -> None:
+        self.network_startup_node = network_startup_node
         self.network_id = network_id
         self.max_peers = max_peers
         self.sync_mode = sync_mode
         self.port = port
         self.rpc_port = rpc_port
         self.use_discv5 = use_discv5
-        self.node_type = int(node_type)
+
+        if self.network_startup_node:
+            #network startup nodes must be bootnodes.
+            self.node_type = 4
+        else:
+            self.node_type = int(node_type)
 
         if helios_root_dir is not None:
             self.helios_root_dir = helios_root_dir
@@ -149,10 +156,12 @@ class ChainConfig:
 
     @property
     def do_upnp(self):
+        #TODO: TESTING
+        return False
         if "INSTANCE_NUMBER" in os.environ:
             return int(os.environ["INSTANCE_NUMBER"]) == 0
         else:
-            return False
+            return True
 
     #todo: add encrypted keyfile usage instead of this
     @property
