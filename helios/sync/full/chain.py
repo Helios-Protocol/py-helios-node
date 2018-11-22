@@ -1046,13 +1046,17 @@ class RegularChainSyncer(FastChainSyncer):
         self.logger.debug("handling new block")
         chain = self.node.get_new_chain()
         required_min_gas_price = self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)
-        block_gas_price = int(get_block_average_transaction_gas_price(new_block))
+        if len(new_block.transactions) != 0:
+            block_gas_price = int(get_block_average_transaction_gas_price(new_block))
 
-        if block_gas_price < required_min_gas_price:
-            self.logger.debug(
-                "New block didn't have high enough gas price. block_gas_price = {}, required_min_gas_price = {}".format(
-                    block_gas_price, required_min_gas_price))
-            return False
+            if block_gas_price < required_min_gas_price:
+                self.logger.debug(
+                    "New block didn't have high enough gas price. block_gas_price = {}, required_min_gas_price = {}".format(
+                        block_gas_price, required_min_gas_price))
+                return False
+
+        else:
+            pass
 
         # Get the head of the chain that we have in the database
         # need this to see if we are replacing a block

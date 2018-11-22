@@ -127,13 +127,13 @@ class HeliosTestnetComputation(BaseComputation):
         return computation
     
     
-    def apply_create_message(self):
+    def apply_create_message(self, validate = True):
         snapshot = self.state.snapshot()
 
         # EIP161 nonce incrementation
         self.state.account_db.increment_nonce(self.msg.storage_address)
 
-        computation = self.apply_message()
+        computation = self.apply_message(validate = validate)
 
         if computation.is_error:
             self.state.revert(snapshot)
@@ -173,6 +173,7 @@ class HeliosTestnetComputation(BaseComputation):
 
                     self.state.account_db.set_code(self.msg.storage_address, contract_code)
                     self.state.commit(snapshot)
+
             else:
                 self.state.commit(snapshot)
             return computation

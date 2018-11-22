@@ -687,6 +687,7 @@ class Consensus(BaseService, PeerSubscriber):
         try:
             chain = self.node.get_new_private_chain()
             new_block = await chain.coro_import_current_queue_block_with_reward(node_staking_score_list)
+            #self.logger.debug("sending new block event with reward amounts = {}, {}".format(new_block.reward_bundle.reward_type_1.amount, new_block.reward_bundle.reward_type_2.amount))
             await self.event_bus.request(
                 NewBlockEvent(block = cast(P2PBlock, new_block), chain_address = self.chain_config.node_wallet_address, only_propogate_to_network=True)
             )
@@ -1671,7 +1672,6 @@ class Consensus(BaseService, PeerSubscriber):
     async def _handle_chain_head_root_hash_timestamps(self, peer: HLSPeer, msg) -> None:
         peer_wallet_address = peer.wallet_address
         #self.logger.debug("_handle_chain_head_root_hash_timestamps msg = {}".format(msg))
-
         try:
             stake = await self.get_accurate_stake(peer)
 
@@ -1681,6 +1681,7 @@ class Consensus(BaseService, PeerSubscriber):
             new_peer_data = PeerRootHashTimestamps(peer_wallet_address, stake, new_root_hash_timestamps)
             self._new_peer_chain_head_root_hash_timestamps.put_nowait(new_peer_data)
         except UnknownPeerStake:
+            self.logger.debug("Received chain head root hash timestamps from a peer with unknown stake")
             # If we don't know their stake yet. Don't add it to the statistics.
             pass
             

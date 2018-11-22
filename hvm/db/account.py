@@ -103,7 +103,8 @@ class BaseAccountDB(metaclass=ABCMeta):
         raise NotImplementedError("Must be implemented by subclasses")
 
     def delta_balance(self, address, delta):
-        self.set_balance(address, self.get_balance(address) + delta)
+        if delta != 0:
+            self.set_balance(address, self.get_balance(address) + delta)
 
     #
     # Receivable Transactions

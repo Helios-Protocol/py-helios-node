@@ -117,21 +117,18 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             #TODO: make sure the computation is not executed
             #temporarily we will just do no computation. This means interactions with
             #smart contracts will cost no gas until we finish this.
-            contract_address = None
-            data = b''
-            code = b''
 
-    #            if transaction.to == constants.CREATE_CONTRACT_ADDRESS:
-    #                contract_address = generate_contract_address(
-    #                    transaction.sender,
-    #                    self.vm_state.account_db.get_nonce(transaction.sender) - 1,
-    #                )
-    #                data = b''
-    #                code = transaction.data
-    #            else:
-    #                contract_address = None
-    #                data = transaction.data
-    #                code = self.vm_state.account_db.get_code(transaction.to)
+            if send_transaction.to == constants.CREATE_CONTRACT_ADDRESS:
+                contract_address = generate_contract_address(
+                    send_transaction.sender,
+                    self.vm_state.account_db.get_nonce(send_transaction.sender) - 1,
+                )
+                data = b''
+                code = send_transaction.data
+            else:
+                contract_address = None
+                data = send_transaction.data
+                code = self.vm_state.account_db.get_code(send_transaction.to)
 
             self.vm_state.logger.debug(
                 (
@@ -172,21 +169,19 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             # Setup VM Message
             #message_gas = transaction.transaction.gas - transaction.transaction.intrinsic_gas -1 * gas_fee
             # I tested this, if this tx uses more gas than what was charged to the send tx it will fail.
-            contract_address = None
-            data = b''
-            code = b''
 
-            # if transaction.transaction.to == constants.CREATE_CONTRACT_ADDRESS:
-            #     contract_address = generate_contract_address(
-            #         transaction.sender,
-            #         self.vm_state.account_db.get_nonce(transaction.sender) - 1,
-            #     )
-            #     data = b''
-            #     code = transaction.transaction.data
-            # else:
-            #     contract_address = None
-            #     data = transaction.transaction.data
-            #     code = self.vm_state.account_db.get_code(transaction.transaction.to)
+
+            if send_transaction.to == constants.CREATE_CONTRACT_ADDRESS:
+                contract_address = generate_contract_address(
+                    send_transaction.sender,
+                    self.vm_state.account_db.get_nonce(send_transaction.sender) - 1,
+                )
+                data = b''
+                code = send_transaction.data
+            else:
+                contract_address = None
+                data = send_transaction.data
+                code = self.vm_state.account_db.get_code(send_transaction.to)
 
             self.vm_state.logger.debug(
                 (
@@ -240,7 +235,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
                 computation = self.vm_state.get_computation(
                     message,
                     transaction_context,
-                ).apply_create_message()
+                ).apply_create_message(validate=validate)
         else:
             computation = self.vm_state.get_computation(
                 message,

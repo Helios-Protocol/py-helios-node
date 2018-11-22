@@ -202,6 +202,11 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     def get_prev_hashes(cls, last_block_hash, chaindb):
         raise NotImplementedError("VM classes must implement this method")
 
+    @classmethod
+    @abstractmethod
+    def convert_block_to_correct_class(self, block: BaseBlock) -> BaseBlock:
+        raise NotImplementedError("VM classes must implement this method")
+
     #
     # Transactions
     #
@@ -750,7 +755,7 @@ class VM(BaseVM):
         else:
             return cls.queue_block_class
         
-    def convert_block_to_correct_class(self, block):
+    def convert_block_to_correct_class(self, block: BaseBlock) -> BaseBlock:
         """
         Returns a block that is an instance of the correct block class for this vm
         Also converts the send transactions, and receive transactions into the correct class.
@@ -767,11 +772,15 @@ class VM(BaseVM):
             new_receive_transaction = convert_rlp_to_correct_class(self.block.receive_transaction_class, receive_transaction)
             #new_receive_transaction = new_receive_transaction.copy(transaction = send_transaction)
             correct_receive_transactions.append(new_receive_transaction)
-        
+
+
+        new_reward_bundle = convert_rlp_to_correct_class(self.block.reward_bundle_class, block.reward_bundle)
+
         self.block = self.get_block_class()(
             header=block.header,
             transactions = correct_transactions,
-            receive_transactions = correct_receive_transactions
+            receive_transactions = correct_receive_transactions,
+            reward_bundle = new_reward_bundle
         )
 
         

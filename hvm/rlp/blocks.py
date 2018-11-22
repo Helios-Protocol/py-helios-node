@@ -17,10 +17,17 @@ from hvm.utils.datatypes import (
     Configurable,
 )
 
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from hvm.rlp.transactions import BaseTransaction, BaseReceiveTransaction
+    from hvm.rlp.consensus import StakeRewardBundle
 
 class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
-    transaction_class = None  # type: Type[BaseTransaction]
+    transaction_class: 'Type[BaseTransaction]' = None
+    receive_transaction_class: 'Type[BaseReceiveTransaction]' = None
+    reward_bundle_class: 'Type[StakeRewardBundle]' = None
+
 
     @classmethod
     def get_transaction_class(cls) -> Type['BaseTransaction']:
