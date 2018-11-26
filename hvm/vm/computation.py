@@ -70,6 +70,7 @@ from hvm.vm.state import (
 from hvm.vm.transaction_context import (
     BaseTransactionContext
 )
+from hvm.rlp.transactions import BaseReceiveTransaction
 
 
 def memory_gas_cost(size_in_bytes: int) -> int:
@@ -94,9 +95,9 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         ``_precompiles``: A mapping of contract address to the precompile function for execution
         of precompiled contracts.
     """
-    state = None
-    msg = None
-    transaction_context = None
+    state: BaseState = None
+    msg: Message = None
+    transaction_context: BaseTransactionContext = None
 
     _memory = None
     _stack = None

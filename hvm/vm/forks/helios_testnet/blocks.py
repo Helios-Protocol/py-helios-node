@@ -22,6 +22,8 @@ from hvm.rlp.receipts import (
 from hvm import constants
 import time
 
+from eth_typing import Address
+
 from hvm.rlp.consensus import StakeRewardBundle
 
 class HeliosTestnetBlock(BaseBlock):
@@ -58,7 +60,6 @@ class HeliosTestnetBlock(BaseBlock):
             receive_transactions=receive_transactions,
             reward_bundle = reward_bundle,
         )
-        # TODO: should perform block validation at this point?
 
     #
     # Helpers
@@ -154,8 +155,9 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
         )
     
     @classmethod
-    def make_genesis_block(cls):
+    def make_genesis_block(cls, chain_address: Address):
         genesis_header = BlockHeader(
+            chain_address=chain_address,
             account_hash=constants.GENESIS_ACCOUNT_HASH,
             extra_data=constants.GENESIS_EXTRA_DATA,
             gas_limit=constants.GENESIS_GAS_LIMIT,

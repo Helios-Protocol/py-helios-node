@@ -320,6 +320,7 @@ ALLOWED_HEADER_FIELDS = {
     'extra_data',
     'transaction_root',
     'receipt_root',
+    'chain_address',
     'v',
     'r',
     's',

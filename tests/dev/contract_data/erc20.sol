@@ -65,7 +65,9 @@ contract BasicToken is ERC20Basic {
    /**
   * @dev total number of tokens in existence
   */
+  event Print(uint);
   function totalSupply() public view returns (uint256) {
+    Print(totalSupply_);
     return totalSupply_;
   }
    /**

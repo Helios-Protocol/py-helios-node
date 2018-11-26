@@ -260,8 +260,8 @@ def test_block_children_stake_calculation():
     print("All block children stake test passed")
     exit("Successful test finished")
 
-#test_block_children_stake_calculation()
-#exit()
+# test_block_children_stake_calculation()
+# exit()
     
 def test_send_transaction_then_receive():
     #testdb = LevelDB('/home/tommy/.local/share/helios/chain/full27')
@@ -270,6 +270,7 @@ def test_send_transaction_then_receive():
     """
     Send 2 blocks
     """
+
 
     genesis_block_header = sender_chain.chaindb.get_canonical_block_header_by_number(0)
     print('checking signature validity')
@@ -292,7 +293,8 @@ def test_send_transaction_then_receive():
                 )
     print('balance after state refresh = ', vm.state.account_db.get_balance(SENDER.public_key.to_canonical_address()))
     #exit()
-    
+
+
     tx = sender_chain.create_and_sign_transaction_for_queue_block(
                 gas_price=0x01,
                 gas=0x0c3500,
@@ -317,9 +319,14 @@ def test_send_transaction_then_receive():
             )
     #print('initial root_hash = ',sender_chain.chain_head_db.get_root_hash())
     #print(sender_chain.chain_head_db.get_historical_root_hashes())
-    
+    balance_1 = sender_chain.get_vm().state.account_db.get_balance(SENDER.public_key.to_canonical_address())
+    print('BALANCE BEFORE SENDING TX = ', balance_1)
     sender_block_1_imported = sender_chain.import_current_queue_block()
-    
+    balance_2 = sender_chain.get_vm().state.account_db.get_balance(SENDER.public_key.to_canonical_address())
+    print('BALANCE AFTER SENDING TX = ', balance_2)
+    assert((balance_1 - balance_2) == (tx.intrinsic_gas*2+2))
+    print("Passed gas and balance test")
+
     #print(sender_chain.chain_head_db.get_last_complete_historical_root_hash())
     #print(sender_chain.chain_head_db.get_historical_root_hashes())
     #print(sender_chain.chain_head_db.get_root_hash())
@@ -1160,6 +1167,7 @@ def create_new_genesis_params_and_state():
     print(new_genesis_private_key.public_key.to_canonical_address())
     total_supply = 100000000 * 10 **18
     new_mainnet_genesis_params = {
+        'chain_address': new_genesis_private_key.public_key.to_canonical_address(),
         'parent_hash': constants.GENESIS_PARENT_HASH,
         'transaction_root': constants.BLANK_ROOT_HASH,
         'receive_transaction_root': constants.BLANK_ROOT_HASH,
@@ -2122,10 +2130,23 @@ def test_block_rewards_system():
 def test_smart_contract_deploy_system():
     from helios.dev_tools import create_dev_fixed_blockchain_database
     import random
-
+    from hvm.rlp.receipts import (
+        Receipt,
+    )
     from solc import compile_source, compile_files, link_code, get_solc_version
 
-    os.environ["SOLC_BINARY"] = "/home/tommy/.py-solc/solc-v0.4.25/bin/solc"
+    from pathlib import Path
+    home = str(Path.home())
+
+    os.environ["SOLC_BINARY"] = home + "/.py-solc/solc-v0.4.25/bin/solc"
+
+    try:
+        get_solc_version()
+    except Exception:
+        print("Solc not found. Installing")
+        from solc import install_solc
+        install_solc('v0.4.25')
+
 
     from web3 import Web3
 
@@ -2144,7 +2165,7 @@ def test_smart_contract_deploy_system():
     now = int(time.time())
     coin_mature_time = constants.COIN_MATURE_TIME_FOR_STAKING
     key_balance_dict = {
-        private_keys[0]: (1000, now - coin_mature_time * 10 - 100),
+        private_keys[0]: (1000000000000, now - coin_mature_time * 10 - 100),
         private_keys[1]: (20000, now - coin_mature_time * 10 - 99),
         private_keys[2]: (34000, now - coin_mature_time * 10 - 98),
         private_keys[3]: (100000, now - coin_mature_time * 10 - 97),
@@ -2160,6 +2181,9 @@ def test_smart_contract_deploy_system():
     create_dev_fixed_blockchain_database(testdb, key_balance_dict)
 
     chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+
+    for private_key, balance_time in key_balance_dict.items():
+        assert(chain.get_vm().state.account_db.get_balance(private_key.public_key.to_canonical_address()) == balance_time[0])
 
     SOLIDITY_SRC_FILE = 'contract_data/erc20.sol'
     EXPECTED_TOTAL_SUPPLY = 10000000000000000000000
@@ -2180,7 +2204,7 @@ def test_smart_contract_deploy_system():
 
     chain.create_and_sign_transaction_for_queue_block(
         gas_price=0x01,
-        gas=0x0c3500,
+        gas=20000000,
         to=CREATE_CONTRACT_ADDRESS,
         value=0,
         data=decode_hex(w3_tx1['data']),
@@ -2189,8 +2213,73 @@ def test_smart_contract_deploy_system():
         s=0
     )
 
+    #time.sleep(1)
+    print("deploying smart contract")
+
     chain.import_current_queue_block()
 
+    print('done')
+
+
+    #now we need to add the block to the smart contract
+    list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
+    deployed_contract_address = list_of_smart_contracts[0]
+    print(list_of_smart_contracts)
+
+    chain = MainnetChain(testdb, deployed_contract_address, private_keys[0])
+
+    chain.populate_queue_block_with_receive_tx()
+    imported_block = chain.import_current_queue_block()
+
+    list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
+    print(list_of_smart_contracts)
+
+    #lets make sure it didn't create a refund transaction for the initial sender.
+    print(chain.get_vm().state.account_db.has_receivable_transactions(GENESIS_PRIVATE_KEY.public_key.to_canonical_address()))
+
+    # print('ASDASD')
+    # print(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].logs[0].data)
+
+    #
+    # Interacting with deployed smart contract step 1) add send transaction
+    #
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+
+    simple_token = w3.eth.contract(
+        address=Web3.toChecksumAddress(deployed_contract_address),
+        abi=contract_interface['abi'],
+    )
+
+    w3_tx2 = simple_token.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=20000000,
+        to=deployed_contract_address,
+        value=0,
+        data=decode_hex(w3_tx2['data']),
+        v=0,
+        r=0,
+        s=0
+    )
+
+    #lets make sure it subtracts the entire max gas
+    initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    chain.import_current_queue_block()
+    final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    assert((initial_balance - final_balance) == 20000000)
+
+    #
+    # Interacting with deployed smart contract step 2) add receive transaction to smart contract chain
+    #
+
+    chain = MainnetChain(testdb, deployed_contract_address, private_keys[0])
+    chain.populate_queue_block_with_receive_tx()
+    imported_block = chain.import_current_queue_block()
+
+
+    #now lets look at the reciept to see the result
+    print(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].status_code)
 
 
 test_smart_contract_deploy_system()

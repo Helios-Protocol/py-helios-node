@@ -43,11 +43,13 @@ from hvm.constants import random_private_keys
 logger = logging.getLogger("dev_tools_testing")
 
 def create_new_genesis_params_and_state(private_key, total_supply = 100000000 * 10 ** 18, timestamp = int(time.time())):
+    print("CREATING GENESIS BLOCK WITH TOTAL SUPPLY = ", total_supply)
     new_genesis_private_key = private_key
 
     print("Ceating new genesis params and state for genesis wallet address:")
     print(new_genesis_private_key.public_key.to_canonical_address())
     new_mainnet_genesis_params = {
+        'chain_address': new_genesis_private_key.public_key.to_canonical_address(),
         'parent_hash': constants.GENESIS_PARENT_HASH,
         'transaction_root': constants.BLANK_ROOT_HASH,
         'receive_transaction_root': constants.BLANK_ROOT_HASH,

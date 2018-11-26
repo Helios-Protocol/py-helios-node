@@ -428,8 +428,9 @@ class Chain(BaseChain):
         except CanonicalHeadNotFound:
             #this is a new block, lets make a genesis block
             self.logger.debug("Creating new genesis block on chain {}".format(self.wallet_address))
-            self.header = self.get_vm_class_for_block_timestamp().create_genesis_block().header
-            
+            self.header = self.get_vm_class_for_block_timestamp().create_genesis_block(self.wallet_address).header
+
+
         self.queue_block = self.get_block()
         
         if self.gas_estimator is None:
@@ -1167,7 +1168,6 @@ class Chain(BaseChain):
         #then we start the journal db
         #then within _import_block, it can commit the journal
         #but we wont persist until it gets out here again.
-        
         if wallet_address is not None:
             #we need to re-initialize the chain for the new wallet address.
             if wallet_address != self.wallet_address:

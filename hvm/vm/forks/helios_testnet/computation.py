@@ -78,24 +78,40 @@ class HeliosTestnetComputation(BaseComputation):
         if self.msg.depth > constants.STACK_DEPTH_LIMIT:
             raise StackDepthLimit("Stack depth limit reached")
 
-        if self.msg.should_transfer_value and self.msg.value:
-            if self.transaction_context.is_receive:
-                #this is a receive transaction
+        if self.msg.should_transfer_value:
+            if self.transaction_context.is_refund:
+                #this is a refund receive transaction
                 try:
-                    self.state.account_db.delete_receivable_transaction(self.msg.storage_address, self.transaction_context.send_tx_hash)
+                    self.state.account_db.delete_receivable_transaction(self.msg.sender, self.transaction_context.receive_tx_hash)
                 except ReceivableTransactionNotFound as e:
                     if validate:
                         raise e
-                        
-                self.state.account_db.delta_balance(self.msg.storage_address, self.msg.value)
+
+                self.state.account_db.delta_balance(self.msg.sender, self.msg.refund_amount)
                 self.logger.debug(
-                    "TRANSFERRED: %s into %s",
-                    self.msg.value,
-                    encode_hex(self.msg.storage_address),
+                    "REFUNDED: %s into %s",
+                    self.msg.refund_amount,
+                    encode_hex(self.msg.sender),
                 )
-            else:
+
+            elif self.transaction_context.is_receive:
+                #this is a receive transaction
+                try:
+                    self.state.account_db.delete_receivable_transaction(self.msg.storage_address, self.transaction_context.send_tx_hash, is_contract_deploy=self.msg.is_create)
+                except ReceivableTransactionNotFound as e:
+                    if validate:
+                        raise e
+
+                if self.msg.value:
+                    self.state.account_db.delta_balance(self.msg.storage_address, self.msg.value)
+                    self.logger.debug(
+                        "RECEIVED: %s into %s",
+                        self.msg.value,
+                        encode_hex(self.msg.storage_address),
+                    )
+            elif self.msg.value:
+                # this is a send transaction
                 if validate:
-                    #this is a send transaction
                     sender_balance = self.state.account_db.get_balance(self.msg.sender)
         
                     if sender_balance < self.msg.value:
@@ -104,34 +120,73 @@ class HeliosTestnetComputation(BaseComputation):
                         )
     
                 self.state.account_db.delta_balance(self.msg.sender, -1 * self.msg.value)
-                
+
                 self.logger.debug(
-                    "TRANSFERRED: %s from %s to pending transactions",
+                    "SENT: %s from %s to pending transactions",
                     self.msg.value,
                     encode_hex(self.msg.sender),
                 )
 
         self.state.account_db.touch_account(self.msg.storage_address)
 
-        computation = self.apply_computation(
-            self.state,
-            self.msg,
-            self.transaction_context,
-        )
-
-        if computation.is_error:
-            self.state.revert(snapshot)
-        else:
+        if self.transaction_context.is_refund:
+            # We never run computations on a refund
             self.state.commit(snapshot)
+            computation = self
+
+        elif self.transaction_context.is_receive:
+            # this is when we run all computation normally
+            computation = self.apply_computation(
+                self.state,
+                self.msg,
+                self.transaction_context,
+            )
+
+            if computation.is_error:
+                self.state.revert(snapshot)
+            else:
+                self.state.commit(snapshot)
+
+        else:
+            # this is a send transaction. We only run computation if is_create = True, and in that case we only run it to determine
+            # the gas cost. So we create a snapshot to remove any changes other thank calculating gas cost.
+
+            if self.msg.is_create:
+                computation_snapshot = self.state.snapshot()
+
+                computation = self.apply_computation(
+                    self.state,
+                    self.msg,
+                    self.transaction_context,
+                )
+
+                if computation.is_error:
+                    # This will revert the computation snapshot as well.
+                    self.state.revert(snapshot)
+                else:
+                    # computation worked, but we don't want it yet until the receive transaction. So lets revert the computation
+                    # but commit the transaction above.
+                    if self.logger:
+                        self.logger.debug(
+                            "REVERTING COMPUTATION FOR CONTRACT DEPLOYMENT. WILL DEPLOY ON RECEIVE TX."
+                        )
+                    self.state.revert(computation_snapshot)
+                    self.state.commit(snapshot)
+
+            else:
+                computation = self
+
 
         return computation
-    
-    
+
+
+
     def apply_create_message(self, validate = True):
         snapshot = self.state.snapshot()
 
-        # EIP161 nonce incrementation
-        self.state.account_db.increment_nonce(self.msg.storage_address)
+        if self.transaction_context.is_receive and not self.transaction_context.is_refund:
+            # EIP161 nonce incrementation
+            self.state.account_db.increment_nonce(self.msg.storage_address)
 
         computation = self.apply_message(validate = validate)
 
@@ -161,17 +216,23 @@ class HeliosTestnetComputation(BaseComputation):
                     # Different from Frontier: reverts state on gas failure while
                     # writing contract code.
                     computation._error = err
+                    self.logger.debug("NOT ENOUGH GAS TO WRITE CONTRACT CODE")
                     self.state.revert(snapshot)
                 else:
-                    if self.logger:
-                        self.logger.debug(
-                            "SETTING CODE: %s -> length: %s | hash: %s",
-                            encode_hex(self.msg.storage_address),
-                            len(contract_code),
-                            encode_hex(keccak(contract_code))
-                        )
 
-                    self.state.account_db.set_code(self.msg.storage_address, contract_code)
+
+                    if self.transaction_context.is_receive and not self.transaction_context.is_refund:
+                        # we only set the code if it is a receive transaction
+                        if self.logger:
+                            self.logger.debug(
+                                "SETTING CODE: %s -> length: %s | hash: %s",
+                                encode_hex(self.msg.storage_address),
+                                len(contract_code),
+                                encode_hex(keccak(contract_code))
+                            )
+
+                        self.state.account_db.set_code(self.msg.storage_address, contract_code)
+
                     self.state.commit(snapshot)
 
             else:

@@ -1,3 +1,5 @@
+from eth_typing import Hash32
+
 import rlp
 
 from hvm.utils.numeric import (
@@ -40,6 +42,7 @@ from hvm.rlp.transactions import (
 from rlp.sedes import (
     big_endian_int,
     binary,
+    boolean,
 )
 from hvm.rlp.sedes import (
     address,
@@ -164,9 +167,18 @@ class HeliosTestnetReceiveTransaction(BaseReceiveTransaction):
 
     fields = [
         ('sender_block_hash', hash32),
-        ('send_transaction_hash', hash32)
+        ('send_transaction_hash', hash32),
+        ('is_refund', boolean),
+        ('remaining_refund', big_endian_int)
     ]
-    
 
-        
+    def __init__(self, sender_block_hash: Hash32, send_transaction_hash: Hash32, is_refund: bool = False, remaining_refund: int = 0):
+
+        super(HeliosTestnetReceiveTransaction, self).__init__(
+            sender_block_hash=sender_block_hash,
+            send_transaction_hash=send_transaction_hash,
+            is_refund=is_refund,
+            remaining_refund=remaining_refund,
+        )
+    
 

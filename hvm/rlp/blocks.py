@@ -9,7 +9,8 @@ from typing import (  # noqa: F401
 import rlp
 
 from eth_typing import (
-    Hash32
+    Hash32,
+    Address
 )
 
 
@@ -168,7 +169,7 @@ class BaseQueueBlock(BaseBlock):
     
     @classmethod
     @abstractmethod
-    def make_genesis_block(cls):
+    def make_genesis_block(cls, chain_address: Address):
         raise NotImplementedError("Must be implemented by subclasses")
         
     def add_transaction(self, transaction):

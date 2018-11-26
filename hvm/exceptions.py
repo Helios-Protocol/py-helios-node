@@ -345,3 +345,11 @@ class OutOfBoundsRead(VMError):
     boundaries of the buffer (such as with RETURNDATACOPY)
     """
     pass
+
+class AttemptedToAccessExternalStorage(VMError):
+    """
+    Raised when a contract calls another contract and attempts
+    to use the storage in the other contract. This is not allowed
+    on Helios. Use DelegateCall instead of Call.
+    """
+    pass

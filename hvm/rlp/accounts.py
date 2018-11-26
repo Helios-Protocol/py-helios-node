@@ -7,13 +7,17 @@ from rlp.sedes import (
 from hvm.constants import (
     EMPTY_SHA3,
     BLANK_ROOT_HASH,
+    ZERO_ADDRESS,
 )
 
 from .sedes import (
     trie_root,
     hash32,
+    address
     
 )
+from eth_typing import Address
+
 
 from typing import Any
 
@@ -23,6 +27,7 @@ class TransactionKey(rlp.Serializable):
         ('transaction_hash', hash32),
         ('sender_block_hash', hash32),
     ]
+
  
 class BlockConflictKey(rlp.Serializable):
     fields = [

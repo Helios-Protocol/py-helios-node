@@ -40,6 +40,7 @@ def make_helios_testnet_receipt(base_header, send_transaction, receive_transacti
         in computation.get_log_entries()
     ]
 
+
     gas_remaining = computation.get_gas_remaining()
     gas_refund = computation.get_gas_refund()
     if receive_transaction is None:

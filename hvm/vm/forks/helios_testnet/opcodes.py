@@ -915,11 +915,36 @@ BYZANTIUM_UPDATED_OPCODES = {
     ),
 }
 
-
-HELIOS_TESTNET_OPCODES = merge(
+BYZANTIUM_OPCODES = merge(
     copy.deepcopy(SPURIOUS_DRAGON_OPCODES),
     BYZANTIUM_UPDATED_OPCODES,
 )
+
+
+HELIOS_UPDATED_OPCODES = {
+
+    #
+    # Call
+    #
+    opcode_values.STATICCALL: call.StaticCallHelios.configure(
+        __name__='opcode:STATICCALL',
+        mnemonic=mnemonics.STATICCALL,
+        gas_cost=GAS_CALL_EIP150,
+    )(),
+    opcode_values.CALL: call.CallHelios.configure(
+        __name__='opcode:CALL',
+        mnemonic=mnemonics.CALL,
+        gas_cost=GAS_CALL_EIP150,
+    )(),
+
+}
+
+
+HELIOS_TESTNET_OPCODES = merge(
+    copy.deepcopy(BYZANTIUM_OPCODES),
+    HELIOS_UPDATED_OPCODES,
+)
+
 
 
 

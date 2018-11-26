@@ -238,9 +238,16 @@ class BaseChainDB(metaclass=ABCMeta):
             transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
         raise NotImplementedError("ChainDB classes must implement this method")
 
+    @abstractmethod
+    def get_transaction_by_hash(self,
+                                tx_hash: Hash32,
+                                send_tx_class: Type['BaseTransaction'],
+                                receive_tx_class: Type['BaseReceiveTransaction']) -> Union['BaseTransaction', 'BaseReceiveTransaction']:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
 
     @abstractmethod
-    def get_transaction_index(self, transaction_hash: Hash32) -> Tuple[BlockNumber, int]:
+    def get_transaction_index(self, transaction_hash: Hash32) -> Tuple[BlockNumber, int, bool]:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     #
@@ -951,6 +958,7 @@ class ChainDB(BaseChainDB):
         try:
             block_header = self.get_block_header_by_hash(block_hash)
         except HeaderNotFound:
+            print("XXXXXXXXXXXX", block_hash)
             raise TransactionNotFound("Block {} is not in the canonical chain".format(block_hash))
         transaction_db = HexaryTrie(self.db, root_hash=block_header.transaction_root)
         encoded_index = rlp.encode(transaction_index)
@@ -965,7 +973,7 @@ class ChainDB(BaseChainDB):
             self,
             block_hash: Hash32,
             transaction_index: int,
-            transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
+            transaction_class: Type['BaseReceiveTransaction']) -> 'BaseReceiveTransaction':
         """
         Returns the transaction at the specified `transaction_index` from the
         block specified by `block_number` from the canonical chain.
@@ -984,6 +992,29 @@ class ChainDB(BaseChainDB):
         else:
             raise TransactionNotFound(
                 "No transaction is at index {} of block {}".format(transaction_index, block_number))
+
+    def get_transaction_by_hash(self,
+                                tx_hash: Hash32,
+                                send_tx_class: Type['BaseTransaction'],
+                                receive_tx_class: Type['BaseReceiveTransaction']) -> Union['BaseTransaction', 'BaseReceiveTransaction']:
+
+        block_hash, index, is_receive = self.get_transaction_index(tx_hash)
+
+        if is_receive:
+            transaction = self.get_receive_transaction_by_index_and_block_hash(
+                block_hash,
+                index,
+                receive_tx_class,
+            )
+        else:
+            transaction = self.get_transaction_by_index_and_block_hash(
+                block_hash,
+                index,
+                send_tx_class,
+            )
+
+        return transaction
+
 
     def get_receive_transaction_by_index(
             self,
@@ -1009,7 +1040,7 @@ class ChainDB(BaseChainDB):
             raise TransactionNotFound(
                 "No transaction is at index {} of block {}".format(transaction_index, block_number))
 
-    def get_transaction_index(self, transaction_hash: Hash32) -> Tuple[BlockNumber, int]:
+    def get_transaction_index(self, transaction_hash: Hash32) -> Tuple[Hash32, int, bool]:
         """
         Returns a 2-tuple of (block_number, transaction_index) indicating which
         block the given transaction can be found in and at what index in the
@@ -1106,7 +1137,7 @@ class ChainDB(BaseChainDB):
         - remove transaction hash to body lookup in the pending pool
         """
         #TODO: allow this for contract addresses
-        if block_header.sender != self.wallet_address:
+        if block_header.chain_address != self.wallet_address:
             raise ValueError("Cannot add transaction to canonical chain because it is from a block on a different chain")
         transaction_key = TransactionKey(block_header.hash, index, True)
         self.db.set(

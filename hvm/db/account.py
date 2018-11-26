@@ -6,7 +6,7 @@ from uuid import UUID
 import traceback
 import logging
 from lru import LRU
-from typing import Set, Tuple, List  # noqa: F401
+from typing import Set, Tuple, List, Optional  # noqa: F401
 
 from eth_typing import Hash32
 
@@ -55,8 +55,10 @@ from hvm.db.schema import SchemaV1
 
 from .hash_trie import HashTrie
 
+from eth_typing import Address, Hash32
 from hvm.rlp.sedes import(
-    trie_root
+    address,
+
 )
 
 from hvm.utils.msgpack import (
@@ -109,8 +111,30 @@ class BaseAccountDB(metaclass=ABCMeta):
     #
     # Receivable Transactions
     #
-    def get_receivable_transactions(self, address) -> List[TransactionKey]:
+    @abstractmethod
+    def get_receivable_transactions(self, address: Address) -> List[TransactionKey]:
         raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def has_receivable_transactions(self, address: Address) -> bool:
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def get_receivable_transaction(self, address: Address, transaction_hash: Hash32) -> Optional[TransactionKey]:
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def add_receivable_transactions(self, address: Address, transaction_keys: TransactionKey) -> None:
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def add_receivable_transaction(self, address: Address, transaction_hash: Hash32, sender_block_hash: Hash32) -> None:
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def delete_receivable_transaction(self, address: Address, transaction_hash: Hash32) -> None:
+        raise NotImplementedError("Must be implemented by subclasses")
+
 
     #
     # Code
@@ -130,6 +154,22 @@ class BaseAccountDB(metaclass=ABCMeta):
     @abstractmethod
     def delete_code(self, address):
         raise NotImplementedError("Must be implemented by subclasses")
+
+    #
+    # Internal use smart contract transaction queue system
+    #
+    @abstractmethod
+    def _add_address_to_smart_contracts_with_pending_transactions(self, address: Address) -> None:
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def _remove_address_from_smart_contracts_with_pending_transactions(self, address: Address) -> None:
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def get_smart_contracts_with_pending_transactions(self) -> List[Address]:
+        raise NotImplementedError("Must be implemented by subclasses")
+
 
     #
     # Account Methods
@@ -295,33 +335,33 @@ class AccountDB(BaseAccountDB):
     #
     # Receivable Transactions
     #
-    def get_receivable_transactions(self, address) -> List[TransactionKey]:
+    def get_receivable_transactions(self, address: Address) -> List[TransactionKey]:
         validate_canonical_address(address, title="Storage Address")
         account = self._get_account(address)
         return account.receivable_transactions
     
-    def has_receivable_transactions(self, address):
+    def has_receivable_transactions(self, address: Address) -> bool:
         tx = self.get_receivable_transactions(address)
         if len(tx) == 0:
             return False
         else:
             return True
         
-    def get_receivable_transaction(self, address, transaction_hash):
+    def get_receivable_transaction(self, address: Address, transaction_hash: Hash32) -> Optional[TransactionKey]:
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         all_tx = self.get_receivable_transactions(address)
         for tx_key in all_tx:
             if tx_key.transaction_hash == transaction_hash:
                 return tx_key
-        return False
+        return None
         
      
-    def add_receivable_transactions(self, address, transaction_keys):
+    def add_receivable_transactions(self, address: Address, transaction_keys: TransactionKey) -> None:
         validate_canonical_address(address, title="Wallet Address")
         for tx_key in transaction_keys:
             self.add_receivable_transaction(address, tx_key.transaction_hash, tx_key.sender_block_hash)
             
-    def add_receivable_transaction(self, address, transaction_hash, sender_block_hash):
+    def add_receivable_transaction(self, address: Address, transaction_hash: Hash32, sender_block_hash: Hash32, is_contract_deploy:bool = False) -> None:
         validate_canonical_address(address, title="Wallet Address")
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         validate_is_bytes(sender_block_hash, title="Sender Block Hash")
@@ -329,10 +369,6 @@ class AccountDB(BaseAccountDB):
         #this is the wallet address people send money to when slashed. It is a sink
         if address == SLASH_WALLET_ADDRESS:
             return
-        
-        #self.logger.debug("adding receivable transaction {}".format(encode_hex(transaction_hash)))
-        #if encode_hex(transaction_hash) == '0x81ecfdd5c983a324928612ce103d0bfb49adaf804b72a124cfcf83de48578075':
-        #    traceback.print_stack()
 
 
         account = self._get_account(address)
@@ -349,9 +385,16 @@ class AccountDB(BaseAccountDB):
         
         #self.logger.debug(new_receivable_transactions)
         
-        self._set_account(address, account.copy(receivable_transactions=new_receivable_transactions)) 
+        self._set_account(address, account.copy(receivable_transactions=new_receivable_transactions))
+
+        #finally, if this is a smart contract, lets add it to the list of smart contracts with pending transactions
+        if is_contract_deploy or self.get_code_hash(address) != EMPTY_SHA3:
+            if len(new_receivable_transactions) == 1:
+                self.logger.debug("Adding address to list of smart contracts with pending transactions")
+                #we only need to run this when adding the first one.
+                self._add_address_to_smart_contracts_with_pending_transactions(address)
         
-    def delete_receivable_transaction(self, address, transaction_hash):
+    def delete_receivable_transaction(self, address: Address, transaction_hash: Hash32, is_contract_deploy: bool = False) -> None:
         validate_canonical_address(address, title="Storage Address")
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         
@@ -372,6 +415,11 @@ class AccountDB(BaseAccountDB):
             raise ReceivableTransactionNotFound("transaction hash {0} not found in receivable_transactions database for wallet {1}".format(transaction_hash, address))
         
         self._set_account(address, account.copy(receivable_transactions=tuple(receivable_transactions)))
+
+        if is_contract_deploy or self.get_code_hash(address) != EMPTY_SHA3:
+            if len(receivable_transactions) == 0:
+                self.logger.debug("Removing address from list of smart contracts with pending transactions")
+                self._remove_address_from_smart_contracts_with_pending_transactions(address)
     
     
     #
@@ -407,11 +455,51 @@ class AccountDB(BaseAccountDB):
         account = self._get_account(address)
         self._set_account(address, account.copy(code_hash=EMPTY_SHA3))
 
+
+    #
+    # Internal use smart contract transaction queue system
+    #
+    def _add_address_to_smart_contracts_with_pending_transactions(self, address: Address) -> None:
+        key = SchemaV1.make_smart_contracts_with_pending_transactions_lookup_key()
+
+        address_set = set(self.get_smart_contracts_with_pending_transactions())
+
+        address_set.add(address)
+
+        self.db[key] = rlp.encode(list(address_set), sedes=rlp.sedes.FCountableList(address))
+
+    def _remove_address_from_smart_contracts_with_pending_transactions(self, address: Address) -> None:
+        key = SchemaV1.make_smart_contracts_with_pending_transactions_lookup_key()
+
+        address_set = set(self.get_smart_contracts_with_pending_transactions())
+
+        address_set.remove(address)
+
+        self.db[key] = rlp.encode(list(address_set), sedes=rlp.sedes.FCountableList(address))
+
+    def has_pending_smart_contract_transactions(self, address: Address) -> bool:
+        validate_canonical_address(address, title="Storage Address")
+        address_set = set(self.get_smart_contracts_with_pending_transactions())
+        return address in address_set
+
+    def get_smart_contracts_with_pending_transactions(self) -> List[Address]:
+        key = SchemaV1.make_smart_contracts_with_pending_transactions_lookup_key()
+
+        try:
+            address_list = rlp.decode(self.db[key], sedes=rlp.sedes.FCountableList(address), use_list=True)
+            return address_list
+        except KeyError:
+            return []
+
     #
     # Account Methods
     #
     def account_has_code_or_nonce(self, address):
-        return self.get_nonce(address) != 0 or self.get_code_hash(address) != EMPTY_SHA3
+        return self.get_nonce(address) != 0 or self.account_has_code(address)
+
+    def account_has_code(self, address: Address) -> bool:
+
+        return self.get_code_hash(address) != EMPTY_SHA3
 
     def delete_account(self, address):
         validate_canonical_address(address, title="Storage Address")

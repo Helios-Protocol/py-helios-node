@@ -25,9 +25,10 @@ from hvm.constants import (
     BLANK_ROOT_HASH,
 )
 from hvm.rlp.consensus import StakeRewardBundle
-from typing import Union  # noqa: F401
+from typing import Optional, Union  # noqa: F401
 
-from eth_typing import Address
+from eth_typing import Address, Hash32
+from hvm.vm.message import Message
 
 if TYPE_CHECKING:
     from hvm.computation import (  # noqa: F401
@@ -37,6 +38,73 @@ if TYPE_CHECKING:
         BaseTransactionContext,
     )
 
+
+class BaseTransactionExecutor(metaclass=ABCMeta):
+    def __init__(self, vm_state):
+        self.vm_state = vm_state
+
+    @abstractmethod
+    def get_transaction_context(self,
+                                send_transaction: BaseTransaction,
+                                caller_chain_address:Address,
+                                receive_transaction: Optional[BaseReceiveTransaction] = None,
+                                refund_transaction: Optional[BaseReceiveTransaction] = None) -> 'BaseTransactionContext':
+        raise NotImplementedError()
+
+    def __call__(self, send_transaction: BaseTransaction,
+                 caller_chain_address: Address,
+                 receive_transaction: Optional[BaseReceiveTransaction] = None,
+                 refund_transaction: Optional[BaseReceiveTransaction] = None,
+                 validate=True) -> 'BaseComputation':
+        if validate:
+            self.validate_transaction(send_transaction=send_transaction,
+                                      receive_transaction=receive_transaction,
+                                      refund_transaction=refund_transaction,
+                                      caller_chain_address=caller_chain_address)
+
+        transaction_context = self.get_transaction_context(send_transaction, caller_chain_address, receive_transaction, refund_transaction)
+        message = self.build_evm_message(send_transaction, transaction_context, receive_transaction)
+        computation = self.build_computation(message, transaction_context, validate)
+        finalized_computation = self.finalize_computation(send_transaction, computation)
+
+        processed_transaction = self.add_possible_refunds_to_currently_executing_transaction(send_transaction,
+                                                                                            finalized_computation,
+                                                                                            receive_transaction,
+                                                                                            refund_transaction)
+
+        return finalized_computation, processed_transaction
+
+    @abstractmethod
+    def validate_transaction(self,
+                             send_transaction: BaseTransaction,
+                             caller_chain_address:Address,
+                             receive_transaction: Optional[BaseReceiveTransaction] = None,
+                             refund_transaction: Optional[BaseReceiveTransaction] = None):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def build_evm_message(self,
+                          send_transaction: BaseTransaction,
+                          transaction_context: 'BaseTransactionContext',
+                          receive_transaction: BaseReceiveTransaction = None) -> Message:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def build_computation(self, message: Message, transaction_context: 'BaseTransactionContext', validate: bool = True) -> 'BaseComputation':
+        raise NotImplementedError()
+
+    @abstractmethod
+    def finalize_computation(send_transaction: BaseTransaction, computation: 'BaseComputation') -> 'BaseComputation':
+        raise NotImplementedError()
+
+    @abstractmethod
+    def add_possible_refunds_to_currently_executing_transaction(self,
+                            send_transaction: BaseTransaction,
+                            computation: 'BaseComputation',
+                            receive_transaction: BaseReceiveTransaction = None,
+                            refund_transaction: BaseReceiveTransaction = None,
+                            ) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        raise NotImplementedError()
 
 class BaseState(Configurable, metaclass=ABCMeta):
     """
@@ -59,15 +127,16 @@ class BaseState(Configurable, metaclass=ABCMeta):
     #
     __slots__ = ['_db', 'execution_context', 'account_db']
 
-    computation_class = None  # type: Type[BaseComputation]
+    computation_class = None  # type: Type['BaseComputation']
     transaction_context_class = None  # type: Type[BaseTransactionContext]
     account_db_class = None  # type: Type[BaseAccountDB]
     transaction_executor = None  # type: Type[BaseTransactionExecutor]
 
+
     def __init__(self, db, execution_context):
         self._db = db
         self.execution_context = execution_context
-        self.account_db = self.get_account_db_class()(self._db)
+        self.account_db: BaseAccountDB = self.get_account_db_class()(self._db)
 
     #
     # Logging
@@ -214,16 +283,21 @@ class BaseState(Configurable, metaclass=ABCMeta):
     #
     # Execution
     #
-    def apply_transaction(self, send_transaction: BaseTransaction, caller_chain_address:bytes, receive_transaction: Union[BaseReceiveTransaction, type(None)] = None, validate = True):
+    def apply_transaction(self,
+                          send_transaction: BaseTransaction,
+                          caller_chain_address:Address,
+                          receive_transaction: Optional[BaseReceiveTransaction] = None,
+                          refund_transaction: Optional[BaseReceiveTransaction] = None,
+                          validate: bool = True) -> 'BaseComputation':
         """
         Apply transaction to the vm state
 
         :param transaction: the transaction to apply
         :return: the new state root, and the computation
         """
-        computation = self.execute_transaction(send_transaction, caller_chain_address, receive_transaction, validate = validate)
+        computation, processed_transaction = self.execute_transaction(send_transaction, caller_chain_address, receive_transaction, refund_transaction, validate = validate)
         
-        return computation
+        return computation, processed_transaction
 
     def apply_reward_bundle(self, reward_bundle:StakeRewardBundle, wallet_address: Address) -> None:
         total_amount = (reward_bundle.reward_type_1.amount +
@@ -232,53 +306,20 @@ class BaseState(Configurable, metaclass=ABCMeta):
         self.account_db.delta_balance(wallet_address, total_amount)
 
 
-    def get_transaction_executor(self):
+    def get_transaction_executor(self) -> BaseTransactionExecutor:
         return self.transaction_executor(self)
 
-#    @abstractmethod
-#    def execute_transaction(self):
-#        raise NotImplementedError()
         
-    def execute_transaction(self, send_transaction: BaseTransaction, caller_chain_address:bytes, receive_transaction: Union[BaseReceiveTransaction, type(None)] = None, validate = True):
+    def execute_transaction(self,
+                            send_transaction: BaseTransaction,
+                            caller_chain_address:Address,
+                            receive_transaction: Optional[BaseReceiveTransaction] = None,
+                            refund_transaction: Optional[BaseReceiveTransaction] = None,
+                            validate:bool = True) -> 'BaseComputation':
         executor = self.get_transaction_executor()
         if executor == None:
             raise ValueError("No transaction executor given")
-        return executor(send_transaction, caller_chain_address, receive_transaction, validate = validate)
+        return executor(send_transaction, caller_chain_address, receive_transaction, refund_transaction, validate = validate)
 
 
-class BaseTransactionExecutor(metaclass=ABCMeta):
-    def __init__(self, vm_state):
-        self.vm_state = vm_state
 
-    @abstractmethod
-    def get_transaction_context(self, transaction):
-        raise NotImplementedError()
-
-    def __call__(self, send_transaction: BaseTransaction, caller_chain_address:bytes, receive_transaction: Union[BaseReceiveTransaction, type(None)] = None, validate = True):
-        if validate:
-            self.validate_transaction(send_transaction = send_transaction,
-                                                          receive_transaction = receive_transaction,
-                                                          caller_chain_address = caller_chain_address)
-
-        transaction_context = self.get_transaction_context(send_transaction, receive_transaction)
-        message = self.build_evm_message(send_transaction, transaction_context)
-        computation = self.build_computation(message, transaction_context, validate)
-        finalized_computation = self.finalize_computation(send_transaction, transaction_context, computation)
-        
-        return finalized_computation
-
-    @abstractmethod
-    def validate_transaction(self):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def build_evm_message(self):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def build_computation(self):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def finalize_computation(self):
-        raise NotImplementedError()

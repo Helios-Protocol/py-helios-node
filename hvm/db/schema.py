@@ -127,3 +127,7 @@ class SchemaV1(BaseSchema):
     @staticmethod
     def make_reward_bundle_hash_lookup_key(reward_bundle_hash: Hash32) -> bytes:
         return b'reward_bundle_lookup:%b' % reward_bundle_hash
+
+    @staticmethod
+    def make_smart_contracts_with_pending_transactions_lookup_key() -> bytes:
+        return b'smart_contracts_with_pending_lookup'

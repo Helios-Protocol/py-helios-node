@@ -6,32 +6,53 @@ from hvm.exceptions import (
 )
 from hvm.constants import (
     SECPK1_N,
+    CREATE_CONTRACT_ADDRESS
 )
 from hvm.rlp.transactions import (
     BaseTransaction,
     BaseReceiveTransaction 
 )
-from typing import Union  # noqa: F401
+from typing import Union, Optional # noqa: F401
 
 '''
 This only performs checks that can be done against the state.
 '''
    
-def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransaction, caller_chain_address:bytes, receive_transaction: Union[BaseReceiveTransaction, type(None)] = None):
+def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransaction, caller_chain_address:bytes, receive_transaction: Optional[BaseReceiveTransaction] = None, refund_receive_transaction: Optional[BaseReceiveTransaction] = None):
 
-    #first find out if it is a send send_transaction or a receive transaction
-    if receive_transaction is not None:
+    #first find out if it is a send send_transaction or a receive transaction or a refund transaction
+    if refund_receive_transaction is not None:
+        #this is a refund transaction
+        if refund_receive_transaction.is_refund is False:
+            raise ValidationError(
+                'Only refund transactions can be used for a refund. On this transaction is_from_refund = False.')
+
+        if refund_receive_transaction.remaining_refund != 0:
+            raise ValidationError(
+                'Refund transactions must have 0 remaining refund')
+
+        if send_transaction.sender != caller_chain_address:
+            raise ValidationError(
+                'Refunds can only go back to the original chain that sent the initial transaction')
+
+    elif receive_transaction is not None:
+        #this is a receive transaction
         # if it is a receive send_transaction we need to make sure the send send_transaction exists and is within the correct block hash
         #TODO: need to check to see if send_transaction hash already exists in our db. this will stop double receive. answer: This is done in the vm before it gets here
         #TODO: dont forget to delete the receivable send_transaction after executing. answer:done
         #we check to make sure the send transaction is in the account in the state before it gets here.
         #receiver = send_transaction.receiver
 
-        if send_transaction.to != caller_chain_address:
+        if send_transaction.to != caller_chain_address and send_transaction.to != CREATE_CONTRACT_ADDRESS:
             raise ValidationError(
                 'Receive transaction is trying to receive a transaction that is not meant for this chain')
 
+        if receive_transaction.is_refund is True:
+            raise ValidationError(
+                'The receive transaction is incorrectly marked as a refund.')
+
     else:
+        #this is a send transaction
         if send_transaction.s > SECPK1_N // 2 or send_transaction.s == 0:
             raise ValidationError("Invalid signature S value")
 
@@ -46,7 +67,7 @@ def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransa
     
         if sender_balance < gas_cost:
             raise ValidationError(
-                "Sender account balance cannot afford txn gas: `{0}`".format(send_transaction.sender)
+                "Sender account balance cannot afford txn gas. Balance:{}, gas cost: {}".format(sender_balance, gas_cost)
             )
     
         total_cost = send_transaction.value + gas_cost
