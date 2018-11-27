@@ -62,10 +62,10 @@ class SchemaV1(BaseSchema):
             raise InvalidHeadRootTimestamp("Can only save or load head root hashes for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
         return b'head-root-at-time:%i' % timestamp
     
-    @staticmethod
-    def make_block_hash_to_chain_wallet_address_lookup_key(block_hash: Hash32) -> bytes:
-        return b'block-hash-to-chain-wallet-address:%b' % block_hash
-    
+    # @staticmethod
+    # def make_block_hash_to_chain_wallet_address_lookup_key(block_hash: Hash32) -> bytes:
+    #     return b'block-hash-to-chain-wallet-address:%b' % block_hash
+    #
     @staticmethod
     def make_chronological_window_lookup_key(timestamp: int) -> bytes:
         #require that it is mod of 1000 seconds

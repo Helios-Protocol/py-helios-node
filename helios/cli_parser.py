@@ -299,6 +299,13 @@ chain_parser.add_argument(
 )
 
 chain_parser.add_argument(
+    '--disable_smart_contract_chain_manager',
+    action='store_true',
+    dest='disable_smart_contract_chain_manager',
+    help="This will stop the node from trying to automatically add new blocks to smart contract chains.",
+)
+
+chain_parser.add_argument(
     '--instance',
     type=int,
     help=(

@@ -561,7 +561,7 @@ def test_import_chain():
     i = 0
     wallet_addresses = []
     for next_head_hash in next_head_hashes:
-        chain_address = node_1.chaindb.get_chain_wallet_address_for_block_hash(node_1.db, next_head_hash)
+        chain_address = node_1.chaindb.get_chain_wallet_address_for_block_hash(next_head_hash)
         #print(chain_address)    
         wallet_addresses.append(chain_address)
         
@@ -637,7 +637,7 @@ def test_import_chain_overwrite_existing():
     
     
     for next_head_hash in next_head_hashes:
-        chain_address = node_1.chaindb.get_chain_wallet_address_for_block_hash(node_1.db, next_head_hash)
+        chain_address = node_1.chaindb.get_chain_wallet_address_for_block_hash(next_head_hash)
 
         wallet_addresses.append(chain_address)
         
@@ -736,7 +736,7 @@ def test_import_chain_overwrite_existing_one_at_a_time():
                              '0x2bdc0707ccf84350c7a0befea81e5ba1c2a78b3e']
     wallet_addresses = [decode_hex(x) for x in hex_wallet_addresses]
     for next_head_hash in next_head_hashes:
-        chain_address = node_1.chaindb.get_chain_wallet_address_for_block_hash(node_1.db, next_head_hash)
+        chain_address = node_1.chaindb.get_chain_wallet_address_for_block_hash(next_head_hash)
 
         wallet_addresses.append(chain_address)
 
@@ -2135,6 +2135,8 @@ def test_smart_contract_deploy_system():
     )
     from solc import compile_source, compile_files, link_code, get_solc_version
 
+    from eth_utils import to_int
+
     from pathlib import Path
     home = str(Path.home())
 
@@ -2202,9 +2204,11 @@ def test_smart_contract_deploy_system():
     # Build transaction to deploy the contract
     w3_tx1 = SimpleToken.constructor().buildTransaction(W3_TX_DEFAULTS)
 
+    max_gas = 20000000
+
     chain.create_and_sign_transaction_for_queue_block(
         gas_price=0x01,
-        gas=20000000,
+        gas=max_gas,
         to=CREATE_CONTRACT_ADDRESS,
         value=0,
         data=decode_hex(w3_tx1['data']),
@@ -2216,7 +2220,13 @@ def test_smart_contract_deploy_system():
     #time.sleep(1)
     print("deploying smart contract")
 
-    chain.import_current_queue_block()
+    initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    imported_block = chain.import_current_queue_block()
+    final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    gas_used = to_int(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].gas_used)
+    assert ((initial_balance - final_balance) == gas_used)
+
+    print("Used the correct amount of gas.")
 
     print('done')
 
@@ -2252,9 +2262,10 @@ def test_smart_contract_deploy_system():
 
     w3_tx2 = simple_token.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
 
+
     chain.create_and_sign_transaction_for_queue_block(
         gas_price=0x01,
-        gas=20000000,
+        gas=max_gas,
         to=deployed_contract_address,
         value=0,
         data=decode_hex(w3_tx2['data']),
@@ -2267,7 +2278,7 @@ def test_smart_contract_deploy_system():
     initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     chain.import_current_queue_block()
     final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    assert((initial_balance - final_balance) == 20000000)
+    assert((initial_balance - final_balance) == max_gas)
 
     #
     # Interacting with deployed smart contract step 2) add receive transaction to smart contract chain
@@ -2279,7 +2290,21 @@ def test_smart_contract_deploy_system():
 
 
     #now lets look at the reciept to see the result
-    print(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].status_code)
+    assert(to_int(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].logs[0].data) == EXPECTED_TOTAL_SUPPLY)
+    print("Total supply call gave expected result!")
+    gas_used = to_int(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].gas_used)
+
+
+    #
+    # Interacting with deployed smart contract step 3) Receiving refund of extra gas that wasn't used in the computation
+    #
+    initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain.populate_queue_block_with_receive_tx()
+    imported_block = chain.import_current_queue_block()
+    final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    assert ((final_balance - initial_balance) == (max_gas - gas_used))
+    print("Refunded gas is the expected amount.")
 
 
 test_smart_contract_deploy_system()

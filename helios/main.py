@@ -176,6 +176,7 @@ def main() -> None:
     log_levels['hp2p.peer'] = logging.INFO
     log_levels['hp2p.peer.PeerPool'] = logging.INFO
     log_levels['hp2p.consensus.Consensus'] = logging.DEBUG
+    log_levels['hp2p.SmartContractChainManager'] = logging.DEBUG
     log_levels['hp2p.kademlia.KademliaProtocol'] = logging.INFO
     log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.INFO
     log_levels['hp2p.discovery.DiscoveryService'] = logging.INFO

@@ -437,10 +437,6 @@ class ChainDB(BaseChainDB):
 
         self.save_header_to_db(header)
 
-        #save the block to the chain wallet address lookup db
-        #this is so we can lookup which chain the block belongs to.
-        self.save_block_hash_to_chain_wallet_address(header.hash)
-
         try:
             head_block_number = self.get_canonical_head().block_number
         except CanonicalHeadNotFound:
@@ -597,26 +593,22 @@ class ChainDB(BaseChainDB):
 
         return self._get_block_transaction_count(header.transaction_root)
 
-    @classmethod
-    def get_chain_wallet_address_for_block_hash(cls, db, block_hash):
-        block_hash_save_key = SchemaV1.make_block_hash_to_chain_wallet_address_lookup_key(block_hash)
-        try:
-            return db[block_hash_save_key]
-        except KeyError:
-            raise ValueError("Block hash {} not found in database".format(block_hash))
+    def get_chain_wallet_address_for_block_hash(self, block_hash):
+        block_header = self.get_block_header_by_hash(block_hash)
+        return block_header.chain_address
 
-    def get_chain_wallet_address_for_block(self, block):
-        if block.header.block_number == 0:
-            return block.header.sender
-        else:
-            return self.get_chain_wallet_address_for_block_hash(self.db, block.header.parent_hash)
+    # def get_chain_wallet_address_for_block(self, block):
+        # if block.header.block_number == 0:
+        #     return block.header.sender
+        # else:
+        #     return self.get_chain_wallet_address_for_block_hash(self.db, block.header.parent_hash)
 
 
-    def save_block_hash_to_chain_wallet_address(self, block_hash, wallet_address = None):
-        if wallet_address is None:
-            wallet_address = self.wallet_address
-        block_hash_save_key = SchemaV1.make_block_hash_to_chain_wallet_address_lookup_key(block_hash)
-        self.db[block_hash_save_key] = wallet_address
+    # def save_block_hash_to_chain_wallet_address(self, block_hash, wallet_address = None):
+    #     if wallet_address is None:
+    #         wallet_address = self.wallet_address
+    #     block_hash_save_key = SchemaV1.make_block_hash_to_chain_wallet_address_lookup_key(block_hash)
+    #     self.db[block_hash_save_key] = wallet_address
 
     def persist_block(self, block: 'BaseBlock') -> None:
         '''
@@ -648,8 +640,6 @@ class ChainDB(BaseChainDB):
 
         if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
             self.persist_reward_bundle(block.reward_bundle)
-
-        self.save_block_hash_to_chain_wallet_address(block.hash, wallet_address)
 
         #add all receive transactions as children to the sender block
         self.add_block_receive_transactions_to_parent_child_lookup(block.header, block.receive_transaction_class)
@@ -774,7 +764,7 @@ class ChainDB(BaseChainDB):
         except KeyError:
             pass
 
-        wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, block_hash)
+        wallet_address = self.get_chain_wallet_address_for_block_hash(block_hash)
 
         lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(wallet_address, block_number)
 
@@ -1262,7 +1252,7 @@ class ChainDB(BaseChainDB):
     #we don't want to count the stake from the origin wallet address. This could allow 51% attacks.The origin chain shouldn't count becuase it is the chain with the conflict.
     def get_block_children_chains(self, block_hash, exclude_chains:List = None) -> List[Address]:
         validate_word(block_hash, title="Block_hash")
-        origin_wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, block_hash)
+        origin_wallet_address = self.get_chain_wallet_address_for_block_hash(block_hash)
         child_chains = self._get_block_children_chains(block_hash)
         if child_chains is None:
             return None
@@ -1291,7 +1281,7 @@ class ChainDB(BaseChainDB):
         else:
             child_chains = set()
             for child_block_hash in children:
-                chain_wallet_address = self.get_chain_wallet_address_for_block_hash(self.db, child_block_hash)
+                chain_wallet_address = self.get_chain_wallet_address_for_block_hash(child_block_hash)
                 child_chains.add(chain_wallet_address)
 
                 sub_children_chain_wallet_addresses = self._get_block_children_chains(child_block_hash)

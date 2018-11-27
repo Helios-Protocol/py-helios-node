@@ -57,7 +57,7 @@ from hvm.rlp.transactions import (  # noqa: F401
 )
 from hvm.rlp.headers import (
     BlockHeader,
-)
+    BaseBlockHeader)
 from hvm.rlp.receipts import Receipt  # noqa: F401
 from hvm.utils.datatypes import (
     Configurable,
@@ -150,7 +150,12 @@ class BaseVM(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("VM classes must implement this method")
 
     @abstractmethod
-    def make_receipt(self, base_header, send_transaction, receive_transaction, computation):
+    def make_receipt(self, base_header: BaseBlockHeader,
+                            computation: BaseComputation,
+                            send_transaction: BaseTransaction,
+                            receive_transaction: BaseReceiveTransaction = None,
+                            refund_transaction: BaseReceiveTransaction = None,
+                            ) -> Receipt:
         """
         Generate the receipt resulting from applying the transaction.
 
@@ -355,7 +360,7 @@ class VM(BaseVM):
                                                    receive_transaction = receive_transaction,
                                                    validate = validate)
         if validate:
-            receipt = self.make_receipt(header, send_transaction, receive_transaction, computation)
+            receipt = self.make_receipt(header, computation, send_transaction)
             
             new_header = header.copy(
                 bloom=int(BloomFilter(header.bloom) | receipt.bloom),
@@ -447,7 +452,7 @@ class VM(BaseVM):
                                                    validate=validate)
 
         if validate:
-            receipt = self.make_receipt(header, send_transaction, receive_transaction, computation)
+            receipt = self.make_receipt(header, computation, send_transaction, receive_transaction, refund_transaction)
 
             new_header = header.copy(
                 bloom=int(BloomFilter(header.bloom) | receipt.bloom),
@@ -757,7 +762,7 @@ class VM(BaseVM):
 
         for receive_transaction in receive_transactions:
             if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:
-                sender_chain_address = self.chaindb.get_chain_wallet_address_for_block_hash(self.chaindb.db, receive_transaction.sender_block_hash)
+                sender_chain_address = self.chaindb.get_chain_wallet_address_for_block_hash(receive_transaction.sender_block_hash)
                 self.state.account_db.add_receivable_transaction(sender_chain_address,
                                                                  receive_transaction.hash,
                                                                  block_header_hash)

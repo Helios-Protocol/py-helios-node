@@ -161,6 +161,9 @@ def construct_chain_config_params(
     if args.network_startup_node is not None:
         yield 'network_startup_node', args.network_startup_node
 
+    if args.disable_smart_contract_chain_manager is not None:
+        yield 'disable_smart_contract_chain_manager', args.disable_smart_contract_chain_manager
+
     if args.preferred_nodes is None:
         yield 'preferred_nodes', tuple()
     else:

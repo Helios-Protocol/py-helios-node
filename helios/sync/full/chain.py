@@ -530,7 +530,7 @@ class FastChainSyncer(BaseService, PeerSubscriber):
         if next_head_hashes is not None:
             for head_hash in next_head_hashes:
 
-                chain_address = await self.chaindb.coro_get_chain_wallet_address_for_block_hash(self.base_db, head_hash)
+                chain_address = await self.chaindb.coro_get_chain_wallet_address_for_block_hash(head_hash)
                 # whole_chain = await self.chaindb.coro_get_all_blocks_on_chain(self.chain.get_vm().get_block_class(), chain_address)
                 whole_chain = await self.chaindb.coro_get_all_blocks_on_chain(P2PBlock, chain_address)
 

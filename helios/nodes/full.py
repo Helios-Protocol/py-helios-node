@@ -1,6 +1,6 @@
 import json
 from hvm.chains.base import (
-    BaseChain
+    AsyncChain
 )
 
 from hp2p.peer import BasePeerPool
@@ -15,7 +15,7 @@ from eth_keys.datatypes import PrivateKey
 from eth_typing import Address
 
 class FullNode(Node):
-    _chain: BaseChain = None
+    _chain: AsyncChain = None
     _p2p_server: FullServer = None
 
     def __init__(self, plugin_manager: PluginManager, chain_config: ChainConfig) -> None:
@@ -29,16 +29,27 @@ class FullNode(Node):
         self._max_peers = chain_config.max_peers
         self.notify_resource_available()
 
-    def get_chain(self) -> BaseChain:
+    def get_chain(self) -> AsyncChain:
         if self._chain is None:
             self._chain = self.chain_class(self.db_manager.get_db(), self.wallet_address)  # type: ignore
 
         return self._chain
 
-    def get_new_private_chain(self):
-        return self.get_new_chain(private_key = self.chain_config.node_private_helios_key)
+    def get_new_private_chain(self, chain_address: Address = None) -> AsyncChain:
+        '''
+        Generates a new chain object that includes the nodes private key. This object can be used to create blocks and
+        do other things requiring signing with a private key. It allows the user to set the chain_address to cover
+        smart contract chains that differ from the wallet address derived from the private key.
+        :param chain_address:
+        :return:
+        '''
+        if chain_address is None:
+            chain_address = self.chain_config.node_private_helios_key.public_key.to_canonical_address()
 
-    def get_new_chain(self, chain_address: Address=None, private_key:PrivateKey = None):
+        return self.get_new_chain(chain_address = chain_address,
+                                  private_key = self.chain_config.node_private_helios_key)
+
+    def get_new_chain(self, chain_address: Address=None, private_key:PrivateKey = None) -> AsyncChain:
         if chain_address is None:
             chain_address = self.wallet_address
         return self.chain_class(self.db_manager.get_db(), chain_address, private_key)

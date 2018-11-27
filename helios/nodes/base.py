@@ -7,7 +7,10 @@ from typing import (
     Type,
 )
 
-from hvm.chains.base import BaseChain
+from hvm.chains.base import (
+    BaseChain,
+    AsyncChain
+)
 
 from hp2p.peer import BasePeerPool
 from hp2p.service import (
@@ -26,6 +29,9 @@ from helios.extensibility.events import (
 from helios.utils.db_proxy import (
     create_db_manager
 )
+from eth_typing import Address
+
+from eth_keys.datatypes import PrivateKey
 
 
 class Node(BaseService):
@@ -37,7 +43,7 @@ class Node(BaseService):
 
     def __init__(self, plugin_manager: PluginManager, chain_config: ChainConfig) -> None:
         super().__init__()
-        self.chain_config = chain_config
+        self.chain_config: ChainConfig = chain_config
         self.private_helios_key = chain_config.node_private_helios_key
         self.wallet_address = chain_config.node_wallet_address
         self._plugin_manager = plugin_manager
@@ -48,11 +54,15 @@ class Node(BaseService):
         self._jsonrpc_ipc_path: Path = chain_config.jsonrpc_ipc_path
 
     @abstractmethod
-    def get_chain(self) -> BaseChain:
+    def get_chain(self) -> AsyncChain:
         raise NotImplementedError("Node classes must implement this method")
 
     @abstractmethod
-    def get_new_chain(self, chain_address: bytes) -> BaseChain:
+    def get_new_chain(self, chain_address: Address=None, private_key:PrivateKey = None) -> AsyncChain:
+        raise NotImplementedError("Node classes must implement this method")
+
+    @abstractmethod
+    def get_new_private_chain(self, chain_address: Address = None) -> AsyncChain:
         raise NotImplementedError("Node classes must implement this method")
 
     @abstractmethod

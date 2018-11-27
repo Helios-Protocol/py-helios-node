@@ -157,6 +157,8 @@ from sortedcontainers import (
 )
 from hvm.rlp.consensus import NodeStakingScore
 
+from hvm.rlp.accounts import TransactionKey
+
 if TYPE_CHECKING:
     from hvm.vm.base import BaseVM  # noqa: F401
 
@@ -291,6 +293,15 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def get_all_chronological_blocks_for_window(self, window_timestamp: Timestamp) -> List[BaseBlock]:
         raise NotImplementedError("Chain classes must implement this method")
 
+    @abstractmethod
+    def import_current_queue_block(self) -> BaseBlock:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
+        raise NotImplementedError("Chain classes must implement this method")
+
+
     #
     # Transaction API
     #
@@ -301,6 +312,34 @@ class BaseChain(Configurable, metaclass=ABCMeta):
 
     @abstractmethod
     def get_canonical_transaction(self, transaction_hash: Hash32) -> BaseTransaction:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def populate_queue_block_with_receive_tx(self) -> List[BaseReceiveTransaction]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_receive_transactions(self, wallet_address: Address):
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def create_receivable_transactions(self) -> List[BaseReceiveTransaction]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_receivable_transactions(self, address: Address) -> Tuple[List[BaseReceiveTransaction], List[TransactionKey]]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_current_queue_block_nonce(self) -> int:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def create_and_sign_transaction_for_queue_block(self, *args: Any, **kwargs: Any) -> BaseTransaction:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def create_and_sign_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         raise NotImplementedError("Chain classes must implement this method")
 
     #
@@ -318,9 +357,6 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def import_block(self, block: BaseBlock, perform_validation: bool=True) -> BaseBlock:
         raise NotImplementedError("Chain classes must implement this method")
 
-    @abstractmethod
-    def import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
-        raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
     def import_chain(self, block_list: List[BaseBlock], perform_validation: bool = True, save_block_head_hash_timestamp: bool=True) -> None:
@@ -854,21 +890,13 @@ class Chain(BaseChain):
     
     def create_and_sign_transaction_for_queue_block(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         tx_nonce = self.get_current_queue_block_nonce()
-        
-        #self.logger.debug("creating transaction with nonce {}".format(tx_nonce))
+
         transaction = self.create_and_sign_transaction(nonce = tx_nonce, *args, **kwargs)
-        
-#        from hvm.utils.rlp_templates import convert_rlp_to_correct_class
-#        
-#        from hvm.rlp_templates.transactions import BaseTransaction
-#        class P2PSendTransaction(rlp_templates.Serializable):
-#            fields = BaseTransaction._meta.fields
-#        transaction = convert_rlp_to_correct_class(P2PSendTransaction, transaction)
-        
+
         self.add_transactions_to_queue_block(transaction)
         return transaction
     
-    def get_current_queue_block_nonce(self):
+    def get_current_queue_block_nonce(self) -> int:
         if self.queue_block is None or self.queue_block.current_tx_nonce is None:
             tx_nonce = self.get_vm().state.account_db.get_nonce(self.wallet_address)
         else:
@@ -881,7 +909,7 @@ class Chain(BaseChain):
         """
         return self.get_vm().create_receive_transaction(*args, **kwargs)
 
-    def get_receivable_transactions(self, address):
+    def get_receivable_transactions(self, address: Address) -> Tuple[List[BaseReceiveTransaction], List[TransactionKey]]:
         #from hvm.rlp_templates.accounts import TransactionKey
         tx_keys = self.get_vm().state.account_db.get_receivable_transactions(address)
         if len(tx_keys) == 0:
@@ -892,7 +920,7 @@ class Chain(BaseChain):
             transactions.append(tx)
         return transactions, tx_keys
     
-    def create_receivable_transactions(self):
+    def create_receivable_transactions(self) -> List[BaseReceiveTransaction]:
         tx_keys = self.get_vm().state.account_db.get_receivable_transactions(self.wallet_address)
         if len(tx_keys) == 0:
             return []
@@ -905,20 +933,24 @@ class Chain(BaseChain):
         #
         receive_transactions = []
         for tx_key in tx_keys:
+            #find out if it is a receive or a refund
+            block_hash, index, is_receive = self.chaindb.get_transaction_index(tx_key.transaction_hash)
+
             re_tx = self.get_vm().create_receive_transaction(
                     sender_block_hash = tx_key.sender_block_hash,
                     send_transaction_hash=tx_key.transaction_hash,
+                    is_refund=is_receive,
                     )
 
             receive_transactions.append(re_tx)
         return receive_transactions
     
-    def populate_queue_block_with_receive_tx(self):
+    def populate_queue_block_with_receive_tx(self) -> List[BaseReceiveTransaction]:
         receive_tx = self.create_receivable_transactions()
         self.add_transactions_to_queue_block(receive_tx)
         return receive_tx
 
-    def get_receive_transactions(self, wallet_address):
+    def get_receive_transactions(self, wallet_address: Address):
         validate_canonical_address(wallet_address, title="wallet_address")
         vm = self.get_vm()
         account_db = vm.state.account_db
@@ -1010,13 +1042,13 @@ class Chain(BaseChain):
             for descendant_block_hash in all_descendant_block_hashes:
                 if not self.chaindb.is_block_unprocessed(descendant_block_hash):
                     descendant_block_header = self.chaindb.get_block_header_by_hash(descendant_block_hash)
-                    descendant_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(self.chaindb.db, descendant_block_hash)
+                    descendant_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(descendant_block_hash)
                     
                     if descendant_block_header.parent_hash not in all_descendant_block_hashes:
                         #this is the new head of a chain. set it as the new head for chronological root hashes
                         #except for children in this chain, because it will be off by 1 block. we already set this earlier
                         
-                        descendant_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(self.chaindb.db, descendant_block_hash)
+                        descendant_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(descendant_block_hash)
                            
                         if descendant_wallet_address != self.wallet_address:
                             if descendant_block_header.block_number == 0:
@@ -1062,7 +1094,7 @@ class Chain(BaseChain):
                         
         try:
             block = self.chaindb.get_block_by_hash(block_hash, self.get_vm(refresh=False).get_block_class()) 
-            chain = encode_hex(self.chaindb.get_chain_wallet_address_for_block(block))
+            chain = encode_hex(block.header.chain_address)
             self.logger.debug("deleting unprocessed child block number {} on chain {}".format(block.number, chain))               
             self.chaindb.remove_block_from_unprocessed(block)
         except HeaderNotFound:
@@ -1098,7 +1130,7 @@ class Chain(BaseChain):
             
             for block_hash_to_delete in block_hashes_to_delete:
                 block_header_to_delete = self.chaindb.get_block_header_by_hash(block_hash_to_delete)
-                block_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(self.chaindb.db, block_hash_to_delete)
+                block_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(block_hash_to_delete)
                 if not self.chaindb.is_block_unprocessed(block_hash_to_delete) and self.chaindb.exists(block_hash_to_delete):
                     self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header_to_delete, wallet_address = block_wallet_address)
     
@@ -1106,7 +1138,7 @@ class Chain(BaseChain):
             self.logger.debug("starting block import for chronological block window")
             #if block list is empty, load the local historical root hashes and delete them all
             for block in block_list:
-                wallet_address = self.chaindb.get_chain_wallet_address_for_block(block)
+                wallet_address = block.header.chain_address
                 self.import_block(block, wallet_address = wallet_address, save_block_head_hash_timestamp = save_block_head_hash_timestamp, allow_unprocessed=allow_unprocessed)
         else:
             self.logger.debug("importing an empty chronological window. going to make sure we have a saved historical root hash")
@@ -1417,7 +1449,7 @@ class Chain(BaseChain):
                         try:
                             #attempt to import.
                             #get chain for wallet address
-                            child_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(self.chaindb.db, child_block_hash)
+                            child_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(child_block_hash)
                             #child_chain = Chain(self.base_db, child_wallet_address)
                             #get block
                             child_block = self.chaindb.get_block_by_hash(child_block_hash, self.get_vm(refresh=False).get_block_class())
@@ -1919,5 +1951,13 @@ class AsyncChain(Chain):
         return await loop.run_in_executor(
             None,
             partial(self.import_current_queue_block_with_reward, *args, **kwargs)
+        )
+
+    async def coro_import_current_queue_block(self, *args, **kwargs):
+        loop = asyncio.get_event_loop()
+
+        return await loop.run_in_executor(
+            None,
+            partial(self.import_current_queue_block, *args, **kwargs)
         )
 

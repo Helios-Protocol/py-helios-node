@@ -89,8 +89,10 @@ class ChainConfig:
                  bootstrap_nodes: Tuple[KademliaNode, ...]=None,
                  node_type=1,
                  network_startup_node = False,
+                 disable_smart_contract_chain_manager = False,
                  ) -> None:
         self.network_startup_node = network_startup_node
+        self._disable_smart_contract_chain_manager = disable_smart_contract_chain_manager
         self.network_id = network_id
         self.max_peers = max_peers
         self.sync_mode = sync_mode
@@ -129,6 +131,15 @@ class ChainConfig:
         if self._preferred_nodes is None or len(self._preferred_nodes) == 0:
             self._preferred_nodes = tuple(load_local_nodes(self.nodekey))
         return self._preferred_nodes
+
+    @property
+    def disable_smart_contract_chain_manager(self):
+        if self._disable_smart_contract_chain_manager:
+            return True
+        elif self.node_type == 2: #micronode
+            return True
+        else:
+            return False
 
     @property
     def bootstrap_nodes(self):

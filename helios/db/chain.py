@@ -147,7 +147,6 @@ class ChainDBProxy(BaseProxy):
     get_chain_wallet_address_for_block_hash = sync_method('get_chain_wallet_address_for_block_hash')
     get_block_by_number = sync_method('get_block_by_number')
     get_all_blocks_on_chain = sync_method('get_all_blocks_on_chain')
-    get_chain_wallet_address_for_block = sync_method('get_chain_wallet_address_for_block')
     min_gas_system_initialization_required = sync_method('min_gas_system_initialization_required')
     load_historical_network_tpc_capability = sync_method('load_historical_network_tpc_capability')
     load_historical_minimum_gas_price = sync_method('load_historical_minimum_gas_price')

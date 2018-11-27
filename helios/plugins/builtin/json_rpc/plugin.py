@@ -48,7 +48,7 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
         chain_class = self.context.chain_config.node_class.chain_class
 
         db = db_manager.get_db()  # type: ignore
-        chain = chain_class(db)
+        chain = chain_class(db, wallet_address = self.context.chain_config.node_wallet_address)
 
         rpc = RPCServer(chain, self.context.event_bus)
         ipc_server = IPCServer(rpc, self.context.chain_config.jsonrpc_ipc_path)

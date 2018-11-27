@@ -620,7 +620,7 @@ class Consensus(BaseService, PeerSubscriber):
         await asyncio.sleep(5)
 
         while self.is_operational:
-            empty_queue(self._new_node_staking_scores)
+
 
             self.logger.debug("Running staking_reward_loop")
             if await self.is_syncing:
@@ -638,6 +638,8 @@ class Consensus(BaseService, PeerSubscriber):
                     latest_reward_block_timestamp = latest_reward_block_header.timestamp
 
                     if (int(time.time()) - latest_reward_block_timestamp) > MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS:
+                        #clear the queue in case there are any old requests
+                        empty_queue(self._new_node_staking_scores)
                         #send out all of the requests
                         num_requests_sent = 0
                         for peer in self.peer_pool.peers:
@@ -688,7 +690,7 @@ class Consensus(BaseService, PeerSubscriber):
             chain = self.node.get_new_private_chain()
             new_block = await chain.coro_import_current_queue_block_with_reward(node_staking_score_list)
             #self.logger.debug("sending new block event with reward amounts = {}, {}".format(new_block.reward_bundle.reward_type_1.amount, new_block.reward_bundle.reward_type_2.amount))
-            await self.event_bus.request(
+            self.event_bus.broadcast(
                 NewBlockEvent(block = cast(P2PBlock, new_block), chain_address = self.chain_config.node_wallet_address, only_propogate_to_network=True)
             )
         except RewardAmountRoundsToZero:

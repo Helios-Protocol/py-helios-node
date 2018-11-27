@@ -40,7 +40,7 @@ ENABLED_PLUGINS = [
     AttachPlugin() if is_ipython_available() else AttachPlugin(use_ipython=False),
     #EthstatsPlugin(),
     FixUncleanShutdownPlugin(),
-    #JsonRpcServerPlugin(),
+    JsonRpcServerPlugin(),
     #RpcHTTPProxyPlugin,
     #LightPeerChainBridgePlugin(),
     #TxPlugin(),

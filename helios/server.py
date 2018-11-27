@@ -67,6 +67,7 @@ from helios.protocol.common.context import ChainContext
 from helios.protocol.hls.peer import HLSPeerPool
 from helios.sync.full.service import FullNodeSyncer
 from hp2p.consensus import Consensus
+from hp2p.smart_contract_chain_manager import SmartContractChainManager
 
 DIAL_IN_OUT_RATIO = 0.75
 
@@ -118,12 +119,21 @@ class BaseServer(BaseService):
             self.upnp_service = UPnPService(self.port, self.rpc_port, token=self.cancel_token)
         self.peer_pool = self._make_peer_pool()
         self.consensus = self._make_consensus()
+        self.smart_contract_chain_manager = self._make_smart_contract_chain_manager()
 
         if not bootstrap_nodes:
             self.logger.warning("Running with no bootstrap nodes")
 
     @abstractmethod
     def _make_peer_pool(self) -> ANY_PEER_POOL:
+        pass
+
+    @abstractmethod
+    def _make_consensus(self) -> Consensus:
+        pass
+
+    @abstractmethod
+    def _make_smart_contract_chain_manager(self) -> SmartContractChainManager:
         pass
 
     @abstractmethod
@@ -182,6 +192,9 @@ class BaseServer(BaseService):
         self.run_daemon(self.peer_pool)
         self.run_daemon(self.discovery)
         self.run_daemon(self.consensus)
+        if not self.chain_config.disable_smart_contract_chain_manager:
+            self.run_daemon(self.smart_contract_chain_manager)
+
         if self.chain_config.do_upnp:
             # UPNP service is still experimental and not essential, so we don't use run_daemon() for
             # it as that means if it crashes we'd be terminated as well.
@@ -355,6 +368,19 @@ class FullServer(BaseServer):
             token = self.cancel_token,
             event_bus=self.event_bus,
         )
+
+    def _make_smart_contract_chain_manager(self) -> BaseService:
+
+        return SmartContractChainManager(
+            context=self.chain_context,
+            peer_pool = cast(HLSPeerPool, self.peer_pool),
+            node=self.node,
+            consensus=self.consensus,
+            token = self.cancel_token,
+            event_bus=self.event_bus,
+        )
+
+
 
 
 
