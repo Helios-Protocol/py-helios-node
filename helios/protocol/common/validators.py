@@ -34,6 +34,13 @@ class BaseValidator(ABC, Generic[TResponse]):
     def validate_result(self, result: TResponse) -> None:
         pass
 
+class NoopResultValidator(BaseValidator[Any]):
+    def __init__(self) -> None:
+        pass
+
+    def validate_result(self, response: Any) -> None:
+        return
+
 
 class BaseBlockHeadersValidator(BaseValidator[Tuple[BlockHeader, ...]]):
     block_number_or_hash: BlockIdentifier

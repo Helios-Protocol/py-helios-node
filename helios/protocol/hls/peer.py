@@ -11,6 +11,7 @@ from typing import (
 
 from eth_utils import encode_hex
 
+
 from hp2p.constants import PEER_STAKE_GONE_STALE_TIME_PERIOD
 from hvm.exceptions import (
     CanonicalHeadNotFound,
@@ -48,6 +49,8 @@ from .handlers import HLSExchangeHandler
 
 from eth_typing import Address
 
+from helios.protocol.common.datastructures import AdditiveSyncRequestHistory
+
 class HLSPeer(BaseChainPeer):
     max_headers_fetch = MAX_HEADERS_FETCH
 
@@ -63,6 +66,8 @@ class HLSPeer(BaseChainPeer):
     peer_salt = None
     chain_head_root_hashes = None
     node_type = None
+
+    additive_sync_request_history: AdditiveSyncRequestHistory = None
 
     def get_extra_stats(self) -> List[str]:
         stats_pairs = self.requests.get_stats().items()

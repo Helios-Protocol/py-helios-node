@@ -12,6 +12,8 @@ from helios.utils.mp import (
 from typing import (
     List,
     Union,
+    Tuple,
+    Optional,
 )
 
 from eth_typing import Hash32
@@ -19,10 +21,16 @@ from eth_typing import Hash32
 from hvm.types import Timestamp
 
 class AsyncChainHeadDB(ChainHeadDB):
-    async def coro_get_historical_root_hashes(self, after_timestamp: Timestamp = None) -> List[List[Union[Timestamp, Hash32]]]:
+    async def coro_get_historical_root_hashes(self, after_timestamp: Timestamp = None) -> Optional[List[List[Union[Timestamp, Hash32]]]]:
         raise NotImplementedError("ChainHeadDB classes must implement this method")
 
     async def coro_get_historical_root_hash(self, timestamp: Timestamp, return_timestamp: bool = False) -> List[Union[Timestamp, Hash32]]:
+        raise NotImplementedError("ChainHeadDB classes must implement this method")
+
+    async def coro_load_chronological_block_window(self, timestamp: Timestamp) -> List[Tuple[int, Hash32]]:
+        raise NotImplementedError("ChainHeadDB classes must implement this method")
+
+    async def coro_get_dense_historical_root_hashes(self, after_timestamp: Timestamp = None) -> Optional[List[List[Union[Timestamp, Hash32]]]]:
         raise NotImplementedError("ChainHeadDB classes must implement this method")
 
 class ChainHeadDBProxy(BaseProxy):
@@ -39,10 +47,14 @@ class ChainHeadDBProxy(BaseProxy):
     coro_get_last_complete_historical_root_hash = async_method('get_last_complete_historical_root_hash')
     coro_get_root_hash = async_method('get_root_hash')
     coro_save_single_historical_root_hash = async_method('save_single_historical_root_hash')
+    coro_get_dense_historical_root_hashes = async_method('get_dense_historical_root_hashes')
+
 
     coro_get_latest_historical_root_hash = async_method('get_latest_historical_root_hash')
     coro_get_chain_head_hash = async_method('get_chain_head_hash')
-    
+    coro_load_chronological_block_window = async_method('load_chronological_block_window')
+
+
 
     get_historical_root_hashes = sync_method('get_historical_root_hashes')
     set_current_syncing_info = sync_method('set_current_syncing_info')
@@ -59,3 +71,5 @@ class ChainHeadDBProxy(BaseProxy):
     load_saved_root_hash = sync_method('load_saved_root_hash')
     get_latest_historical_root_hash = sync_method('get_latest_historical_root_hash')
     get_chain_head_hash = sync_method('get_chain_head_hash')
+    load_chronological_block_window = sync_method('load_chronological_block_window')
+    get_dense_historical_root_hashes = sync_method('get_dense_historical_root_hashes')

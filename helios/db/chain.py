@@ -96,7 +96,7 @@ class AsyncChainDB(ChainDB):
     async def coro_save_historical_network_tpc_capability(self, historical_tpc_capability: List[List[Union[Timestamp, int]]], de_sparse: bool = False) -> None:
         raise NotImplementedError()
 
-    async def coro_get_block_by_hash(self, block_hash: Hash32, block_class: type(BaseBlock)) -> BaseBlock:
+    async def coro_get_block_by_hash(self, block_hash: Hash32, block_class: Type[BaseBlock]) -> BaseBlock:
         raise NotImplementedError()
 
     async def coro_get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:

@@ -90,7 +90,6 @@ class NewBlock(Command):
     _cmd_id = 7
     structure = [
         ('block', P2PBlock),
-        ('chain_address', address)
     ]
 
 
@@ -256,6 +255,25 @@ class SendNodeStakingScore(Command):
     _cmd_id = 37
     structure = [
         ('node_staking_score', NodeStakingScore)
+    ]
+
+
+class GetChronoligcalBlockHashFragments(Command):
+    _cmd_id = 38
+    structure = [
+        ('timestamp', sedes.f_big_endian_int),
+        ('fragment_length', sedes.f_big_endian_int),
+        ('entire_window', sedes.boolean),
+        ('only_these_indices', sedes.FCountableList(sedes.f_big_endian_int)),
+    ]
+
+class SendChronoligcalBlockHashFragments(Command):
+    _cmd_id = 39
+    structure = [
+        ('fragments', sedes.FCountableList(sedes.binary)),
+        ('timestamp', sedes.f_big_endian_int),
+        ('fragment_length', sedes.f_big_endian_int),
+        ('root_hash_of_just_this_chronological_block_window', hash32)
     ]
 
 

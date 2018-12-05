@@ -165,12 +165,6 @@ def _get_helios_testnet_intrinsic_gas(transaction):
     
 class HeliosTestnetReceiveTransaction(BaseReceiveTransaction):
 
-    fields = [
-        ('sender_block_hash', hash32),
-        ('send_transaction_hash', hash32),
-        ('is_refund', boolean),
-        ('remaining_refund', big_endian_int)
-    ]
 
     def __init__(self, sender_block_hash: Hash32, send_transaction_hash: Hash32, is_refund: bool = False, remaining_refund: int = 0):
 

@@ -11,6 +11,7 @@ from typing import (
     Union,
     Set,
     Tuple,
+    Optional,
 )
 
 from eth_typing import Hash32, Address, BlockNumber
@@ -66,6 +67,8 @@ from hvm.rlp.accounts import (
     Account,
     TransactionKey,
 )
+
+from hvm.utils.padding import de_sparse_timestamp_item_list
 
 from hvm.types import Timestamp
 
@@ -732,7 +735,7 @@ class ChainHeadDB():
         else:
             return root_hash_to_return
         
-    def get_historical_root_hashes(self, after_timestamp: Timestamp = None) -> List[List[Union[Timestamp, Hash32]]]:
+    def get_historical_root_hashes(self, after_timestamp: Timestamp = None) -> Optional[List[List[Union[Timestamp, Hash32]]]]:
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
         try:
             data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=rlp.sedes.CountableList(rlp.sedes.List([big_endian_int, hash32])))
@@ -755,7 +758,25 @@ class ChainHeadDB():
                 
         except KeyError:
             return None
-        
+
+    def get_dense_historical_root_hashes(self, after_timestamp: Timestamp = None) -> Optional[List[List[Union[Timestamp, Hash32]]]]:
+        '''
+        Gets historical root hashes up the the present time with any gaps filled by propogating the previous root hash.
+        :param after_timestamp:
+        :return:
+        '''
+        last_finished_window = int(time.time() / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+        current_window = last_finished_window + TIME_BETWEEN_HEAD_HASH_SAVE
+
+        sparse_root_hashes = self.get_historical_root_hashes(after_timestamp = after_timestamp)
+        if sparse_root_hashes is None:
+            return None
+
+        dense_root_hashes = de_sparse_timestamp_item_list(sparse_list = sparse_root_hashes,
+                                                          spacing = TIME_BETWEEN_HEAD_HASH_SAVE,
+                                                          end_timestamp = current_window)
+        return dense_root_hashes
+
     def get_latest_timestamp(self):
         historical = self.get_historical_root_hashes()
         if historical is None:
@@ -774,7 +795,7 @@ class ChainHeadDB():
         
         #only add blocks for the proper time period        
         if timestamp > int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
-            #onlike the root hashes, this window is for the blocks added after the time
+            #unlike the root hashes, this window is for the blocks added after the time
             window_for_this_block = int(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
             
             data = self.load_chronological_block_window(window_for_this_block)
@@ -836,7 +857,7 @@ class ChainHeadDB():
             encoded_data,
         )
     
-    def load_chronological_block_window(self, timestamp):
+    def load_chronological_block_window(self, timestamp: Timestamp) -> List[Union[int, Hash32]]:
         validate_uint256(timestamp, title='timestamp')
         if timestamp % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
             raise InvalidHeadRootTimestamp("Can only save or load chronological block for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))

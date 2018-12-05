@@ -609,9 +609,9 @@ class VM(BaseVM):
         else:
             is_queue_block = False
             block_timestamp = block.header.timestamp
-            if (block.sender != self.wallet_address or
+            if (block.sender != self.wallet_address and not (
                 self.state.account_db.account_has_code(block.header.chain_address) or
-                self.state.account_db.has_pending_smart_contract_transactions(block.header.chain_address)):
+                self.state.account_db.has_pending_smart_contract_transactions(block.header.chain_address))):
                 raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
 
 

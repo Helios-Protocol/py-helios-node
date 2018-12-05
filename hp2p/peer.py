@@ -95,7 +95,6 @@ from .events import (
 
 from sortedcontainers import SortedList
 
-
 async def handshake(remote: Node, factory: 'BasePeerFactory') -> 'BasePeer':
     """Perform the auth and P2P handshakes with the given remote.
 
@@ -952,7 +951,7 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
     def sort_peers_by_stake(self, peers=None):
         if peers is None:
             if not self.connected_nodes:
-                raise NoConnectedPeers()
+                return []
             peers = self.peers
 
         peers_with_stake = [peer for peer in peers if peer._stake is not None]

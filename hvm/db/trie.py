@@ -22,11 +22,13 @@ from trie.constants import (
 from hvm.rlp.receipts import Receipt
 from hvm.rlp.transactions import BaseTransaction
 
+from eth_typing import Hash32
+
+from hvm.rlp.sedes import hash32
 
 def make_trie_root_and_nodes(
         items: Union[List[Receipt], List[BaseTransaction]]) -> Tuple[bytes, Dict[bytes, bytes]]:
     return _make_trie_root_and_nodes(tuple(rlp.encode(item) for item in items))
-
 
 # This cache is expected to be useful when importing blocks as we call this once when importing
 # and again when validating the imported block. But it should also help for post-Byzantium blocks
@@ -41,6 +43,8 @@ def _make_trie_root_and_nodes(items: Tuple[bytes, ...]) -> Tuple[bytes, Dict[byt
             index_key = rlp.encode(index, sedes=rlp.sedes.big_endian_int)
             memory_trie[index_key] = item
     return trie.root_hash, kv_store
+
+
 
 class BinaryTrie(ParentBinaryTrie):
     def get_leaf_nodes(self, node, reverse = False):
@@ -61,5 +65,16 @@ class BinaryTrie(ParentBinaryTrie):
                 yield from self.get_leaf_nodes(right, reverse)
         else:
             yield right
+
+
+def make_binary_trie_root(items: Tuple[bytes, ...]) -> bytes:
+    kv_store = {}  # type: Dict[bytes, bytes]
+    trie = BinaryTrie(kv_store, BLANK_ROOT_HASH)
+
+    for index, item in enumerate(items):
+        index_key = rlp.encode(index, sedes=rlp.sedes.big_endian_int)
+        trie[index_key] = item
+
+    return trie.root_hash
 
 

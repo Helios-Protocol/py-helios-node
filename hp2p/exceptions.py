@@ -71,6 +71,12 @@ class DatabaseResyncRequired(BaseP2PError):
     """
     pass
 
+class NotSyncedToAdditiveSyncStartTime(BaseP2PError):
+    """
+    Raised when we need to perform a normal sync to sync up to the point where additive sync can start again
+    """
+    pass
+
 
 class LESAnnouncementProcessingError(BaseP2PError):
     """

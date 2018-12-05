@@ -20,19 +20,23 @@ def zpad_left(value: bytes, to_size: int) -> bytes:
 pad32 = zpad_left(to_size=32)
 pad32r = zpad_right(to_size=32)
 
-def de_sparse_timestamp_item_list(sparse_list, spacing, filler = None):
-    if len(sparse_list) <= 1:
+def de_sparse_timestamp_item_list(sparse_list, spacing, filler = None, end_timestamp = None):
+    if len(sparse_list) <= 1 and end_timestamp is None:
         return sparse_list
-    
-    start_timestamp = sparse_list[0][0]
-    end_timestamp = sparse_list[-1][0]
+
+    sparse_dict = SortedDict(sparse_list)
+
+    timestamps = list(sparse_dict.keys())
+
+    start_timestamp = timestamps[0]
+    if end_timestamp is None:
+        end_timestamp = timestamps[-1]
     
     expected_length = (end_timestamp-start_timestamp)/spacing + abs(spacing)
     
     if len(sparse_list) == expected_length:
         return sparse_list
-    
-    sparse_dict = SortedDict(sparse_list)
+
     for timestamp in range(start_timestamp, end_timestamp+spacing, spacing):
         if timestamp not in sparse_dict:
             if filler is not None:

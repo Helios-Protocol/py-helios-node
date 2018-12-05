@@ -11,6 +11,7 @@ from rlp.sedes import (
     big_endian_int,
     f_big_endian_int,
     binary,
+    boolean,
 )
 
 from eth_typing import (
@@ -150,6 +151,13 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
 
 
 class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
+
+    fields = [
+        ('sender_block_hash', hash32),
+        ('send_transaction_hash', hash32),
+        ('is_refund', boolean),
+        ('remaining_refund', big_endian_int)
+    ]
 
     @classmethod
     def from_base_transaction(cls, transaction: 'BaseReceiveTransaction') -> 'BaseReceiveTransaction':

@@ -31,9 +31,8 @@ class NoResponse(BaseEvent):
 
 class NewBlockEvent(BaseRequestResponseEvent[NoResponse]):
 
-    def __init__(self, block:P2PBlock, chain_address: Address, only_propogate_to_network: bool= False) -> None:
+    def __init__(self, block:P2PBlock, only_propogate_to_network: bool= False) -> None:
         self.block = block
-        self.chain_address = chain_address
         self.only_propogate_to_network = only_propogate_to_network
 
     @staticmethod

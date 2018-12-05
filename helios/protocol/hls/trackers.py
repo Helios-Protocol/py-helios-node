@@ -1,8 +1,11 @@
 from typing import (
     Optional,
     Tuple,
+    Dict,
+    Any,
 )
 
+from helios.protocol.common.datastructures import ChronologicalBlockHashFragmentBundle
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.consensus import NodeStakingScore
 
@@ -21,7 +24,7 @@ from .requests import (
     GetReceiptsRequest,
     GetBlocksRequest,
     GetNodeStakingScoreRequest,
-)
+    GetChronoligcalBlockHashFragmentsRequest)
 
 from helios.rlp_templates.hls import P2PBlock
 
@@ -122,3 +125,21 @@ class GetNodeStakingScoreTracker(BaseGetNodeStakingScoreTracker):
 
     def _get_result_item_count(self, result: NodeStakingScore) -> int:
         return len(result)
+
+
+BaseGetChronoligcalBlockHashFragmentsTracker = BasePerformanceTracker[
+    GetChronoligcalBlockHashFragmentsRequest,
+    ChronologicalBlockHashFragmentBundle,
+]
+
+class GetChronoligcalBlockHashFragmentsTracker(BaseGetChronoligcalBlockHashFragmentsTracker):
+    def _get_request_size(self, request) -> Optional[int]:
+        #return None if we don't know how many to expect
+        if request.command_payload['entire_window'] == False:
+            return len(request.command_payload['only_these_indices'])
+
+    def _get_result_size(self, result: ChronologicalBlockHashFragmentBundle) -> int:
+        return len(result.fragments)
+
+    def _get_result_item_count(self, result: ChronologicalBlockHashFragmentBundle) -> int:
+        return len(result.fragments)

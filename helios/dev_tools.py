@@ -271,7 +271,7 @@ def load_local_nodes(local_private_key = None):
         
 
 
-def create_predefined_blockchain_database(db, genesis_block_timestamp = None):
+def create_predefined_blockchain_database(db, genesis_block_timestamp = None, instance = 0):
     if genesis_block_timestamp is None:
         genesis_block_timestamp = MAINNET_GENESIS_PARAMS['timestamp']
 
@@ -280,35 +280,38 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None):
         return keys.PrivateKey(random_private_keys[instance_number])
 
     private_keys = []
-    for i in range(10):
+    for i in range(11):
         private_keys.append(keys.PrivateKey(random_private_keys[i]))
 
-    # key_balance_dict = {
-    #     private_keys[0]: (1000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS),
-    #     private_keys[1]: (20000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*2),
-    #     private_keys[2]: (34000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*3),
-    #     private_keys[3]: (100000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*4),
-    #     private_keys[4]: (140000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*5),
-    #     private_keys[5]: (240000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*6),
-    #     private_keys[6]: (300000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*7),
-    #     private_keys[7]: (400000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*8),
-    #     private_keys[8]: (100000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*9),
-    #     private_keys[9]: (1000000, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + 1 + MIN_TIME_BETWEEN_BLOCKS*10),
-    #   }
+    if instance == 0:
+        key_balance_dict = {
+            private_keys[0]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+            private_keys[1]: (2000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*2),
+            private_keys[2]: (3400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*3),
+            private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),
+            private_keys[4]: (14000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*5),
+            private_keys[5]: (2400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*6),
+            private_keys[6]: (30000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*7),
+            private_keys[7]: (40000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*8),
+            private_keys[8]: (10000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*9),
+            private_keys[9]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
 
-    key_balance_dict = {
-        private_keys[0]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
-        private_keys[1]: (2000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*2),
-        private_keys[2]: (3400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*3),
-        private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),
-        private_keys[4]: (14000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*5),
-        private_keys[5]: (2400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*6),
-        private_keys[6]: (30000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*7),
-        private_keys[7]: (40000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*8),
-        private_keys[8]: (10000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*9),
-        private_keys[9]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
+        }
+    elif instance == 1:
+        key_balance_dict = {
+            private_keys[0]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+            private_keys[1]: (2000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*2),
+            private_keys[2]: (3400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*3),
+            private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),
+            private_keys[4]: (14000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*5),
+            private_keys[5]: (2400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*6),
+            private_keys[6]: (30000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*7),
+            private_keys[7]: (40000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*8),
+            private_keys[8]: (10000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*9),
+            private_keys[9]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
+            private_keys[10]: (1000 * 10 ** 18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS * 10),
 
-    }
+        }
     if genesis_block_timestamp == MAINNET_GENESIS_PARAMS['timestamp']:
         create_dev_fixed_blockchain_database(db, key_balance_dict, True)
     else:

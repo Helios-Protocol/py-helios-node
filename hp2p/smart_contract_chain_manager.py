@@ -168,7 +168,7 @@ class SmartContractChainManager(BaseService, PeerSubscriber):
                 self.logger.debug("Sending new smart contract block to network")
 
                 self.event_bus.broadcast(
-                    NewBlockEvent(block=cast(P2PBlock, new_block), chain_address=new_block.header.chain_address,
+                    NewBlockEvent(block=cast(P2PBlock, new_block),
                                   only_propogate_to_network=True)
                 )
 

@@ -1,11 +1,14 @@
 from typing import (
     Tuple,
     Dict,
+    Any,
 )
 
 from cytoolz import (
     compose,
 )
+
+from helios.protocol.common.datastructures import ChronologicalBlockHashFragmentBundle
 from hvm.db.trie import make_trie_root_and_nodes
 from eth_hash.auto import keccak
 import rlp
@@ -67,3 +70,14 @@ class GetNodeStakingScoreNormalizer(BaseNormalizer[Dict[str, NodeStakingScore], 
     def normalize_result(msg: Dict[str, NodeStakingScore]) -> NodeStakingScore:
         result = msg['node_staking_score']
         return result
+
+
+class GetChronoligcalBlockHashFragmentsNormalizer(BaseNormalizer[Dict[str, Any], ChronologicalBlockHashFragmentBundle]):
+    is_normalization_slow = False
+
+    @staticmethod
+    def normalize_result(msg: Dict[str, Any]) -> ChronologicalBlockHashFragmentBundle:
+        result = ChronologicalBlockHashFragmentBundle(fragments = msg['fragments'],
+                                                      root_hash_of_just_this_chronological_block_window = msg['root_hash_of_just_this_chronological_block_window'])
+        return result
+

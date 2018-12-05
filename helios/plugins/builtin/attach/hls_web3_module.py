@@ -370,4 +370,7 @@ class Hls(Module):
     
     def test(self):
         return self.web3.manager.request_blocking("hls_test", [])
+
+    def devDeploySmartContract(self):
+        return self.web3.manager.request_blocking("hls_devDeploySmartContract", [])
     

@@ -124,7 +124,7 @@ class BaseService(ABC, CancellableMixin):
     def add_finished_callback(self, finished_callback: Callable[['BaseService'], None]) -> None:
         self._finished_callbacks.append(finished_callback)
 
-    def run_task(self, awaitable: Awaitable[Any]) -> None:
+    def run_task(self, awaitable: Awaitable[Any]) -> Awaitable:
         """Run the given awaitable in the background.
 
         The awaitable should return whenever this service's cancel token is triggered.
@@ -143,7 +143,25 @@ class BaseService(ABC, CancellableMixin):
                 self.logger.debug("Task failure traceback", exc_info=True)
             else:
                 self.logger.trace("Task %s finished with no errors", awaitable)
-        self._tasks.add(asyncio.ensure_future(_run_task_wrapper()))
+
+        future = asyncio.ensure_future(_run_task_wrapper())
+        self._tasks.add(future)
+        return future
+
+    async def wait_all(self, awaitables: List[Awaitable[Any]]):
+        '''
+        Waits for all of the awaitables to finish.
+        :param awaitables:
+        :return:
+        '''
+        loop = self.get_event_loop()
+
+        done, _ = await asyncio.wait(
+            awaitables,
+            return_when=asyncio.ALL_COMPLETED,
+            loop=loop,
+        )
+        return done.pop().result()
 
     def run_daemon_task(self, awaitable: Awaitable[Any]) -> None:
         """Run the given awaitable in the background.

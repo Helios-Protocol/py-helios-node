@@ -51,3 +51,9 @@ class DAOForkCheckFailure(BaseHeliosError):
     Raised when the DAO fork check with a certain peer is unsuccessful.
     """
     pass
+
+class NoCandidatePeers(BaseHeliosError):
+    """
+    Raised when there are no peers to send a request to
+    """
+    pass

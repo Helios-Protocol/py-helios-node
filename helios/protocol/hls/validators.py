@@ -1,5 +1,7 @@
 from typing import (
     Tuple,
+    Dict,
+    Any,
 )
 
 from helios.rlp_templates.hls import P2PBlock
@@ -26,6 +28,7 @@ from hvm.db.consensus import ConsensusDB
 
 from . import constants
 
+from hvm.types import Timestamp
 
 class GetBlockHeadersValidator(BaseBlockHeadersValidator):
     protocol_max_request_size = constants.MAX_HEADERS_FETCH
@@ -101,9 +104,6 @@ class GetBlockBodiesValidator(BaseValidator[BlockBodyBundles]):
 
 class GetBlocksValidator(BaseValidator[Tuple[P2PBlock, ...]]):
     def __init__(self, block_hashes: Tuple[Hash32, ...]) -> None:
-        #todo remove this  to optimize speed later
-        if not isinstance(block_hashes, tuple):
-            raise ValueError("GetBlocks requires a tuple for block_hashes")
         self.block_hashes = block_hashes
 
     def validate_result(self, response: Tuple[P2PBlock, ...]) -> None:
@@ -140,5 +140,43 @@ class GetNodeStakingScoreValidator(BaseValidator[NodeStakingScore]):
         #the node doesn't accidentally include any invalid node staking scores which will invalidate the entire
         #reward bundle and they will have to re-create it.
         self.consensus_db.validate_node_staking_score(response, self.since_block)
+
+
+
+# def GetChronoligcalBlockHashFragmentsValidator(BaseValidator[Dict[str, Any]]):
+#     def __init__(self, timestamp: Timestamp, fragment_length:int) -> None:
+#         self.timestamp = timestamp
+#         self.fragment_length = fragment_length
+#
+#     def validate_result(self, response: Dict[str, Any]) -> None:
+#         if not response:
+#             # an empty response is always valid
+#             return
+#
+#         if response['timestamp'] != self.timestamp:
+#             raise ValidationError(
+#                 "Response is for unexpected timestamp"
+#             )
+#
+#         if response['fragment_length'] != self.fragment_length:
+#             raise ValidationError(
+#                 "Response contains unexpected fragment length"
+#             )
+#
+
+def get_chronological_block_hash_fragments_payload_validator(request: Dict[str, Any], response: Dict[str, Any]) -> None:
+    if not response:
+        # an empty response is always valid
+        return
+
+    if response['timestamp'] != request['timestamp']:
+        raise ValidationError(
+            "Response is for unexpected timestamp"
+        )
+
+    if response['fragment_length'] != request['fragment_length']:
+        raise ValidationError(
+            "Response contains unexpected fragment length"
+        )
 
 

@@ -29,6 +29,8 @@ from helios.rlp_templates.hls import (
     P2PBlock,
 )
 
+from hvm.types import Timestamp
+
 from .commands import (
     BlockBodies,
     BlockHeaders,
@@ -62,7 +64,9 @@ from .commands import (
     GetBlocks,
     Blocks,
     GetNodeStakingScore,
-    SendNodeStakingScore
+    SendNodeStakingScore,
+    GetChronoligcalBlockHashFragments,
+    SendChronoligcalBlockHashFragments,
 )
 from .constants import (
     MAX_HEADERS_FETCH,
@@ -84,7 +88,7 @@ class HLSProtocol(Protocol):
         ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification,
         GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain, GetChronologicalBlockWindow,
         ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters, GetChainSegment, GetBlocks,
-        Blocks, GetNodeStakingScore, SendNodeStakingScore]
+        Blocks, GetNodeStakingScore, SendNodeStakingScore, GetChronoligcalBlockHashFragments, SendChronoligcalBlockHashFragments]
     cmd_length = 60
     logger = logging.getLogger("hp2p.hls.HLSProtocol")
 
@@ -276,11 +280,10 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(data)
         self.send(header, body)
 
-    def send_new_block(self, block, chain_address) -> None:
+    def send_new_block(self, block: P2PBlock) -> None:
         cmd = NewBlock(self.cmd_id_offset)
         data = {
-            'block': block,
-            'chain_address': chain_address}
+            'block': block}
         header, body = cmd.encode(data)
         self.send(header, body)
 
@@ -308,6 +311,19 @@ class HLSProtocol(Protocol):
     def send_node_staking_score(self, node_staking_score: NodeStakingScore) -> None:
         cmd = SendNodeStakingScore(self.cmd_id_offset)
         data = {'node_staking_score': node_staking_score}
+        header, body = cmd.encode(data)
+        self.send(header, body)
+
+    def send_chronological_block_hash_fragments(self,
+                                                fragments: List[bytes],
+                                                timestamp: Timestamp,
+                                                fragment_length: int,
+                                                root_hash_of_just_this_chronological_block_window: Hash32) -> None:
+        cmd = SendChronoligcalBlockHashFragments(self.cmd_id_offset)
+        data = {'fragments': fragments,
+                'timestamp': timestamp,
+                'fragment_length': fragment_length,
+                'root_hash_of_just_this_chronological_block_window': root_hash_of_just_this_chronological_block_window}
         header, body = cmd.encode(data)
         self.send(header, body)
 

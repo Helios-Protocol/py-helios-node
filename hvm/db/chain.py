@@ -180,7 +180,7 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_block_by_hash(self, block_hash: Hash32, block_class: type('BaseBlock')) -> 'BaseBlock':
+    def get_block_by_hash(self, block_hash: Hash32, block_class: Type['BaseBlock']) -> 'BaseBlock':
         raise NotImplementedError("ChainDB classes must implement this method")
     #
     # Transaction API
@@ -350,7 +350,7 @@ class ChainDB(BaseChainDB):
         except KeyError:
             raise CanonicalHeadNotFound("No canonical head set for this chain")
 
-    def get_block_by_hash(self, block_hash: Hash32, block_class) -> 'BaseBlock':
+    def get_block_by_hash(self, block_hash: Hash32, block_class: Type['BaseBlock']) -> 'BaseBlock':
 
         block_header = self.get_block_header_by_hash(block_hash)
 
@@ -850,7 +850,7 @@ class ChainDB(BaseChainDB):
     def get_block_transactions(
             self,
             header: BlockHeader,
-            transaction_class: 'BaseTransaction') -> Iterable['BaseTransaction']:
+            transaction_class: Type['BaseTransaction']) -> Iterable['BaseTransaction']:
         """
         Returns an iterable of transactions for the block speficied by the
         given block header.
@@ -861,7 +861,7 @@ class ChainDB(BaseChainDB):
     def get_block_receive_transactions(
             self,
             header: BlockHeader,
-            transaction_class: 'BaseReceiveTransaction') -> Iterable['BaseReceiveTransaction']:
+            transaction_class: Type['BaseReceiveTransaction']) -> Iterable['BaseReceiveTransaction']:
         """
         Returns an iterable of transactions for the block speficied by the
         given block header.
@@ -1318,7 +1318,7 @@ class ChainDB(BaseChainDB):
         This takes list of timestamp, gas_price. The timestamps are every minute
         '''
         lookup_key = SchemaV1.make_historical_minimum_gas_price_lookup_key()
-        encoded_data = rlp.encode(historical_minimum_gas_price[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
+        encoded_data = rlp.encode(historical_minimum_gas_price[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
         self.db.set(
             lookup_key,
             encoded_data,
@@ -1331,7 +1331,7 @@ class ChainDB(BaseChainDB):
         '''
         lookup_key = SchemaV1.make_historical_minimum_gas_price_lookup_key()
         try:
-            data = rlp.decode(self.db[lookup_key], sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
+            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
             if sort:
                 if len(data) > 0:
                     sorted_data = SortedList(data)
@@ -1347,13 +1347,13 @@ class ChainDB(BaseChainDB):
 
     def save_historical_tx_per_centisecond(self, historical_tx_per_centisecond, de_sparse = True):
         '''
-        This takes list of timestamp, tx_per_minute. The timestamps are every minute, tx_per_minute must be an intiger
+        This takes list of timestamp, tx_per_centisecond. The timestamps are every minute, tx_per_minute must be an intiger
         this one is naturally a sparse list because some 100 second intervals might have no tx. So we can de_sparse it.
         '''
         if de_sparse:
             historical_tx_per_centisecond = de_sparse_timestamp_item_list(historical_tx_per_centisecond, 100, filler = 0)
         lookup_key = SchemaV1.make_historical_tx_per_centisecond_lookup_key()
-        encoded_data = rlp.encode(historical_tx_per_centisecond[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
+        encoded_data = rlp.encode(historical_tx_per_centisecond[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
         self.db.set(
             lookup_key,
             encoded_data,
@@ -1366,7 +1366,7 @@ class ChainDB(BaseChainDB):
 
         lookup_key = SchemaV1.make_historical_tx_per_centisecond_lookup_key()
         try:
-            data = rlp.decode(self.db[lookup_key], sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
+            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
             if sort:
                 if len(data) > 0:
                     sorted_data = SortedList(data)
@@ -1386,7 +1386,7 @@ class ChainDB(BaseChainDB):
         if de_sparse:
             historical_tpc_capability = de_sparse_timestamp_item_list(historical_tpc_capability, 100, filler = None)
         lookup_key = SchemaV1.make_historical_network_tpc_capability_lookup_key()
-        encoded_data = rlp.encode(historical_tpc_capability[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
+        encoded_data = rlp.encode(historical_tpc_capability[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
         self.db.set(
             lookup_key,
             encoded_data,
@@ -1417,7 +1417,7 @@ class ChainDB(BaseChainDB):
         '''
         lookup_key = SchemaV1.make_historical_network_tpc_capability_lookup_key()
         try:
-            data = rlp.decode(self.db[lookup_key], sedes=CountableList(rlp.sedes.List([big_endian_int, big_endian_int])))
+            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
             if sort:
                 if len(data) > 0:
                     sorted_data = SortedList(data)
@@ -1465,13 +1465,17 @@ class ChainDB(BaseChainDB):
             return new_minimum_allowed_gas
 
     def initialize_historical_minimum_gas_price_at_genesis(self, min_gas_price, net_tpc_cap, tpc = None):
+        # we need to initialize the entire additive and fast sync region in time because that is where we check
+        # that blocks have enough gas
         current_centisecond = int(time.time()/100) * 100
 
         historical_minimum_gas_price = []
         historical_tx_per_centisecond = []
         historical_tpc_capability = []
 
-        for timestamp in range(current_centisecond-100*50, current_centisecond+100, 100):
+        earliest_required_centisecond = int(time.time()/100)*100-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP*100
+
+        for timestamp in range(earliest_required_centisecond, current_centisecond+100, 100):
             historical_minimum_gas_price.append([timestamp, min_gas_price])
             if tpc is not None:
                 historical_tx_per_centisecond.append([timestamp, tpc])
@@ -1662,9 +1666,12 @@ class ChainDB(BaseChainDB):
         if test_1 is None or test_3 is None:
             return True
 
-        min_centisecond_window = int(time.time()/100) * 100-100*15
+        earliest_required_centisecond = int(time.time()) - MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP
+        newest_required_centisecond = int(time.time()/100) * 100-100*15
         sorted_test_3 = SortedList(test_3)
-        if sorted_test_3[-1][0] < min_centisecond_window:
+
+
+        if sorted_test_3[-1][0] < newest_required_centisecond or sorted_test_3[0][0] > earliest_required_centisecond:
             return True
 
         return False

@@ -63,7 +63,6 @@ from hvm.constants import (
     MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY,
     MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH,
     MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE,
-    MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP,
 )
 
 from hvm.db.trie import make_trie_root_and_nodes
@@ -300,6 +299,15 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     @abstractmethod
     def import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
         raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader, wallet_address: Address = None):
+        raise NotImplementedError("Chain classes must implement this method")
+
 
 
     #
@@ -1020,55 +1028,61 @@ class Chain(BaseChain):
 
         #self.chaindb.save_unprocessed_block_lookup(descendant_block_hash)
  
-            
-    def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header, wallet_address = None):
-        if wallet_address is not None:
-            #we need to re-initialize the chain for the new wallet address.
-            if wallet_address != self.wallet_address:
-                self.set_new_wallet_address(wallet_address = wallet_address)
-                
-        self.get_vm()
-        if existing_block_header.block_number == 0:
-            self.delete_canonical_chain(self.wallet_address, self.get_vm(refresh = False))
-        else:
-            #set the parent block as the new canonical head, and handle all the data for that
-            self.set_parent_as_canonical_head(existing_block_header, self.wallet_address, self.get_vm(refresh = False))
+    def purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32) -> None:
+        block_header_to_delete = self.chaindb.get_block_header_by_hash(block_hash_to_delete)
+        block_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(block_hash_to_delete)
+        self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header_to_delete, wallet_address=block_wallet_address)
 
-        #1) delete chronological transactions, delete everything from chronological root hashes, delete children lookups
-        all_descendant_block_hashes = self.chaindb.get_all_descendant_block_hashes(existing_block_header.hash)
-        
-        #first set all of the new chain heads and all the data that goes along with them
-        if all_descendant_block_hashes is not None:
-            for descendant_block_hash in all_descendant_block_hashes:
-                if not self.chaindb.is_block_unprocessed(descendant_block_hash):
-                    descendant_block_header = self.chaindb.get_block_header_by_hash(descendant_block_hash)
-                    descendant_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(descendant_block_hash)
-                    
-                    if descendant_block_header.parent_hash not in all_descendant_block_hashes:
-                        #this is the new head of a chain. set it as the new head for chronological root hashes
-                        #except for children in this chain, because it will be off by 1 block. we already set this earlier
-                        
+
+    def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader, wallet_address: Address = None):
+        if not self.chaindb.is_block_unprocessed(existing_block_header.hash) and self.chaindb.exists(existing_block_header.hash):
+            if wallet_address is not None:
+                #we need to re-initialize the chain for the new wallet address.
+                if wallet_address != self.wallet_address:
+                    self.set_new_wallet_address(wallet_address = wallet_address)
+
+            self.get_vm()
+            if existing_block_header.block_number == 0:
+                self.delete_canonical_chain(self.wallet_address, self.get_vm(refresh = False))
+            else:
+                #set the parent block as the new canonical head, and handle all the data for that
+                self.set_parent_as_canonical_head(existing_block_header, self.wallet_address, self.get_vm(refresh = False))
+
+            #1) delete chronological transactions, delete everything from chronological root hashes, delete children lookups
+            all_descendant_block_hashes = self.chaindb.get_all_descendant_block_hashes(existing_block_header.hash)
+
+            #first set all of the new chain heads and all the data that goes along with them
+            if all_descendant_block_hashes is not None:
+                for descendant_block_hash in all_descendant_block_hashes:
+                    if not self.chaindb.is_block_unprocessed(descendant_block_hash):
+                        descendant_block_header = self.chaindb.get_block_header_by_hash(descendant_block_hash)
                         descendant_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(descendant_block_hash)
-                           
-                        if descendant_wallet_address != self.wallet_address:
-                            if descendant_block_header.block_number == 0:
-                                self.delete_canonical_chain(descendant_wallet_address, self.get_vm(refresh = False))
-                            else:
-                                self.set_parent_as_canonical_head(descendant_block_header, self.wallet_address, self.get_vm(refresh = False))
-                 
-            #now we know what the new heads are, so we can deal with the rest of the descendants
-            for descendant_block_hash in all_descendant_block_hashes:
-                #here, since we are already going through all children, we don't need this function to purge children as well
-                if self.chaindb.is_block_unprocessed(descendant_block_hash):
-                    self.purge_unprocessed_block(descendant_block_hash, purge_children_too = False)
-                else:
-                    self.revert_block(descendant_block_hash, self.get_vm(refresh = False))
-        
-        self.revert_block(existing_block_header.hash, self.get_vm(refresh = False))
-        
-        #persist changes
-        self.get_vm(refresh = False).state.account_db.persist()
-        self.chain_head_db.persist(True)
+
+                        if descendant_block_header.parent_hash not in all_descendant_block_hashes:
+                            #this is the new head of a chain. set it as the new head for chronological root hashes
+                            #except for children in this chain, because it will be off by 1 block. we already set this earlier
+
+                            descendant_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(descendant_block_hash)
+
+                            if descendant_wallet_address != self.wallet_address:
+                                if descendant_block_header.block_number == 0:
+                                    self.delete_canonical_chain(descendant_wallet_address, self.get_vm(refresh = False))
+                                else:
+                                    self.set_parent_as_canonical_head(descendant_block_header, self.wallet_address, self.get_vm(refresh = False))
+
+                #now we know what the new heads are, so we can deal with the rest of the descendants
+                for descendant_block_hash in all_descendant_block_hashes:
+                    #here, since we are already going through all children, we don't need this function to purge children as well
+                    if self.chaindb.is_block_unprocessed(descendant_block_hash):
+                        self.purge_unprocessed_block(descendant_block_hash, purge_children_too = False)
+                    else:
+                        self.revert_block(descendant_block_hash, self.get_vm(refresh = False))
+
+            self.revert_block(existing_block_header.hash, self.get_vm(refresh = False))
+
+            #persist changes
+            self.get_vm(refresh = False).state.account_db.persist()
+            self.chain_head_db.persist(True)
         
     
     def purge_unprocessed_block(self, block_hash, purge_children_too = True):
@@ -1129,10 +1143,7 @@ class Chain(BaseChain):
                 self.logger.debug("deleting existing blocks in chronological window {}".format(block_hashes_to_delete))
             
             for block_hash_to_delete in block_hashes_to_delete:
-                block_header_to_delete = self.chaindb.get_block_header_by_hash(block_hash_to_delete)
-                block_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(block_hash_to_delete)
-                if not self.chaindb.is_block_unprocessed(block_hash_to_delete) and self.chaindb.exists(block_hash_to_delete):
-                    self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header_to_delete, wallet_address = block_wallet_address)
+                self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(block_hash_to_delete)
     
         if len(block_list) > 0:
             self.logger.debug("starting block import for chronological block window")
@@ -1214,10 +1225,9 @@ class Chain(BaseChain):
             self.logger.debug("converting block to correct class")
             block = self.get_vm(refresh=False).convert_block_to_correct_class(block)
         
-        if not isinstance(block, self.get_vm(refresh=False).get_queue_block_class()) and block.sender == self.genesis_wallet_address and block.header.block_number == 0:
-            self.logger.debug("Tried to import a new genesis block on the genesis chain. This is not allowed")
-            return
-        
+        if not isinstance(block, self.get_vm(refresh=False).get_queue_block_class()) and block.header.chain_address == self.genesis_wallet_address and block.header.block_number == 0:
+            raise ValidationError("Tried to import a new genesis block on the genesis chain. This is not allowed.")
+
 
         if len(block.transactions) == 0 and len(block.receive_transactions) == 0:
             # if block.reward_bundle is None:
@@ -1959,5 +1969,13 @@ class AsyncChain(Chain):
         return await loop.run_in_executor(
             None,
             partial(self.import_current_queue_block, *args, **kwargs)
+        )
+
+    async def coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, *args, **kwargs):
+        loop = asyncio.get_event_loop()
+
+        return await loop.run_in_executor(
+            None,
+            partial(self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash, *args, **kwargs)
         )
 

@@ -2,6 +2,8 @@ from typing import (
     Any,
     Dict,
     Tuple,
+    Optional,
+    List,
 )
 
 from eth_typing import (
@@ -28,9 +30,10 @@ from .commands import (
     GetBlocks,
     Blocks,
     GetNodeStakingScore,
-    SendNodeStakingScore
-)
+    SendNodeStakingScore,
+    GetChronoligcalBlockHashFragments, SendChronoligcalBlockHashFragments)
 
+from hvm.types import Timestamp
 
 class HeaderRequest(BaseHeaderRequest):
     """
@@ -105,3 +108,19 @@ class GetNodeStakingScoreRequest(BaseRequest[BlockNumber]):
 
     def __init__(self, since_block: BlockNumber) -> None:
         self.command_payload = {'since_block': since_block}
+
+class GetChronoligcalBlockHashFragmentsRequest(BaseRequest[Dict[str, Any]]):
+    cmd_type = GetChronoligcalBlockHashFragments
+    response_type = SendChronoligcalBlockHashFragments
+
+    def __init__(self, timestamp: Timestamp, fragment_length: int, only_these_indices: Optional[List[int]] = None) -> None:
+        if only_these_indices is None:
+            entire_window = True
+            only_these_indices = []
+        else:
+            entire_window = False
+
+        self.command_payload = {'timestamp': timestamp,
+                                'fragment_length': fragment_length,
+                                'entire_window': entire_window,
+                                'only_these_indices': only_these_indices}

@@ -1160,9 +1160,11 @@ def importing_p2p_type_block():
     
     
 def create_new_genesis_params_and_state():
-    #new_genesis_private_key = keys.PrivateKey(b'p.Oids\xedb\xa3\x93\xc5\xad\xb9\x8d\x92\x94\x00\x06\xb9\x82\xde\xb9\xbdBg\\\x82\xd4\x90W\xd0\xd5')
-    new_genesis_private_key = TPC_CAP_TEST_GENESIS_PRIVATE_KEY
-    #new_genesis_private_key = GENESIS_PRIVATE_KEY
+    #
+    # GENESIS STATE, HEADER PARAMS
+    #
+
+    new_genesis_private_key = GENESIS_PRIVATE_KEY
     print("Ceating new genesis params and state for genesis wallet address:")
     print(new_genesis_private_key.public_key.to_canonical_address())
     total_supply = 100000000 * 10 **18
@@ -1176,7 +1178,7 @@ def create_new_genesis_params_and_state():
         'block_number': constants.GENESIS_BLOCK_NUMBER,
         'gas_limit': constants.GENESIS_GAS_LIMIT,
         'gas_used': 0,
-        'timestamp': 1542748000,
+        'timestamp': 1543700000,
         'extra_data': constants.GENESIS_EXTRA_DATA,
         'reward_hash': constants.GENESIS_REWARD_HASH,
         'account_balance': total_supply,
@@ -1196,16 +1198,68 @@ def create_new_genesis_params_and_state():
     genesis_header = MainnetChain.create_genesis_header(testdb1, new_genesis_private_key.public_key.to_canonical_address(), new_genesis_private_key, new_mainnet_genesis_params, new_genesis_state)
     
     print()
-    print("New completed and signed header params")
+    print("New completed and signed genesis header params")
     parameter_names = list(dict(genesis_header._meta.fields).keys())
     header_params = {}
     for parameter_name in parameter_names:
         header_params[parameter_name] = getattr(genesis_header, parameter_name)
     print(header_params)
     print()
+
+    #
+    # TPC TEST STATE, HEADER PARAMS
+    #
+    new_genesis_private_key = TPC_CAP_TEST_GENESIS_PRIVATE_KEY
+    print(new_genesis_private_key.public_key.to_canonical_address())
+
+    testdb1 = MemoryDB()
+    genesis_header = MainnetChain.create_genesis_header(testdb1,
+                                                        new_genesis_private_key.public_key.to_canonical_address(),
+                                                        new_genesis_private_key, new_mainnet_genesis_params,
+                                                        new_genesis_state)
+
+    print()
+    print("New completed and signed tpc test header params")
+    parameter_names = list(dict(genesis_header._meta.fields).keys())
+    header_params = {}
+    for parameter_name in parameter_names:
+        header_params[parameter_name] = getattr(genesis_header, parameter_name)
+    print(header_params)
+    print()
+
+
+
+
+
+    db = MemoryDB()
+    chain = MainnetChain.from_genesis(db,
+                                      TPC_CAP_TEST_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                      header_params,
+                                      new_genesis_state,
+                                      private_key=TPC_CAP_TEST_GENESIS_PRIVATE_KEY)
+
+    receiver_privkey = keys.PrivateKey(random_private_keys[0])
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=0x0c3500,
+        to=receiver_privkey.public_key.to_canonical_address(),
+        value=1000,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    imported_block = chain.import_current_queue_block()
+
+    block_dict = imported_block.to_dict()
+    print("TPC test block to import")
+    print(block_dict)
+
     
-# create_new_genesis_params_and_state()
-# exit()
+create_new_genesis_params_and_state()
+exit()
 
 def create_block_params():
     from hvm.chains.mainnet import (
@@ -2129,13 +2183,15 @@ def test_block_rewards_system():
 
 def test_smart_contract_deploy_system():
     from helios.dev_tools import create_dev_fixed_blockchain_database
-    import random
+
     from hvm.rlp.receipts import (
         Receipt,
     )
     from solc import compile_source, compile_files, link_code, get_solc_version
 
     from eth_utils import to_int
+
+    from hvm.utils.address import generate_contract_address
 
     from pathlib import Path
     home = str(Path.home())
@@ -2225,6 +2281,13 @@ def test_smart_contract_deploy_system():
     final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     gas_used = to_int(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].gas_used)
     assert ((initial_balance - final_balance) == gas_used)
+
+    print(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    print(generate_contract_address(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), imported_block.transactions[0].nonce))
+    print(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].logs[0].address)
+    exit()
+
+    #contractAddress
 
     print("Used the correct amount of gas.")
 

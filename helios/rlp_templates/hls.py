@@ -9,7 +9,10 @@ from hvm.rlp.sedes import (
 )
 
 from hvm.rlp.headers import BlockHeader
-from hvm.rlp.transactions import BaseTransaction
+from hvm.rlp.transactions import (
+    BaseTransaction,
+    BaseReceiveTransaction,
+)
 
 
 # This is needed because BaseTransaction has several @abstractmethods, which means it can't be
@@ -24,10 +27,7 @@ class P2PSendTransaction(rlp.Serializable):
 
 # TODO. link this to the definition in the vm somehow.
 class P2PReceiveTransaction(rlp.Serializable):
-    fields = [
-        ('sender_block_hash', hash32),
-        ('send_transaction_hash', hash32),
-    ]
+    fields = BaseReceiveTransaction._meta.fields
 
 
 class P2PBlock(rlp.Serializable):
@@ -68,3 +68,4 @@ class TimestampRootHashKey(rlp.Serializable):
         ('timestamp', sedes.big_endian_int),
         ('root_hash', trie_root),
     ]
+
