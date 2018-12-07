@@ -203,7 +203,7 @@ def validate_uint64(value, title="Value"):
         )
     if value > UINT_64_MAX:
         raise ValidationError(
-            "{title} exeeds maximum UINT256 size.  Got: {0}".format(
+            "{title} exeeds maximum UINT64 size.  Got: {0}".format(
                 value,
                 title=title,
             )

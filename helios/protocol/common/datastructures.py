@@ -10,7 +10,7 @@ from eth_typing import Hash32
 
 from helios.protocol.hls.sync import get_sync_stage_for_historical_root_hash_timestamp
 if TYPE_CHECKING:
-    from helios.protocol.common.peer import BasePeer
+    from helios.protocol.common.peer import HLSPeer
 
 class AdditiveSyncRequestHistory:
     def __init__(self,
@@ -26,13 +26,13 @@ class AdditiveSyncRequestHistory:
         self.local_hashes_sent_to_peer: List[Union[Timestamp, Hash32]] = local_hashes_sent_to_peer
 
 
-class ChronologicalBlockHashFragmentBundle:
+class HashFragmentBundle:
     def __init__(self,
                  fragments: List[bytes],
-                 root_hash_of_just_this_chronological_block_window: Hash32,
+                 root_hash_of_the_full_hashes: Hash32,
                  ):
         self.fragments: List[bytes] = fragments
-        self.root_hash_of_just_this_chronological_block_window: Hash32 = root_hash_of_just_this_chronological_block_window
+        self.root_hash_of_the_full_hashes: Hash32 = root_hash_of_the_full_hashes
 
 
 class SyncParameters():
@@ -40,7 +40,7 @@ class SyncParameters():
                  timestamp_for_root_hash: Timestamp,
                  local_root_hash: Hash32,
                  consensus_root_hash: Hash32,
-                 peers_to_sync_with: List['BasePeer'],
+                 peers_to_sync_with: List['HLSPeer'],
                  sync_stage_override: Optional[int] = None,
                 ):
 
@@ -57,6 +57,23 @@ class SyncParameters():
 
         self.local_root_hash: Hash32 = local_root_hash
         self.consensus_root_hash: Hash32 = consensus_root_hash
-        self.peers_to_sync_with: List[HLSPeer] = peers_to_sync_with
+        self.peers_to_sync_with: List['HLSPeer'] = peers_to_sync_with
 
 
+class ChainRequestInfo():
+    def __init__(self, peer: 'HLSPeer', head_root_timestamp: Timestamp, head_root_hash: Hash32, start_idx: int, end_idx: int):
+        self.peer = peer
+        self.head_root_timestamp = head_root_timestamp
+        self.head_root_hash = head_root_hash
+        self.start_idx = start_idx
+        self.end_idx = end_idx
+
+
+class FastSyncParameters():
+    def __init__(self,
+                 expected_block_hash_fragments: List[bytes],
+                 chain_idx_that_we_need: List[int],
+                ):
+
+        self.expected_block_hash_fragments: List[bytes] = expected_block_hash_fragments
+        self.chain_idx_that_we_need: List[int] = chain_idx_that_we_need

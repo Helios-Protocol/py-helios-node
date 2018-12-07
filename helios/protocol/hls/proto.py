@@ -54,8 +54,7 @@ from .commands import (
     WalletAddressVerification,
     GetStakeForAddresses,
     StakeForAddresses,
-    GetChainsSyncing,
-    Chain,
+    GetChains,
     GetChronologicalBlockWindow,
     ChronologicalBlockWindow,
     GetMinGasParameters,
@@ -65,9 +64,9 @@ from .commands import (
     Blocks,
     GetNodeStakingScore,
     SendNodeStakingScore,
-    GetChronoligcalBlockHashFragments,
-    SendChronoligcalBlockHashFragments,
-)
+    GetHashFragments,
+    SendHashFragments,
+    Chains)
 from .constants import (
     MAX_HEADERS_FETCH,
 
@@ -86,9 +85,9 @@ class HLSProtocol(Protocol):
         NewBlock, NewBlock, NewBlock, GetNodeData, NodeData,
         GetReceipts, Receipts, GetChainHeadTrieBranch, ChainHeadTrieBranch, GetChainHeadRootHashTimestamps,
         ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification,
-        GetStakeForAddresses, StakeForAddresses, GetChainsSyncing, Chain, GetChronologicalBlockWindow,
+        GetStakeForAddresses, StakeForAddresses, GetChains, Chains, GetChronologicalBlockWindow,
         ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters, GetChainSegment, GetBlocks,
-        Blocks, GetNodeStakingScore, SendNodeStakingScore, GetChronoligcalBlockHashFragments, SendChronoligcalBlockHashFragments]
+        Blocks, GetNodeStakingScore, SendNodeStakingScore, GetHashFragments, SendHashFragments]
     cmd_length = 60
     logger = logging.getLogger("hp2p.hls.HLSProtocol")
 
@@ -247,21 +246,18 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(data)
         self.send(header, body)
 
-    def send_get_chains_syncing(self, chain_request_info) -> None:
-        cmd = GetChainsSyncing(self.cmd_id_offset)
+    def send_get_chains(self, timestamp: Timestamp, idx_list: List[int]) -> None:
+        cmd = GetChains(self.cmd_id_offset)
         data = {
-            'head_root_hash': chain_request_info.head_root_hash,
-            'head_hash_of_last_chain': chain_request_info.head_hash_of_last_chain,
-            'window_start': chain_request_info.window_start,
-            'window_length': chain_request_info.window_length}
+            'timestamp': timestamp,
+            'idx_list': idx_list}
         header, body = cmd.encode(data)
         self.send(header, body)
 
-    def send_chain(self, list_of_blocks, is_last) -> None:
-        cmd = Chain(self.cmd_id_offset)
+    def send_chains(self, chains: List[List[P2PBlock]]) -> None:
+        cmd = Chains(self.cmd_id_offset)
         data = {
-            'is_last': is_last,
-            'blocks': list_of_blocks}
+            'chains': chains}
         header, body = cmd.encode(data)
         self.send(header, body)
 
@@ -314,16 +310,18 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(data)
         self.send(header, body)
 
-    def send_chronological_block_hash_fragments(self,
-                                                fragments: List[bytes],
-                                                timestamp: Timestamp,
-                                                fragment_length: int,
-                                                root_hash_of_just_this_chronological_block_window: Hash32) -> None:
-        cmd = SendChronoligcalBlockHashFragments(self.cmd_id_offset)
+    def send_hash_fragments(self,
+                            fragments: List[bytes],
+                            timestamp: Timestamp,
+                            fragment_length: int,
+                            root_hash_of_just_this_chronological_block_window: Hash32,
+                            hash_type_id: int) -> None:
+        cmd = SendHashFragments(self.cmd_id_offset)
         data = {'fragments': fragments,
                 'timestamp': timestamp,
                 'fragment_length': fragment_length,
-                'root_hash_of_just_this_chronological_block_window': root_hash_of_just_this_chronological_block_window}
+                'root_hash_of_the_full_hashes': root_hash_of_just_this_chronological_block_window,
+                'hash_type_id': hash_type_id}
         header, body = cmd.encode(data)
         self.send(header, body)
 

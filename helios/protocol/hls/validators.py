@@ -2,6 +2,7 @@ from typing import (
     Tuple,
     Dict,
     Any,
+    List,
 )
 
 from helios.rlp_templates.hls import P2PBlock
@@ -124,6 +125,26 @@ class GetBlocksValidator(BaseValidator[Tuple[P2PBlock, ...]]):
                 "Response contains {0} unexpected blocks".format(len(unexpected_hashes))
             )
 
+class GetChainsValidator(BaseValidator[Tuple[Tuple[P2PBlock], ...]]):
+    def __init__(self, expected_chain_head_hash_fragments: List[bytes]) -> None:
+        self.expected_chain_head_hash_fragments = set(expected_chain_head_hash_fragments)
+        if len(expected_chain_head_hash_fragments) > 0:
+            self.fragment_length = len(expected_chain_head_hash_fragments[0])
+        else:
+            self.fragment_length = 0
+
+    def validate_result(self, response: Tuple[Tuple[P2PBlock], ...]) -> None:
+        if not response:
+            # an empty response is always valid
+            return
+
+        for chain in response:
+            chain_head = chain[-1]
+            if chain_head.header.hash[:self.fragment_length] not in self.expected_chain_head_hash_fragments:
+                raise ValidationError(
+                    "Response contains the incorrect chain head blocks"
+                )
+
 
 class GetNodeStakingScoreValidator(BaseValidator[NodeStakingScore]):
     def __init__(self, since_block: BlockNumber, consensus_db:ConsensusDB) -> None:
@@ -164,7 +185,7 @@ class GetNodeStakingScoreValidator(BaseValidator[NodeStakingScore]):
 #             )
 #
 
-def get_chronological_block_hash_fragments_payload_validator(request: Dict[str, Any], response: Dict[str, Any]) -> None:
+def get_hash_fragments_payload_validator(request: Dict[str, Any], response: Dict[str, Any]) -> None:
     if not response:
         # an empty response is always valid
         return

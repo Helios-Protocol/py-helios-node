@@ -184,21 +184,18 @@ class StakeForAddresses(Command):
     ]
 
 
-class GetChainsSyncing(Command):
+class GetChains(Command):
     _cmd_id = 27
     structure = [
-        ('head_root_hash', hash32),
-        ('head_hash_of_last_chain', hash32),
-        ('window_start', sedes.big_endian_int),
-        ('window_length', sedes.big_endian_int),
+        ('timestamp', sedes.f_big_endian_int),
+        ('idx_list', sedes.FCountableList(sedes.f_big_endian_int))
     ]
 
 
-class Chain(Command):
+class Chains(Command):
     _cmd_id = 28
     structure = [
-        ('is_last', sedes.boolean),
-        ('blocks', sedes.CountableList(P2PBlock))]
+        ('chains', sedes.CountableList(sedes.CountableList(P2PBlock)))]
 
 
 class GetChronologicalBlockWindow(Command):
@@ -258,22 +255,24 @@ class SendNodeStakingScore(Command):
     ]
 
 
-class GetChronoligcalBlockHashFragments(Command):
+class GetHashFragments(Command):
     _cmd_id = 38
     structure = [
         ('timestamp', sedes.f_big_endian_int),
         ('fragment_length', sedes.f_big_endian_int),
         ('entire_window', sedes.boolean),
         ('only_these_indices', sedes.FCountableList(sedes.f_big_endian_int)),
+        ('hash_type_id',sedes.f_big_endian_int),
     ]
 
-class SendChronoligcalBlockHashFragments(Command):
+class SendHashFragments(Command):
     _cmd_id = 39
     structure = [
         ('fragments', sedes.FCountableList(sedes.binary)),
         ('timestamp', sedes.f_big_endian_int),
         ('fragment_length', sedes.f_big_endian_int),
-        ('root_hash_of_just_this_chronological_block_window', hash32)
+        ('root_hash_of_the_full_hashes', hash32),
+        ('hash_type_id', sedes.f_big_endian_int),
     ]
 
 

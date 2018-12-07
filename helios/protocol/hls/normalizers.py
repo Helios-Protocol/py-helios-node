@@ -8,7 +8,7 @@ from cytoolz import (
     compose,
 )
 
-from helios.protocol.common.datastructures import ChronologicalBlockHashFragmentBundle
+from helios.protocol.common.datastructures import HashFragmentBundle
 from hvm.db.trie import make_trie_root_and_nodes
 from eth_hash.auto import keccak
 import rlp
@@ -22,7 +22,7 @@ from helios.protocol.common.types import (
     ReceiptsBundles,
     ReceiptsByBlock,
 )
-from helios.rlp_templates.hls import BlockBody
+from helios.rlp_templates.hls import BlockBody, P2PBlock
 from hvm.rlp.consensus import NodeStakingScore
 
 
@@ -72,12 +72,20 @@ class GetNodeStakingScoreNormalizer(BaseNormalizer[Dict[str, NodeStakingScore], 
         return result
 
 
-class GetChronoligcalBlockHashFragmentsNormalizer(BaseNormalizer[Dict[str, Any], ChronologicalBlockHashFragmentBundle]):
+class GetHashFragmentsNormalizer(BaseNormalizer[Dict[str, Any], HashFragmentBundle]):
     is_normalization_slow = False
 
     @staticmethod
-    def normalize_result(msg: Dict[str, Any]) -> ChronologicalBlockHashFragmentBundle:
-        result = ChronologicalBlockHashFragmentBundle(fragments = msg['fragments'],
-                                                      root_hash_of_just_this_chronological_block_window = msg['root_hash_of_just_this_chronological_block_window'])
+    def normalize_result(msg: Dict[str, Any]) -> HashFragmentBundle:
+        result = HashFragmentBundle(fragments = msg['fragments'],
+                                    root_hash_of_the_full_hashes= msg['root_hash_of_the_full_hashes'])
+        return result
+
+class GetChainsNormalizer(BaseNormalizer[Dict[str, Any], Tuple[Tuple[P2PBlock]]]):
+    is_normalization_slow = False
+
+    @staticmethod
+    def normalize_result(msg: Dict[str, Any]) -> HashFragmentBundle:
+        result = msg['chains']
         return result
 

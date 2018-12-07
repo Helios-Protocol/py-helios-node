@@ -6,7 +6,8 @@ from typing import (
     List,
 )
 
-from helios.protocol.common.datastructures import ChronologicalBlockHashFragmentBundle
+from helios.protocol.common.datastructures import HashFragmentBundle
+from helios.protocol.hls.commands import GetChains
 from hvm.types import Timestamp
 from eth_typing import (
     BlockIdentifier,
@@ -42,7 +43,7 @@ from .normalizers import (
     GetBlockBodiesNormalizer,
     GetNodeDataNormalizer,
     ReceiptsNormalizer,
-    GetNodeStakingScoreNormalizer, GetChronoligcalBlockHashFragmentsNormalizer)
+    GetNodeStakingScoreNormalizer, GetHashFragmentsNormalizer, GetChainsNormalizer)
 from .requests import (
     GetBlockBodiesRequest,
     GetBlockHeadersRequest,
@@ -51,7 +52,7 @@ from .requests import (
     GetBlocksRequest,
     GetNodeStakingScoreRequest,
 
-    GetChronoligcalBlockHashFragmentsRequest)
+    GetHashFragmentsRequest, GetChainsRequest)
 from .trackers import (
     GetBlockHeadersTracker,
     GetBlockBodiesTracker,
@@ -59,7 +60,7 @@ from .trackers import (
     GetReceiptsTracker,
     GetBlocksTracker,
     GetNodeStakingScoreTracker,
-    GetChronoligcalBlockHashFragmentsTracker)
+    GetHashFragmentsTracker, GetChainsTracker)
 from .validators import (
     GetBlockBodiesValidator,
     GetBlockHeadersValidator,
@@ -67,7 +68,7 @@ from .validators import (
     ReceiptsValidator,
     GetBlocksValidator,
     GetNodeStakingScoreValidator,
-    get_chronological_block_hash_fragments_payload_validator)
+    get_hash_fragments_payload_validator, GetChainsValidator)
 
 
 
@@ -207,6 +208,38 @@ class GetBlocksExchange(BaseGetBlocksExchange):
             timeout,
         )
 
+BaseGetChainsExchange = BaseExchange[
+    Dict[str, Any], #parameter types for request_class
+    Tuple[List[P2PBlock], ...], #type that rlp returns
+    Tuple[List[P2PBlock], ...], #type that the normalizer returns
+]
+
+#if rlp and normalizer return same type, use NoobNormalizer. It does nothing.
+
+
+class GetChainsExchange(BaseGetChainsExchange):
+    _normalizer = GetChainsNormalizer()
+    request_class = GetChainsRequest
+    tracker_class = GetChainsTracker
+
+    async def __call__(  # type: ignore
+            self,
+            timestamp: Timestamp,
+            idx_list: List[int],
+            expected_chain_head_hash_fragments: List[bytes],
+            timeout: float = None) -> Tuple[Tuple[P2PBlock], ...]:
+
+        validator = GetChainsValidator(expected_chain_head_hash_fragments)
+        request = self.request_class(timestamp, idx_list)
+
+        return await self.get_result(
+            request,
+            self._normalizer,
+            validator,
+            noop_payload_validator,
+            timeout,
+        )
+
 
 BaseGetNodeStakingScoreExchange = BaseExchange[
     BlockNumber, #parameter types for request_class
@@ -237,30 +270,33 @@ class GetNodeStakingScoreExchange(BaseGetNodeStakingScoreExchange):
         )
 
 
-BaseGetChronoligcalBlockHashFragmentsExchange = BaseExchange[
-    Dict[str, Any], #parameter types for request_class
-    Dict[str, Any], #type that rlp returns
-    ChronologicalBlockHashFragmentBundle, #type that the normalizer returns
+BaseGetHashFragmentsExchange = BaseExchange[
+    Dict[str, Any],  #parameter types for request_class
+    Dict[str, Any],  #type that rlp returns
+    HashFragmentBundle, #type that the normalizer returns
 ]
 
-class GetChronoligcalBlockHashFragmentsExchange(BaseGetChronoligcalBlockHashFragmentsExchange):
-    _normalizer = GetChronoligcalBlockHashFragmentsNormalizer()
-    request_class = GetChronoligcalBlockHashFragmentsRequest
-    tracker_class = GetChronoligcalBlockHashFragmentsTracker
+#hash type ids: 1: chronological block hashes. In this case the timestamp is the timestamp of the chronological block hash window.
+# 2: chain head block hashes. In this case, the timestamp is the chronological chain head root hash timestamp.
+class GetHashFragmentsExchange(BaseGetHashFragmentsExchange):
+    _normalizer = GetHashFragmentsNormalizer()
+    request_class = GetHashFragmentsRequest
+    tracker_class = GetHashFragmentsTracker
 
     async def __call__(  # type: ignore
             self,
             timestamp: Timestamp,
             fragment_length: int = 32,
             only_these_indices: Optional[List[int]] = None, #None sends all hashes in window
-            timeout: float = None) -> ChronologicalBlockHashFragmentBundle:
+            hash_type_id: int = 1,
+            timeout: float = None) -> HashFragmentBundle:
 
         result_validator = NoopResultValidator() #this gets called after the normalizer
 
         # this gets called before the normalizer. Therefore, we can validate the payload, and then strip out any
         # validation data that is no longer needed in the normalization function.
-        payload_validator = get_chronological_block_hash_fragments_payload_validator
-        request = self.request_class(timestamp, fragment_length, only_these_indices)
+        payload_validator = get_hash_fragments_payload_validator
+        request = self.request_class(timestamp, fragment_length, only_these_indices, hash_type_id)
 
         return await self.get_result(
             request,
@@ -269,5 +305,7 @@ class GetChronoligcalBlockHashFragmentsExchange(BaseGetChronoligcalBlockHashFrag
             payload_validator,
             timeout,
         )
+
+
 
 

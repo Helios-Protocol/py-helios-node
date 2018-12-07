@@ -5,7 +5,7 @@ from typing import (
     Any,
 )
 
-from helios.protocol.common.datastructures import ChronologicalBlockHashFragmentBundle
+from helios.protocol.common.datastructures import HashFragmentBundle
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.consensus import NodeStakingScore
 
@@ -24,7 +24,7 @@ from .requests import (
     GetReceiptsRequest,
     GetBlocksRequest,
     GetNodeStakingScoreRequest,
-    GetChronoligcalBlockHashFragmentsRequest)
+    GetHashFragmentsRequest, GetChainsRequest)
 
 from helios.rlp_templates.hls import P2PBlock
 
@@ -95,12 +95,12 @@ class GetNodeDataTracker(BasePerformanceTracker[GetNodeDataRequest, NodeDataBund
         return len(result)
 
 
-BaseGetBlockHeadersTracker = BasePerformanceTracker[
+BaseGetBlocksTracker = BasePerformanceTracker[
     GetBlocksRequest,
     Tuple[P2PBlock, ...],
 ]
 
-class GetBlocksTracker(BaseGetBlockHeadersTracker):
+class GetBlocksTracker(BaseGetBlocksTracker):
     def _get_request_size(self, request: GetBlocksRequest) -> Optional[int]:
         return len(request.command_payload)
 
@@ -108,6 +108,21 @@ class GetBlocksTracker(BaseGetBlockHeadersTracker):
         return len(result)
 
     def _get_result_item_count(self, result: Tuple[P2PBlock, ...]) -> int:
+        return len(result)
+
+BaseGetChainsTracker = BasePerformanceTracker[
+    GetChainsRequest,
+    Tuple[Tuple[P2PBlock], ...],
+]
+
+class GetChainsTracker(BaseGetChainsTracker):
+    def _get_request_size(self, request: GetChainsRequest) -> int:
+        return len(request.command_payload.idx_list)
+
+    def _get_result_size(self, result: Tuple[Tuple[P2PBlock], ...]) -> int:
+        return len(result)
+
+    def _get_result_item_count(self, result: Tuple[Tuple[P2PBlock], ...]) -> int:
         return len(result)
 
 
@@ -127,19 +142,19 @@ class GetNodeStakingScoreTracker(BaseGetNodeStakingScoreTracker):
         return len(result)
 
 
-BaseGetChronoligcalBlockHashFragmentsTracker = BasePerformanceTracker[
-    GetChronoligcalBlockHashFragmentsRequest,
-    ChronologicalBlockHashFragmentBundle,
+BaseGetHashFragmentsTracker = BasePerformanceTracker[
+    GetHashFragmentsRequest,
+    HashFragmentBundle,
 ]
 
-class GetChronoligcalBlockHashFragmentsTracker(BaseGetChronoligcalBlockHashFragmentsTracker):
+class GetHashFragmentsTracker(BaseGetHashFragmentsTracker):
     def _get_request_size(self, request) -> Optional[int]:
         #return None if we don't know how many to expect
         if request.command_payload['entire_window'] == False:
             return len(request.command_payload['only_these_indices'])
 
-    def _get_result_size(self, result: ChronologicalBlockHashFragmentBundle) -> int:
+    def _get_result_size(self, result: HashFragmentBundle) -> int:
         return len(result.fragments)
 
-    def _get_result_item_count(self, result: ChronologicalBlockHashFragmentBundle) -> int:
+    def _get_result_item_count(self, result: HashFragmentBundle) -> int:
         return len(result.fragments)

@@ -1,4 +1,6 @@
 import time
+import asyncio
+from functools import partial
 from abc import (
     ABCMeta,
     abstractmethod
@@ -127,10 +129,9 @@ class CurrentSyncingInfo(rlp.Serializable):
     fields = [
         ('timestamp', big_endian_int),
         ('head_root_hash', hash32),
-        ('head_hash_of_last_chain', hash32),
     ]
     
-    
+
 class ChainHeadDB():
 
     logger = logging.getLogger('hvm.db.chain_head.ChainHeadDB')
@@ -193,7 +194,7 @@ class ChainHeadDB():
        
     def get_next_n_head_block_hashes(self, prev_head_hash = ZERO_HASH32, window_start = 0, window_length = 1, root_hash = None, reverse = False):
         """
-        Gets the next head root hash in the leaves of the binary trie
+        Gets the next head block hash in the leaves of the binary trie
         """
         
         validate_is_bytes(prev_head_hash, title='prev_head_hash')
@@ -237,7 +238,7 @@ class ChainHeadDB():
                 
     def get_next_head_block_hash(self, prev_head_hash = ZERO_HASH32, root_hash = None, reverse = False):
         """
-        Gets the next head root hash in the leaves of the binary trie
+        Gets the next head block hash in the leaves of the binary trie
         """
         
         validate_is_bytes(prev_head_hash, title='prev_head_hash')
@@ -268,34 +269,58 @@ class ChainHeadDB():
         validate_is_bytes(root_hash, title='Root Hash')
         
         yield from self._trie.get_leaf_nodes(root_hash, reverse)
-     
-    
-    
+
+    def get_head_block_hashes_list(self, root_hash: Hash32=None, reverse: bool=False) -> List[Hash32]:
+        return list(self.get_head_block_hashes(root_hash, reverse))
+
+    def get_head_block_hashes_by_idx_list(self, idx_list: List[int], root_hash: Hash32=None) -> List[Hash32]:
+        """
+        Gets the head block hashes of the index range corresponding to the position of the leaves of the binary trie
+        """
+
+        if root_hash is None:
+            root_hash = self.root_hash
+
+        idx_set = set(idx_list)
+        validate_is_bytes(root_hash, title='Root Hash')
+
+        output_list = []
+
+        for idx, head_hash in enumerate(self.get_head_block_hashes(root_hash)):
+            if idx in idx_set:
+                output_list.append(head_hash)
+                idx_set.remove(idx)
+            if len(idx_set) == 0:
+                break
+
+
+        return output_list
+
+        # if this function returns less than window_length, then it is the end.
         
     
     #
     # Block hash API
     #
-    def set_current_syncing_info(self, timestamp, head_root_hash, head_hash_of_last_chain = ZERO_HASH32):
+    def set_current_syncing_info(self, timestamp: Timestamp, head_root_hash: Hash32) -> None:
         validate_is_bytes(head_root_hash, title='Head Root Hash')
-        validate_is_bytes(head_hash_of_last_chain, title='Head Hash of last chain')
         validate_uint256(timestamp, title='timestamp')
-        encoded = rlp.encode([timestamp, head_root_hash, head_hash_of_last_chain], sedes=CurrentSyncingInfo)
+        encoded = rlp.encode([timestamp, head_root_hash], sedes=CurrentSyncingInfo)
         self.db[SchemaV1.make_current_syncing_info_lookup_key()] = encoded
         
-    def get_current_syncing_info(self):
+    def get_current_syncing_info(self) -> CurrentSyncingInfo:
         try:
             encoded = self.db[SchemaV1.make_current_syncing_info_lookup_key()]
             return rlp.decode(encoded, sedes=CurrentSyncingInfo)
         except KeyError:
             return None
         
-    def set_current_syncing_last_chain(self, head_hash_of_last_chain):
-        validate_is_bytes(head_hash_of_last_chain, title='Head Hash of last chain')
-        syncing_info = self.get_current_syncing_info()
-        new_syncing_info = syncing_info.copy(head_hash_of_last_chain = head_hash_of_last_chain)
-        encoded = rlp.encode(new_syncing_info, sedes=CurrentSyncingInfo)
-        self.db[SchemaV1.make_current_syncing_info_lookup_key()] = encoded
+    # def set_current_syncing_last_chain(self, head_hash_of_last_chain):
+    #     validate_is_bytes(head_hash_of_last_chain, title='Head Hash of last chain')
+    #     syncing_info = self.get_current_syncing_info()
+    #     new_syncing_info = syncing_info.copy(head_hash_of_last_chain = head_hash_of_last_chain)
+    #     encoded = rlp.encode(new_syncing_info, sedes=CurrentSyncingInfo)
+    #     self.db[SchemaV1.make_current_syncing_info_lookup_key()] = encoded
         
     def set_chain_head_hash(self, address, head_hash):
         validate_canonical_address(address, title="Wallet Address")
@@ -518,11 +543,18 @@ class ChainHeadDB():
             self.root_hash,
         )
         
-        #TODO. remove this. it is probably unnessisary now. since we handle it elsewhere
-        if append_current_root_hash_to_historical:
-            self.logger.debug("appending to historical {}".format(self.root_hash))
-            self.append_current_root_hash_to_historical()
+        # #TODO. remove this. it is probably unnessisary now. since we handle it elsewhere
+        # if append_current_root_hash_to_historical:
+        #     self.logger.debug("appending to historical {}".format(self.root_hash))
+        #     self.append_current_root_hash_to_historical()
         
+    def get_saved_root_hash(self):
+        current_head_root_lookup_key = SchemaV1.make_current_head_root_lookup_key()
+        try:
+            return self.db[current_head_root_lookup_key]
+        except KeyError:
+            # there is none. this must be a fresh genesis block type thing
+            return BLANK_HASH
 
     def load_saved_root_hash(self):
         current_head_root_lookup_key = SchemaV1.make_current_head_root_lookup_key()
@@ -701,7 +733,7 @@ class ChainHeadDB():
             data,
         )
         
-    def get_historical_root_hash(self, timestamp: Timestamp, return_timestamp: bool = False) -> List[Union[Timestamp, Hash32]]:
+    def get_historical_root_hash(self, timestamp: Timestamp, return_timestamp: bool = False) -> Tuple[Optional[Timestamp], Hash32]:
         '''
         This returns the historical root hash for a given timestamp.
         If no root hash exists for this timestamp, it will return the latest root hash prior to this timestamp
@@ -886,7 +918,14 @@ class ChainHeadDB():
     
     
 
-    
-    
-    
-    
+# class AsyncChainHeadDB(ChainHeadDB):
+#     async def coro_import_current_queue_block(self, *args, **kwargs):
+#         loop = asyncio.get_event_loop()
+#
+#         return await loop.run_in_executor(
+#             None,
+#             partial(self.import_current_queue_block, *args, **kwargs)
+#         )
+#
+#
+#

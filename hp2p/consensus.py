@@ -329,12 +329,16 @@ class Consensus(BaseService, PeerSubscriber):
             if not self.coro_is_ready.is_set():
                 self._current_sync_stage = 0
             else:
-                sync_params = await self.get_blockchain_sync_parameters()
-                if sync_params is None:
-                    self._current_sync_stage = 4
+                try:
+                    sync_params = await self.get_blockchain_sync_parameters()
+                except NoEligiblePeers:
+                    self._current_sync_stage = 0
                 else:
-                    sync_stage = get_sync_stage_for_historical_root_hash_timestamp(sync_params.timestamp_for_root_hash)
-                    self._current_sync_stage = sync_stage
+                    if sync_params is None:
+                        self._current_sync_stage = 4
+                    else:
+                        sync_stage = get_sync_stage_for_historical_root_hash_timestamp(sync_params.timestamp_for_root_hash)
+                        self._current_sync_stage = sync_stage
 
         return self._current_sync_stage
 
@@ -1258,7 +1262,10 @@ class Consensus(BaseService, PeerSubscriber):
 
     def remove_block_conflict(self, chain_wallet_address: Address, block_number: BlockNumber) -> None:
         new_block_conflict = BlockConflictInfo(chain_wallet_address, block_number)
-        self.block_conflicts.remove(new_block_conflict)
+        try:
+            self.block_conflicts.remove(new_block_conflict)
+        except KeyError:
+            pass
         
     #for effeciency, we can assume that we are always in consensus
     async def get_correct_block_conflict_choice_where_we_differ_from_consensus(self):

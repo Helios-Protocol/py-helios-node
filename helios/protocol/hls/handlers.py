@@ -9,7 +9,7 @@ from .exchanges import (
     # GetReceiptsExchange,
     GetBlocksExchange,
     GetNodeStakingScoreExchange,
-    GetChronoligcalBlockHashFragmentsExchange)
+    GetHashFragmentsExchange, GetChainsExchange)
 
 
 class HLSExchangeHandler(BaseExchangeHandler):
@@ -30,10 +30,12 @@ class HLSExchangeHandler(BaseExchangeHandler):
     _exchange_config = {
         'get_blocks': GetBlocksExchange,
         'get_node_staking_score': GetNodeStakingScoreExchange,
-        'get_chronological_block_hash_fragments': GetChronoligcalBlockHashFragmentsExchange,
+        'get_hash_fragments': GetHashFragmentsExchange,
+        'get_chains_exchange': GetChainsExchange,
     }
 
     # These are needed only to please mypy.
     get_blocks: GetBlocksExchange
     get_node_staking_score: GetNodeStakingScoreExchange
-    get_chronological_block_hash_fragments: GetChronoligcalBlockHashFragmentsExchange
+    get_hash_fragments: GetHashFragmentsExchange
+    get_chains_exchange: GetChainsExchange

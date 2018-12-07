@@ -157,6 +157,10 @@ class BaseChainDB(metaclass=ABCMeta):
     def get_canonical_head_hash(self, wallet_address: Address = None) -> Hash32:
         raise NotImplementedError("ChainDB classes must implement this method")
 
+    @abstractmethod
+    def get_all_block_hashes_on_chain(self, chain_address: Address) -> List[Hash32]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
     #
     # Header API
     #
@@ -350,6 +354,23 @@ class ChainDB(BaseChainDB):
         except KeyError:
             raise CanonicalHeadNotFound("No canonical head set for this chain")
 
+    def get_all_block_hashes_on_chain(self, chain_address: Address) -> List[Hash32]:
+        chain_hashes = []
+
+        for block_number in itertools.count():
+            try:
+                chain_hashes.append(self.get_canonical_block_hash(block_number, chain_address))
+            except HeaderNotFound:
+                break
+        return chain_hashes
+
+    def get_all_block_hashes_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[Hash32]:
+        chain_head_header = self.get_block_header_by_hash(chain_head_hash)
+        chain_address = chain_head_header.chain_address
+        chain_block_hashes = self.get_all_block_hashes_on_chain(chain_address)
+        return chain_block_hashes
+
+
     def get_block_by_hash(self, block_hash: Hash32, block_class: Type['BaseBlock']) -> 'BaseBlock':
 
         block_header = self.get_block_header_by_hash(block_hash)
@@ -387,6 +408,7 @@ class ChainDB(BaseChainDB):
 
         return blocks
 
+
     def get_all_blocks_on_chain(self, block_class, wallet_address = None):
         if wallet_address is None:
             wallet_address = self.wallet_address
@@ -396,6 +418,11 @@ class ChainDB(BaseChainDB):
 
 
         return self.get_blocks_on_chain(block_class,  0, head_block_number, wallet_address = wallet_address)
+
+    def get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32, block_class) -> List['BaseBlock']:
+        chain_head_header = self.get_block_header_by_hash(chain_head_hash)
+        chain_address = chain_head_header.chain_address
+        return self.get_all_blocks_on_chain(block_class, chain_address)
 
 
     #

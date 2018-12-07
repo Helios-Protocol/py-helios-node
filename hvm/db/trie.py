@@ -21,7 +21,8 @@ from trie.constants import (
 )
 from hvm.rlp.receipts import Receipt
 from hvm.rlp.transactions import BaseTransaction
-
+from eth_hash.auto import keccak
+import os
 from eth_typing import Hash32
 
 from hvm.rlp.sedes import hash32
@@ -66,10 +67,10 @@ class BinaryTrie(ParentBinaryTrie):
         else:
             yield right
 
-
+#this is probably unreliable because some keys are prefixes of other keys...
 def make_binary_trie_root(items: Tuple[bytes, ...]) -> bytes:
     kv_store = {}  # type: Dict[bytes, bytes]
-    trie = BinaryTrie(kv_store, BLANK_ROOT_HASH)
+    trie = BinaryTrie(kv_store, BLANK_HASH)
 
     for index, item in enumerate(items):
         index_key = rlp.encode(index, sedes=rlp.sedes.big_endian_int)

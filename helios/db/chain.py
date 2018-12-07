@@ -102,7 +102,14 @@ class AsyncChainDB(ChainDB):
     async def coro_get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:
         raise NotImplementedError()
 
+    async def coro_get_all_block_hashes_on_chain(self, chain_address: Address) -> List[Hash32]:
+        raise NotImplementedError()
 
+    async def coro_get_all_block_hashes_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[Hash32]:
+        raise NotImplementedError()
+
+    async def coro_get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32, block_class) -> List[BaseBlock]:
+        raise NotImplementedError()
 
 class ChainDBProxy(BaseProxy):
     coro_get_block_header_by_hash = async_method('get_block_header_by_hash')
@@ -133,7 +140,9 @@ class ChainDBProxy(BaseProxy):
     coro_get_blocks_on_chain = async_method('get_blocks_on_chain')
     coro_get_block_by_hash = async_method('get_block_by_hash')
     coro_get_latest_reward_block_number = async_method('get_latest_reward_block_number')
-
+    coro_get_all_block_hashes_on_chain = async_method('get_all_block_hashes_on_chain')
+    coro_get_all_block_hashes_on_chain_by_head_block_hash = async_method('get_all_block_hashes_on_chain_by_head_block_hash')
+    coro_get_all_blocks_on_chain_by_head_block_hash = async_method('get_all_blocks_on_chain_by_head_block_hash')
 
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')
@@ -160,6 +169,7 @@ class ChainDBProxy(BaseProxy):
     get_latest_reward_block_number = sync_method('get_latest_reward_block_number')
     get_canonical_block_header_by_number = sync_method('get_canonical_block_header_by_number')
 
+    get_all_block_hashes_on_chain = sync_method('get_all_block_hashes_on_chain')
 
 
     get_block_by_hash = sync_method('get_block_by_hash')

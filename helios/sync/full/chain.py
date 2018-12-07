@@ -57,6 +57,7 @@ from typing import (
     Optional,
     NamedTuple,
     Iterable,
+    Callable,
 )
 
 from cancel_token import CancelToken, OperationCancelled
@@ -120,7 +121,11 @@ from helios.utils.sync import get_missing_hash_locations_bytes
 
 from helios.protocol.common.datastructures import (
     AdditiveSyncRequestHistory,
-    ChronologicalBlockHashFragmentBundle)
+    HashFragmentBundle,
+    ChainRequestInfo,
+    SyncParameters,
+    FastSyncParameters,
+)
 
 HeaderRequestingPeer = Union[LESPeer, HLSPeer]
 # (ReceiptBundle, (Receipt, (root_hash, receipt_trie_data))
@@ -182,16 +187,16 @@ class WaitingPeers:
         return peer
 
 
-class ChainRequestInfo():
-    def __init__(self, peer, head_root_timestamp, head_root_hash, head_hash_of_last_chain, window_start, window_length,
-                 timestamp_sent):
-        self.peer = peer
-        self.head_root_timestamp = head_root_timestamp
-        self.head_root_hash = head_root_hash
-        self.head_hash_of_last_chain = head_hash_of_last_chain
-        self.window_start = window_start
-        self.window_length = window_length
-        self.timestamp_sent = timestamp_sent
+# class ChainRequestInfo():
+#     def __init__(self, peer, head_root_timestamp, head_root_hash, head_hash_of_last_chain, window_start, window_length,
+#                  timestamp_sent):
+#         self.peer = peer
+#         self.head_root_timestamp = head_root_timestamp
+#         self.head_root_hash = head_root_hash
+#         self.head_hash_of_last_chain = head_hash_of_last_chain
+#         self.window_start = window_start
+#         self.window_length = window_length
+#         self.timestamp_sent = timestamp_sent
 
 
 
@@ -204,14 +209,13 @@ class FastChainSyncer(BaseService, PeerSubscriber):
     """
 
     subscription_msg_types: Set[Type[Command]] = {
-        commands.GetChainsSyncing,
-        commands.Chain,
+        commands.GetChains,
         commands.NewBlock,
         commands.GetChronologicalBlockWindow,
         commands.ChronologicalBlockWindow,
         commands.GetChainSegment,
         commands.GetBlocks,
-        commands.GetChronoligcalBlockHashFragments,
+        commands.GetHashFragments,
     }
 
 
@@ -525,7 +529,7 @@ class FastChainSyncer(BaseService, PeerSubscriber):
     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
 
-        if isinstance(cmd, commands.GetChainsSyncing):
+        if isinstance(cmd, commands.GetChains):
             await self._handle_get_chains_syncing(peer, cast(Dict[str, Any], msg))
         elif isinstance(cmd, commands.Chain):
             await self._handle_chain(peer, cast(Dict[str, Any], msg))
@@ -621,9 +625,12 @@ class RegularChainSyncer(FastChainSyncer):
     _current_syncing_root_hash = None
     _latest_block_conflict_choices_to_change = None
     importing_blocks_lock = asyncio.Lock()
-    _fast_sync_complete = asyncio.Event()
     num_blocks_to_request_at_once = 10000
-    _fast_sync_chain_number = 0
+    _max_fast_sync_workers = 5
+
+    # This is the current index in the list of chains that we require. This may not correspond to the index of the chain.
+    # For example, if we need the chains: [0,4,6,76,192], then when _fast_sync_required_chain_list_idx = 2 corresponds to chain 6.
+    _fast_sync_required_chain_list_idx = 0
     _fast_sync_use_shared_vars = asyncio.Lock()
     _fast_sync_num_chains_to_request = FAST_SYNC_NUM_CHAINS_TO_REQUEST
 
@@ -638,32 +645,27 @@ class RegularChainSyncer(FastChainSyncer):
         self.chain_head_db.load_saved_root_hash()
 
     async def _run(self) -> None:
-        if self.is_ready_for_regular_syncer:
 
-            self.logger.debug("Starting regular chainsyncer. waiting for consensus and chain config to initialize.")
-            self.run_daemon_task(self._handle_msg_loop())
-            consensus_ready = await self.consensus.coro_is_ready.wait()
-            if consensus_ready:
-                self.logger.debug('waiting for consensus min gas system ready')
-                min_gas_system_ready = await self.consensus.coro_min_gas_system_ready.wait()
-                if min_gas_system_ready:
-                    self.logger.debug("consensus ready")
-                    with self.subscribe(self.peer_pool):
+        self.logger.debug("Starting regular chainsyncer. Waiting for consensus and chain config to initialize.")
+        self.run_daemon_task(self._handle_msg_loop())
+        consensus_ready = await self.consensus.coro_is_ready.wait()
+        if consensus_ready:
+            self.logger.debug('waiting for consensus min gas system ready')
+            min_gas_system_ready = await self.consensus.coro_min_gas_system_ready.wait()
+            if min_gas_system_ready:
+                self.logger.debug("consensus ready")
+                with self.subscribe(self.peer_pool):
 
-                        self.run_daemon_task(self._handle_import_block_loop())
-                        if self.event_bus is not None:
-                            self.run_daemon_task(self.handle_new_block_events())
+                    self.run_daemon_task(self._handle_import_block_loop())
+                    if self.event_bus is not None:
+                        self.run_daemon_task(self.handle_new_block_events())
 
-                        # this runs forever
-                        #self.run_daemon_task(self.sync_with_consensus_loop())
-                        self.run_daemon_task(self.fast_sync_main())
+                    # this runs forever
+                    self.run_daemon_task(self.sync_with_consensus_loop())
+                    #self.run_daemon_task(self.fast_sync_main())
 
-                        await self.wait(self.sync_block_conflict_with_consensus_loop(), self.cancel_token)
+                    await self.wait(self.sync_block_conflict_with_consensus_loop(), self.cancel_token)
 
-        else:
-            self.logger.error(
-                'We are not synced enough for regular chain syncer to start. Need to run fastchainsyncer first. '
-                'If this is the genesis node, make sure the genesis block timestamp is within the regular syncer range.')
 
 
     #
@@ -674,7 +676,7 @@ class RegularChainSyncer(FastChainSyncer):
                                                 request_function_parameters: Dict[str, Any],
                                                 peer: HLSPeer,
                                                 additional_candidate_peers: List[HLSPeer] = [],
-                                                num_attempts_when_no_additional_peers = 0) -> Tuple[Any, HLSPeer]:
+                                                num_attempts_when_no_additional_peers: int = 0) -> Tuple[Any, HLSPeer]:
         '''
         Cycles through peers trying to get the specified request. If it runs out of peers it will raise NoCandidatePeers().
         It returns the result and the peer who returned it. It also pops peers out of additional_candidate_peers as they are
@@ -859,6 +861,9 @@ class RegularChainSyncer(FastChainSyncer):
                 self.logger.debug("We are fully synced. Skipping sync loop and pausing before checking again.")
                 return
 
+            #TODO:REMOVE THIS IS FOR TESTING
+            sync_parameters.sync_stage = 1
+
             sync_stage = sync_parameters.sync_stage
             if sync_stage >= 4:
                 self.logger.debug("We are synced up to stage 4. Skipping sync loop and pausing before checking again.")
@@ -868,24 +873,25 @@ class RegularChainSyncer(FastChainSyncer):
                 # TODO: perform fast sync now. await the fast sync before continuing.
                 # fast sync should first check our chain head fragments to resume any previously
                 # attempted fast sync.
+                await self.fast_sync_main(sync_parameters)
                 return
 
             additional_candidate_peers = list(sync_parameters.peers_to_sync_with)
             peer_to_sync_with = additional_candidate_peers.pop()
             chronological_window_timestamp = sync_parameters.timestamp_for_chronoligcal_block_window
 
-
+            #TODO: NEED TO CONFIRM THAT THESE BLOCKS ACTUALLY BRING US TO THE CORRECT ROOT HASH
             timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(chronological_window_timestamp)
             if timestamp_block_hashes is None:
                 # we have no blocks for this window. So just request all of them automatically.
                 # This is the same for all versions of syncing
-
+                self.logger.debug("We have no blocks for this chronological block window. Requesting all blocks to add to our database.")
                 try:
-                    fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_chronological_block_hash_fragments",
+                    fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
                                                                                                  request_function_parameters = {'timestamp': chronological_window_timestamp},
                                                                                                  peer = peer_to_sync_with,
                                                                                                  additional_candidate_peers = additional_candidate_peers)
-                    fragment_bundle = cast(ChronologicalBlockHashFragmentBundle, fragment_bundle)
+                    fragment_bundle = cast(HashFragmentBundle, fragment_bundle)
 
                     required_block_hashes = cast(List[Hash32], fragment_bundle.fragments)
 
@@ -901,12 +907,12 @@ class RegularChainSyncer(FastChainSyncer):
 
                 try:
                     while True:
-                        their_fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_chronological_block_hash_fragments",
+                        their_fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
                                                                                                          request_function_parameters = {'timestamp': chronological_window_timestamp,
                                                                                                                                         'fragment_length':fragment_length},
                                                                                                          peer = peer_to_sync_with,
                                                                                                          additional_candidate_peers = additional_candidate_peers)
-                        their_fragment_bundle = cast(ChronologicalBlockHashFragmentBundle, their_fragment_bundle)
+                        their_fragment_bundle = cast(HashFragmentBundle, their_fragment_bundle)
                         their_fragment_list = their_fragment_bundle.fragments
 
                         hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
@@ -923,19 +929,19 @@ class RegularChainSyncer(FastChainSyncer):
                         # We must get these hashes from the same peer. If they don't respond here then we need to start over again.
                         if len(hash_positions_of_theirs_that_we_need) > 0:
                             their_fragment_bundle_we_need_to_add, peer_to_sync_with = await self.handle_getting_request_from_peers(
-                                                                                                     request_function_name = "get_chronological_block_hash_fragments",
+                                                                                                     request_function_name = "get_hash_fragments",
                                                                                                      request_function_parameters = {'timestamp': chronological_window_timestamp,
                                                                                                                                     'only_these_indices':list(hash_positions_of_theirs_that_we_need)},
                                                                                                      peer = peer_to_sync_with,
                                                                                                      num_attempts_when_no_additional_peers = 3)
 
-                            their_fragment_bundle_we_need_to_add = cast(ChronologicalBlockHashFragmentBundle, their_fragment_bundle_we_need_to_add)
+                            their_fragment_bundle_we_need_to_add = cast(HashFragmentBundle, their_fragment_bundle_we_need_to_add)
                             their_fragment_list_we_need_to_add = their_fragment_bundle_we_need_to_add.fragments
                             diff_verification_block_hashes.extend(their_fragment_list_we_need_to_add)
 
                         diff_verification_root_hash, _ = _make_trie_root_and_nodes(tuple(diff_verification_block_hashes))
 
-                        if diff_verification_root_hash == their_fragment_bundle.root_hash_of_just_this_chronological_block_window:
+                        if diff_verification_root_hash == their_fragment_bundle.root_hash_of_the_full_hashes:
                             self.logger.debug("Diff was correct. Syncing blocks now.")
 
                             if len(hash_positions_of_theirs_that_we_need) > 0:
@@ -974,27 +980,127 @@ class RegularChainSyncer(FastChainSyncer):
                 except NoCandidatePeers:
                     return
 
-    async def fast_sync_main(self):
-        self._fast_sync_complete.clear()
+    # If the node crashes during fast sync, we don't need to resume fast sync at the exact same root hash timestamp.
+    # This is because the vast majority of chains will be unchanged since the last timestamp. So we can just start
+    # a new sync with the timestamp of 24 or 48 hours ago, and the diff will tell us which chains have changed so that
+    # we can request them.
+    #
+    #
+    #
+    async def fast_sync_main(self, sync_parameters: SyncParameters):
         self.logger.debug('fast_sync_main starting')
-        worker_tasks = []
-        for i in range(5):
-            worker_tasks.append(self.run_task(self.fast_sync_worker()))
+        self._fast_sync_required_chain_list_idx = 0
 
-        await self.wait_all(worker_tasks)
+        fragment_length = 3
+        additional_candidate_peers = list(sync_parameters.peers_to_sync_with)
+        peer_to_sync_with = additional_candidate_peers.pop()
+        chronological_window_timestamp = sync_parameters.timestamp_for_chronoligcal_block_window
+        consensus_root_hash = sync_parameters.consensus_root_hash
+
+        # before starting workers, lets figure out which chains we already have.
+        # We can make a shared list of chains that the workers can skip
+        # Since we are syncing to a specific timestamp, if any of the nodes somehow add a new block that is older than this timestamp,
+        # then the indices here will become out of sync. We can check to see if the indices/chains are out of sync by comparing the
+        # chains that we are given with the expected fragments. If they don't match, go to the next peer. If no peers match, quit this
+        # fast sync and allow the syncer to restart the whole fast sync process. This will resume where we left off.
+        self.chain_head_db.load_saved_root_hash()
+        our_block_hashes = list(await self.chain_head_db.coro_get_head_block_hashes_list())
+
+        while self.is_operational:
+            our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
+
+            try:
+                their_fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
+                                                                                                         request_function_parameters = {'timestamp': chronological_window_timestamp,
+                                                                                                                                        'fragment_length':fragment_length,
+                                                                                                                                        'hash_type_id': 2},
+                                                                                                         peer = peer_to_sync_with,
+                                                                                                         additional_candidate_peers = additional_candidate_peers)
+            except NoCandidatePeers:
+                return
+
+            their_fragment_bundle = cast(HashFragmentBundle, their_fragment_bundle)
+            their_fragment_list = their_fragment_bundle.fragments
+
+            hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
+                                                                                            our_hash_fragments=our_fragment_list,
+                                                                                            their_hash_fragments=their_fragment_list,
+                                                                                            )
+
+            if len(our_fragment_list) > len(their_fragment_list) and len(their_fragment_list) > 0:
+                if len(hash_positions_of_ours_that_they_need) > 0:
+                    self.logger.debug("Fast sync: deleting extra chains we have that arent in the consensus db.")
+                    for idx in hash_positions_of_ours_that_they_need:
+                        chain_head_hash = our_block_hashes[idx]
+                        chain_block_hashes = await self.chaindb.coro_get_all_block_hashes_on_chain_by_head_block_hash(chain_head_hash)
+
+                        # by removing the genesis block on the chain, the vm will remove all children blocks automatically.
+                        await self.remove_block_by_hash(chain_block_hashes[0])
+
+
+            fast_sync_parameters = FastSyncParameters(their_fragment_list, list(hash_positions_of_theirs_that_we_need))
+
+            worker_tasks = []
+            num_workers = min(self._max_fast_sync_workers, len(sync_parameters.peers_to_sync_with))
+            for i in range(num_workers):
+                worker_tasks.append(self.run_task(self.fast_sync_worker(sync_parameters, fast_sync_parameters)))
+
+            await self.wait_all(worker_tasks)
+
+            resulting_chain_head_root_hash = self.chain_head_db.get_saved_root_hash()
+            if resulting_chain_head_root_hash == consensus_root_hash:
+                break
+
+            fragment_length += 1
+            if fragment_length >= 16:
+                self.logger.debug("Fast sync checked up to max fragment length and our db still incorrect.")
+                break
+
+
+
         self.logger.debug('fast_sync_main finished')
 
-    async def fast_sync_worker(self):
+        # at this point, we should check our root hash. If it is unexpected, then increase the fragment length and redo the sync within this loop.
+        # Do a max of 16 or something
+
+    async def fast_sync_worker(self, sync_parameters: SyncParameters, fast_sync_parameters: FastSyncParameters):
         self.logger.debug("fast_sync_worker started")
-        while not self._fast_sync_complete.is_set():
-            with self._fast_sync_use_shared_vars:
-                start = self._fast_sync_chain_number
+
+        expected_fragment_list = fast_sync_parameters.expected_block_hash_fragments
+        chains_that_we_need = fast_sync_parameters.chain_idx_that_we_need
+        timestamp = sync_parameters.timestamp_for_root_hash
+        additional_candidate_peers = list(sync_parameters.peers_to_sync_with)
+        peer_to_sync_with = additional_candidate_peers.pop()
+        num_chains_to_request = len(chains_that_we_need)
+
+        while self.is_operational:
+            async with self._fast_sync_use_shared_vars:
+                start = self._fast_sync_required_chain_list_idx
                 end = start + self._fast_sync_num_chains_to_request
-                self._fast_sync_chain_number = end
+                self._fast_sync_required_chain_list_idx = end
             self.logger.debug("Requesting chains from {} to {}".format(start, end))
 
+            if start >= num_chains_to_request:
+                #we have requested all of the chains already
+                break
+
+            idx_list = chains_that_we_need[start:end]
+            expected_chain_head_hash_fragments = []
+            for idx in idx_list:
+                expected_chain_head_hash_fragments.append(expected_fragment_list[idx])
+
+            chains, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "send_get_chains",
+                                                                                                     request_function_parameters = {'timestamp': timestamp,
+                                                                                                                                    'idx_list':idx_list,
+                                                                                                                                    'expected_chain_head_hash_fragments': expected_chain_head_hash_fragments},
+                                                                                                     peer = peer_to_sync_with,
+                                                                                                     additional_candidate_peers = additional_candidate_peers)
+            async with self.importing_blocks_lock:
+                for chain in chains:
+                    await self.chain.coro_import_chain(block_list=chain, save_block_head_hash_timestamp=False)
 
 
+        self.logger.debug("Worker finished getting all required chains for fast sync.")
         #raise OperationCancelled when finished to exit cleanly.
         raise OperationCancelled()
 
@@ -1031,12 +1137,12 @@ class RegularChainSyncer(FastChainSyncer):
             await self._handle_chronological_block_window(peer, cast(Dict[str, Any], msg))
         elif isinstance(cmd, commands.GetChainSegment):
             await self._handle_get_chain_segment(peer, cast(Dict[str, Any], msg))
-        elif isinstance(cmd, commands.Chain):
-            await self._handle_chain(peer, cast(Dict[str, Any], msg))
+        elif isinstance(cmd, commands.GetChains):
+            await self._handle_get_chains(peer, cast(Dict[str, Any], msg))
         elif isinstance(cmd, commands.GetBlocks):
             await self._handle_get_blocks(peer, cast(Iterable, msg))
-        elif isinstance(cmd, commands.GetChronoligcalBlockHashFragments):
-            await self._handle_get_chronological_block_hash_fragments(peer, cast(Dict[str, Any], msg))
+        elif isinstance(cmd, commands.GetHashFragments):
+            await self._handle_get_hash_fragments(peer, cast(Dict[str, Any], msg))
 
 
 
@@ -1083,7 +1189,7 @@ class RegularChainSyncer(FastChainSyncer):
         chain_segment = await self.chaindb.coro_get_blocks_on_chain(P2PBlock, msg['block_number_start'],
                                                                     msg['block_number_end'], chain_address)
 
-        peer.sub_proto.send_chain(chain_segment, True)
+        peer.sub_proto.send_blocks(chain_segment)
 
         self.logger.debug("sending chain with chain address {}".format(chain_address))
 
@@ -1108,30 +1214,25 @@ class RegularChainSyncer(FastChainSyncer):
 
             self.logger.debug("Sent peer {} the blocks they requested".format(encode_hex(peer.wallet_address)))
 
-    async def _handle_chain(self,
+    async def _handle_get_chains(self,
                             peer: HLSPeer,
                             msg: Dict[str, Any]) -> None:
-        self.logger.debug("received new chain")
-        block_list = msg['blocks']
+        self.logger.debug("received get_chains request")
+        timestamp = msg['timestamp']
+        idx_list = msg['idx_list']
 
-        # in this mode, we can only import a chain if we already have the parent,
-        # or if it starts from block 0. In both cases, we can get the chain wallet address
-        # from the parent, or from the sender of block 0
+        root_hash = await self.chain_head_db.coro_get_historical_root_hash(timestamp)
 
-        i = 1
-        for new_block in block_list:
-            if i == len(block_list):
-                propogate_to_network = True
-            else:
-                propogate_to_network = False
+        chain_head_hashes = await self.chain_head_db.coro_get_head_block_hashes_by_idx_list(idx_list, root_hash)
 
-            success = await self.handle_new_block(new_block, propogate_to_network=propogate_to_network)
-            if success == False:
-                # if one block fails to be imported, no point in importing the rest because they will fail or call this function again
-                # creating an infinite loop.
-                break
+        chains = []
+        for head_hash in chain_head_hashes:
+            chain = await self.chaindb.coro_get_all_blocks_on_chain_by_head_block_hash(head_hash, self.chain.get_vm().get_block_class())
+            chains.append(chain)
 
-            i += 1
+        peer.sub_proto.send_chains(chains)
+
+
 
     async def _handle_new_block(self, peer: HLSPeer,
                                 msg: Dict[str, Any]) -> None:
@@ -1179,44 +1280,46 @@ class RegularChainSyncer(FastChainSyncer):
         # Get the head of the chain that we have in the database
         # need this to see if we are replacing a block
         replacing_block_permitted = force_replace_existing_blocks
+        resolving_block_conflict = False
         try:
             canonical_head = self.chaindb.get_canonical_head(chain_address)
+            if not replacing_block_permitted:
+                # check to see if we are replacing a block
+                if new_block.header.block_number <= canonical_head.block_number:
+                    # it is trying to replace a block that we already have.
 
-            # check to see if we are replacing a block
-            if new_block.header.block_number <= canonical_head.block_number:
-                # it is trying to replace a block that we already have.
+                    # is it the same as the one we already have?
+                    local_block_hash = self.chaindb.get_canonical_block_hash(new_block.header.block_number, chain_address)
+                    if new_block.header.hash == local_block_hash:
+                        # we already have this block. Do nothing. Do not propogate if we already have it.
+                        self.logger.debug("We already have this block, doing nothing")
+                        return True
+                    else:
+                        # check to see if we are expecting this block because it is actually the new consensus block
+                        if self._latest_block_conflict_choices_to_change is not None:
+                            # we are actually expecting new blocks to overwrite. Lets check to see if this is one of them.
+                            new_block_conflict_choice = BlockConflictChoice(chain_address, new_block.header.block_number,
+                                                                        new_block.header.hash)
+                            if new_block_conflict_choice in self._latest_block_conflict_choices_to_change:
+                                replacing_block_permitted = True
+                                resolving_block_conflict = True
+                                self.logger.debug(
+                                    "Received a block conflict that we were expecting. going to import and replace ours.")
 
-                # is it the same as the one we already have?
-                local_block_hash = self.chaindb.get_canonical_block_hash(new_block.header.block_number, chain_address)
-                if new_block.header.hash == local_block_hash:
-                    # we already have this block. Do nothing. Do not propogate if we already have it.
-                    self.logger.debug("We already have this block, doing nothing")
-                    return True
-                else:
-                    # check to see if we are expecting this block because it is actually the new consensus block
-                    if self._latest_block_conflict_choices_to_change is not None:
-                        # we are actually expecting new blocks to overwrite. Lets check to see if this is one of them.
-                        new_block_conflict_choice = BlockConflictChoice(chain_address, new_block.header.block_number,
-                                                                    new_block.header.hash)
-                        if new_block_conflict_choice in self._latest_block_conflict_choices_to_change:
-                            replacing_block_permitted = True
-                            self.logger.debug(
-                                "Received a block conflict that we were expecting. going to import and replace ours.")
+                        if not replacing_block_permitted:
+                            # this is a conflict block. Send it to consensus and let the syncer do its thing.
+                            if not from_rpc:
+                                if not self.consensus.has_block_conflict(chain_address, new_block.header.block_number):
+                                    self.logger.debug("Received a conflicting block. sending to consensus as block conflict. Also sending our conflict block back to the peer.")
+                                    self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
 
-                    if not replacing_block_permitted:
-                        # this is a conflict block. Send it to consensus and let the syncer do its thing.
-                        if not from_rpc:
-                            if not self.consensus.has_block_conflict(chain_address, new_block.header.block_number):
-                                self.logger.debug("Received a conflicting block. sending to consensus as block conflict. Also sending our conflict block back to the peer.")
-                                self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
+                                    #lets also send this peer our conflict block to let it know that it exists.
+                                    conflict_block = self.chaindb.get_block_by_number(block_number = new_block.header.block_number,
+                                                                                      wallet_address = new_block.header.chain_address,
+                                                                                      block_class = chain.get_vm().get_block_class())
+                                    peer.sub_proto.send_new_block(cast(P2PBlock, conflict_block))
 
-                                #lets also send this peer our conflict block to let it know that it exists.
-                                conflict_block = self.chaindb.get_block_by_number(block_number = new_block.header.block_number,
-                                                                                  wallet_address = new_block.header.chain_address,
-                                                                                  block_class = chain.get_vm().get_block_class())
-                                peer.sub_proto.send_new_block(cast(P2PBlock, conflict_block))
-
-                        return False
+                            return False
 
         except CanonicalHeadNotFound:
             # we have to download the entire chain
@@ -1287,11 +1390,14 @@ class RegularChainSyncer(FastChainSyncer):
         self.logger.debug('successfully imported block')
 
         #if we replaced our own block because it was a block conflict, then we need to remove the entry from consensus now
-        if replacing_block_permitted:
+        if resolving_block_conflict:
             self.logger.debug("Succesfully replaced our block with consensus block. Deleting conflict block lookup.")
             self.consensus.remove_block_conflict(chain_wallet_address = imported_block.header.chain_address,
                                                  block_number = imported_block.header.block_number)
-            self._latest_block_conflict_choices_to_change.remove(new_block_conflict_choice)
+            try:
+                self._latest_block_conflict_choices_to_change.remove(new_block_conflict_choice)
+            except KeyError:
+                pass
 
 
         if propogate_to_network:
@@ -1304,54 +1410,60 @@ class RegularChainSyncer(FastChainSyncer):
         return True
 
 
-    async def _handle_get_chronological_block_hash_fragments(self, peer: HLSPeer, msg) -> None:
+    async def _handle_get_hash_fragments(self, peer: HLSPeer, msg) -> None:
         self.logger.debug("Received request to send chronological block hash fragments.")
 
         timestamp = msg['timestamp']
         fragment_length = msg['fragment_length']
+        hash_type_id = msg['hash_type_id']
 
-        if msg['entire_window']:
-            timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(timestamp)
+        if hash_type_id == 1:
+            if msg['entire_window']:
+                timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(timestamp)
 
-            if timestamp_block_hashes is None:
-                    peer.sub_proto.send_chronological_block_hash_fragments(fragments = [],
-                                                                           timestamp = timestamp,
-                                                                           fragment_length = fragment_length,
-                                                                           root_hash_of_just_this_chronological_block_window=BLANK_ROOT_HASH)
+                if timestamp_block_hashes is None:
+                        peer.sub_proto.send_hash_fragments(fragments = [],
+                                                           timestamp = timestamp,
+                                                           fragment_length = fragment_length,
+                                                           root_hash_of_just_this_chronological_block_window=BLANK_ROOT_HASH,
+                                                           hash_type_id=hash_type_id)
 
+                else:
+                    block_hashes = [x[1] for x in timestamp_block_hashes]
+                    fragment_list = prepare_hash_fragments(block_hashes, fragment_length)
+                    trie_root, _ = _make_trie_root_and_nodes(tuple(block_hashes))
+                    peer.sub_proto.send_hash_fragments(fragments=fragment_list,
+                                                       timestamp=timestamp,
+                                                       fragment_length=fragment_length,
+                                                       root_hash_of_just_this_chronological_block_window=cast(Hash32, trie_root),
+                                                       hash_type_id=hash_type_id)
+
+                    # we also have to save the info in the peer so that we know what they are talking about later when they reply asking for hashes
+                    peer.additive_sync_request_history = AdditiveSyncRequestHistory(chronological_window_timestamp = timestamp,
+                                                                                    fragment_length = fragment_length,
+                                                                                    root_hash_of_just_this_chronological_block_window = cast(Hash32, trie_root),
+                                                                                    local_hashes_sent_to_peer = block_hashes)
             else:
-                block_hashes = [x[1] for x in timestamp_block_hashes]
-                fragment_list = prepare_hash_fragments(block_hashes, fragment_length)
-                trie_root, _ = _make_trie_root_and_nodes(tuple(block_hashes))
-                peer.sub_proto.send_chronological_block_hash_fragments(fragments=fragment_list,
-                                                                       timestamp=timestamp,
-                                                                       fragment_length=fragment_length,
-                                                                       root_hash_of_just_this_chronological_block_window=cast(Hash32, trie_root))
+                #if they are requesting hashes of specified indices, then they are referring to the hashes we already sent them.
+                if peer.additive_sync_request_history is None:
+                    self.logger.error("Peer asked for hash fragments relative to the list we sent, but the peer object doesn't contain any history.")
+                    peer.sub_proto.send_hash_fragments(fragments=[],
+                                                       timestamp=timestamp,
+                                                       fragment_length=fragment_length,
+                                                       root_hash_of_just_this_chronological_block_window=BLANK_ROOT_HASH,
+                                                       hash_type_id=hash_type_id)
+                else:
+                    self.logger.debug("Sending peer hash fragments relative to the list we sent earlier.")
+                    hashes_to_send = []
+                    for index in msg['only_these_indices']:
+                        hashes_to_send.append(peer.additive_sync_request_history.local_hashes_sent_to_peer[index])
 
-                # we also have to save the info in the peer so that we know what they are talking about later when they reply asking for hashes
-                peer.additive_sync_request_history = AdditiveSyncRequestHistory(chronological_window_timestamp = timestamp,
-                                                                                fragment_length = fragment_length,
-                                                                                root_hash_of_just_this_chronological_block_window = cast(Hash32, trie_root),
-                                                                                local_hashes_sent_to_peer = block_hashes)
-        else:
-            #if they are requesting hashes of specified indices, then they are referring to the hashes we already sent them.
-            if peer.additive_sync_request_history is None:
-                self.logger.error("Peer asked for hash fragments relative to the list we sent, but the peer object doesn't contain any history.")
-                peer.sub_proto.send_chronological_block_hash_fragments(fragments=[],
-                                                                       timestamp=timestamp,
-                                                                       fragment_length=fragment_length,
-                                                                       root_hash_of_just_this_chronological_block_window=BLANK_ROOT_HASH)
-            else:
-                self.logger.debug("Sending peer hash fragments relative to the list we sent earlier.")
-                hashes_to_send = []
-                for index in msg['only_these_indices']:
-                    hashes_to_send.append(peer.additive_sync_request_history.local_hashes_sent_to_peer[index])
-
-                fragment_list = prepare_hash_fragments(hashes_to_send, fragment_length)
-                peer.sub_proto.send_chronological_block_hash_fragments(fragments=fragment_list,
-                                                                       timestamp=timestamp,
-                                                                       fragment_length=fragment_length,
-                                                                       root_hash_of_just_this_chronological_block_window=peer.additive_sync_request_history.root_hash_of_just_this_chronological_block_window)
+                    fragment_list = prepare_hash_fragments(hashes_to_send, fragment_length)
+                    peer.sub_proto.send_hash_fragments(fragments=fragment_list,
+                                                       timestamp=timestamp,
+                                                       fragment_length=fragment_length,
+                                                       root_hash_of_just_this_chronological_block_window=peer.additive_sync_request_history.root_hash_of_just_this_chronological_block_window,
+                                                       hash_type_id=hash_type_id)
 
 
 
