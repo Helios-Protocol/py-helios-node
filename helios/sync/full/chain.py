@@ -120,7 +120,7 @@ from hvm.db.trie import _make_trie_root_and_nodes
 from helios.utils.sync import get_missing_hash_locations_bytes
 
 from helios.protocol.common.datastructures import (
-    AdditiveSyncRequestHistory,
+    HashFragmentRequestHistory,
     HashFragmentBundle,
     ChainRequestInfo,
     SyncParameters,
@@ -1004,7 +1004,7 @@ class RegularChainSyncer(FastChainSyncer):
         # chains that we are given with the expected fragments. If they don't match, go to the next peer. If no peers match, quit this
         # fast sync and allow the syncer to restart the whole fast sync process. This will resume where we left off.
         self.chain_head_db.load_saved_root_hash()
-        our_block_hashes = list(await self.chain_head_db.coro_get_head_block_hashes_list())
+        our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list()
 
         while self.is_operational:
             our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
@@ -1019,6 +1019,8 @@ class RegularChainSyncer(FastChainSyncer):
             except NoCandidatePeers:
                 return
 
+
+
             their_fragment_bundle = cast(HashFragmentBundle, their_fragment_bundle)
             their_fragment_list = their_fragment_bundle.fragments
 
@@ -1026,6 +1028,11 @@ class RegularChainSyncer(FastChainSyncer):
                                                                                             our_hash_fragments=our_fragment_list,
                                                                                             their_hash_fragments=their_fragment_list,
                                                                                             )
+
+            print('AAAAAAAA')
+            print(their_fragment_list)
+            print(hash_positions_of_theirs_that_we_need)
+            print('BBBBBB')
 
             if len(our_fragment_list) > len(their_fragment_list) and len(their_fragment_list) > 0:
                 if len(hash_positions_of_ours_that_they_need) > 0:
@@ -1418,6 +1425,8 @@ class RegularChainSyncer(FastChainSyncer):
         hash_type_id = msg['hash_type_id']
 
         if hash_type_id == 1:
+
+            #They want the hash fragments of all of the blocks in a chronological window
             if msg['entire_window']:
                 timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(timestamp)
 
@@ -1425,7 +1434,7 @@ class RegularChainSyncer(FastChainSyncer):
                         peer.sub_proto.send_hash_fragments(fragments = [],
                                                            timestamp = timestamp,
                                                            fragment_length = fragment_length,
-                                                           root_hash_of_just_this_chronological_block_window=BLANK_ROOT_HASH,
+                                                           hexary_trie_root_hash_of_complete_window=BLANK_ROOT_HASH,
                                                            hash_type_id=hash_type_id)
 
                 else:
@@ -1435,38 +1444,89 @@ class RegularChainSyncer(FastChainSyncer):
                     peer.sub_proto.send_hash_fragments(fragments=fragment_list,
                                                        timestamp=timestamp,
                                                        fragment_length=fragment_length,
-                                                       root_hash_of_just_this_chronological_block_window=cast(Hash32, trie_root),
+                                                       hexary_trie_root_hash_of_complete_window=cast(Hash32, trie_root),
                                                        hash_type_id=hash_type_id)
 
                     # we also have to save the info in the peer so that we know what they are talking about later when they reply asking for hashes
-                    peer.additive_sync_request_history = AdditiveSyncRequestHistory(chronological_window_timestamp = timestamp,
-                                                                                    fragment_length = fragment_length,
-                                                                                    root_hash_of_just_this_chronological_block_window = cast(Hash32, trie_root),
-                                                                                    local_hashes_sent_to_peer = block_hashes)
+                    peer.hash_fragment_request_history_type_1 = HashFragmentRequestHistory(timestamp= timestamp,
+                                                                                           fragment_length = fragment_length,
+                                                                                           hexary_trie_root_hash_of_complete_window= cast(Hash32, trie_root),
+                                                                                           local_hashes_sent_to_peer = block_hashes)
             else:
                 #if they are requesting hashes of specified indices, then they are referring to the hashes we already sent them.
-                if peer.additive_sync_request_history is None:
-                    self.logger.error("Peer asked for hash fragments relative to the list we sent, but the peer object doesn't contain any history.")
+                if peer.hash_fragment_request_history_type_1 is None:
+                    self.logger.error("Peer asked for hash fragments type 1 relative to the list we sent, but the peer object doesn't contain any history.")
                     peer.sub_proto.send_hash_fragments(fragments=[],
                                                        timestamp=timestamp,
                                                        fragment_length=fragment_length,
-                                                       root_hash_of_just_this_chronological_block_window=BLANK_ROOT_HASH,
+                                                       hexary_trie_root_hash_of_complete_window=BLANK_ROOT_HASH,
                                                        hash_type_id=hash_type_id)
                 else:
-                    self.logger.debug("Sending peer hash fragments relative to the list we sent earlier.")
+                    self.logger.debug("Sending peer hash fragments type 1 relative to the list we sent earlier.")
                     hashes_to_send = []
                     for index in msg['only_these_indices']:
-                        hashes_to_send.append(peer.additive_sync_request_history.local_hashes_sent_to_peer[index])
+                        hashes_to_send.append(peer.hash_fragment_request_history_type_1.local_hashes_sent_to_peer[index])
 
                     fragment_list = prepare_hash_fragments(hashes_to_send, fragment_length)
                     peer.sub_proto.send_hash_fragments(fragments=fragment_list,
                                                        timestamp=timestamp,
                                                        fragment_length=fragment_length,
-                                                       root_hash_of_just_this_chronological_block_window=peer.additive_sync_request_history.root_hash_of_just_this_chronological_block_window,
+                                                       hexary_trie_root_hash_of_complete_window=peer.hash_fragment_request_history_type_1.hexary_trie_root_hash_of_complete_window,
                                                        hash_type_id=hash_type_id)
 
+        elif hash_type_id == 2:
+            #They want the hash fragments of all of the head blocks of the chains.
+
+            chain_head_root_hash = await self.chain_head_db.coro_get_historical_root_hash(timestamp)
+            self.logger.error("Got a request for hash fragments type 2")
+            if msg['entire_window']:
+
+                block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list(chain_head_root_hash)
 
 
+                if len(block_hashes) == 0:
+                    peer.sub_proto.send_hash_fragments(fragments=[],
+                                                       timestamp=timestamp,
+                                                       fragment_length=fragment_length,
+                                                       hexary_trie_root_hash_of_complete_window=BLANK_ROOT_HASH,
+                                                       hash_type_id=hash_type_id)
+                else:
+                    fragment_list = prepare_hash_fragments(block_hashes, fragment_length)
+                    trie_root, _ = _make_trie_root_and_nodes(tuple(block_hashes))
+                    peer.sub_proto.send_hash_fragments(fragments=fragment_list,
+                                                       timestamp=timestamp,
+                                                       fragment_length=fragment_length,
+                                                       hexary_trie_root_hash_of_complete_window=cast(Hash32, trie_root),
+                                                       hash_type_id=hash_type_id)
+
+                    # we also have to save the info in the peer so that we know what they are talking about later when they reply asking for hashes
+                    peer.hash_fragment_request_history_type_2 = HashFragmentRequestHistory(
+                        timestamp=timestamp,
+                        fragment_length=fragment_length,
+                        hexary_trie_root_hash_of_complete_window=cast(Hash32, trie_root),
+                        local_hashes_sent_to_peer=block_hashes)
+
+            else:
+                # if they are requesting hashes of specified indices, then they are referring to the hashes we already sent them.
+                if peer.hash_fragment_request_history_type_2 is None:
+                    self.logger.error("Peer asked for hash fragments type 2 relative to the list we sent, but the peer object doesn't contain any history.")
+                    peer.sub_proto.send_hash_fragments(fragments=[],
+                                                       timestamp=timestamp,
+                                                       fragment_length=fragment_length,
+                                                       hexary_trie_root_hash_of_complete_window=BLANK_ROOT_HASH,
+                                                       hash_type_id=hash_type_id)
+                else:
+                    self.logger.debug("Sending peer hash fragments type 2 relative to the list we sent earlier.")
+                    hashes_to_send = []
+                    for index in msg['only_these_indices']:
+                        hashes_to_send.append(peer.hash_fragment_request_history_type_2.local_hashes_sent_to_peer[index])
+
+                    fragment_list = prepare_hash_fragments(hashes_to_send, fragment_length)
+                    peer.sub_proto.send_hash_fragments(fragments=fragment_list,
+                                                       timestamp=timestamp,
+                                                       fragment_length=fragment_length,
+                                                       hexary_trie_root_hash_of_complete_window=peer.hash_fragment_request_history_type_2.hexary_trie_root_hash_of_complete_window,
+                                                       hash_type_id=hash_type_id)
 
 
     #

@@ -82,4 +82,4 @@ class ChainHeadDBProxy(BaseProxy):
     load_chronological_block_window = sync_method('load_chronological_block_window')
     get_dense_historical_root_hashes = sync_method('get_dense_historical_root_hashes')
     get_head_block_hashes_by_idx_list = sync_method('get_head_block_hashes_by_idx_list')
-    get_saved_root_hash  = sync_method('get_head_block_hashes_by_idx_list')
+    get_saved_root_hash  = sync_method('get_saved_root_hash')

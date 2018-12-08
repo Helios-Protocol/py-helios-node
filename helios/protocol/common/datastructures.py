@@ -12,17 +12,16 @@ from helios.protocol.hls.sync import get_sync_stage_for_historical_root_hash_tim
 if TYPE_CHECKING:
     from helios.protocol.common.peer import HLSPeer
 
-class AdditiveSyncRequestHistory:
+class HashFragmentRequestHistory:
     def __init__(self,
-                 chronological_window_timestamp: Timestamp,
+                 timestamp: Timestamp,
                  fragment_length: int,
-                 root_hash_of_just_this_chronological_block_window: Hash32,
+                 hexary_trie_root_hash_of_complete_window: Hash32,
                  local_hashes_sent_to_peer: List[Union[Timestamp, Hash32]],
-
-                ):
-        self.chronological_window_timestamp: Timestamp = chronological_window_timestamp
+                 ):
+        self.timestamp: Timestamp = timestamp
         self.fragment_length: int = fragment_length
-        self.root_hash_of_just_this_chronological_block_window: Hash32 = root_hash_of_just_this_chronological_block_window
+        self.hexary_trie_root_hash_of_complete_window: Hash32 = hexary_trie_root_hash_of_complete_window
         self.local_hashes_sent_to_peer: List[Union[Timestamp, Hash32]] = local_hashes_sent_to_peer
 
 

@@ -314,13 +314,13 @@ class HLSProtocol(Protocol):
                             fragments: List[bytes],
                             timestamp: Timestamp,
                             fragment_length: int,
-                            root_hash_of_just_this_chronological_block_window: Hash32,
+                            hexary_trie_root_hash_of_complete_window: Hash32,
                             hash_type_id: int) -> None:
         cmd = SendHashFragments(self.cmd_id_offset)
         data = {'fragments': fragments,
                 'timestamp': timestamp,
                 'fragment_length': fragment_length,
-                'root_hash_of_the_full_hashes': root_hash_of_just_this_chronological_block_window,
+                'root_hash_of_the_full_hashes': hexary_trie_root_hash_of_complete_window,
                 'hash_type_id': hash_type_id}
         header, body = cmd.encode(data)
         self.send(header, body)

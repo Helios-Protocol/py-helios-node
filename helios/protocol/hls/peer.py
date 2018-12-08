@@ -49,7 +49,7 @@ from .handlers import HLSExchangeHandler
 
 from eth_typing import Address
 
-from helios.protocol.common.datastructures import AdditiveSyncRequestHistory
+from helios.protocol.common.datastructures import HashFragmentRequestHistory
 
 class HLSPeer(BaseChainPeer):
     max_headers_fetch = MAX_HEADERS_FETCH
@@ -67,7 +67,8 @@ class HLSPeer(BaseChainPeer):
     chain_head_root_hashes = None
     node_type = None
 
-    additive_sync_request_history: AdditiveSyncRequestHistory = None
+    hash_fragment_request_history_type_1: HashFragmentRequestHistory = None
+    hash_fragment_request_history_type_2: HashFragmentRequestHistory = None
 
     def get_extra_stats(self) -> List[str]:
         stats_pairs = self.requests.get_stats().items()
