@@ -384,7 +384,7 @@ class AccountDB(BaseAccountDB):
         
         
         #self.logger.debug(new_receivable_transactions)
-        
+        self.logger.debug("Adding receivable transaction {} to account {}".format(encode_hex(transaction_hash), encode_hex(address)))
         self._set_account(address, account.copy(receivable_transactions=new_receivable_transactions))
 
         #finally, if this is a smart contract, lets add it to the list of smart contracts with pending transactions
@@ -398,7 +398,7 @@ class AccountDB(BaseAccountDB):
         validate_canonical_address(address, title="Storage Address")
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         
-        self.logger.debug("deleting receivable tx {}".format(encode_hex(transaction_hash)))
+        self.logger.debug("deleting receivable tx {} from account {}".format(encode_hex(transaction_hash), encode_hex(address)))
         account = self._get_account(address)
         receivable_transactions = list(self.get_receivable_transactions(address))
         i = 0

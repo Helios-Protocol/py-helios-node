@@ -24,7 +24,7 @@ from hvm.exceptions import (
     ReplacingBlocksNotAllowed,
     ParentNotFound,
     ValidationError,
-)
+    TriedDeletingGenesisBlock)
 
 from hp2p.constants import (
     FAST_SYNC_CUTOFF_PERIOD,
@@ -627,6 +627,7 @@ class RegularChainSyncer(FastChainSyncer):
     importing_blocks_lock = asyncio.Lock()
     num_blocks_to_request_at_once = 10000
     _max_fast_sync_workers = 5
+    _latest_sync_stage = 0
 
     # This is the current index in the list of chains that we require. This may not correspond to the index of the chain.
     # For example, if we need the chains: [0,4,6,76,192], then when _fast_sync_required_chain_list_idx = 2 corresponds to chain 6.
@@ -690,6 +691,8 @@ class RegularChainSyncer(FastChainSyncer):
         while True:
             try:
                 result = await getattr(peer.requests, request_function_name)(**request_function_parameters)
+            except AttributeError as e:
+                raise(e)
             except AlreadyWaiting:
                 # put this peer at the beginning of the list and pop the next peer from the end to try with
                 additional_candidate_peers.insert(0, peer)
@@ -751,8 +754,10 @@ class RegularChainSyncer(FastChainSyncer):
             chain = self.node.get_new_chain()
             try:
                 await chain.coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(block_hash)
-            except Exception:
-                pass
+            except TriedDeletingGenesisBlock as e:
+                raise e
+            except Exception as e:
+                raise e
 
     #
     # Loops
@@ -787,22 +792,23 @@ class RegularChainSyncer(FastChainSyncer):
                 new_block_queue_item = await self.wait(self._new_blocks_to_import.get())
             except OperationCancelled:
                 break
-            self.logger.debug('found new block to import in queue. sending to handling function')
-            # we await for the import block function here to make sure that we are only importing one block at a time.
-            # later we will add multiprocessing with multiple instances of this object to import in parallel.
-            try:
-                async with self.importing_blocks_lock:
-                    await self.handle_new_block(new_block=new_block_queue_item.new_block,
-                                                peer=new_block_queue_item.peer,
-                                                propogate_to_network=new_block_queue_item.propogate_to_network,
-                                                from_rpc=new_block_queue_item.from_rpc)
-            except OperationCancelled:
-                # Silently swallow OperationCancelled exceptions because we run unsupervised (i.e.
-                # with ensure_future()). Our caller will also get an OperationCancelled anyway, and
-                # there it will be handled.
-                pass
-            except Exception:
-                self.logger.exception("Unexpected error when importing block from %s", new_block_queue_item.peer)
+            if self._latest_sync_stage >= 3:
+                self.logger.debug('found new block to import in queue. sending to handling function')
+                # we await for the import block function here to make sure that we are only importing one block at a time.
+                # later we will add multiprocessing with multiple instances of this object to import in parallel.
+                try:
+                    async with self.importing_blocks_lock:
+                        await self.handle_new_block(new_block=new_block_queue_item.new_block,
+                                                    peer=new_block_queue_item.peer,
+                                                    propogate_to_network=new_block_queue_item.propogate_to_network,
+                                                    from_rpc=new_block_queue_item.from_rpc)
+                except OperationCancelled:
+                    # Silently swallow OperationCancelled exceptions because we run unsupervised (i.e.
+                    # with ensure_future()). Our caller will also get an OperationCancelled anyway, and
+                    # there it will be handled.
+                    pass
+                except Exception:
+                    self.logger.exception("Unexpected error when importing block from %s", new_block_queue_item.peer)
 
     async def sync_with_consensus_loop(self):
         '''
@@ -859,20 +865,16 @@ class RegularChainSyncer(FastChainSyncer):
             fragment_length = 3
             if sync_parameters is None:
                 self.logger.debug("We are fully synced. Skipping sync loop and pausing before checking again.")
+                self._latest_sync_stage = 4
                 return
 
-            #TODO:REMOVE THIS IS FOR TESTING
-            sync_parameters.sync_stage = 1
-
             sync_stage = sync_parameters.sync_stage
+            self._latest_sync_stage = sync_stage
             if sync_stage >= 4:
                 self.logger.debug("We are synced up to stage 4. Skipping sync loop and pausing before checking again.")
                 return
 
             if sync_stage == 1:
-                # TODO: perform fast sync now. await the fast sync before continuing.
-                # fast sync should first check our chain head fragments to resume any previously
-                # attempted fast sync.
                 await self.fast_sync_main(sync_parameters)
                 return
 
@@ -958,12 +960,17 @@ class RegularChainSyncer(FastChainSyncer):
                                     block_hash = our_block_hashes[idx]
                                     if sync_stage <= 2:
                                         # We need to delete any blocks that they do not have, this will bring us in line with consensus.
-                                        await self.remove_block_by_hash(block_hash)
+                                        try:
+                                            self.logger.debug("Deleting chronological block that is not in consensus.")
+                                            await self.remove_block_by_hash(block_hash)
+                                        except TriedDeletingGenesisBlock:
+                                            self.logger.debug("The consensus blockchain database has a different genesis block. This should never happen.")
+                                            return
                                     else:
                                         # At this stage of syncing, we should send them the blocks they don't have so they can add them too.
                                         for peer in sync_parameters.peers_to_sync_with:
                                             try:
-                                                block = await self.chaindb.coro_get_block_by_hash(block_hash, self.chain.get_vm().get_block_class())
+                                                block = await self.chaindb.coro_get_block_by_hash(block_hash, P2PBlock)
                                                 peer.sub_proto.send_new_block(block)
                                             except Exception:
                                                 pass
@@ -989,12 +996,13 @@ class RegularChainSyncer(FastChainSyncer):
     #
     async def fast_sync_main(self, sync_parameters: SyncParameters):
         self.logger.debug('fast_sync_main starting')
-        self._fast_sync_required_chain_list_idx = 0
+
 
         fragment_length = 3
         additional_candidate_peers = list(sync_parameters.peers_to_sync_with)
         peer_to_sync_with = additional_candidate_peers.pop()
         chronological_window_timestamp = sync_parameters.timestamp_for_chronoligcal_block_window
+        historical_root_hash_timestamp = sync_parameters.timestamp_for_root_hash
         consensus_root_hash = sync_parameters.consensus_root_hash
 
         # before starting workers, lets figure out which chains we already have.
@@ -1003,10 +1011,14 @@ class RegularChainSyncer(FastChainSyncer):
         # then the indices here will become out of sync. We can check to see if the indices/chains are out of sync by comparing the
         # chains that we are given with the expected fragments. If they don't match, go to the next peer. If no peers match, quit this
         # fast sync and allow the syncer to restart the whole fast sync process. This will resume where we left off.
-        self.chain_head_db.load_saved_root_hash()
-        our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list()
+
 
         while self.is_operational:
+            self.chain_head_db.load_saved_root_hash()
+            our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list()
+
+            self._fast_sync_required_chain_list_idx = 0
+
             our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
 
             try:
@@ -1020,7 +1032,6 @@ class RegularChainSyncer(FastChainSyncer):
                 return
 
 
-
             their_fragment_bundle = cast(HashFragmentBundle, their_fragment_bundle)
             their_fragment_list = their_fragment_bundle.fragments
 
@@ -1029,26 +1040,14 @@ class RegularChainSyncer(FastChainSyncer):
                                                                                             their_hash_fragments=their_fragment_list,
                                                                                             )
 
-            print('AAAAAAAA')
-            print(their_fragment_list)
-            print(hash_positions_of_theirs_that_we_need)
-            print('BBBBBB')
 
-            if len(our_fragment_list) > len(their_fragment_list) and len(their_fragment_list) > 0:
-                if len(hash_positions_of_ours_that_they_need) > 0:
-                    self.logger.debug("Fast sync: deleting extra chains we have that arent in the consensus db.")
-                    for idx in hash_positions_of_ours_that_they_need:
-                        chain_head_hash = our_block_hashes[idx]
-                        chain_block_hashes = await self.chaindb.coro_get_all_block_hashes_on_chain_by_head_block_hash(chain_head_hash)
-
-                        # by removing the genesis block on the chain, the vm will remove all children blocks automatically.
-                        await self.remove_block_by_hash(chain_block_hashes[0])
 
 
             fast_sync_parameters = FastSyncParameters(their_fragment_list, list(hash_positions_of_theirs_that_we_need))
 
             worker_tasks = []
             num_workers = min(self._max_fast_sync_workers, len(sync_parameters.peers_to_sync_with))
+            self.logger.debug("Creating {} workers. {}, {}".format(num_workers, self._max_fast_sync_workers, len(sync_parameters.peers_to_sync_with)))
             for i in range(num_workers):
                 worker_tasks.append(self.run_task(self.fast_sync_worker(sync_parameters, fast_sync_parameters)))
 
@@ -1058,12 +1057,55 @@ class RegularChainSyncer(FastChainSyncer):
             if resulting_chain_head_root_hash == consensus_root_hash:
                 break
 
+
+            # Now that we have given the system a chance to update chain differences, we may be left with additional
+            # chains that we have that they don't have. Lets delete them.
+            # TODO: before deleting blocks, get all children chains and add them to the chains we need to request.
+            # Actually we don't really need to do this. It will just request those on the next loop...
+            # This is because when blocks are deleted,
+            # Also, only delete if we have more chains then them. This will work if when importing a chain, we delete any
+            # additional blocks we have that arent on the imported chain. If our chain is 1,2,3,4,5, and we import
+            # 1,2,3, but they are the same as ours, delete 4,5
+            if len(our_fragment_list) >= len(their_fragment_list) and len(their_fragment_list) > 0:
+
+                self.chain_head_db.load_saved_root_hash()
+                our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list()
+
+                self._fast_sync_required_chain_list_idx = 0
+
+                our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
+
+                hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
+                                                                                                    our_hash_fragments=our_fragment_list,
+                                                                                                    their_hash_fragments=their_fragment_list,
+                                                                                                )
+
+                if len(hash_positions_of_ours_that_they_need) > 0:
+                    self.logger.debug("Fast sync: deleting chains we have that are not in consensus.")
+                    for idx in hash_positions_of_ours_that_they_need:
+                        chain_head_hash = our_block_hashes[idx]
+                        chain_block_hashes = await self.chaindb.coro_get_all_block_hashes_on_chain_by_head_block_hash(
+                            chain_head_hash)
+
+                        # by removing the genesis block on the chain, the vm will remove all children blocks automatically.
+                        # But if this is the genesis chain then we cannot delete the first block, must go for the 2nd
+                        try:
+                            await self.remove_block_by_hash(chain_block_hashes[0])
+                        except TriedDeletingGenesisBlock:
+                            try:
+                                await self.remove_block_by_hash(chain_block_hashes[1])
+                            except KeyError:
+                                pass
+
+
             fragment_length += 1
             if fragment_length >= 16:
                 self.logger.debug("Fast sync checked up to max fragment length and our db still incorrect.")
                 break
 
 
+        final_root_hash = self.chain_head_db.get_saved_root_hash()
+        await self.chain_head_db.coro_initialize_historical_root_hashes(final_root_hash, historical_root_hash_timestamp)
 
         self.logger.debug('fast_sync_main finished')
 
@@ -1096,20 +1138,37 @@ class RegularChainSyncer(FastChainSyncer):
             for idx in idx_list:
                 expected_chain_head_hash_fragments.append(expected_fragment_list[idx])
 
-            chains, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "send_get_chains",
+            chains, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_chains",
                                                                                                      request_function_parameters = {'timestamp': timestamp,
                                                                                                                                     'idx_list':idx_list,
                                                                                                                                     'expected_chain_head_hash_fragments': expected_chain_head_hash_fragments},
                                                                                                      peer = peer_to_sync_with,
                                                                                                      additional_candidate_peers = additional_candidate_peers)
-            async with self.importing_blocks_lock:
-                for chain in chains:
-                    await self.chain.coro_import_chain(block_list=chain, save_block_head_hash_timestamp=False)
+
+            await self.handle_priority_import_chains(chains)
 
 
         self.logger.debug("Worker finished getting all required chains for fast sync.")
         #raise OperationCancelled when finished to exit cleanly.
         raise OperationCancelled()
+
+    async def handle_priority_import_chains(self, chains: List[List[P2PBlock]], save_block_head_hash_timestamp:bool =False, allow_replacement:bool = True) -> None:
+        async with self.importing_blocks_lock:
+            chain = self.node.get_new_chain()
+            for block_chain in chains:
+                try:
+                    await chain.coro_import_chain(block_list=block_chain, save_block_head_hash_timestamp=save_block_head_hash_timestamp, allow_replacement = allow_replacement)
+                except ReplacingBlocksNotAllowed:
+                    self.logger.debug('ReplacingBlocksNotAllowed error when importing chain.')
+                except ParentNotFound:
+                    self.logger.debug('ParentNotFound error when importing chain.')
+                except ValidationError as e:
+                    self.logger.debug('ValidationError error when importing chain. Error: {}'.format(e))
+                except ValueError as e:
+                    self.logger.debug('ValueError error when importing chain. Error: {}'.format(e))
+                except Exception as e:
+                    self.logger.error('tried to import a chain and got error {}'.format(e))
+
 
 
 
@@ -1136,20 +1195,22 @@ class RegularChainSyncer(FastChainSyncer):
     #
     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
-        if isinstance(cmd, commands.NewBlock):
-            await self._handle_new_block(peer, cast(Dict[str, Any], msg))
-        elif isinstance(cmd, commands.GetChronologicalBlockWindow):
-            await self._handle_get_chronological_block_window(peer, cast(Dict[str, Any], msg))
-        elif isinstance(cmd, commands.ChronologicalBlockWindow):
-            await self._handle_chronological_block_window(peer, cast(Dict[str, Any], msg))
-        elif isinstance(cmd, commands.GetChainSegment):
-            await self._handle_get_chain_segment(peer, cast(Dict[str, Any], msg))
-        elif isinstance(cmd, commands.GetChains):
-            await self._handle_get_chains(peer, cast(Dict[str, Any], msg))
-        elif isinstance(cmd, commands.GetBlocks):
-            await self._handle_get_blocks(peer, cast(Iterable, msg))
-        elif isinstance(cmd, commands.GetHashFragments):
-            await self._handle_get_hash_fragments(peer, cast(Dict[str, Any], msg))
+        if self._latest_sync_stage >= 2:
+            if isinstance(cmd, commands.GetChronologicalBlockWindow):
+                await self._handle_get_chronological_block_window(peer, cast(Dict[str, Any], msg))
+            elif isinstance(cmd, commands.ChronologicalBlockWindow):
+                await self._handle_chronological_block_window(peer, cast(Dict[str, Any], msg))
+            elif isinstance(cmd, commands.GetChainSegment):
+                await self._handle_get_chain_segment(peer, cast(Dict[str, Any], msg))
+            elif isinstance(cmd, commands.GetChains):
+                await self._handle_get_chains(peer, cast(Dict[str, Any], msg))
+            elif isinstance(cmd, commands.GetBlocks):
+                await self._handle_get_blocks(peer, cast(Iterable, msg))
+            elif isinstance(cmd, commands.GetHashFragments):
+                await self._handle_get_hash_fragments(peer, cast(Dict[str, Any], msg))
+            elif isinstance(cmd, commands.NewBlock):
+                if self._latest_sync_stage >= 3:
+                    await self._handle_new_block(peer, cast(Dict[str, Any], msg))
 
 
 
@@ -1234,7 +1295,7 @@ class RegularChainSyncer(FastChainSyncer):
 
         chains = []
         for head_hash in chain_head_hashes:
-            chain = await self.chaindb.coro_get_all_blocks_on_chain_by_head_block_hash(head_hash, self.chain.get_vm().get_block_class())
+            chain = await self.chaindb.coro_get_all_blocks_on_chain_by_head_block_hash(head_hash, P2PBlock)
             chains.append(chain)
 
         peer.sub_proto.send_chains(chains)
@@ -1360,6 +1421,7 @@ class RegularChainSyncer(FastChainSyncer):
             #                                    wallet_address = chain_address,
             #                                    allow_replacement = replacing_block_permitted)
 
+            #todo: make this async
             imported_block = chain.import_block(new_block,
                                                 wallet_address=chain_address,
                                                 allow_replacement=replacing_block_permitted,
@@ -1424,6 +1486,8 @@ class RegularChainSyncer(FastChainSyncer):
         fragment_length = msg['fragment_length']
         hash_type_id = msg['hash_type_id']
 
+        self.logger.debug("Got a request for hash fragments type {} with fragment length {} for timestamp {}".format(hash_type_id, fragment_length, timestamp))
+
         if hash_type_id == 1:
 
             #They want the hash fragments of all of the blocks in a chronological window
@@ -1478,11 +1542,10 @@ class RegularChainSyncer(FastChainSyncer):
             #They want the hash fragments of all of the head blocks of the chains.
 
             chain_head_root_hash = await self.chain_head_db.coro_get_historical_root_hash(timestamp)
-            self.logger.error("Got a request for hash fragments type 2")
+
             if msg['entire_window']:
 
                 block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list(chain_head_root_hash)
-
 
                 if len(block_hashes) == 0:
                     peer.sub_proto.send_hash_fragments(fragments=[],

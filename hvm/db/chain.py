@@ -161,6 +161,10 @@ class BaseChainDB(metaclass=ABCMeta):
     def get_all_block_hashes_on_chain(self, chain_address: Address) -> List[Hash32]:
         raise NotImplementedError("ChainDB classes must implement this method")
 
+    @abstractmethod
+    def is_in_canonical_chain(self, block_hash: Hash32) -> bool:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
     #
     # Header API
     #
@@ -319,6 +323,23 @@ class ChainDB(BaseChainDB):
             raise HeaderNotFound(
                 "No header found on the canonical chain {} with number {}".format(wallet_address, block_number)
             )
+
+    def remove_block_from_canonical_block_hash_lookup(self, block_number: BlockNumber, wallet_address = None) -> Hash32:
+        '''
+        Deletes the block number from the get_canonical_block_hash lookup
+        :param block_number:
+        :param wallet_address:
+        :return:
+        '''
+        if wallet_address is None:
+            wallet_address = self.wallet_address
+        validate_uint256(block_number, title="Block Number")
+        number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(wallet_address, block_number)
+        try:
+            del(self.db[number_to_hash_key])
+        except KeyError:
+            pass
+
 
     def get_canonical_block_header_by_number(self, block_number: BlockNumber, wallet_address: Address = None) -> BlockHeader:
         """
@@ -501,6 +522,27 @@ class ChainDB(BaseChainDB):
 
             del(self.db[SchemaV1.make_canonical_head_hash_lookup_key(wallet_address)])
 
+    def is_in_canonical_chain(self, block_hash: Hash32) -> bool:
+        try:
+            header = self.get_block_header_by_hash(block_hash)
+        except HeaderNotFound:
+            return False
+
+        block_number = header.block_number
+        chain_address = header.chain_address
+
+        try:
+            existing_header = self.get_canonical_block_header_by_number(block_number, chain_address)
+        except HeaderNotFound:
+            return False
+
+        if header.hash == existing_header.hash:
+            return True
+        else:
+            return False
+
+
+
 
     # TODO: update this to take a `hash` rather than a full header object.
     #this also accepts a header that has a smaller block number than the current header
@@ -530,6 +572,7 @@ class ChainDB(BaseChainDB):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
                 for transaction_hash in self.get_block_receive_transaction_hashes(header_to_remove):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
+                self.remove_block_from_canonical_block_hash_lookup(BlockNumber(i), wallet_address = wallet_address)
 
             new_canonical_headers = tuple()
 

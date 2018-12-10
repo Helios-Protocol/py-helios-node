@@ -179,6 +179,12 @@ class TriedImportingGenesisBlock(PyEVMError):
     """
     pass
 
+class TriedDeletingGenesisBlock(PyEVMError):
+    """
+    Raised when the genesis block on the genesis chain is attempted to be deleted
+    """
+    pass
+
 
 class CollationHeaderNotFound(PyEVMError):
     """

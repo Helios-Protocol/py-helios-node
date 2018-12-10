@@ -31,11 +31,11 @@ class HLSExchangeHandler(BaseExchangeHandler):
         'get_blocks': GetBlocksExchange,
         'get_node_staking_score': GetNodeStakingScoreExchange,
         'get_hash_fragments': GetHashFragmentsExchange,
-        'get_chains_exchange': GetChainsExchange,
+        'get_chains': GetChainsExchange,
     }
 
     # These are needed only to please mypy.
     get_blocks: GetBlocksExchange
     get_node_staking_score: GetNodeStakingScoreExchange
     get_hash_fragments: GetHashFragmentsExchange
-    get_chains_exchange: GetChainsExchange
+    get_chains: GetChainsExchange

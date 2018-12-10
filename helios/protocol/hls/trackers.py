@@ -117,7 +117,7 @@ BaseGetChainsTracker = BasePerformanceTracker[
 
 class GetChainsTracker(BaseGetChainsTracker):
     def _get_request_size(self, request: GetChainsRequest) -> int:
-        return len(request.command_payload.idx_list)
+        return len(request.command_payload['idx_list'])
 
     def _get_result_size(self, result: Tuple[Tuple[P2PBlock], ...]) -> int:
         return len(result)

@@ -71,7 +71,7 @@ def get_block_at_number(chain, at_block):
         at_header = get_header(chain, at_block)
         return chain.get_block_by_header(at_header)
 
-
+#TODO: if sync stage is less than 3, don't accept new blocks.
 class Hls(RPCModule):
     '''
     All the methods defined by JSON-RPC API, starting with "hls_"...

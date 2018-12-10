@@ -337,9 +337,10 @@ class Consensus(BaseService, PeerSubscriber):
                     if sync_params is None:
                         self._current_sync_stage = 4
                     else:
-                        sync_stage = get_sync_stage_for_historical_root_hash_timestamp(sync_params.timestamp_for_root_hash)
+                        sync_stage = sync_params.sync_stage
                         self._current_sync_stage = sync_stage
 
+        self.logger.debug("SYNC STAGE {}".format(self._current_sync_stage))
         return self._current_sync_stage
 
     #    @property
@@ -1529,11 +1530,18 @@ class Consensus(BaseService, PeerSubscriber):
         '''
         # We start one hash before the correct one, because if that one is also incorrect, then we havent synced up to
         # the time where additive syncing can occur.
+        if self.chain_config.network_startup_node:
+            fast_sync_test = False
+        else:
+            fast_sync_test = True
+
+        fast_sync_test = False
+
         earliest_allowed_time = int((int(time.time()) - NUMBER_OF_HEAD_HASH_TO_SAVE * TIME_BETWEEN_HEAD_HASH_SAVE)/1000)*1000
 
         disagreement_found = False
         local_root_hash_timestamps = self.local_root_hash_timestamps
-        if local_root_hash_timestamps is not None:
+        if local_root_hash_timestamps is not None and not fast_sync_test:
 
             #we run the loop from newest to oldest because the db is most often going to be close to syncing. This will be more effecient
             sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x) * -1, local_root_hash_timestamps)
@@ -1592,10 +1600,10 @@ class Consensus(BaseService, PeerSubscriber):
                         break
 
 
-        if local_root_hash_timestamps is None or disagreement_found:
+        if local_root_hash_timestamps is None or disagreement_found or fast_sync_test:
             # Ours disagrees all of the way through. We need to perform a fast sync, or stage 1 sync.
             # By default, lets perform the fast sync up to the root hash from 24 hours ago.
-            fast_sync_chronological_block_hash_timestamp = Timestamp(int((int(time.time()) - 24*60*60) / 1000) * 1000)
+            fast_sync_chronological_block_hash_timestamp = Timestamp(int((time.time() - 24*60*60) / 1000) * 1000)
 
             if local_root_hash_timestamps is None:
                 local_root_hash = BLANK_ROOT_HASH
@@ -1621,6 +1629,8 @@ class Consensus(BaseService, PeerSubscriber):
                     except (KeyError, IndexError):
                         pass
 
+            if len(peers_to_sync_with) == 0:
+                raise NoEligiblePeers("No peers have the root hash that we need to sync with. They may have just disconnected.")
 
             return SyncParameters(fast_sync_chronological_block_hash_timestamp,
                                local_root_hash=local_root_hash,
@@ -1766,7 +1776,8 @@ class Consensus(BaseService, PeerSubscriber):
             await self._handle_stake_for_addresses(peer, cast(Dict[str, Any], msg))
             
         elif isinstance(cmd, GetStakeForAddresses):
-            await self._handle_get_stake_for_addresses(peer, cast(Dict[str, Any], msg))
+            if await self.current_sync_stage >= 2:
+                await self._handle_get_stake_for_addresses(peer, cast(Dict[str, Any], msg))
             
         elif isinstance(cmd, GetMinGasParameters):
             await self._handle_get_min_gas_parameters(peer, cast(Dict[str, Any], msg))
@@ -1775,7 +1786,8 @@ class Consensus(BaseService, PeerSubscriber):
             await self._handle_min_gas_parameters(peer, cast(Dict[str, Any], msg))
 
         elif isinstance(cmd, GetNodeStakingScore):
-            await self._handle_get_node_staking_score(peer, cast(NodeStakingScore, msg))
+            if await self.current_sync_stage >= 4:
+                await self._handle_get_node_staking_score(peer, cast(NodeStakingScore, msg))
 
 
         

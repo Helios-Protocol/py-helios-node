@@ -93,7 +93,7 @@ from hvm.exceptions import (
     NoChronologicalBlocks,
     RewardProofSenderBlockMissing,
 
-    RewardAmountRoundsToZero)
+    RewardAmountRoundsToZero, TriedDeletingGenesisBlock)
 from eth_keys.exceptions import (
     BadSignature,
 )
@@ -367,7 +367,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
 
 
     @abstractmethod
-    def import_chain(self, block_list: List[BaseBlock], perform_validation: bool = True, save_block_head_hash_timestamp: bool=True) -> None:
+    def import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -1017,6 +1017,7 @@ class Chain(BaseChain):
         vm.state.revert_account_to_hash_keep_receivable_transactions_and_persist(block_parent_header.account_hash, wallet_address)
         
     def revert_block(self, descendant_block_hash, vm):
+        self.logger.debug('Reverting block with hash {}'.format(encode_hex(descendant_block_hash)))
         descendant_block_header = self.chaindb.get_block_header_by_hash(descendant_block_hash)
         self.chain_head_db.delete_block_hash_from_chronological_window(descendant_block_hash, descendant_block_header.timestamp)
         self.chaindb.remove_block_from_all_parent_child_lookups(descendant_block_header, vm.get_block_class().receive_transaction_class)
@@ -1029,6 +1030,10 @@ class Chain(BaseChain):
         #self.chaindb.save_unprocessed_block_lookup(descendant_block_hash)
  
     def purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32) -> None:
+        genesis_block_hash = self.chaindb.get_canonical_block_hash(BlockNumber(0), self.genesis_wallet_address)
+        if block_hash_to_delete == genesis_block_hash:
+            raise TriedDeletingGenesisBlock("Attempted to delete genesis block. This is not allowed.")
+
         block_header_to_delete = self.chaindb.get_block_header_by_hash(block_hash_to_delete)
         block_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(block_hash_to_delete)
         self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header_to_delete, wallet_address=block_wallet_address)
@@ -1163,7 +1168,7 @@ class Chain(BaseChain):
                     self.logger.debug("Tried to propogate the previous historical root hash but there was none. This shouldn't happen")
         #self.logger.debug("historical root hashes after chronological block import {}".format(self.chain_head_db.get_historical_root_hashes()))
     
-    def import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp = True) -> None:
+    def import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
         self.logger.debug("importing chain")
         
         #if we are given a block that is not one of the two allowed classes, try converting it.
@@ -1176,13 +1181,34 @@ class Chain(BaseChain):
             block_list = corrected_block_list
             
         #the wallet address is always the sender of the genesis block. Even for smart contracts
-        wallet_address = block_list[0].header.sender
+        wallet_address = block_list[0].header.chain_address
         for block in block_list:
             self.import_block(block, 
                               perform_validation = perform_validation, 
                               save_block_head_hash_timestamp = save_block_head_hash_timestamp, 
-                              wallet_address = wallet_address)
-            
+                              wallet_address = wallet_address,
+                              allow_replacement = allow_replacement)
+
+        # If we started with a longer chain, and all the imported blocks match ours, our chain will remain longer even after importing the new one.
+        # To fix this, we need to delete any blocks of ours that is longer in length then this chain that we are importing
+
+        # First make sure the whole chain imported correctly. If not, then we don't need to do anything
+
+        imported_canonical_head = block_list[-1].header
+        local_canonical_head = self.chaindb.get_canonical_head(wallet_address)
+        if imported_canonical_head.block_number < local_canonical_head.block_number:
+            local_block_header_at_location_of_imported_canonical_head = self.chaindb.get_canonical_block_header_by_number(BlockNumber(imported_canonical_head.block_number), wallet_address)
+            if imported_canonical_head.hash == local_block_header_at_location_of_imported_canonical_head.hash:
+                # Our chain is the same as the imported one, but we have some extra blocks on top. In this case, we would like to prune our chain
+                # to match the imported one.
+                # We only need to purge the next block after the imported chain. The vm will automatically purge all children
+                self.logger.debug("After importing a chain, our local chain is identical except with additional blocks on top. We will prune the top blocks to bring"
+                                  " our chain in line with the imported one.")
+                block_number_to_purge = imported_canonical_head.block_number + 1
+                hash_to_purge = self.chaindb.get_canonical_block_hash(BlockNumber(block_number_to_purge), wallet_address)
+                self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(hash_to_purge)
+
+
             
     # async def coro_import_block(self, *args, **kwargs):
     #     loop = asyncio.get_event_loop()
@@ -1226,7 +1252,11 @@ class Chain(BaseChain):
             block = self.get_vm(refresh=False).convert_block_to_correct_class(block)
         
         if not isinstance(block, self.get_vm(refresh=False).get_queue_block_class()) and block.header.chain_address == self.genesis_wallet_address and block.header.block_number == 0:
-            raise ValidationError("Tried to import a new genesis block on the genesis chain. This is not allowed.")
+            our_genesis_hash = self.chaindb.get_canonical_block_header_by_number(BlockNumber(0), self.genesis_wallet_address).hash
+            if block.header.hash == our_genesis_hash:
+                return block
+            else:
+                raise ValidationError("Tried to import a new genesis block on the genesis chain. This is not allowed.")
 
 
         if len(block.transactions) == 0 and len(block.receive_transactions) == 0:
@@ -1395,7 +1425,8 @@ class Chain(BaseChain):
                 if save_block_head_hash_timestamp:
                     self.chain_head_db.add_block_hash_to_chronological_window(imported_block.header.hash, imported_block.header.timestamp)
                     self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
-                
+
+                self.chain_head_db.set_chain_head_hash(imported_block.header.chain_address, imported_block.header.hash)
                 self.chain_head_db.persist(True, False)
                 self.chaindb.persist_block(imported_block)
                 vm.state.account_db.persist(save_account_hash = True, wallet_address = self.wallet_address)
@@ -1405,8 +1436,12 @@ class Chain(BaseChain):
                 #because the children cannot be imported if their chain parent is unprocessed.
                 #but we cannot delete the lookup for unprocessed children yet.
                 self.chaindb.remove_block_from_unprocessed(imported_block)
-                
-                self.header = self.create_header_from_parent(self.get_canonical_head())
+
+                try:
+                    self.header = self.create_header_from_parent(self.get_canonical_head())
+                except CanonicalHeadNotFound:
+                    self.header = self.get_vm_class_for_block_timestamp().create_genesis_block(self.wallet_address).header
+
                 self.queue_block = None
                 self.logger.debug(
                     'IMPORTED_BLOCK: number %s | hash %s',
@@ -1494,11 +1529,11 @@ class Chain(BaseChain):
         #We just want to save it to the database so we can process it later if needbe.
         self.chaindb.persist_non_canonical_block(block, wallet_address)
         #self.chaindb.persist_block(block)
-        
+
         try:
             self.header = self.create_header_from_parent(self.get_canonical_head())
         except CanonicalHeadNotFound:
-            self.header = self.get_vm_class_for_block_timestamp().create_genesis_block().header
+            self.header = self.get_vm_class_for_block_timestamp().create_genesis_block(self.wallet_address).header
             
         self.queue_block = None
         
@@ -1923,8 +1958,7 @@ class AsyncChain(Chain):
                                 perform_validation: bool=True) -> BaseBlock:
         raise NotImplementedError()
 
-    async def coro_import_chain(self, block_list: List[BaseBlock], perform_validation: bool = True,
-                     save_block_head_hash_timestamp: bool = True) -> None:
+    async def coro_import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
         raise NotImplementedError()
 
     async def coro_get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
@@ -1953,6 +1987,14 @@ class AsyncChain(Chain):
 
     async def coro_import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
         raise NotImplementedError()
+
+    async def coro_import_chain(self, *args, **kwargs):
+        loop = asyncio.get_event_loop()
+
+        return await loop.run_in_executor(
+            None,
+            partial(self.import_chain, *args, **kwargs)
+        )
 
 
     async def coro_import_current_queue_block_with_reward(self, *args, **kwargs):

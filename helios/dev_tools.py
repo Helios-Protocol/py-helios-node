@@ -216,6 +216,11 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_gen
         timestamp_modified_imported_block = imported_block.copy(header=imported_block.header.copy(timestamp=timestamp).get_signed(receiver_privkey, dummy_receiver_chain.network_id))
         receiver_chain.import_block(timestamp_modified_imported_block, allow_unprocessed=False)
 
+    # print(receiver_chain.chain_head_db.get_historical_root_hashes())
+    # root_hash = receiver_chain.chain_head_db.get_historical_root_hash(int((time.time() - 60*60*48)/1000)*1000)
+    # print(root_hash)
+    # print(receiver_chain.chain_head_db.get_head_block_hashes_list(root_hash))
+    # exit()
     logger.debug("finished creating fixed blockchain")
 
     # sender_chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), privkey)

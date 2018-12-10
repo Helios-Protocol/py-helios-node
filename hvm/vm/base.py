@@ -581,12 +581,14 @@ class VM(BaseVM):
 
         wallet_address = block_header.sender
         send_transactions = self.chaindb.get_block_transactions(block_header, self.get_block_class().transaction_class)
-        self.delete_transactions_as_receivable(block_header.hash, send_transactions)
-        
         receive_transactions = self.chaindb.get_block_receive_transactions(block_header, self.get_block_class().receive_transaction_class)
+
+        self.delete_transactions_as_receivable(send_transactions, receive_transactions)
+
         for receive_transaction in receive_transactions:
             #only add this back if the sender block has still been processed
-            if not self.chaindb.is_block_unprocessed(receive_transaction.sender_block_hash) and self.chaindb.exists(receive_transaction.sender_block_hash):
+            #need to verify that this block is in the canonical chain
+            if self.chaindb.is_in_canonical_chain(receive_transaction.sender_block_hash):
                 try:
                     self.state.account_db.add_receivable_transaction(wallet_address, receive_transaction.send_transaction_hash,
                                                                      receive_transaction.sender_block_hash)
@@ -768,15 +770,24 @@ class VM(BaseVM):
                                                                  block_header_hash)
 
             
-    def delete_transaction_as_receivable(self,block_header_hash, transaction):
+    def delete_transaction_as_receivable(self, wallet_address, transaction_hash):
         try:
-            self.state.account_db.delete_receivable_transaction(transaction.to, transaction.hash)
+            self.state.account_db.delete_receivable_transaction(wallet_address, transaction_hash)
         except ReceivableTransactionNotFound:
             pass
         
-    def delete_transactions_as_receivable(self,block_header_hash, transactions):
+    def delete_transactions_as_receivable(self,transactions, receive_transactions):
         for transaction in transactions:
-            self.delete_transaction_as_receivable(block_header_hash, transaction)
+            self.delete_transaction_as_receivable(transaction.to, transaction.hash)
+
+        for receive_transaction in receive_transactions:
+            if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:
+                # receive transactions that have refund remaining will have saved the refund as receivable. Need to
+                # delete those too.
+                # The refund gets sent back to the sender. So lets find the sender chain, and remove it from there.
+                sender_header = self.chaindb.get_block_header_by_hash(receive_transaction.sender_block_hash)
+                sender_wallet_address = sender_header.chain_address
+                self.delete_transaction_as_receivable(sender_wallet_address, receive_transaction.hash)
         
     def save_items_to_db_as_trie(self, items, root_hash_to_verify = None):
         root_hash, kv_nodes = make_trie_root_and_nodes(items)

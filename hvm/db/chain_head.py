@@ -371,7 +371,7 @@ class ChainHeadDB():
     
     def delete_chain(self, address):
         validate_canonical_address(address, title="Wallet Address")
-        self.delete_chain_head_hash(address)
+        #self.delete_chain_head_hash(address)
         self.add_block_hash_to_timestamp(address, BLANK_HASH, 0)
    
     #it is assumed that this is the head for a particular chain. because blocks can only be imported from the top.
@@ -542,7 +542,7 @@ class ChainHeadDB():
             current_head_root_lookup_key,
             self.root_hash,
         )
-        
+
         # #TODO. remove this. it is probably unnessisary now. since we handle it elsewhere
         # if append_current_root_hash_to_historical:
         #     self.logger.debug("appending to historical {}".format(self.root_hash))
@@ -551,10 +551,12 @@ class ChainHeadDB():
     def get_saved_root_hash(self):
         current_head_root_lookup_key = SchemaV1.make_current_head_root_lookup_key()
         try:
-            return self.db[current_head_root_lookup_key]
+            root_hash = self.db[current_head_root_lookup_key]
         except KeyError:
             # there is none. this must be a fresh genesis block type thing
-            return BLANK_HASH
+            root_hash = BLANK_HASH
+
+        return root_hash
 
     def load_saved_root_hash(self):
         current_head_root_lookup_key = SchemaV1.make_current_head_root_lookup_key()
@@ -642,9 +644,11 @@ class ChainHeadDB():
                 
 
         
-    def initialize_historical_root_hashes(self, root_hash, timestamp):
+    def initialize_historical_root_hashes(self, root_hash: Hash32, timestamp: Timestamp) -> None:
         validate_is_bytes(root_hash, title='Head Hash')
         validate_historical_timestamp(timestamp, title="timestamp")
+
+        #lets populate the root hash timestamp
         first_root_hash_timestamp = [[timestamp, root_hash]]
         self.save_historical_root_hashes(first_root_hash_timestamp)
     
