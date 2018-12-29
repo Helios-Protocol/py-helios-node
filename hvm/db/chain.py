@@ -419,8 +419,13 @@ class ChainDB(BaseChainDB):
         if wallet_address is None:
             wallet_address = self.wallet_address
 
+        if end == 0:
+            canonical_head_header = self.get_canonical_head(wallet_address=wallet_address)
+            head_block_number = canonical_head_header.block_number
+            end = head_block_number+1
+
         blocks = []
-        for block_number in range(start, end+1):
+        for block_number in range(start, end):
             try:
                 new_block = self.get_block_by_number(block_number, block_class, wallet_address)
                 blocks.append(new_block)
@@ -438,7 +443,7 @@ class ChainDB(BaseChainDB):
         head_block_number = canonical_head_header.block_number
 
 
-        return self.get_blocks_on_chain(block_class,  0, head_block_number, wallet_address = wallet_address)
+        return self.get_blocks_on_chain(block_class,  0, head_block_number+1, wallet_address = wallet_address)
 
     def get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32, block_class) -> List['BaseBlock']:
         chain_head_header = self.get_block_header_by_hash(chain_head_hash)
@@ -519,7 +524,7 @@ class ChainDB(BaseChainDB):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
                 for transaction_hash in self.get_block_receive_transaction_hashes(header_to_remove):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
-
+                self.remove_block_from_canonical_block_hash_lookup(BlockNumber(i), wallet_address=wallet_address)
             del(self.db[SchemaV1.make_canonical_head_hash_lookup_key(wallet_address)])
 
     def is_in_canonical_chain(self, block_hash: Hash32) -> bool:
@@ -1176,8 +1181,9 @@ class ChainDB(BaseChainDB):
         - remove transaction hash to body lookup in the pending pool
         """
         #TODO: allow this for contract addresses
-        if block_header.sender != self.wallet_address:
-            raise ValueError("Cannot add transaction to canonical chain because it is from a block on a different chain")
+        if block_header.chain_address != self.wallet_address:
+            raise ValueError("Cannot add transaction to canonical chain because it is from a block on a different chain. Block chain address = {}"
+                             ", this chain address = {}, block sender = {}".format(encode_hex(block_header.chain_address), encode_hex(self.wallet_address), encode_hex(block_header.sender)))
         transaction_key = TransactionKey(block_header.hash, index, False)
         self.db.set(
             SchemaV1.make_transaction_hash_to_block_lookup_key(transaction_hash),
@@ -1198,7 +1204,8 @@ class ChainDB(BaseChainDB):
         """
         #TODO: allow this for contract addresses
         if block_header.chain_address != self.wallet_address:
-            raise ValueError("Cannot add transaction to canonical chain because it is from a block on a different chain")
+            raise ValueError("Cannot add receive transaction to canonical chain because it is from a block on a different chain. Block chain address = {}"
+                             ", this chain address = {}".format(encode_hex(block_header.chain_address), encode_hex(self.wallet_address)))
         transaction_key = TransactionKey(block_header.hash, index, True)
         self.db.set(
             SchemaV1.make_transaction_hash_to_block_lookup_key(transaction_hash),
@@ -1708,7 +1715,7 @@ class ChainDB(BaseChainDB):
 
         hist_min_gas_price = self.load_historical_minimum_gas_price()
 
-        if hist_min_gas_price is None:
+        if hist_min_gas_price is None or len(hist_min_gas_price) == 0:
             #there is no data for calculating min gas price
             raise HistoricalMinGasPriceError("tried to get required block minimum gas price but historical minimum gas price has not been initialized")
 
@@ -1720,14 +1727,11 @@ class ChainDB(BaseChainDB):
         except KeyError:
             pass
 
+        sorted_list = list(hist_min_gas_price)
+        sorted_list.sort()
         #if we don't have this centisecond_window, lets return the previous one.
-        try:
-            return dict_hist_min_gas_price[centisecond_window-100]
-        except KeyError:
-            pass
+        return sorted_list[-1][1]
 
-
-        raise HistoricalMinGasPriceError("Could not get required block min gas price for block timestamp {}".format(block_timestamp))
 
     def min_gas_system_initialization_required(self):
         test_1 = self.load_historical_minimum_gas_price(mutable = False)

@@ -50,7 +50,7 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
         db = db_manager.get_db()  # type: ignore
         chain = chain_class(db, wallet_address = self.context.chain_config.node_wallet_address)
 
-        rpc = RPCServer(chain, self.context.event_bus)
+        rpc = RPCServer(chain, self.context.event_bus, chain_class)
         ipc_server = IPCServer(rpc, self.context.chain_config.jsonrpc_ipc_path)
 
         loop = asyncio.get_event_loop()

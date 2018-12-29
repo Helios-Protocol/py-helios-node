@@ -3,7 +3,7 @@ from rlp.sedes import (
 )
 from hvm.rlp.headers import (
     BlockHeader,
-)
+    MicroBlockHeader)
 
 from eth_bloom import (
     BloomFilter,
@@ -15,7 +15,7 @@ from .transactions import (
 from hvm.rlp.blocks import (
     BaseBlock,
     BaseQueueBlock,
-)
+    BaseMicroBlock)
 from hvm.rlp.receipts import (
     Receipt,
 )
@@ -26,6 +26,16 @@ from eth_typing import Address
 
 from hvm.rlp.consensus import StakeRewardBundle
 
+#this one is just used to decode blocks that come in through RPC
+class MicroBlock(BaseMicroBlock):
+
+    fields = [
+        ('header', MicroBlockHeader),
+        ('transactions', CountableList(HeliosTestnetTransaction)),
+        ('receive_transactions', CountableList(HeliosTestnetReceiveTransaction)),
+        ('reward_bundle', StakeRewardBundle),
+    ]
+
 class HeliosTestnetBlock(BaseBlock):
     transaction_class = HeliosTestnetTransaction
     receive_transaction_class = HeliosTestnetReceiveTransaction
@@ -33,7 +43,7 @@ class HeliosTestnetBlock(BaseBlock):
     reward_bundle_class = StakeRewardBundle
 
     fields = [
-        ('header', BlockHeader),
+        ('header', header_class),
         ('transactions', CountableList(transaction_class)),
         ('receive_transactions', CountableList(receive_transaction_class)),
         ('reward_bundle', reward_bundle_class),
@@ -93,6 +103,7 @@ class HeliosTestnetBlock(BaseBlock):
     def get_reward_bundle_class(cls):
         return cls.reward_bundle_class
 
+
     #
     # Receipts API
     #
@@ -116,6 +127,18 @@ class HeliosTestnetBlock(BaseBlock):
             receive_transactions=receive_transactions
         )
 
+    #
+    # Microblock API
+    #
+    @classmethod
+    def from_micro_block(cls, micro_block: MicroBlock):
+        header = cls.header_class.from_micro_header(micro_block.header)
+        return cls(
+            header=header,
+            transactions=micro_block.transactions,
+            receive_transactions=micro_block.receive_transactions,
+            reward_bundle=micro_block.reward_bundle,
+        )
 
 class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
     transaction_class = HeliosTestnetTransaction

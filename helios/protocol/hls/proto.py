@@ -236,7 +236,7 @@ class HLSProtocol(Protocol):
     def send_get_chain_segment(self, chain_address, block_number_start, block_number_end=None) -> None:
         cmd = GetChainSegment(self.cmd_id_offset)
         if block_number_end is None:
-            block_number_end = UINT_256_MAX
+            block_number_end = 0
 
         data = {
             'chain_address': chain_address,

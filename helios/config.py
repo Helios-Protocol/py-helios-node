@@ -166,13 +166,19 @@ class ChainConfig:
         return self._bootstrap_nodes
 
     @property
-    def do_upnp(self):
-        #TODO: TESTING
-        return False
-        if "INSTANCE_NUMBER" in os.environ:
+    def is_main_instance(self):
+        if self.network_startup_node:
+            return True
+        elif "INSTANCE_NUMBER" in os.environ:
             return int(os.environ["INSTANCE_NUMBER"]) == 0
         else:
             return True
+
+    @property
+    def do_upnp(self):
+        #TODO: TESTING
+        return False
+        return self.is_main_instance
 
     #todo: add encrypted keyfile usage instead of this
     @property

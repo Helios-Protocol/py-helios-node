@@ -40,6 +40,8 @@ from hvm.db.journal import (
 )
 
 from hvm.db.chain import ChainDB
+from hvm.db.trie import make_trie_root_and_nodes
+from hvm.rlp.headers import MicroBlockHeader
 from hvm.rlp.transactions import BaseTransaction
 
 import rlp
@@ -78,6 +80,8 @@ from hvm.utils.profile import profile
 #TODO: save to encrypted json file
 #primary_private_keys = [b'p.Oids\xedb\xa3\x93\xc5\xad\xb9\x8d\x92\x94\x00\x06\xb9\x82\xde\xb9\xbdBg\\\x82\xd4\x90W\xd0\xd5', b'\xa41\x95@\xbb\xa5\xde\xbbc\xffR\x8a\x18\x06\x95\xa3\xd7\xd2\x95]5{\x12\xe4n\xb6R\xd7S\x96\xf0+', b'\xd8>Fh\xefT\x04jf\x13\xca|E\xc4\x91\xed\x07\xcd\x02fW\xd8s;\xd8\xe4\xde\xb9\xbc\xe4\xf0I', b'\x83\x1d\xf6\xaf-\x00\xbfS4\x0f\xcds\x18"\xdd\x906]e\xfc\xe6\x0c?\xb1v20\xced7y\xf4', b")M\xf4\x1c\xb7\xe0Z\xf4\x17F\x9b\x089'\x004\xd3\x89\xd8\x80\xf5`\xa2\x11\x00\x90\xbd\x0f&KjZ", b'RI\xda\xbc7\xc4\xe8\tz\xfaI\x1f\xa1\x02{v\x0e\xac\x87W\xa2s\x81L4M\xad\xbd\xb3\x84\xaae', b'>kG\xd5\xb3qG\x84\xa6"\x1c~\xb6\xbf\x96\xac\n\x88\xfb\x05\x8aG\r\xe9Z\x16\x15\xb1P\xe0\xb7[', b'\x87\xf6\xb1\xa7v\x8bv<\xa3\xe5\xb18\xa7u\x99\xbaBa\xe9\xd5\x0e\xcb\x0f?\x84nZ\xba\xdf\xa3\x8a~', b'`$g\xe9\xa5r\xd2\xacG&\xf81^\x98\xf7\xda\xa5\xf4\x93)\xf3\x0c\x18\x84\xe4)!\x9dR\xa0\xac\xd3', b'\xcfd\xd5|\xe2\xf1\xda\xb9\x1f|\xb9\xdc\xeb \xd7\xb0\x81g\xdc\x03\xd6dQ\xf14\x19`\x94o\xf7\xc7\x1b', b'}LO\x14($d\n!\x1a\x91\xa8S\xb3\x05\xaa\x89\xf2\x0b\x97\xd3\x1c#\xe7\x86g`\xf1\x1a\xedXW']
 from hvm.constants import random_private_keys
+from hvm.vm.forks.helios_testnet.blocks import MicroBlock, HeliosTestnetBlock
+
 primary_private_keys = random_private_keys
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(primary_private_keys[instance_number])
@@ -362,7 +366,12 @@ def test_send_transaction_then_receive():
     receiver2_chain = MainnetChain(testdb, RECEIVER2.public_key.to_canonical_address(), RECEIVER2)
     receiver2_chain.populate_queue_block_with_receive_tx()
     receiver2_chain.import_current_queue_block()
-    
+
+    #there should be 3 chians now. Lets make sure there are 3 saved head hashes in the chain_head_db database
+    chain_head_root_hash = receiver_chain.chain_head_db.get_latest_historical_root_hash()[1]
+    block_hashes = receiver_chain.chain_head_db.get_head_block_hashes_list(chain_head_root_hash)
+    assert(len(block_hashes) == 3)
+    print('passed head hash count test')
     
 #    #####
 #    head_hash = receiver_chain.chaindb.get_canonical_head_hash(wallet_address = RECEIVER.public_key.to_canonical_address())
@@ -388,6 +397,7 @@ def test_send_transaction_then_receive():
         block_1_imported.header.account_balance))
     assert (block_1_imported.header.account_balance == receiver_chain.get_vm().state.account_db.get_balance(
         RECEIVER.public_key.to_canonical_address()))
+
 
     # print("block 1 parent hash = ", encode_hex(block_1_imported.header.parent_hash))
     # print("length in bytes = ", len(block_1_imported.header.parent_hash))
@@ -1257,9 +1267,9 @@ def create_new_genesis_params_and_state():
     print("TPC test block to import")
     print(block_dict)
 
-    
-create_new_genesis_params_and_state()
-exit()
+#
+# create_new_genesis_params_and_state()
+# exit()
 
 def create_block_params():
     from hvm.chains.mainnet import (
@@ -1605,8 +1615,8 @@ def get_node_tpc_cap():
     print("tpc_cap = {}".format(tpc_cap))
 
 
-# get_node_tpc_cap()
-# sys.exit()
+get_node_tpc_cap()
+sys.exit()
 
 
 def test_fast_rlp():
@@ -2369,11 +2379,53 @@ def test_smart_contract_deploy_system():
     assert ((final_balance - initial_balance) == (max_gas - gas_used))
     print("Refunded gas is the expected amount.")
 
-
-test_smart_contract_deploy_system()
-exit()
-
-
-
-
-
+#
+# # test_smart_contract_deploy_system()
+# # exit()
+# # print('now')
+# #
+# # encoded=rlp.encode(, sedes=rlp.sedes.f_big_endian_int)
+# # print(encoded)
+# # decoded=rlp.decode(encoded, sedes=rlp.sedes.f_big_endian_int)
+# # print(decoded)
+# # decoded=rlp.decode(encoded, sedes=rlp.sedes.big_endian_int)
+# # print(decoded)
+# # exit()
+#
+# #print(rlp.encode(ZERO_HASH32, sedes=rlp.sedes.big_endian_int))
+# #sender: 0x0939e75072cb91d862cbf6ebcc86c758157f16cd
+# microblock = b'\xf9\x01\xce\xf8\xe3\x94\x01\x03O\xe7\x7f\xf8\xd4fBn\xd8B\x8bq\xc0\xbb\r5\xad\xeb\xa0\x8a_\x84\xd3\x0eb\xb6\xf9SV"\xbc\xba\xe8\x90\\\xc5\xef\x9a\x8b\xa3K\x03h\xa9\x93\xae\x05#,y2\xa0\x93_Q\x98\xcfp\xd63)\xb1\xbb\x04\xbb\xdccJ\xb8m2t\xdf\xe9o\x9d\x1e\xee\xc3j\xc8\xf8\x04\xe7\xa0V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!\x01\x84\\\x1d\x97\xb8\x80\xa0_\x83h\xd9V\t\x8a\xc8\x8bGc\xf9t\r\xa6\x05w-\xcb\xdf\xe6\xc3\xf1\xfaZO\x1b=3:\x17\x81%\xa0\xb2\x7fMCt\xa8Q\xcb\xd7\xf2\x177s\x19p\xf5*\x9e\xff\x01Z\x0c\xd9\xfe\xf3\x97?$\xc1\xa8t\xec\xa0"Y\xd8"uh\x98\x1d\xa2\xb5\xe6e\x05\xd9\xc4\x02U7L\xbf\xb3\x88\xf1\xe6\xcdl%\xbd\x08\x10\x8d\x97\xf8\xd8\xf8j\x80\x86\xd5V\x987$1\x83\x1e\x84\x80\x94\xf0\x10\x9f\xc8\xdf(0\'\xb6(\\\xc8\x89\xf5\xaabN\xac\x1fU\x84;\x9a\xca\x00\x80&\xa0\x03\xdf\xc2\x96Gv\xfek\x9b#^\x11\x90"\x8fu\x0f\xe7?\x91\xe8\x06o\xd5%0k\xf7\x91\xc5\x80\x91\xa0#>\xaf\xcf\xc9\xc7\xae\xf4\x97\xbfRR\x06\xde\xf6\x84\x9f\x81`\xe8H\x0b\xe9\x004\xc6\x14{\xc7\xd1\nU\xf8j\x01\x86\xd5V\x987$1\x83\x1e\x84\x80\x94\xf0\x10\x9f\xc8\xdf(0\'\xb6(\\\xc8\x89\xf5\xaabN\xac\x1fU\x84\x05\xf5\xe1\x00\x80%\xa0\x93\xf3\xb1D\x94RP?^\x96\x1f\xdd~P\xc4\xd4\xdc\xfb\x11 _f\xddgW\xb9^P\xfe\x11Sf\xa0yl\xdb\x87\xd1\x19\x91\xfb\x01\x9c\xc3\t\x08\xa6^j\x80T^\x94\xefg\xbcqR\xff\xfb\xee\x0c\xcf%X\xc0\xcd\xc9\x88\xd6\xad\x02\xc4\x93\xf8x\x00\xc2\x80\xc0'
+#
+# #TODO: fix transactions to use fast sedes gain.
+# #print(MicroBlock.get_sede_identifier())
+# decoded_block = rlp.decode(microblock)
+#
+# decoded_block = rlp.decode(microblock, sedes=MicroBlock)
+#
+# full_block = HeliosTestnetBlock.from_micro_block(decoded_block)
+#
+# transactions = full_block.transactions
+# print(encode_hex(transactions[0].sender))
+# print(full_block.header.chain_address)
+#
+#
+# tx_root_hash, _ = make_trie_root_and_nodes(transactions)
+#
+# print(tx_root_hash)
+# print(full_block.header.transaction_root)
+#
+# for tx in transactions:
+#     print(tx.nonce)
+#
+# print(encode_hex(full_block.sender))
+#
+# print(decoded_block)
+#
+# reward_hash = full_block.header.reward_hash
+# reward_bundle = full_block.reward_bundle
+# print(reward_hash)
+# print(reward_bundle.hash)
+# print(reward_bundle.reward_type_2.amount)
+# print(reward_bundle.reward_type_2.proof)
+#
+# print(full_block.receive_transactions)

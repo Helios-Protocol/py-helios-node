@@ -24,7 +24,7 @@ from .requests import (
     GetReceiptsRequest,
     GetBlocksRequest,
     GetNodeStakingScoreRequest,
-    GetHashFragmentsRequest, GetChainsRequest)
+    GetHashFragmentsRequest, GetChainsRequest, GetChainSegmentRequest)
 
 from helios.rlp_templates.hls import P2PBlock
 
@@ -103,6 +103,25 @@ BaseGetBlocksTracker = BasePerformanceTracker[
 class GetBlocksTracker(BaseGetBlocksTracker):
     def _get_request_size(self, request: GetBlocksRequest) -> Optional[int]:
         return len(request.command_payload)
+
+    def _get_result_size(self, result: Tuple[P2PBlock, ...]) -> int:
+        return len(result)
+
+    def _get_result_item_count(self, result: Tuple[P2PBlock, ...]) -> int:
+        return len(result)
+
+BaseGetChainSegmentTracker = BasePerformanceTracker[
+    GetChainSegmentRequest,
+    Tuple[P2PBlock, ...],
+]
+
+class GetChainSegmentTracker(BaseGetChainSegmentTracker):
+    def _get_request_size(self, request: GetChainSegmentRequest) -> Optional[int]:
+        num_blocks = request.command_payload['block_number_end'] - request.command_payload['block_number_start']
+        if num_blocks == 0:
+            #this is usually the whole chain
+            return None
+        return num_blocks
 
     def _get_result_size(self, result: Tuple[P2PBlock, ...]) -> int:
         return len(result)

@@ -447,6 +447,7 @@ class Chain(BaseChain):
     chain_head_db_class = ChainHeadDB
     consensus_db_class = ConsensusDB
     chain_head_db: ChainHeadDB = None
+    consensus_db: ConsensusDB = None
     chaindb: ChainDB = None
 
     def __init__(self, base_db: BaseDB, wallet_address: Address, private_key: BaseKey=None) -> None:
@@ -933,12 +934,6 @@ class Chain(BaseChain):
         if len(tx_keys) == 0:
             return []
 
-        # class TransactionKey(rlp_templates.Serializable):
-        #     fields = [
-        #         ('transaction_hash', hash32),
-        #         ('sender_block_hash', hash32),
-        #     ]
-        #
         receive_transactions = []
         for tx_key in tx_keys:
             #find out if it is a receive or a refund
@@ -989,7 +984,8 @@ class Chain(BaseChain):
             #first make sure enough time has passed since genesis. We need at least TIME_BETWEEN_HEAD_HASH_SAVE since genesis so that the
             # genesis historical root hash only contains the genesis chain.
             if block.header.timestamp < (self.genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE):
-                raise NotEnoughTimeBetweenBlocks("Not enough time has passed since the genesis block. Must wait at least {} seconds after genesis block.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
+                raise NotEnoughTimeBetweenBlocks("Not enough time has passed since the genesis block. Must wait at least {} seconds after genesis block. "
+                                                 "This block timestamp is {}, genesis block timestamp is {}.".format(TIME_BETWEEN_HEAD_HASH_SAVE, block.header.timestamp, self.genesis_block_timestamp))
 
             time_wait = self.get_vm(refresh=False).check_wait_before_new_block(block)
             if time_wait > 0:
@@ -1040,7 +1036,7 @@ class Chain(BaseChain):
 
 
     def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader, wallet_address: Address = None):
-        if not self.chaindb.is_block_unprocessed(existing_block_header.hash) and self.chaindb.exists(existing_block_header.hash):
+        if self.chaindb.is_in_canonical_chain(existing_block_header.hash):
             if wallet_address is not None:
                 #we need to re-initialize the chain for the new wallet address.
                 if wallet_address != self.wallet_address:
@@ -1225,12 +1221,12 @@ class Chain(BaseChain):
 
     
     def import_block(self, block: BaseBlock,
-                           perform_validation: bool=True,
-                           save_block_head_hash_timestamp = True, 
-                           wallet_address = None, 
-                           allow_unprocessed = True, 
-                           allow_replacement = True,
-                           ensure_block_unchainged:bool = True) -> BaseBlock:
+                     perform_validation: bool=True,
+                     save_block_head_hash_timestamp = True,
+                     wallet_address = None,
+                     allow_unprocessed = True,
+                     allow_replacement = True,
+                     ensure_block_unchanged:bool = True) -> BaseBlock:
          
         #we handle replacing blocks here
         #this includes deleting any blocks that it might be replacing
@@ -1356,11 +1352,11 @@ class Chain(BaseChain):
 
         try:
             return_block = self._import_block(block = block,
-                               perform_validation = perform_validation,
-                               save_block_head_hash_timestamp = save_block_head_hash_timestamp, 
-                               wallet_address = wallet_address, 
-                               allow_unprocessed = allow_unprocessed,
-                               ensure_block_unchainged = ensure_block_unchainged)
+                                              perform_validation = perform_validation,
+                                              save_block_head_hash_timestamp = save_block_head_hash_timestamp,
+                                              wallet_address = wallet_address,
+                                              allow_unprocessed = allow_unprocessed,
+                                              ensure_block_unchanged= ensure_block_unchanged)
         
         except Exception as e:
             if journal_enabled:
@@ -1378,12 +1374,12 @@ class Chain(BaseChain):
         return return_block
     
          
-    def _import_block(self, block: BaseBlock, 
-                           perform_validation: bool=True,
-                           save_block_head_hash_timestamp = True, 
-                           wallet_address = None, 
-                           allow_unprocessed = True,
-                           ensure_block_unchainged: bool = True) -> BaseBlock:
+    def _import_block(self, block: BaseBlock,
+                      perform_validation: bool=True,
+                      save_block_head_hash_timestamp = True,
+                      wallet_address = None,
+                      allow_unprocessed = True,
+                      ensure_block_unchanged: bool = True) -> BaseBlock:
         """
         Imports a complete block.
         """
@@ -1401,7 +1397,7 @@ class Chain(BaseChain):
         if isinstance(block, self.get_vm(refresh=False).get_queue_block_class()):
             # If it was a queueblock, then the header will have changed after importing
             perform_validation = False
-            ensure_block_unchainged = False
+            ensure_block_unchanged = False
             
         
         if not self.chaindb.is_block_unprocessed(block.header.parent_hash):
@@ -1413,9 +1409,11 @@ class Chain(BaseChain):
                
                 
                 # Validate the imported block.
-                if ensure_block_unchainged:
+                if ensure_block_unchanged:
                     self.logger.debug('ensuring block unchanged')
                     ensure_imported_block_unchanged(imported_block, block)
+                else:
+                    self.logger.debug('Not checking block for changes.')
                 if perform_validation:
                     self.validate_block(imported_block)
 
@@ -1459,7 +1457,10 @@ class Chain(BaseChain):
                 
                 return_block = imported_block
                 
+
             except (ReceivableTransactionNotFound, RewardProofSenderBlockMissing):
+                # print('AAAAAAAAAAAA')
+                # print(block.receive_transactions)
                 if not allow_unprocessed:
                     raise UnprocessedBlockNotAllowed()
                 return_block = self.save_block_as_unprocessed(block, self.wallet_address)

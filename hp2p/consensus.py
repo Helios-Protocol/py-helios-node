@@ -33,6 +33,7 @@ from typing import (
     Type,
     Optional,
 )
+from itertools import repeat
 from hp2p.protocol import Command
 from helios.protocol.common.constants import ROUND_TRIP_TIMEOUT
 from helios.exceptions import AlreadyWaiting
@@ -283,6 +284,8 @@ class Consensus(BaseService, PeerSubscriber):
         self.coro_is_ready = asyncio.Event()
         self.coro_root_hash_statistics_ready = asyncio.Event()
         self.coro_min_gas_system_ready = asyncio.Event()
+
+        self._write_to_root_hash_timestamps_statistics = asyncio.Lock()
      
     '''
     Properties and utils
@@ -340,8 +343,15 @@ class Consensus(BaseService, PeerSubscriber):
                         sync_stage = sync_params.sync_stage
                         self._current_sync_stage = sync_stage
 
+            self._last_check_if_syncing_time = int(time.time())
+
         self.logger.debug("SYNC STAGE {}".format(self._current_sync_stage))
         return self._current_sync_stage
+
+    @current_sync_stage.setter
+    def current_sync_stage(self, sync_stage):
+        self._current_sync_stage = sync_stage
+        self._last_check_if_syncing_time = int(time.time())
 
     #    @property
 #    def min_gas_system_ready(self):
@@ -589,6 +599,8 @@ class Consensus(BaseService, PeerSubscriber):
                 #TODO. when a peer disconnects, make sure we delete their vote.
                 
                 #todo: re-enable these Actually need to re-enable
+                #todo: these will cause statistics problems because the statistics subtracts previous stake then adds new stake.
+                #if the previous stake was deleted, it will just add the new stake and double the stake.
                 #self.remove_data_for_old_root_hash_timestamps()
                 #self.remove_data_for_disconnected_peers()
                 #self.remove_data_for_blocks_that_achieved_consensus()
@@ -731,7 +743,8 @@ class Consensus(BaseService, PeerSubscriber):
                 await asyncio.sleep(ROUND_TRIP_TIMEOUT)
                 continue
             except Exception as e:
-                raise e
+                self.logger.debug("Error when receiving staking score from peer. {}".format(e))
+                break
 
 
     async def peer_node_health_syncer_loop(self) -> None:
@@ -899,11 +912,27 @@ class Consensus(BaseService, PeerSubscriber):
             # finally, update the peer block choices
             self.peer_block_choices[peer_wallet_address] = [new_peer_stake, new_block_hash_keys]
 
+    def get_chain_head_root_hash_for_peer(self, peer_wallet_address: Address, timestamp: Timestamp) -> Optional[Hash32]:
+
+        try:
+            root_hash_timestamps = self.peer_root_hash_timestamps[peer_wallet_address][1]
+        except KeyError:
+            return None
+
+        root_hash_timestamps_dict = dict(root_hash_timestamps)
+        #assert(len(root_hash_timestamps_dict) == len(root_hash_timestamps))
+
+        try:
+            return root_hash_timestamps_dict[timestamp]
+        except KeyError:
+            return None
+
 
     async def receive_peer_chain_head_root_hash_timestamps_loop(self):
         self.logger.debug("Starting receive_peer_chain_head_root_hash_timestamps_loop")
         while self.is_operational:
             root_hash_timestamp_item = await self.wait(self._new_peer_chain_head_root_hash_timestamps.get(), token=self.cancel_token)
+            self.logger.debug("receive_peer_chain_head_root_hash_timestamps_loop new loop")
             peer_wallet_address = root_hash_timestamp_item.peer_wallet_address
             new_peer_stake = root_hash_timestamp_item.stake
             new_root_hash_timestamps = root_hash_timestamp_item.msg
@@ -911,35 +940,55 @@ class Consensus(BaseService, PeerSubscriber):
 
             # first we check to see if we have an entry for this peer:
             if peer_wallet_address in self.peer_root_hash_timestamps:
+
                 previous_peer_stake = self.peer_root_hash_timestamps[peer_wallet_address][0]
                 previous_root_hash_timestamps = self.peer_root_hash_timestamps[peer_wallet_address][1]
 
-                # lets just find the difference this way. should be more effectient. hopefully.
-                stake_sub, stake_add = self.calc_stake_difference(previous_root_hash_timestamps,
-                                                                  new_root_hash_timestamps)
+                # We have to handle 2 cases, 1) Their root hash choices change. 2) Thier stake changes.
+                # Lets find the difference between previous and new choices and stake
+                previous_bundles = list(zip(repeat(previous_peer_stake, len(previous_root_hash_timestamps)), previous_root_hash_timestamps))
+                new_bundles = list(zip(repeat(previous_peer_stake, len(new_root_hash_timestamps)), new_root_hash_timestamps))
 
+                bundle_subs, bundle_adds = self.calc_stake_difference(previous_bundles,
+                                                                  new_bundles)
+                # if len(stake_sub) > 0 or len(stake_add) > 0:
+                #     print('AAAAAAAAAAAAAAA')
+                #     print(self.peer_root_hash_timestamps[peer_wallet_address])
+                #     print(new_peer_stake, new_root_hash_timestamps)
                 # self.logger.debug("subtracting stake {} from timestamps {}".format(previous_peer_stake, [x[0] for x in stake_sub]))
                 # self.logger.debug("adding stake {} from timestamps {}".format(new_peer_stake, [x[0] for x in stake_add]))
                 # first we subtract the previous stake
-                for previous_root_hash_timestamp in stake_sub:
-                    self.delta_root_hash_timestamp_statistics(
-                        previous_root_hash_timestamp[0],  # timestamp
-                        previous_root_hash_timestamp[1],  # root_hash
-                        -1 * previous_peer_stake)
 
-                # now add the new stake with new choices
-                for new_root_hash_timestamp in stake_add:
-                    self.delta_root_hash_timestamp_statistics(
-                        new_root_hash_timestamp[0],  # timestamp
-                        new_root_hash_timestamp[1],  # root_hash
-                        new_peer_stake)
+                # print("AAAAAAAAAAAAAAAAA")
+                # print(bundle_subs[-5:])
+                # print(bundle_adds[-5:])
+                async with self._write_to_root_hash_timestamps_statistics:
+                    for bundle in bundle_subs:
+                        stake_sub = bundle[0]
+                        previous_root_hash_timestamp = bundle[1]
+                        self.delta_root_hash_timestamp_statistics(
+                            previous_root_hash_timestamp[0],  # timestamp
+                            previous_root_hash_timestamp[1],  # root_hash
+                            -1 * stake_sub)
+
+                    # now add the new stake with new choices
+                    for bundle in bundle_adds:
+                        stake_add = bundle[0]
+                        previous_root_hash_timestamp = bundle[1]
+                        self.delta_root_hash_timestamp_statistics(
+                            previous_root_hash_timestamp[0],  # timestamp
+                            previous_root_hash_timestamp[1],  # root_hash
+                            stake_add)
+
+
             else:
                 # now add the new stake with new choices
-                for new_root_hash_timestamp in new_root_hash_timestamps:
-                    self.delta_root_hash_timestamp_statistics(
-                        new_root_hash_timestamp[0],  # timestamp
-                        new_root_hash_timestamp[1],  # root_hash
-                        new_peer_stake)
+                async with self._write_to_root_hash_timestamps_statistics:
+                    for new_root_hash_timestamp in new_root_hash_timestamps:
+                        self.delta_root_hash_timestamp_statistics(
+                            new_root_hash_timestamp[0],  # timestamp
+                            new_root_hash_timestamp[1],  # root_hash
+                            new_peer_stake)
             # finally, update the peer block choices
             self.peer_root_hash_timestamps[peer_wallet_address] = [new_peer_stake, new_root_hash_timestamps]
 
@@ -1191,28 +1240,25 @@ class Consensus(BaseService, PeerSubscriber):
 #            self.block_choice_consensus[chain_wallet_address] = block_number_consensus
 #
 #
-    def remove_data_for_old_root_hash_timestamps(self):
+    async def remove_data_for_old_root_hash_timestamps(self):
         if self._last_check_to_remove_old_local_root_hash_timestamps_from_peer_statistics < (int(time.time()) - CONSENSUS_SYNC_TIME_PERIOD):
-            self._remove_data_for_old_root_hash_timestamps()
+            await self._remove_data_for_old_root_hash_timestamps()
             self._last_check_to_remove_old_local_root_hash_timestamps_from_peer_statistics = int(time.time())
 
-    def _remove_data_for_old_root_hash_timestamps(self):
+    async def _remove_data_for_old_root_hash_timestamps(self):
         #cant do it by time because if the network was down for a while, and it starts back up, all of them might be too old.
         #we have to remove ones if the length gets too long
         max_allowed_length = NUMBER_OF_HEAD_HASH_TO_SAVE*2
-        current_statistics_length = len(self.root_hash_timestamps_statistics)
-        if current_statistics_length > max_allowed_length:
-            num_to_remove = current_statistics_length - max_allowed_length
-            sorted_root_hash_timestamps_statistics = SortedDict(self.root_hash_timestamps_statistics)
-            for i in range(num_to_remove):
-                sorted_root_hash_timestamps_statistics.popitem(0)
-            self.root_hash_timestamps_statistics = dict(sorted_root_hash_timestamps_statistics)
+        async with self._write_to_root_hash_timestamps_statistics:
+            current_statistics_length = len(self.root_hash_timestamps_statistics)
+            if current_statistics_length > max_allowed_length:
+                num_to_remove = current_statistics_length - max_allowed_length
+                sorted_root_hash_timestamps_statistics = SortedDict(self.root_hash_timestamps_statistics)
+                for i in range(num_to_remove):
+                    sorted_root_hash_timestamps_statistics.popitem(0)
+                self.root_hash_timestamps_statistics = dict(sorted_root_hash_timestamps_statistics)
 
 
-#        oldest_allowed_time = int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE*2
-#        for timestamp, root_hash_stakes in self.root_hash_timestamps_statistics.copy().items():
-#            if timestamp < oldest_allowed_time:
-#                del(self.root_hash_timestamps_statistics[timestamp])
 
 
     def remove_data_for_blocks_that_achieved_consensus(self):
@@ -1530,18 +1576,14 @@ class Consensus(BaseService, PeerSubscriber):
         '''
         # We start one hash before the correct one, because if that one is also incorrect, then we havent synced up to
         # the time where additive syncing can occur.
-        if self.chain_config.network_startup_node:
-            fast_sync_test = False
-        else:
-            fast_sync_test = True
 
-        fast_sync_test = False
+        do_fast_sync = False
 
         earliest_allowed_time = int((int(time.time()) - NUMBER_OF_HEAD_HASH_TO_SAVE * TIME_BETWEEN_HEAD_HASH_SAVE)/1000)*1000
 
         disagreement_found = False
         local_root_hash_timestamps = self.local_root_hash_timestamps
-        if local_root_hash_timestamps is not None and not fast_sync_test:
+        if local_root_hash_timestamps is not None:
 
             #we run the loop from newest to oldest because the db is most often going to be close to syncing. This will be more effecient
             sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x) * -1, local_root_hash_timestamps)
@@ -1561,25 +1603,26 @@ class Consensus(BaseService, PeerSubscriber):
                     if disagreement_found:
                         # this is the first agreeing one after some disagreeing ones. This is what we return
                         if timestamp <= earliest_allowed_time:
-                            raise DatabaseResyncRequired()
+                            do_fast_sync = True
+                            break
 
                         peers_to_sync_with = []
 
                         for peer in self.peer_pool.peers:
-                            if peer.chain_head_root_hashes is not None:
-                                try:
-                                    if dict(peer.chain_head_root_hashes)[previous_timestamp] == previous_consensus_root_hash:
-                                        peers_to_sync_with.append(peer)
-                                except (KeyError, IndexError):
-                                    pass
+                            if self.get_chain_head_root_hash_for_peer(peer.wallet_address, previous_timestamp) == previous_consensus_root_hash:
+                                peers_to_sync_with.append(peer)
+
 
                         if len(peers_to_sync_with) == 0:
+
                             raise NoEligiblePeers("No peers have the root hash that we need to sync with. They may have just disconnected.")
 
-                        return SyncParameters(previous_timestamp,
+                        sync_params = SyncParameters(previous_timestamp,
                                               local_root_hash=previous_local_root_hash,
                                               consensus_root_hash=previous_consensus_root_hash,
                                               peers_to_sync_with=peers_to_sync_with)
+                        self.current_sync_stage = sync_params.sync_stage
+                        return sync_params
 
                     else:
                         # we are in agreemenet from the newest roothash without any disagreements, we break and return none
@@ -1600,7 +1643,7 @@ class Consensus(BaseService, PeerSubscriber):
                         break
 
 
-        if local_root_hash_timestamps is None or disagreement_found or fast_sync_test:
+        if local_root_hash_timestamps is None or disagreement_found or do_fast_sync:
             # Ours disagrees all of the way through. We need to perform a fast sync, or stage 1 sync.
             # By default, lets perform the fast sync up to the root hash from 24 hours ago.
             fast_sync_chronological_block_hash_timestamp = Timestamp(int((time.time() - 24*60*60) / 1000) * 1000)
@@ -1622,24 +1665,24 @@ class Consensus(BaseService, PeerSubscriber):
             peers_to_sync_with = []
 
             for peer in self.peer_pool.peers:
-                if peer.chain_head_root_hashes is not None:
-                    try:
-                        if dict(peer.chain_head_root_hashes)[fast_sync_chronological_block_hash_timestamp] == consensus_root_hash:
-                            peers_to_sync_with.append(peer)
-                    except (KeyError, IndexError):
-                        pass
+                if self.get_chain_head_root_hash_for_peer(peer.wallet_address, fast_sync_chronological_block_hash_timestamp) == consensus_root_hash:
+                    peers_to_sync_with.append(peer)
+
 
             if len(peers_to_sync_with) == 0:
                 raise NoEligiblePeers("No peers have the root hash that we need to sync with. They may have just disconnected.")
 
-            return SyncParameters(fast_sync_chronological_block_hash_timestamp,
+            sync_params = SyncParameters(fast_sync_chronological_block_hash_timestamp,
                                local_root_hash=local_root_hash,
                                consensus_root_hash=consensus_root_hash,
                                peers_to_sync_with=peers_to_sync_with,
                                sync_stage_override = 1)
+            self.current_sync_stage = sync_params.sync_stage
+            return sync_params
 
 
         else:
+            self.current_sync_stage = 4
             return None
 
 

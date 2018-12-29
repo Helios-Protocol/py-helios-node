@@ -21,6 +21,7 @@ from helios.plugins.builtin.rpc_http_proxy.plugin import (
 # from helios.plugins.builtin.light_peer_chain_bridge.plugin import (
 #     LightPeerChainBridgePlugin
 # )
+from helios.plugins.builtin.rpc_websocket_proxy.plugin import RpcWebsocketProxyPlugin
 
 
 def is_ipython_available() -> bool:
@@ -41,7 +42,8 @@ ENABLED_PLUGINS = [
     #EthstatsPlugin(),
     FixUncleanShutdownPlugin(),
     JsonRpcServerPlugin(),
-    #RpcHTTPProxyPlugin,
+    #RpcHTTPProxyPlugin(),
+    RpcWebsocketProxyPlugin(),
     #LightPeerChainBridgePlugin(),
     #TxPlugin(),
 ]

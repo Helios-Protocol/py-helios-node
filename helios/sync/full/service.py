@@ -16,7 +16,7 @@ from helios.db.chain_head import AsyncChainHeadDB
 from helios.protocol.hls.peer import HLSPeerPool
 from helios.protocol.common.context import ChainContext
 
-from .chain import FastChainSyncer, RegularChainSyncer
+from .chain import RegularChainSyncer
 
 from typing import TYPE_CHECKING
 
@@ -51,30 +51,6 @@ class FullNodeSyncer(BaseService):
         self.peer_pool = peer_pool
 
     async def _run(self) -> None:
-        latest_chain_head_root_timestamp = self.chain_head_db.get_latest_timestamp()
-        # We're still too slow at block processing, so if our local head is older than
-        # FAST_SYNC_CUTOFF we first do a fast-sync run to catch up with the rest of the network.
-        # See https://github.com/ethereum/py-evm/issues/654 for more details
-        # if latest_chain_head_root_timestamp < time.time() - FAST_SYNC_CUTOFF:
-        #     # Fast-sync chain data.
-        #     self.logger.info("Starting fast-sync; current head: #%d", head.block_number)
-        #     fast_syncer = FastChainSyncer(
-        #         self.chain,
-        #         self.chaindb,
-        #         self.peer_pool,
-        #         self.cancel_token,
-        #     )
-        #     await fast_syncer.run()
-        #     # remove the reference so the memory can be reclaimed
-        #     del fast_syncer
-        #
-        # if self.cancel_token.triggered:
-        #     return
-
-        # context: ChainContext,
-        # peer_pool: HLSPeerPool,
-        # consensus,
-        # node,
 
         # Now, loop forever, fetching missing blocks and applying them.
         self.logger.info("Starting regular sync; latest root hash timestamp = {}".format(self.chain_head_db.get_latest_timestamp()))

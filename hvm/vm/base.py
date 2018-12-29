@@ -371,6 +371,7 @@ class VM(BaseVM):
         else:
             return None, None, computation
 
+
     def apply_receive_transaction(self,
                                header: BlockHeader,
                                receive_transaction: BaseReceiveTransaction,
@@ -392,9 +393,15 @@ class VM(BaseVM):
 
         if receivable_tx_key is None:
             # now check for that shit
-            if self.chaindb.exists(receive_transaction.sender_block_hash) and send_transaction is not None:
-                raise ValidationError(
-                    'Receive transaction is invalid. We have the sender block, but it didn\'t contain the send transaction')
+            if self.chaindb.exists(receive_transaction.sender_block_hash):
+                try:
+                    block_hash, index, is_receive = self.chaindb.get_transaction_index(receive_transaction.send_transaction_hash)
+                    if block_hash != receive_transaction.sender_block_hash:
+                        raise ValidationError(
+                            'Receive transaction is invalid. We have the sender block, but it didn\'t contain the send transaction')
+                except TransactionNotFound:
+                    raise ValidationError(
+                        'Receive transaction is invalid. We have the sender block, but it didn\'t contain the send transaction')
             else:
                 raise ReceivableTransactionNotFound()
 
@@ -674,6 +681,15 @@ class VM(BaseVM):
         packed_block = self.pack_block(self.block, *args, **kwargs)
         
         packed_block = self.save_account_hash(packed_block)
+
+        account_balance = self.state.account_db.get_balance(self.wallet_address)
+        self.logger.debug("setting account_balance of block to {}".format(account_balance))
+        packed_block = packed_block.copy(
+            header=packed_block.header.copy(
+                account_balance=account_balance,
+            ),
+        )
+
         
         if isinstance(packed_block, self.get_queue_block_class()):
             """
@@ -682,12 +698,9 @@ class VM(BaseVM):
             """
             #update timestamp now.
             self.logger.debug("setting timestamp of block to {}".format(int(time.time())))
-            account_balance = self.state.account_db.get_balance(self.wallet_address)
-            self.logger.debug("setting account_balance of block to {}".format(account_balance))
             packed_block = packed_block.copy(
                 header=packed_block.header.copy(
                     timestamp=block_timestamp,
-                    account_balance=account_balance,
                 ),
             )
             if self.private_key is None:

@@ -228,12 +228,12 @@ class StakeRewardType2(rlp.Serializable, metaclass=ABCMeta):
 
         super(StakeRewardType2, self).__init__(amount, proof, **kwargs)
 
-    @property
-    def hash(self) -> bytes:
-        encoded_amount = rlp.encode(self.amount)
-        reward_parts_for_hash = encoded_amount + self.proof_root_hash
-
-        return keccak(reward_parts_for_hash)
+    # @property
+    # def hash(self) -> bytes:
+    #     return keccak(self.get_message_for_hash())
+    #
+    # def get_message_for_hash(self):
+    #     return rlp.encode([self.amount, self.proof_root_hash])
 
     @property
     def proof_root_hash(self) -> bytes:
@@ -265,12 +265,10 @@ class StakeRewardBundle(rlp.Serializable, metaclass=ABCMeta):
 
     @property
     def hash(self) -> bytes:
-        encoded_reward_type_1 = rlp.encode(self.reward_type_1)
-        reward_parts_for_hash = encoded_reward_type_1 + self.reward_type_2.hash
+        return keccak(self.get_message_for_hash())
 
-        return keccak(reward_parts_for_hash)
-
-
+    def get_message_for_hash(self):
+        return rlp.encode([self.reward_type_1, self.reward_type_2.amount, self.reward_type_2.proof_root_hash])
 
 
 #

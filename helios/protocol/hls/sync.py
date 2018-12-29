@@ -1,4 +1,4 @@
-from hp2p.constants import MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED
+from hp2p.constants import MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED, SYNC_STAGE_4_START_OFFSET
 from hvm.types import Timestamp
 import time
 from hvm.constants import (
@@ -53,7 +53,7 @@ def get_sync_stage_for_historical_root_hash_timestamp(timestamp: Timestamp) -> i
         return 1
     elif timestamp < int(time.time()) - MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED:
         return 2
-    elif timestamp < int(time.time()):
+    elif timestamp < int(time.time()) - SYNC_STAGE_4_START_OFFSET:
         return 3
     else:
         return 4

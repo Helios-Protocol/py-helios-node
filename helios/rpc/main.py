@@ -5,6 +5,7 @@ from typing import (
     Dict,
     Tuple,
     Union,
+    Type,
 )
 
 from eth_utils import (
@@ -76,11 +77,12 @@ class RPCServer:
         Web3,
     )
 
-    def __init__(self, chain: AsyncChain=None, event_bus: Endpoint=None) -> None:
+    def __init__(self, chain: AsyncChain=None, event_bus: Endpoint=None, chain_class: Type[AsyncChain]= None) -> None:
         self.modules: Dict[str, RPCModule] = {}
         self.chain = chain
+        self.chain_class = chain_class
         for M in self.module_classes:
-            self.modules[M.__name__.lower()] = M(chain, event_bus)
+            self.modules[M.__name__.lower()] = M(chain, event_bus, chain_class)
         if len(self.modules) != len(self.module_classes):
             raise ValueError("apparent name conflict in RPC module_classes", self.module_classes)
 

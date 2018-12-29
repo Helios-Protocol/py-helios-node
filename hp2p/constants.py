@@ -74,9 +74,6 @@ BLOCK_CONFLICT_RESOLUTION_PERIOD = 60
 #the amount of time to wait between removing data from disconnected peers
 CONSENUS_PEER_DISCONNECT_CHECK_PERIOD = 120
 CONSENSUS_CHECK_READY_TIME_PERIOD = 2
-#FAST_SYNC_CUTOFF_PERIOD = 60*60*24 #one day
-#TODO.
-FAST_SYNC_CUTOFF_PERIOD = 0 #testing
 FAST_SYNC_NUM_CHAINS_TO_REQUEST = 5
 ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD = 60*24 #testing
 
@@ -88,6 +85,8 @@ MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD = 5 #this should be set to 30 afte
 MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG = 0 #This can only be set higher once the network is running. at the start this needs to be 0
 MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED = 60*5 #This is the amount of time we allow the network to sync new blocks between nodes.
                                                            #After this time, the nodes will take the copy of the database that has the most stake.
+SYNC_STAGE_4_START_OFFSET = 200 # The number of seconds before the current time where we cut off the sync stage 4. If this was 0, then every 1000 seconds
+                                # as we move to the next window, we would temporarily go to stage 3 and communication would stop.
 
 PEER_STAKE_GONE_STALE_TIME_PERIOD = 60 # The amount of time that needs to pass before we re-update the peer stake from the
                                         # blockchain database.

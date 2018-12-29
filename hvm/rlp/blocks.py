@@ -24,6 +24,10 @@ if TYPE_CHECKING:
     from hvm.rlp.transactions import BaseTransaction, BaseReceiveTransaction
     from hvm.rlp.consensus import StakeRewardBundle
 
+class BaseMicroBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
+    pass
+
+
 class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
     transaction_class: 'Type[BaseTransaction]' = None
     receive_transaction_class: 'Type[BaseReceiveTransaction]' = None

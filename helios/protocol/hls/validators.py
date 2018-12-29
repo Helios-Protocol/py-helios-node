@@ -10,7 +10,8 @@ from hvm.rlp.consensus import NodeStakingScore
 from hvm.rlp.headers import BlockHeader
 from eth_typing import (
     Hash32,
-    BlockNumber)
+    BlockNumber,
+    Address)
 from eth_utils import (
     ValidationError,
 )
@@ -125,6 +126,21 @@ class GetBlocksValidator(BaseValidator[Tuple[P2PBlock, ...]]):
                 "Response contains {0} unexpected blocks".format(len(unexpected_hashes))
             )
 
+class GetChainSegmentValidator(BaseValidator[Tuple[P2PBlock, ...]]):
+    def __init__(self, chain_address: Address) -> None:
+        self.chain_address = chain_address
+
+    def validate_result(self, response: Tuple[P2PBlock, ...]) -> None:
+        if not response:
+            # an empty response is always valid
+            return
+
+        for block in response:
+            if block.header.chain_address != self.chain_address:
+                raise ValidationError(
+                    "Received blocks on wrong chain"
+                )
+
 class GetChainsValidator(BaseValidator[Tuple[Tuple[P2PBlock], ...]]):
     def __init__(self, expected_chain_head_hash_fragments: List[bytes]) -> None:
         self.expected_chain_head_hash_fragments = set(expected_chain_head_hash_fragments)
@@ -141,8 +157,11 @@ class GetChainsValidator(BaseValidator[Tuple[Tuple[P2PBlock], ...]]):
         for chain in response:
             chain_head = chain[-1]
             if chain_head.header.hash[:self.fragment_length] not in self.expected_chain_head_hash_fragments:
+                all_block_fragments = []
+                for block in chain:
+                    all_block_fragments.append(block.header.hash[:self.fragment_length])
                 raise ValidationError(
-                    "Response contains the incorrect chain head blocks"
+                    "Response contains the incorrect chain head blocks. All expected head hashes {}, entire received chain {}".format(self.expected_chain_head_hash_fragments, all_block_fragments)
                 )
 
 

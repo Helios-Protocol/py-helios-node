@@ -13,6 +13,7 @@ from eth_typing import (
     BlockIdentifier,
     Hash32,
     BlockNumber,
+    Address,
 )
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.consensus import NodeStakingScore
@@ -52,7 +53,7 @@ from .requests import (
     GetBlocksRequest,
     GetNodeStakingScoreRequest,
 
-    GetHashFragmentsRequest, GetChainsRequest)
+    GetHashFragmentsRequest, GetChainsRequest, GetChainSegmentRequest)
 from .trackers import (
     GetBlockHeadersTracker,
     GetBlockBodiesTracker,
@@ -60,7 +61,7 @@ from .trackers import (
     GetReceiptsTracker,
     GetBlocksTracker,
     GetNodeStakingScoreTracker,
-    GetHashFragmentsTracker, GetChainsTracker)
+    GetHashFragmentsTracker, GetChainsTracker, GetChainSegmentTracker)
 from .validators import (
     GetBlockBodiesValidator,
     GetBlockHeadersValidator,
@@ -68,7 +69,7 @@ from .validators import (
     ReceiptsValidator,
     GetBlocksValidator,
     GetNodeStakingScoreValidator,
-    get_hash_fragments_payload_validator, GetChainsValidator)
+    get_hash_fragments_payload_validator, GetChainsValidator, GetChainSegmentValidator)
 
 
 
@@ -207,6 +208,39 @@ class GetBlocksExchange(BaseGetBlocksExchange):
             noop_payload_validator,
             timeout,
         )
+
+BaseGetChainSegmentExchange = BaseExchange[
+    Dict[str, Any], #parameter types for request_class
+    Tuple[P2PBlock, ...], #type that rlp returns
+    Tuple[P2PBlock, ...], #type that the normalizer returns
+]
+
+#if rlp and normalizer return same type, use NoobNormalizer. It does nothing.
+
+
+class GetChainSegmentExchange(BaseGetChainSegmentExchange):
+    _normalizer = NoopNormalizer[Tuple[P2PBlock, ...]]()
+    request_class = GetChainSegmentRequest
+    tracker_class = GetChainSegmentTracker
+
+    async def __call__(  # type: ignore
+            self,
+            chain_address: Address,
+            block_number_start: int = 0,
+            block_number_end: int = 0,
+            timeout: float = None) -> Tuple[P2PBlock, ...]:
+
+        validator = GetChainSegmentValidator(chain_address)
+        request = self.request_class(chain_address, block_number_start, block_number_end)
+
+        return await self.get_result(
+            request,
+            self._normalizer,
+            validator,
+            noop_payload_validator,
+            timeout,
+        )
+
 
 BaseGetChainsExchange = BaseExchange[
     Dict[str, Any], #parameter types for request_class

@@ -10,6 +10,7 @@ from eth_typing import (
     BlockIdentifier,
     Hash32,
     BlockNumber,
+    Address,
 )
 from hp2p.protocol import BaseRequest
 
@@ -31,7 +32,7 @@ from .commands import (
     Blocks,
     GetNodeStakingScore,
     SendNodeStakingScore,
-    GetHashFragments, SendHashFragments, GetChains, Chains)
+    GetHashFragments, SendHashFragments, GetChains, Chains, GetChainSegment)
 
 from hvm.types import Timestamp
 
@@ -101,6 +102,15 @@ class GetBlocksRequest(BaseRequest[Tuple[Hash32, ...]]):
 
     def __init__(self, block_hashes: Tuple[Hash32, ...]) -> None:
         self.command_payload = block_hashes
+
+class GetChainSegmentRequest(BaseRequest[Dict[str, Any]]):
+    cmd_type = GetChainSegment
+    response_type = Blocks
+
+    def __init__(self, chain_address: Address, block_number_start: int, block_number_end: int) -> None:
+        self.command_payload = {'chain_address': chain_address,
+                                'block_number_start': block_number_start,
+                                'block_number_end': block_number_end}
 
 
 class GetChainsRequest(BaseRequest[Tuple[Hash32, ...]]):

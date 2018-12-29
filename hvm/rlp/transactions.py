@@ -65,7 +65,7 @@ class BaseTransactionCommonMethods:
 
 class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
     fields = [
-        ('nonce', f_big_endian_int),
+        ('nonce', big_endian_int),
         ('gas_price', big_endian_int),
         ('gas', big_endian_int),
         ('to', address),

@@ -116,7 +116,7 @@ from hvm.exceptions import (
     AppendHistoricalRootHashTooOld,
 )
 from hvm.utils.rlp import make_mutable
-
+import bisect
 from sortedcontainers import SortedList
 from sortedcontainers import SortedDict
 
@@ -371,7 +371,7 @@ class ChainHeadDB():
     
     def delete_chain(self, address):
         validate_canonical_address(address, title="Wallet Address")
-        #self.delete_chain_head_hash(address)
+        self.delete_chain_head_hash(address)
         self.add_block_hash_to_timestamp(address, BLANK_HASH, 0)
    
     #it is assumed that this is the head for a particular chain. because blocks can only be imported from the top.
@@ -429,11 +429,14 @@ class ChainHeadDB():
     #going to need to optimize this with c code.
     #@profile(sortby='cumulative')
     def add_block_hash_to_timestamp(self, address, head_hash, timestamp):
+
+
+
         validate_canonical_address(address, title="Wallet Address")
         validate_is_bytes(head_hash, title='Head Hash')
         validate_uint256(timestamp, title='timestamp')
-        
-        
+
+
         currently_saving_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE +TIME_BETWEEN_HEAD_HASH_SAVE
         #make sure it isnt in the future
         if timestamp > currently_saving_window:
@@ -446,8 +449,7 @@ class ChainHeadDB():
         
         starting_timestamp, existing_root_hash = self.get_historical_root_hash(timestamp, return_timestamp = True)
         historical_roots = self.get_historical_root_hashes()
-        
-        
+
         if historical_roots is None:
             if head_hash == BLANK_HASH:
                 self.delete_chain_head_hash(address)
@@ -456,13 +458,14 @@ class ChainHeadDB():
             self.persist()
             historical_roots = [[timestamp, self.root_hash]]
         else:
-            
+
             if starting_timestamp is None:
                 #this means there is no saved root hash that is at this time or before it. 
                 #so we have no root hash to load
-                self.logger.debug("tried appending block hash to timestamp for time earlier than earliest timestamp")
+                self.logger.debug("tried appending block hash to timestamp for time earlier than earliest timestamp."
+                                  "Adding to timestamp {}. Existing historical_roots {}".format(timestamp, historical_roots))
             else:
-            
+
                 new_blockchain_head_db = ChainHeadDB(self.db, existing_root_hash)
                 if head_hash == BLANK_HASH:
                     new_blockchain_head_db.delete_chain_head_hash(address)
@@ -470,7 +473,7 @@ class ChainHeadDB():
                     new_blockchain_head_db.set_chain_head_hash(address, head_hash)
                 new_blockchain_head_db.persist()
                 new_root_hash = new_blockchain_head_db.root_hash
-                
+
                 if starting_timestamp == timestamp:
                     #we already had a root hash for this timestamp. just update the existing one.
                     #self.logger.debug("adding block hash to timestamp without propogating. root hash already existed. updating for time {}".format(timestamp))
@@ -481,14 +484,16 @@ class ChainHeadDB():
                     #self.logger.debug(new_root_hash)
                 else:
                     #self.logger.debug("adding block hash to timestamp without propogating. root hash didnt exist")
-                    sorted_historical_roots = SortedList(historical_roots)
+                    #sorted_historical_roots = SortedList(historical_roots)
+                    historical_roots_dict = dict(historical_roots)
                     for loop_timestamp in range(starting_timestamp, timestamp, TIME_BETWEEN_HEAD_HASH_SAVE):
-                        sorted_historical_roots.add([loop_timestamp, existing_root_hash])
-                    sorted_historical_roots.add([timestamp, new_root_hash])
-                    historical_roots = list(sorted_historical_roots)
+                        historical_roots_dict[loop_timestamp] = existing_root_hash
+
+                    historical_roots_dict[timestamp] = new_root_hash
+                    historical_roots = list(historical_roots_dict.items())
                 
         #now propogate the new head hash to any saved historical root hashes newer than this one.
-        #effeciently do this by starting from the end and working back. we can assume 
+        #effeciently do this by starting from the end and working back. we can assume
         if historical_roots[-1][0] > timestamp:
             self.logger.debug("propogating historical root hash timestamps forward")
             for i in range(len(historical_roots)-1, 0, -1):
@@ -510,7 +515,6 @@ class ChainHeadDB():
          
         #lets now make sure our root hash is the same as the last historical. It is possible that another thread or chain object
         #has imported a block since this one was initialized.
-
 
         self.save_historical_root_hashes(historical_roots)
         
@@ -725,13 +729,15 @@ class ChainHeadDB():
     def save_historical_root_hashes(self, root_hashes):
         #if root_hashes[-1][0] == 1534567000:
         #    exit()
+        # Automatically sort when saving. This way we can always assume they are sorted when loading
+        root_hashes.sort()
+
         if len(root_hashes) > 1000:
             root_hashes = root_hashes[-1000:]
 
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
-        data = rlp.encode(root_hashes, sedes=rlp.sedes.CountableList(rlp.sedes.List([big_endian_int, hash32])))
-        #data = hp_encode(root_hashes)
-        #data = hm_encode(root_hashes)
+        data = rlp.encode(root_hashes, sedes=rlp.sedes.FCountableList(rlp.sedes.FList([f_big_endian_int, hash32])))
+
         self.db.set(
             historical_head_root_lookup_key,
             data,
@@ -746,54 +752,66 @@ class ChainHeadDB():
         if timestamp % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
             timestamp = int(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
         historical = self.get_historical_root_hashes()
+
         root_hash_to_return = None
         timestamp_to_return = None
-        if historical is not None:
-            historical_sorted_dict = SortedDict(historical)
-            if list(historical_sorted_dict.keys())[-1] < timestamp:
-                #the last one is earlier than this timestamp, lets just return it
-                timestamp_to_return = list(historical_sorted_dict.keys())[-1]
-                root_hash_to_return = historical_sorted_dict[timestamp_to_return]
-            else: 
-                if list(historical_sorted_dict.keys())[0] <= timestamp:
-                    #otherwise we have none that are earlier than this timestamp
-                    #TODO: optimize this
-                    for i in range(timestamp, int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE, -TIME_BETWEEN_HEAD_HASH_SAVE):
-                        try:
-                            timestamp_to_return = i
-                            root_hash_to_return = historical_sorted_dict[i]
-                            break
-                        except KeyError:
-                            pass
-        
+
+        #historical.sort()
+
+        timestamps = [x[0] for x in historical]
+        right_index = bisect.bisect_right(timestamps, timestamp)
+        if right_index:
+            index = right_index-1
+            timestamp_to_return, root_hash_to_return = historical[index]
+
         if return_timestamp:
             return timestamp_to_return, root_hash_to_return
         else:
             return root_hash_to_return
-        
+
+
+
     def get_historical_root_hashes(self, after_timestamp: Timestamp = None) -> Optional[List[List[Union[Timestamp, Hash32]]]]:
+        '''
+        This has been performance optimized December 22, 2018
+        :param after_timestamp:
+        :return:
+        '''
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
         try:
-            data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=rlp.sedes.CountableList(rlp.sedes.List([big_endian_int, hash32])))
-            #data = hp_decode(self.db[historical_head_root_lookup_key])
-            #data = hm_decode(self.db[historical_head_root_lookup_key])
-            if after_timestamp is None:
-                return make_mutable(data)
-            else:
-                mutable = make_mutable(data)
-                mutable_old_removed = list(mutable)
-                num_deleted = 0
-                for i in range(len(mutable)):
-                    if mutable[i][0] < after_timestamp:
-                        del(mutable_old_removed[i-num_deleted])
-                        num_deleted += 1
-                        
-                if mutable_old_removed == []:
-                    return None
-                return mutable_old_removed
-                
+            data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([f_big_endian_int, hash32])), use_list=True)
         except KeyError:
             return None
+
+        if after_timestamp is None:
+            to_return = data
+        else:
+            timestamps = [x[0] for x in data]
+            index = bisect.bisect_left(timestamps, after_timestamp)
+            to_return = data[index:]
+
+        if len(to_return) == 0:
+            return None
+
+        return to_return
+
+        #         mutable = data
+        #         mutable_old_removed = list(mutable)
+        #         num_deleted = 0
+        #         for i in range(len(mutable)):
+        #             if mutable[i][0] < after_timestamp:
+        #                 del(mutable_old_removed[i-num_deleted])
+        #                 num_deleted += 1
+        #
+        #         if mutable_old_removed == []:
+        #             return None
+        #             to_return = mutable_old_removed
+        #
+        # except KeyError:
+        #     return None
+        #
+        # #to_return.sort()
+        #return to_return
 
     def get_dense_historical_root_hashes(self, after_timestamp: Timestamp = None) -> Optional[List[List[Union[Timestamp, Hash32]]]]:
         '''

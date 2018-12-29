@@ -17,7 +17,7 @@ from rlp.sedes import (
     big_endian_int,
     Binary,
     binary,
-)
+    f_big_endian_int)
 
 
 from cytoolz import (
@@ -41,10 +41,11 @@ from hvm.constants import (
     EMPTY_UNCLE_HASH,
     GENESIS_NONCE,
     BLANK_ROOT_HASH,
-)
+    BLOCK_GAS_LIMIT)
 from hvm.exceptions import (
     ValidationError,
 )
+from hvm.utils.rlp import convert_rlp_to_correct_class
 
 from hvm.validation import (
     validate_uint256,
@@ -81,6 +82,25 @@ from hvm.vm.execution_context import (
 
 HeaderParams = Union[Optional[int], bytes, Address, Hash32]
 
+default_gas_limit = BLOCK_GAS_LIMIT
+
+# The microblockheader is used to decode headers that come from rlp.
+class MicroBlockHeader(rlp.Serializable, metaclass=ABCMeta):
+
+    fields = [
+        ('chain_address', address),
+        ('parent_hash', hash32),
+        ('transaction_root', trie_root),
+        ('receive_transaction_root', trie_root),
+        ('block_number', big_endian_int),
+        ('timestamp', big_endian_int),
+        ('extra_data', binary),
+        ('reward_hash', hash32),
+        ('v', big_endian_int),
+        ('r', big_endian_int),
+        ('s', big_endian_int),
+    ]
+
 class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
     fields = [
         ('chain_address', address),
@@ -101,6 +121,8 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
         ('r', big_endian_int),
         ('s', big_endian_int),
     ]
+    #header_parts[:4] + [header_parts[6]] + header_parts[9:12]
+
 
     @overload
     def __init__(self, **kwargs: HeaderParams) -> None:
@@ -109,7 +131,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
     @overload  # noqa: F811
     def __init__(self,
                  block_number: int,
-                 gas_limit: int,
+                 gas_limit: int=default_gas_limit,
                  account_hash: Hash32=ZERO_HASH32,
                  account_balance: int = 0,
                  timestamp: int=None,
@@ -129,7 +151,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
 
     def __init__(self,  # noqa: F811
                  block_number,
-                 gas_limit,
+                 gas_limit = default_gas_limit,
                  account_hash = ZERO_HASH32,
                  account_balance = 0,
                  timestamp=None,
@@ -189,7 +211,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
         if self._micro_header_hash is None:
             header_parts = rlp.decode(rlp.encode(self), use_list=True)
             header_parts_for_hash = (
-                    header_parts[:3] + [header_parts[5]] + header_parts[8:11] + [header_parts[12]] + [header_parts[13]] + header_parts[-3:]
+                    header_parts[:4] + [header_parts[6]] + header_parts[9:12] + header_parts[-3:]
             )
             self._micro_header_hash = keccak(rlp.encode(header_parts_for_hash))
         return self._micro_header_hash
@@ -201,7 +223,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
     @classmethod
     def from_parent(cls,
                     parent: 'BaseBlockHeader',
-                    gas_limit: int,
+                    gas_limit: int=default_gas_limit,
                     timestamp: int=None,
                     extra_data: bytes=None,
                     transaction_root: bytes=None,
@@ -258,9 +280,13 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
 
         header_parts = rlp.decode(rlp.encode(self, sedes=self.__class__), use_list=True)
         header_parts_for_signature = (
-                header_parts[:3] + [header_parts[5]] + header_parts[8:11] + [header_parts[12]] + [header_parts[13]] + [
+                header_parts[:4] + [header_parts[6]] + header_parts[9:12] + [
             int_to_big_endian(chain_id), b'', b'']
         )
+        # header_parts_for_signature = (
+        #         header_parts[:3] + [header_parts[5]] + header_parts[8:11] + [header_parts[12]] + [header_parts[13]] + [
+        #     int_to_big_endian(chain_id), b'', b'']
+        # )
         message = rlp.encode(header_parts_for_signature)
         return message
 
@@ -301,6 +327,12 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
         raise NotImplementedError("Must be implemented by subclasses")
 
 
+    #
+    # MicroHeader API
+    #
+    @classmethod
+    def from_micro_header(cls, micro_header:MicroBlockHeader):
+        return convert_rlp_to_correct_class(cls, micro_header)
         
 
 
@@ -346,7 +378,8 @@ class BlockHeader(BaseBlockHeader):
         if is_eip_155_signed_block_header(self):
             return 36 + (2 * self.chain_id)
 
-        
+
+
         
 class CollationHeader(rlp.Serializable):
     """The header of a collation signed by the proposer."""

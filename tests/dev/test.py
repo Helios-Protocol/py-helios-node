@@ -1,45 +1,25 @@
-import difflib
-from eth_hash.auto import keccak
-from random import randint
-from eth_utils import int_to_big_endian
-import os
-from pprint import pprint
-
-from trie.constants import BLANK_HASH
-
-from eth_typing import Hash32
-from typing import List, Tuple, Set
-import math
-from itertools import zip_longest
-import diff_match_patch as dmp_module
+import bisect
 import time
-from hvm.db.trie import BinaryTrie, HexaryTrie, _make_trie_root_and_nodes
-from hvm.constants import BLANK_ROOT_HASH
-from hvm.db.trie import make_binary_trie_root
-from hvm.db.backends.memory import MemoryDB
-import rlp
-from eth_utils import encode_hex
-from trie import BinaryTrie
+import random
 
-# num_bytes = 4
-# num_bits = num_bytes*8
-# num_differences = 1000*10
-#
-# print(1- ((2**num_bits-1)/(2**num_bits))**num_differences)
-# #
-#
-# num_bytes_per_hash = 1
-#
-# node_1_num_blocks = 1000
-#
-# node_1_chronological_block_hashes = []
-#
-# for i in range(node_1_num_blocks):
-#     node_1_chronological_block_hashes.append(keccak(b"\x00"+os.urandom(12)+b"\x00"))
-#
-# print(make_binary_trie_root(node_1_chronological_block_hashes))
-# root, _ = _make_trie_root_and_nodes(tuple(node_1_chronological_block_hashes))
-# print(root)
+test_timestamp_value_list = []
+for i in range(1000):
+    number = random.randint(100, 10000000)
+    test_timestamp_value_list.append([number, 'sadfsadfasdf'])
 
-test = [0,1,2,3,4,5]
-print(test[2:10])
+
+
+print(test_timestamp_value_list)
+start_timestamp = time.time()
+for i in range(1000):
+    #test_timestamp_value_list = sorted(test_timestamp_value_list)
+    test_timestamp_value_list.sort()
+    timestamps = [x[0] for x in test_timestamp_value_list]
+
+    index = bisect.bisect_right(timestamps, 100000)-1
+
+    what = test_timestamp_value_list[index]
+
+print(what)
+print(time.time()-start_timestamp)
+

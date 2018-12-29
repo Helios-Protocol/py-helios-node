@@ -267,8 +267,11 @@ class ConsensusDB():
             at_timestamp = int(time.time())
 
         latest_reward_block_number = self.chaindb.get_latest_reward_block_number(wallet_address)
-        since_timestamp = self.chaindb.get_canonical_block_header_by_number(latest_reward_block_number,
-                                                                            wallet_address).timestamp
+        try:
+            since_timestamp = self.chaindb.get_canonical_block_header_by_number(latest_reward_block_number,
+                                                                                wallet_address).timestamp
+        except HeaderNotFound:
+            return 0
 
         canonical_head_block_number = self.chaindb.get_canonical_head(wallet_address).block_number
 
@@ -397,8 +400,7 @@ class ConsensusDB():
 
         # need to make sure we have the up-to-date peer chain so that our stake calculation is correct.
         # RewardProofSenderBlockMissing
-        if not self.chaindb.exists(node_staking_score.head_hash_of_sender_chain) or self.chaindb.is_block_unprocessed(
-                node_staking_score.head_hash_of_sender_chain):
+        if not self.chaindb.is_in_canonical_chain(node_staking_score.head_hash_of_sender_chain):
             raise RewardProofSenderBlockMissing("Our chain for chain_address {} appears to be out of date".format(
                 encode_hex(node_staking_score.sender)))
 
@@ -454,7 +456,6 @@ class ConsensusDB():
 
         #next we validate reward type 2. Only some bundles will contain this.
         if reward_bundle.reward_type_2.amount != 0:
-
             # need to create function that validates the reward.
             # check timestamps are all near the block timestamp. leave wiggle room for network latency
             for node_staking_score in reward_bundle.reward_type_2.proof:
