@@ -18,7 +18,7 @@ deps = {
         "pyethash>=0.1.27,<1.0.0",
         "trie>=1.3.5,<2.0.0",
         "sortedcontainers>=2.0.4",
-        "pbkdf2>=1.3"
+        "pbkdf2>=1.3",
         "rlp-cython>=2.1.2",
     ],
     # The hvm-extra sections is for libraries that the hvm does not
