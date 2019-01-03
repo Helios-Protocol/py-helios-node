@@ -18,7 +18,7 @@ from typing import (
 
 from eth_typing import Hash32, Address, BlockNumber
 
-import rlp
+import rlp_cython as rlp
 from hvm.utils.pickle import (
     hp_encode,
     hp_decode,
@@ -99,7 +99,7 @@ from hvm.rlp.sedes import(
     hash32,
 )
 
-from rlp.sedes import (
+from rlp_cython.sedes import (
     big_endian_int,
     f_big_endian_int,
     binary,

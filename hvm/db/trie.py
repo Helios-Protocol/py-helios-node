@@ -1,7 +1,7 @@
 import functools
 from typing import Dict, List, Tuple, Union
 
-import rlp
+import rlp_cython as rlp
 from trie import (
     HexaryTrie,
 )

@@ -1,4 +1,4 @@
-import rlp
+import rlp_cython as rlp
 
 from eth_keys import keys
 from eth_keys.exceptions import (

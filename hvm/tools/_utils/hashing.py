@@ -1,6 +1,6 @@
 from eth_hash.auto import keccak
 
-import rlp
+import rlp_cython as rlp
 
 from hvm.rlp.logs import Log
 

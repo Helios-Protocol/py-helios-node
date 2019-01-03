@@ -1,5 +1,5 @@
-import msgpack
-import rlp
+import msgpack_rlp as msgpack
+import rlp_cython as rlp
 from functools import partial
 
 def encoding_function(obj):

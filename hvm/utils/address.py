@@ -1,4 +1,4 @@
-import rlp
+import rlp_cython as rlp
 
 from eth_hash.auto import keccak
 

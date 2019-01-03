@@ -8,14 +8,14 @@ from eth_utils import (
     to_tuple,
 )
 
-from rlp.exceptions import (
+from rlp_cython.exceptions import (
     SerializationError,
     ListSerializationError,
     DeserializationError,
     ListDeserializationError,
 )
 
-from rlp.sedes.binary import (
+from rlp_cython.sedes.binary import (
     Binary as BinaryClass,
 )
 
@@ -141,7 +141,7 @@ class CountableList(object):
 
 
 
-from rlp.exceptions import DeserializationError, SerializationError
+from rlp_cython.exceptions import DeserializationError, SerializationError
 
 cpdef bytes int_to_big_endian(int value):
     return value.to_bytes((value.bit_length() + 7) // 8 or 1, 'big')

@@ -9,7 +9,7 @@ from typing import Set, Tuple  # noqa: F401
 
 from eth_typing import Hash32
 
-import rlp
+import rlp_cython as rlp
 
 from trie import (
     HexaryTrie,

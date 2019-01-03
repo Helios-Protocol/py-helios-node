@@ -18,7 +18,7 @@ from typing import (
 
 from async_lru import alru_cache
 
-import rlp
+import rlp_cython as rlp
 
 from eth_typing import (
     Address,

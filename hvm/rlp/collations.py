@@ -1,4 +1,4 @@
-import rlp
+import rlp_cython as rlp
 
 from hvm.utils.datatypes import (
     Configurable,

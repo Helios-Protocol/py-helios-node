@@ -1,4 +1,4 @@
-from rlp import sedes
+from rlp_cython import sedes
 from hvm.rlp.sedes import address
 
 class HashOrNumber:

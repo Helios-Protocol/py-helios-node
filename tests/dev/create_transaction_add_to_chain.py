@@ -44,7 +44,11 @@ from hvm.db.trie import make_trie_root_and_nodes
 from hvm.rlp.headers import MicroBlockHeader
 from hvm.rlp.transactions import BaseTransaction
 
-import rlp
+import rlp as rlp
+
+print(rlp.encode(b'test'))
+
+sys.exit()
 
 from eth_utils import (
     encode_hex,
@@ -1120,8 +1124,8 @@ def importing_p2p_type_block():
     from hvm.rlp.sedes import(
         hash32
     )
-    import rlp
-    from rlp import sedes
+    import rlp_cython as rlp
+    from rlp_cython import sedes
     from hvm.rlp.transactions import BaseTransaction
     class P2PSendTransaction(rlp.Serializable):
         fields = BaseTransaction._meta.fields
@@ -1620,12 +1624,12 @@ sys.exit()
 
 def test_fast_rlp():
     import crlp
-    import rlp
+    import rlp_cython as rlp
     from crlp.sedes.serializable import Serializable
     from crlp.sedes import big_endian_int, binary, Binary, BigEndianInt, CountableList
     import random
     import sys
-    from msgpack import packb, unpackb, Packer
+    from msgpack_rlp import packb, unpackb, Packer
 
     address = Binary.fixed_length(20, allow_empty=True)
     hash32 = Binary.fixed_length(32)
@@ -1833,7 +1837,7 @@ def test_trie():
         BLANK_ROOT_HASH,
     )
 
-    import rlp
+    import rlp_cython as rlp
 
     kv_store = {}
     trie = HexaryTrie(kv_store, BLANK_ROOT_HASH)

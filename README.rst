@@ -73,18 +73,6 @@ Py-helios-node install instructions:
         $ cd py-helios-node
         $ pyenv local 3.6.5
 
-5)  Install pandoc
-
-    .. code:: bash
-
-        $ sudo apt install pandoc
-
-    or
-
-    .. code:: bash
-
-        $ sudo yum install pandoc
-
 
 5)  Install the Helios Node
 

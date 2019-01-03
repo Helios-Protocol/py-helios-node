@@ -1,7 +1,7 @@
 from enum import Enum
 
-import rlp
-from rlp.sedes import (
+import rlp_cython as rlp
+from rlp_cython.sedes import (
     big_endian_int,
 )
 

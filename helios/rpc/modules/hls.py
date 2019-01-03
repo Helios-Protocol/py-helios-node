@@ -16,7 +16,7 @@ from helios.rpc.format import (
     to_int_if_hex,
     transaction_to_dict,
 )
-import rlp
+import rlp_cython as rlp
 
 #from hp2p.chain import NewBlockQueueItem
 

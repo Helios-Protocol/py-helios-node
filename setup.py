@@ -16,10 +16,10 @@ deps = {
         "lru-dict>=1.1.6",
         "py-ecc>=1.4.2,<2.0.0",
         "pyethash>=0.1.27,<1.0.0",
-        "rlp-cython>=1.2.0,<2.0.0",
         "trie>=1.3.5,<2.0.0",
         "sortedcontainers>=2.0.4",
         "pbkdf2>=1.3"
+        "rlp-cython>=2.1.2",
     ],
     # The hvm-extra sections is for libraries that the hvm does not
     # explicitly need to function and hence should not depend on.
@@ -92,19 +92,19 @@ deps = {
 
 deps['dev'] = (
     deps['dev'] +
-    deps['hvm'] +
     deps['hvm-extra'] +
     deps['hp2p'] +
     deps['helios'] +
     deps['test'] +
     deps['doc'] +
-    deps['lint']
+    deps['lint'] +
+    deps['hvm']
 )
 
 # As long as hvm, hp2p and helios are managed together in the py-helios-node
 # package, someone running a `pip install py-helios-node` should expect all
 # dependencies for hvm, hp2p and helios to get installed.
-install_requires = deps['hvm'] + deps['hp2p'] + deps['helios']
+install_requires =  deps['hp2p'] + deps['helios'] + deps['hvm']
 
 setup(
     name='py-helios-node',

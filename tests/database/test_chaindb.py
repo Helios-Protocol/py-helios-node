@@ -5,7 +5,7 @@ from hypothesis import (
     strategies as st,
 )
 
-import rlp
+import rlp_cython as rlp
 
 from eth_hash.auto import keccak
 

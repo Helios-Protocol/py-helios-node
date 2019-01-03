@@ -11,7 +11,7 @@ from cytoolz import (
 from helios.protocol.common.datastructures import HashFragmentBundle
 from hvm.db.trie import make_trie_root_and_nodes
 from eth_hash.auto import keccak
-import rlp
+import rlp_cython as rlp
 
 from helios.protocol.common.normalizers import (
     BaseNormalizer,

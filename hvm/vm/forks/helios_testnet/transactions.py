@@ -1,6 +1,6 @@
 from eth_typing import Hash32
 
-import rlp
+import rlp_cython as rlp
 
 from hvm.utils.numeric import (
     int_to_big_endian,
@@ -39,7 +39,7 @@ from hvm.rlp.transactions import (
     BaseReceiveTransaction,
 )
 
-from rlp.sedes import (
+from rlp_cython.sedes import (
     big_endian_int,
     binary,
     boolean,

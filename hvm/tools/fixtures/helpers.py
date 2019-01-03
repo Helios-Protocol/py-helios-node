@@ -1,6 +1,6 @@
 import os
 
-import rlp
+import rlp_cython as rlp
 
 from cytoolz import first
 

@@ -1,4 +1,4 @@
-from rlp.sedes import (
+from rlp_cython.sedes import (
     BigEndianInt,
     Binary,
 )

@@ -7,8 +7,8 @@ from typing import Tuple
 
 import sha3
 
-import rlp
-from rlp import sedes
+import rlp_cython as rlp
+from rlp_cython import sedes
 
 from eth_keys import (
     datatypes,

@@ -1,4 +1,4 @@
-from rlp import sedes
+from rlp_cython import sedes
 
 from hp2p.protocol import (
     Command,

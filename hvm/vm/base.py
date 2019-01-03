@@ -15,7 +15,7 @@ from typing import (  # noqa: F401
 
 import time
 
-import rlp
+import rlp_cython as rlp
 
 from eth_bloom import (
     BloomFilter,

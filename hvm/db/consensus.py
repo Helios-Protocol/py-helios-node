@@ -25,7 +25,7 @@ from eth_keys.datatypes import(
 
 from eth_keys import keys
 
-import rlp
+import rlp_cython as rlp
 
 from hvm.constants import (
     TIME_BETWEEN_PEER_NODE_HEALTH_CHECK,
@@ -55,7 +55,7 @@ from hvm.db.schema import SchemaV1
 
 
 
-import rlp.sedes
+import rlp_cython.sedes as sedes
 
 from hvm.exceptions import (
     InvalidHeadRootTimestamp,

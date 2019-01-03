@@ -18,7 +18,7 @@ from eth_utils import (
     int_to_big_endian,
 )
 
-import rlp
+import rlp_cython as rlp
 
 from hvm.chains.base import (
     AsyncChain

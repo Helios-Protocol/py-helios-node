@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-import rlp
+import rlp_cython as rlp
 
 from eth_utils import (
     big_endian_to_int,

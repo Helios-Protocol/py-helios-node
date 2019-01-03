@@ -5260,7 +5260,7 @@ static PyObject *__pyx_gb_6clists_13CountableList_7generator3(__pyx_CoroutineObj
 }
 
 /* "clists.pyx":146
- * from rlp.exceptions import DeserializationError, SerializationError
+ * from rlp_cython.exceptions import DeserializationError, SerializationError
  * 
  * cpdef bytes int_to_big_endian(int value):             # <<<<<<<<<<<<<<
  *     return value.to_bytes((value.bit_length() + 7) // 8 or 1, 'big')
@@ -5390,7 +5390,7 @@ static PyObject *__pyx_f_6clists_int_to_big_endian(int __pyx_v_value, CYTHON_UNU
   goto __pyx_L0;
 
   /* "clists.pyx":146
- * from rlp.exceptions import DeserializationError, SerializationError
+ * from rlp_cython.exceptions import DeserializationError, SerializationError
  * 
  * cpdef bytes int_to_big_endian(int value):             # <<<<<<<<<<<<<<
  *     return value.to_bytes((value.bit_length() + 7) // 8 or 1, 'big')
@@ -7859,7 +7859,7 @@ if (!__Pyx_RefNanny) {
 
   /* "clists.pyx":12
  * 
- * from rlp.exceptions import (
+ * from rlp_cython.exceptions import (
  *     SerializationError,             # <<<<<<<<<<<<<<
  *     ListSerializationError,
  *     DeserializationError,
@@ -7882,7 +7882,7 @@ if (!__Pyx_RefNanny) {
   /* "clists.pyx":11
  * )
  * 
- * from rlp.exceptions import (             # <<<<<<<<<<<<<<
+ * from rlp_cython.exceptions import (             # <<<<<<<<<<<<<<
  *     SerializationError,
  *     ListSerializationError,
  */
@@ -7909,7 +7909,7 @@ if (!__Pyx_RefNanny) {
 
   /* "clists.pyx":19
  * 
- * from rlp.sedes.binary import (
+ * from rlp_cython.sedes.binary import (
  *     Binary as BinaryClass,             # <<<<<<<<<<<<<<
  * )
  * 
@@ -7923,7 +7923,7 @@ if (!__Pyx_RefNanny) {
   /* "clists.pyx":18
  * )
  * 
- * from rlp.sedes.binary import (             # <<<<<<<<<<<<<<
+ * from rlp_cython.sedes.binary import (             # <<<<<<<<<<<<<<
  *     Binary as BinaryClass,
  * )
  */
@@ -8319,7 +8319,7 @@ if (!__Pyx_RefNanny) {
   /* "clists.pyx":144
  * 
  * 
- * from rlp.exceptions import DeserializationError, SerializationError             # <<<<<<<<<<<<<<
+ * from rlp_cython.exceptions import DeserializationError, SerializationError             # <<<<<<<<<<<<<<
  * 
  * cpdef bytes int_to_big_endian(int value):
  */

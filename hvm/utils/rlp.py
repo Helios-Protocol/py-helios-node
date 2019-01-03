@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-import rlp
+import rlp_cython as rlp
 
 from cytoolz import (
     curry,

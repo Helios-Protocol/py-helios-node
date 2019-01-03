@@ -32,7 +32,7 @@ from typing import (
 
 import cytoolz
 
-import rlp
+import rlp_cython as rlp
 
 from eth_typing import Hash32
 

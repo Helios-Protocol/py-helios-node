@@ -2,8 +2,8 @@ from typing import (  # noqa: F401
     List
 )
 
-import rlp
-from rlp.sedes import (
+import rlp_cython as rlp
+from rlp_cython.sedes import (
     CountableList,
 )
 

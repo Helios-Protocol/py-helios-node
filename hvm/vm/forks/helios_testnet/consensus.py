@@ -1,5 +1,5 @@
 from hvm.rlp.consensus import BaseBlockConflictMessage
-from rlp.sedes import (
+from rlp_cython.sedes import (
      big_endian_int,
      CountableList,
 )

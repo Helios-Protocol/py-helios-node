@@ -12,8 +12,8 @@ from typing import (
     overload,
 )
 
-import rlp
-from rlp.sedes import (
+import rlp_cython as rlp
+from rlp_cython.sedes import (
     big_endian_int,
     Binary,
     binary,
@@ -84,7 +84,7 @@ HeaderParams = Union[Optional[int], bytes, Address, Hash32]
 
 default_gas_limit = BLOCK_GAS_LIMIT
 
-# The microblockheader is used to decode headers that come from rlp.
+# The microblockheader is used to decode headers that come from rlp_cython.
 class MicroBlockHeader(rlp.Serializable, metaclass=ABCMeta):
 
     fields = [

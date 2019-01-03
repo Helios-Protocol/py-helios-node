@@ -1,6 +1,6 @@
 import os
 import pytest
-import rlp
+import rlp_cython as rlp
 
 from eth_utils import (
     ValidationError,

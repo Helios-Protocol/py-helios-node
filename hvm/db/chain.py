@@ -22,7 +22,7 @@ from typing import (
 
 from hvm.types import Timestamp
 
-import rlp
+import rlp_cython as rlp
 
 from trie import (
     HexaryTrie,
@@ -90,7 +90,7 @@ from hvm.rlp.sedes import(
     hash32,
 
 )
-from rlp.sedes import(
+from rlp_cython.sedes import(
     big_endian_int,
     CountableList,
     binary,

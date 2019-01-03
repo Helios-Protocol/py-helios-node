@@ -7,8 +7,8 @@ from typing import (
 
 from cytoolz import assoc
 
-import rlp
-from rlp import sedes
+import rlp_cython as rlp
+from rlp_cython import sedes
 
 from hp2p.exceptions import MalformedMessage
 

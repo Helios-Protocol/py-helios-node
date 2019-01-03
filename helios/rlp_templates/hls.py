@@ -1,5 +1,5 @@
-import rlp
-from rlp import sedes
+import rlp_cython as rlp
+from rlp_cython import sedes
 
 from hvm.rlp.consensus import StakeRewardBundle
 from hvm.rlp.sedes import (

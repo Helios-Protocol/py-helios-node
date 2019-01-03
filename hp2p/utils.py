@@ -5,7 +5,7 @@ import os
 import signal
 from typing import Tuple
 
-import rlp
+import rlp_cython as rlp
 
 from eth_keys import keys
 from eth_keys.exceptions import (

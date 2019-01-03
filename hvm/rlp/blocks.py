@@ -6,7 +6,7 @@ from typing import (  # noqa: F401
     Type
 )
 
-import rlp
+import rlp_cython as rlp
 
 from eth_typing import (
     Hash32,

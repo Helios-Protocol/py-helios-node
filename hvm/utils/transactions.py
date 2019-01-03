@@ -1,5 +1,5 @@
 
-import rlp
+import rlp_cython as rlp
 from functools import lru_cache
 from eth_keys import keys
 from eth_keys.exceptions import (

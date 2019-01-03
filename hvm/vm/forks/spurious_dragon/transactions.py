@@ -1,4 +1,4 @@
-import rlp
+import rlp_cython as rlp
 
 from hvm.vm.forks.homestead.transactions import (
     HomesteadTransaction,

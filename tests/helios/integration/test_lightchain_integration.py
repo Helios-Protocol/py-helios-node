@@ -6,7 +6,7 @@ import subprocess
 import time
 
 import pytest
-import rlp
+import rlp_cython as rlp
 from eth_utils import (
     decode_hex,
     encode_hex,

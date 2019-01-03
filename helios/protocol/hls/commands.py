@@ -3,7 +3,7 @@ from typing import (
     Tuple,
 )
 
-from rlp import sedes
+from rlp_cython import sedes
 
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.receipts import Receipt
