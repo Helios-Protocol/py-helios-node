@@ -1,9 +1,13 @@
-# Helios Protocol Node
+====================
+Helios Protocol Node
+====================
+
 [![Python 3.6](https://img.shields.io/badge/python-3.6-blue.svg)](https://www.python.org/downloads/release/python-360/)
 
 This is the pre-alpha stage of the HeliosProtocol node. It is currently under active development and is not yet complete.
 
-## Installing
+Install
+-------
 
 
 Py-helios-node install instructions:
@@ -16,26 +20,32 @@ Py-helios-node install instructions:
     pyenv, use the setup script found [here](https://github.com/pyenv/pyenv-installer).
     For completeness, we will summarize the current setup steps here:
 
-        1)  Install
+    1)  Install
 
-            .. code:: bash
+        .. code:: bash
 
-                $ curl -L https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
+            $ curl -L https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
 
-        2)  Edit .bashrc
+    2)  Edit .bashrc
 
-            .. code:: bash
+        .. code:: bash
 
-                $ vi ~/.bashrc
+            $ vi ~/.bashrc
 
-            add the lines
+        add the lines
 
-            .. code:: bash
+        .. code:: bash
 
-                export PATH="~/.pyenv/bin:$PATH"
-                eval "$(pyenv init -)"
-                eval "$(pyenv virtualenv-init -)"
+            export PATH="~/.pyenv/bin:$PATH"
+            eval "$(pyenv init -)"
+            eval "$(pyenv virtualenv-init -)"
 
+
+    3)  Install python 3.6
+
+        .. code:: bash
+
+            $ pyenv install 3.6.5
 
 2)  Install git
 
@@ -47,13 +57,40 @@ Py-helios-node install instructions:
 
     .. code:: bash
 
-                $ sudo yum install git
+        $ sudo yum install git
 
 3)  Clone this repo
 
     .. code:: bash
 
-                $ git clone https://github.com/Helios-Protocol/py-helios-node
+        $ git clone https://github.com/Helios-Protocol/py-helios-node
+
+
+4)  Set python environment
+
+    .. code:: bash
+
+        $ cd py-helios-node
+        $ pyenv local 3.6.5
+
+5)  Install pandoc
+
+    .. code:: bash
+
+        $ sudo apt install pandoc
+
+    or
+
+    .. code:: bash
+
+        $ sudo yum install pandoc
+
+
+5)  Install the Helios Node
+
+    .. code:: bash
+
+        $ pip3 install -e .
 
 
 Further instructions coming soon.

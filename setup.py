@@ -111,7 +111,7 @@ setup(
     # *IMPORTANT*: Don't manually change the version here. Use the 'bumpversion' utility.
     version='0.2.0-alpha.33',
     description='Python implementation of the Helios Protocol Node',
-    long_description_markdown_filename='README.md',
+    long_description_markdown_filename='README.rst',
     author='Tommy Mckinnon',
     author_email='tommy@heliosprotocol.io',
     url='https://github.com/Helios-Protocol/py-helios-node',
