@@ -104,7 +104,6 @@ HELIOS_HEADER = (
 from hvm.constants import GENESIS_PARENT_HASH
 from eth_utils import is_hex_address
 
-
 log_level = getattr(logging, 'DEBUG')
 #log_level = getattr(logging, 'INFO')
 logger, log_queue, listener = setup_helios_logging(log_level)
