@@ -53,7 +53,7 @@ Py-helios-node install instructions:
 
     .. code:: bash
 
-                $ git clone https://github.com/Helios-Protocol/py-rlp-cython
+                $ git clone https://github.com/Helios-Protocol/py-helios-node
 
 
 Further instructions coming soon.
