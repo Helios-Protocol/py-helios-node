@@ -70,5 +70,10 @@ monkeytype.sqlite3
 # pyenv
 .python-version
 
-#idea
+# idea
 .idea
+
+# keystore files
+helios/keystore/*
+helios/keystore_config.py
+

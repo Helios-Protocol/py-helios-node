@@ -46,9 +46,6 @@ from hvm.rlp.transactions import BaseTransaction
 
 import rlp as rlp
 
-print(rlp.encode(b'test'))
-
-sys.exit()
 
 from eth_utils import (
     encode_hex,
@@ -1618,8 +1615,8 @@ def get_node_tpc_cap():
     print("tpc_cap = {}".format(tpc_cap))
 
 
-get_node_tpc_cap()
-sys.exit()
+# get_node_tpc_cap()
+# sys.exit()
 
 
 def test_fast_rlp():
@@ -2382,53 +2379,43 @@ def test_smart_contract_deploy_system():
     assert ((final_balance - initial_balance) == (max_gas - gas_used))
     print("Refunded gas is the expected amount.")
 
-#
-# # test_smart_contract_deploy_system()
-# # exit()
-# # print('now')
-# #
-# # encoded=rlp.encode(, sedes=rlp.sedes.f_big_endian_int)
-# # print(encoded)
-# # decoded=rlp.decode(encoded, sedes=rlp.sedes.f_big_endian_int)
-# # print(decoded)
-# # decoded=rlp.decode(encoded, sedes=rlp.sedes.big_endian_int)
-# # print(decoded)
-# # exit()
-#
-# #print(rlp.encode(ZERO_HASH32, sedes=rlp.sedes.big_endian_int))
-# #sender: 0x0939e75072cb91d862cbf6ebcc86c758157f16cd
-# microblock = b'\xf9\x01\xce\xf8\xe3\x94\x01\x03O\xe7\x7f\xf8\xd4fBn\xd8B\x8bq\xc0\xbb\r5\xad\xeb\xa0\x8a_\x84\xd3\x0eb\xb6\xf9SV"\xbc\xba\xe8\x90\\\xc5\xef\x9a\x8b\xa3K\x03h\xa9\x93\xae\x05#,y2\xa0\x93_Q\x98\xcfp\xd63)\xb1\xbb\x04\xbb\xdccJ\xb8m2t\xdf\xe9o\x9d\x1e\xee\xc3j\xc8\xf8\x04\xe7\xa0V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!\x01\x84\\\x1d\x97\xb8\x80\xa0_\x83h\xd9V\t\x8a\xc8\x8bGc\xf9t\r\xa6\x05w-\xcb\xdf\xe6\xc3\xf1\xfaZO\x1b=3:\x17\x81%\xa0\xb2\x7fMCt\xa8Q\xcb\xd7\xf2\x177s\x19p\xf5*\x9e\xff\x01Z\x0c\xd9\xfe\xf3\x97?$\xc1\xa8t\xec\xa0"Y\xd8"uh\x98\x1d\xa2\xb5\xe6e\x05\xd9\xc4\x02U7L\xbf\xb3\x88\xf1\xe6\xcdl%\xbd\x08\x10\x8d\x97\xf8\xd8\xf8j\x80\x86\xd5V\x987$1\x83\x1e\x84\x80\x94\xf0\x10\x9f\xc8\xdf(0\'\xb6(\\\xc8\x89\xf5\xaabN\xac\x1fU\x84;\x9a\xca\x00\x80&\xa0\x03\xdf\xc2\x96Gv\xfek\x9b#^\x11\x90"\x8fu\x0f\xe7?\x91\xe8\x06o\xd5%0k\xf7\x91\xc5\x80\x91\xa0#>\xaf\xcf\xc9\xc7\xae\xf4\x97\xbfRR\x06\xde\xf6\x84\x9f\x81`\xe8H\x0b\xe9\x004\xc6\x14{\xc7\xd1\nU\xf8j\x01\x86\xd5V\x987$1\x83\x1e\x84\x80\x94\xf0\x10\x9f\xc8\xdf(0\'\xb6(\\\xc8\x89\xf5\xaabN\xac\x1fU\x84\x05\xf5\xe1\x00\x80%\xa0\x93\xf3\xb1D\x94RP?^\x96\x1f\xdd~P\xc4\xd4\xdc\xfb\x11 _f\xddgW\xb9^P\xfe\x11Sf\xa0yl\xdb\x87\xd1\x19\x91\xfb\x01\x9c\xc3\t\x08\xa6^j\x80T^\x94\xefg\xbcqR\xff\xfb\xee\x0c\xcf%X\xc0\xcd\xc9\x88\xd6\xad\x02\xc4\x93\xf8x\x00\xc2\x80\xc0'
-#
-# #TODO: fix transactions to use fast sedes gain.
-# #print(MicroBlock.get_sede_identifier())
-# decoded_block = rlp.decode(microblock)
-#
-# decoded_block = rlp.decode(microblock, sedes=MicroBlock)
-#
-# full_block = HeliosTestnetBlock.from_micro_block(decoded_block)
-#
-# transactions = full_block.transactions
-# print(encode_hex(transactions[0].sender))
-# print(full_block.header.chain_address)
-#
-#
-# tx_root_hash, _ = make_trie_root_and_nodes(transactions)
-#
-# print(tx_root_hash)
-# print(full_block.header.transaction_root)
-#
-# for tx in transactions:
-#     print(tx.nonce)
-#
-# print(encode_hex(full_block.sender))
-#
-# print(decoded_block)
-#
-# reward_hash = full_block.header.reward_hash
-# reward_bundle = full_block.reward_bundle
-# print(reward_hash)
-# print(reward_bundle.hash)
-# print(reward_bundle.reward_type_2.amount)
-# print(reward_bundle.reward_type_2.proof)
-#
-# print(full_block.receive_transactions)
+
+def test_keystore_load_save():
+    import eth_keyfile
+    file_location = '/d:/Google Drive/forex/blockchain_coding/Helios/prototype_laptop/py-helios-node/keystore/UTC--2019-01-03T21-04-40.210Z--f7c6563c0978073d5b521e602e25f2b7e72ea176'
+    json_data = eth_keyfile.load_keyfile(file_location)
+
+    print(json_data)
+
+    private_key = encode_hex(eth_keyfile.extract_key_from_keyfile(file_location, '123456789'))
+
+    print(private_key)
+
+# test_keystore_load_save()
+# sys.exit()
+
+def save_dev_test_keystore_files():
+    import eth_keyfile
+    from hvm.constants import random_private_keys
+    from pathlib import Path
+    import json
+
+    basepath = Path('keystore')
+
+    for i in range(len(random_private_keys)):
+        path = basepath / Path('instance_'+str(i))
+        private_key = random_private_keys[i]
+
+        json_keyfile = eth_keyfile.create_keyfile_json(private_key, b'dev')
+
+        with path.open('w') as file:
+            file.write(json.dumps(json_keyfile))
+
+
+save_dev_test_keystore_files()
+sys.exit()
+
+
+
+
+

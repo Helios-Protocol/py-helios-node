@@ -26,7 +26,6 @@ from helios.constants import (
 )
 from hp2p.constants import (
     MAINNET_BOOTNODES,
-    LOCAL_PEER_POOL_PATH,
 )
 from helios.utils.chains import (
     construct_chain_config_params,
@@ -36,6 +35,7 @@ from helios.utils.chains import (
     get_logfile_path,
     get_nodekey_path,
     load_nodekey,
+    get_local_peer_pool_path,
 )
 from helios.utils.filesystem import (
     PidFile,
@@ -48,11 +48,15 @@ from helios.dev_tools import load_local_nodes
 
 from helios.utils.keybox import get_primary_node_private_helios_key
 
+import eth_keyfile
+
 if TYPE_CHECKING:
     # avoid circular import
     from helios.nodes.base import Node  # noqa: F401
 
 DATABASE_DIR_NAME = 'chain'
+
+from .keystore_config import KEYSTORE_FILENAME_TO_USE
 
 
 class ChainConfig:
@@ -66,6 +70,8 @@ class ChainConfig:
     _node_private_helios_key = None
     _node_wallet_address = None
     _node_type = 1
+    _local_peer_pool_path = None
+
 
     port: int = None
     rpc_port: int = None
@@ -87,10 +93,16 @@ class ChainConfig:
                  use_discv5: bool = False,
                  preferred_nodes: Tuple[KademliaNode, ...]=None,
                  bootstrap_nodes: Tuple[KademliaNode, ...]=None,
-                 node_type=1,
-                 network_startup_node = False,
-                 disable_smart_contract_chain_manager = False,
+                 node_type: int=1,
+                 network_startup_node: bool= False,
+                 disable_smart_contract_chain_manager: bool= False,
+                 keystore_path: str= None,
+                 keystore_password: str=None,
                  ) -> None:
+
+        self.keystore_password = bytes(keystore_password, 'UTF-8')
+
+        self.keystore_path = keystore_path
         self.network_startup_node = network_startup_node
         self._disable_smart_contract_chain_manager = disable_smart_contract_chain_manager
         self.network_id = network_id
@@ -127,9 +139,19 @@ class ChainConfig:
             self.logfile_path = logfile_path
 
     @property
+    def is_dev_test_node(self):
+        if "INSTANCE_NUMBER" in os.environ:
+            return True
+        else:
+            return False
+
+    @property
     def preferred_nodes(self):
-        if self._preferred_nodes is None or len(self._preferred_nodes) == 0:
-            self._preferred_nodes = tuple(load_local_nodes(self.nodekey))
+        if self.is_dev_test_node and (self._preferred_nodes is None or len(self._preferred_nodes) == 0):
+            try:
+                self._preferred_nodes = tuple(load_local_nodes(self.local_peer_pool_path, self.nodekey))
+            except FileNotFoundError:
+                self._preferred_nodes = ()
         return self._preferred_nodes
 
     @property
@@ -144,24 +166,25 @@ class ChainConfig:
     @property
     def bootstrap_nodes(self):
         if self._bootstrap_nodes is None or len(self._bootstrap_nodes) == 0:
-            #make sure we save our node to the file before loading it. This will create the file if it doesnt exist.
-            self.save_node_address_to_local_peer_pool_file()
+            if self.is_dev_test_node:
+                self.save_node_address_to_local_peer_pool_file()
 
-            if len(self.preferred_nodes) == 0:
-                self._bootstrap_nodes = tuple(
-                    KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
-                )
-            else:
-                bootstrap_nodes = tuple(load_local_nodes())
-                if bootstrap_nodes[0].pubkey != self.nodekey_public:
-                    self._bootstrap_nodes = (bootstrap_nodes[0],)
+                if len(self.preferred_nodes) == 0:
+                    self._bootstrap_nodes = tuple(
+                        KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
+                    )
                 else:
-                    self._bootstrap_nodes = ()
+                    bootstrap_nodes = tuple(load_local_nodes(self.local_peer_pool_path))
+                    if bootstrap_nodes[0].pubkey != self.nodekey_public:
+                        self._bootstrap_nodes = (bootstrap_nodes[0],)
+                    else:
+                        self._bootstrap_nodes = ()
 
-#             if self.network_id == MAINNET_NETWORK_ID:
-#                    self._bootstrap_nodes = tuple(
-#                        KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
-#                    )
+            else:
+                if self.network_id == MAINNET_NETWORK_ID:
+                   self._bootstrap_nodes = tuple(
+                       KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
+                   )
 
         return self._bootstrap_nodes
 
@@ -176,24 +199,37 @@ class ChainConfig:
 
     @property
     def do_upnp(self):
-        #TODO: TESTING
-        return False
-        return self.is_main_instance
+        if self.is_dev_test_node:
+            return False
+        else:
+            return True
 
     #todo: add encrypted keyfile usage instead of this
     @property
     def node_private_helios_key(self):
         if self._node_private_helios_key is None:
-            if "INSTANCE_NUMBER" in os.environ:
-                self._node_private_helios_key = get_primary_node_private_helios_key(int(os.environ["INSTANCE_NUMBER"]))
+            if self.is_dev_test_node:
+                if "INSTANCE_NUMBER" in os.environ:
+                    self._node_private_helios_key = get_primary_node_private_helios_key(int(os.environ["INSTANCE_NUMBER"]))
+
             else:
-                self._node_private_helios_key = get_primary_node_private_helios_key()
+                if (self.keystore_path is None and KEYSTORE_FILENAME_TO_USE is None) or self.keystore_password is None:
+                    raise ValueError("You must provide a keystore file containing a private key for this node, and a password to open it.")
+                else:
+                    if self.keystore_path is None is not None:
+                        self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(self.keystore_path, self.keystore_password))
+                    else:
+                        self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile('keystore/'+KEYSTORE_FILENAME_TO_USE, self.keystore_password))
+
         return self._node_private_helios_key
 
     @property
     def node_wallet_address(self):
         if self._node_wallet_address is None:
-            self._node_wallet_address = self.node_private_helios_key.public_key.to_canonical_address()
+            if self.node_private_helios_key is None:
+                raise ValueError("You must provide a keystore file containing a private key for this node, and a password to open it.")
+            else:
+                self._node_wallet_address = self.node_private_helios_key.public_key.to_canonical_address()
         return self._node_wallet_address
 
     #0 is master, 1 is fullnode, 2 is micronode, 4 is bootstrap_node
@@ -291,8 +327,11 @@ class ChainConfig:
         return get_jsonrpc_socket_path(self.data_dir)
 
     @property
-    def local_peer_pool_path(self):
-        return LOCAL_PEER_POOL_PATH
+    def local_peer_pool_path(self) -> Path:
+        if self._local_peer_pool_path is None:
+            self._local_peer_pool_path = get_local_peer_pool_path(self.helios_root_dir)
+        return self._local_peer_pool_path
+
 
     #save as [public_key,ip,udp_port,tcp_port]
     def save_node_address_to_local_peer_pool_file(self):
@@ -310,7 +349,7 @@ class ChainConfig:
 
         #load existing pool
         try:
-            with open(path, 'r') as peer_file:
+            with path.open('r') as peer_file:
                 existing_peers_raw = peer_file.read()
                 existing_peers = json.loads(existing_peers_raw)
             #append the new one
@@ -322,9 +361,8 @@ class ChainConfig:
             existing_peers = []
             existing_peers.append(new_peer)
 
-
         #then save
-        with open(path, 'w') as peer_file:
+        with path.open('w') as peer_file:
             peer_file.write(json.dumps(existing_peers))
 
 

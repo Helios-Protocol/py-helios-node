@@ -76,6 +76,18 @@ def get_nodekey_path(data_dir: Path) -> Path:
         str(data_dir / NODEKEY_FILENAME),
     ))
 
+LOCAL_PEER_POOL_FILENAME = 'local_peer_pool'
+
+
+def get_local_peer_pool_path(data_dir: Path) -> Path:
+    """
+    Returns the path to the private key used for devp2p connections.
+    """
+    return Path(os.environ.get(
+        'LOCAL_PEER_POOL',
+        str(data_dir / LOCAL_PEER_POOL_FILENAME),
+    ))
+
 
 DATABASE_SOCKET_FILENAME = 'db.ipc'
 
@@ -168,6 +180,9 @@ def construct_chain_config_params(
         yield 'preferred_nodes', tuple()
     else:
         yield 'preferred_nodes', tuple(args.preferred_nodes)
+
+    if args.keystore_password is not None:
+        yield 'keystore_password', args.keystore_password
 
 
 def _default_max_peers(sync_mode: str) -> int:

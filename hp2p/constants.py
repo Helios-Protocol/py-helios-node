@@ -91,9 +91,6 @@ SYNC_STAGE_4_START_OFFSET = 200 # The number of seconds before the current time 
 PEER_STAKE_GONE_STALE_TIME_PERIOD = 60 # The amount of time that needs to pass before we re-update the peer stake from the
                                         # blockchain database.
 
-#DEVELOPMENT HELPERS
-LOCAL_PEER_POOL_PATH = '/home/tommy/.local/share/helios/local_peer_pool'
-
 
 #TESTING
 PEER_STAKE_GONE_STALE_TIME_PERIOD = 5

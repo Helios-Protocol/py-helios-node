@@ -321,6 +321,14 @@ chain_parser.add_argument(
     ),
 )
 
+chain_parser.add_argument(
+    '--keystore_password',
+    type=str,
+    help=(
+        "Password for the keystore containing the private key for this node."
+    ),
+)
+
 
 #
 # Debug configuration

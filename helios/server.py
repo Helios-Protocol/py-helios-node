@@ -156,6 +156,7 @@ class BaseServer(BaseService):
     async def _run(self) -> None:
         self.logger.info("Running server...")
         if self.chain_config.do_upnp:
+            self.logger.debug("Doing upnp...")
             mapped_external_ip = await self.upnp_service.add_nat_portmap()
         else:
             mapped_external_ip = None

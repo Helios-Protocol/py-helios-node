@@ -23,7 +23,6 @@ from eth_utils import (
 
 from hp2p.kademlia import Address, Node
 
-from hp2p.constants import LOCAL_PEER_POOL_PATH
 
 from eth_hash.auto import keccak
 
@@ -255,16 +254,15 @@ def save_random_private_keys(limit):
 #save_random_private_keys(100) 
     
     
-def load_peers_from_file():
-    path = LOCAL_PEER_POOL_PATH
+def load_peers_from_file(path):
     #load existing pool
-    with open(path, 'r') as peer_file:
+    with path.open('r') as peer_file:
         existing_peers_raw = peer_file.read()
         existing_peers = json.loads(existing_peers_raw)
     return existing_peers
 
-def load_local_nodes(local_private_key = None):
-    existing_peers = load_peers_from_file()
+def load_local_nodes(path, local_private_key = None):
+    existing_peers = load_peers_from_file(path)
     peer_pool = []
     for i, peer in enumerate(existing_peers):
         if local_private_key is None or peer[0] != local_private_key.public_key.to_hex():

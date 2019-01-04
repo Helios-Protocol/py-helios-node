@@ -2,9 +2,12 @@
 Helios Protocol Node
 ====================
 
-[![Python 3.6](https://img.shields.io/badge/python-3.6-blue.svg)](https://www.python.org/downloads/release/python-360/)
+.. image:: https://img.shields.io/badge/python-3.6-blue.svg
+    :target: https://www.python.org/downloads/release/python-360/
+    :alt: Python3.6
 
-This is the pre-alpha stage of the HeliosProtocol node. It is currently under active development and is not yet complete.
+
+This is the beta stage of the HeliosProtocol node. It is currently under active development and is not yet complete.
 
 Install
 -------
@@ -16,8 +19,8 @@ Py-helios-node install instructions:
     The version is listed at the top of this document. Caution:
     do not upgrade your system python from 2 to 3 as this can cause
     massive problems. Instead, we recommend installing a new version
-    of python using [pyenv](https://github.com/pyenv/pyenv). To install
-    pyenv, use the setup script found [here](https://github.com/pyenv/pyenv-installer).
+    of python using `pyenv <https://github.com/pyenv/pyenv>`_. To install
+    pyenv, use the setup script found `here <https://github.com/pyenv/pyenv-installer>`_.
     For completeness, we will summarize the current setup steps here:
 
     1)  Install
@@ -40,8 +43,13 @@ Py-helios-node install instructions:
             eval "$(pyenv init -)"
             eval "$(pyenv virtualenv-init -)"
 
+    3)  Reload .bashrc
 
-    3)  Install python 3.6
+        .. code:: bash
+
+            $ source ~/.bashrc
+
+    4)  Install python 3.6
 
         .. code:: bash
 
@@ -79,6 +87,16 @@ Py-helios-node install instructions:
     .. code:: bash
 
         $ pip3 install -e .
+
+6)  Ensure that the slow version of RLP is uninstalled, and install
+    a fresh copy of the fast one. This will force all external libraries
+    that use RLP to switch to the fast one.
+
+    .. code:: bash
+
+        $ pip3 uninstall rlp
+        $ pip3 uninstall rlp-cython
+        $ pip3 install rlp-cython
 
 
 Further instructions coming soon.

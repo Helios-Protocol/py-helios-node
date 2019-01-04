@@ -54,36 +54,6 @@ class FullNode(Node):
             chain_address = self.wallet_address
         return self.chain_class(self.db_manager.get_db(), chain_address, private_key)
 
-    # save as [public_key,ip,udp_port,tcp_port]
-    def save_node_address_to_local_peer_pool_file(self):
-        # path, node_key, ip, udp_port, tcp_port
-        path = self.chain_config.local_peer_pool_path
-        node_key = self._node_key
-        ip = '127.0.0.1'
-        udp_port = self._node_port
-        tcp_port = self._node_port
-
-        public_key_hex = node_key.public_key.to_hex()
-
-        new_peer = [public_key_hex, ip, udp_port, tcp_port]
-
-        # load existing pool
-        try:
-            with open(path, 'r') as peer_file:
-                existing_peers_raw = peer_file.read()
-                existing_peers = json.loads(existing_peers_raw)
-            # append the new one
-            if not new_peer in existing_peers:
-                existing_peers.append(new_peer)
-
-        except FileNotFoundError:
-            # No local peers exist yet. lets start a new list.
-            existing_peers = []
-            existing_peers.append(new_peer)
-
-        # then save
-        with open(path, 'w') as peer_file:
-            peer_file.write(json.dumps(existing_peers))
 
     def get_p2p_server(self) -> FullServer:
         if self._p2p_server is None:

@@ -199,12 +199,12 @@ def main() -> None:
     log_levels['helios.extensibility'] = logging.INFO
 
 
-
-
     setup_log_levels(log_levels = log_levels)
 
 
-
+    #
+    # Dev testing stuff
+    #
     if args.rand_db == 1:
         os.environ["GENERATE_RANDOM_DATABASE"] = 'true'
     if args.instance is not None:
@@ -217,9 +217,6 @@ def main() -> None:
 
         os.environ["HELIOS_DATA_DIR"] = str(absolute_path.resolve())
         os.environ["INSTANCE_NUMBER"] = str(args.instance)
-
-
-    #args.data_dir = '/d:/Google Drive/forex/blockchain coding/Helios/prototype desktop/py-hvm/helios/data/'
 
 
     try:
