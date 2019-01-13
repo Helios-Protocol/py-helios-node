@@ -100,7 +100,10 @@ class ChainConfig:
                  keystore_password: str=None,
                  ) -> None:
 
-        self.keystore_password = bytes(keystore_password, 'UTF-8')
+        if keystore_password is not None:
+            self.keystore_password = bytes(keystore_password, 'UTF-8')
+        else:
+            self.keystore_password = None
 
         self.keystore_path = keystore_path
         self.network_startup_node = network_startup_node

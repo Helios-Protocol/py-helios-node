@@ -1201,9 +1201,10 @@ class Consensus(BaseService, PeerSubscriber):
             return
 
         for boot_node in self.bootstrap_nodes:
-            try: 
+            try:
                 boot_node_peer = self.peer_pool.connected_nodes[boot_node]
                 #lets just ask the first bootnode we find that we are connected to.
+                self.logger.debug("Asking bootnode for missing stake")
                 boot_node_peer.sub_proto.send_get_stake_for_addresses(addresses_needing_stake)
                 return
             except KeyError:
@@ -1901,6 +1902,7 @@ class Consensus(BaseService, PeerSubscriber):
 
             
     async def _handle_get_stake_for_addresses(self, peer: HLSPeer, msg) -> None:
+        self.logger.debug("Received request for stake for some addresses")
         address_stakes = []
         for address in msg['addresses']:
             stake = await self.chain.coro_get_mature_stake(address)

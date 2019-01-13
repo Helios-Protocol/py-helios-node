@@ -2412,10 +2412,24 @@ def save_dev_test_keystore_files():
             file.write(json.dumps(json_keyfile))
 
 
-save_dev_test_keystore_files()
+# save_dev_test_keystore_files()
+# sys.exit()
+
+def test_upnp():
+    import upnpclient
+
+    from upnpclient.upnp import Device
+
+    # device = Device('http://192.168.1.9:5000/ssdp/desc-DSM-eth0.xml')
+    #
+    # print(device)
+
+    devices = upnpclient.discover()
+
+    print(devices)
+
+test_upnp()
 sys.exit()
-
-
 
 
 
