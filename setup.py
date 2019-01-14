@@ -5,13 +5,13 @@ from setuptools import setup, find_packages
 
 deps = { 
     'hvm': [
-        "aiohttp>=2.3.1,<3.0.0",
+        "aiohttp>=2.3.1,<4.0.0",
         "async_lru>=0.1.0,<1.0.0",
         "cryptography>=2.0.3,<3.0.0",
         "cytoolz>=0.9.0,<1.0.0",
         "eth-bloom>=1.0.3,<2.0.0",
         "eth-keys>=0.2.0b3,<1.0.0",
-        "eth-typing>=1.1.0,<2.0.0",
+        "eth-typing>=1.1.0,<3.0.0",
         "eth-utils>=1.2.0,<2.0.0",
         "lru-dict>=1.1.6",
         "py-ecc>=1.4.2,<2.0.0",
@@ -33,7 +33,7 @@ deps = {
     ],
     'hp2p': [
         "asyncio-cancel-token==0.1.0a2",
-        "aiohttp>=2.3.1,<3.0.0",
+        "aiohttp>=2.3.1,<4.0.0",
         "async_lru>=0.1.0,<1.0.0",
         "eth-hash>=0.2.0,<1",
         "netifaces>=0.10.7<1",
@@ -47,10 +47,10 @@ deps = {
         "coincurve>=8.0.0,<9.0.0",
         "ipython>=6.2.1,<7.0.0",
         "plyvel==1.0.5",
-        "web3==4.4.1",
+        "web3>=4.1.0",
         "lahja==0.8.0",
         "uvloop==0.11.2;platform_system=='Linux' or platform_system=='Darwin'",
-        "websockets==5.0.1",
+        "websockets>=3.0.0",
     ],
     'test': [
         "hypothesis==3.69.5",
@@ -71,7 +71,7 @@ deps = {
     ],
     'benchmark': [
         "termcolor>=1.1.0,<2.0.0",
-        "web3>=4.1.0,<5.0.0",
+        "web3>=4.1.0",
     ],
     'doc': [
         "py-evm>=0.2.0-alpha.14",
