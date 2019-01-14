@@ -32,6 +32,8 @@ DEFAULT_DATA_DIRS = {
 #
 # Filesystem path utils
 #
+
+
 def get_local_data_dir(chain_name: str, helios_root_dir: Path) -> Path:
     """
     Returns the base directory path where data for a given chain will be stored.
@@ -169,6 +171,9 @@ def construct_chain_config_params(
 
     if args.rpc_port is not None:
         yield 'rpc_port', args.rpc_port
+
+    if args.keystore_path is not None:
+        yield 'keystore_path', args.keystore_path
 
     if args.network_startup_node is not None:
         yield 'network_startup_node', args.network_startup_node

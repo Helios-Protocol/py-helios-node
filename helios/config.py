@@ -56,7 +56,10 @@ if TYPE_CHECKING:
 
 DATABASE_DIR_NAME = 'chain'
 
-from .keystore_config import KEYSTORE_FILENAME_TO_USE
+try:
+    from .keystore_config import KEYSTORE_FILENAME_TO_USE
+except ModuleNotFoundError:
+    print("Keystore configuration file required. Please use the template to create a keystore_config.py file. See our github for more details.")
 
 
 class ChainConfig:
@@ -177,9 +180,16 @@ class ChainConfig:
                         KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
                     )
                 else:
-                    bootstrap_nodes = tuple(load_local_nodes(self.local_peer_pool_path))
-                    if bootstrap_nodes[0].pubkey != self.nodekey_public:
-                        self._bootstrap_nodes = (bootstrap_nodes[0],)
+                    saved_bootstrap_nodes = tuple(load_local_nodes(self.local_peer_pool_path))
+
+                    #assume instance 0 is the bootstrap node for dev testing
+                    bootstrap_node = None
+                    for loop_bootstrap_node in saved_bootstrap_nodes:
+                        if loop_bootstrap_node.address.tcp_port == 30303:
+                            bootstrap_node = loop_bootstrap_node
+
+                    if bootstrap_node is not None and (bootstrap_node.pubkey != self.nodekey_public):
+                        self._bootstrap_nodes = (bootstrap_node,)
                     else:
                         self._bootstrap_nodes = ()
 
@@ -188,7 +198,6 @@ class ChainConfig:
                    self._bootstrap_nodes = tuple(
                        KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
                    )
-
         return self._bootstrap_nodes
 
     @property
@@ -207,22 +216,25 @@ class ChainConfig:
         else:
             return True
 
-    #todo: add encrypted keyfile usage instead of this
+
     @property
     def node_private_helios_key(self):
         if self._node_private_helios_key is None:
-            if self.is_dev_test_node:
-                if "INSTANCE_NUMBER" in os.environ:
-                    self._node_private_helios_key = get_primary_node_private_helios_key(int(os.environ["INSTANCE_NUMBER"]))
+            # if self.is_dev_test_node:
+            #     if "INSTANCE_NUMBER" in os.environ:
+            #         self._node_private_helios_key = get_primary_node_private_helios_key(int(os.environ["INSTANCE_NUMBER"]))
+            #
+            # else:
 
+            if (self.keystore_path is None and KEYSTORE_FILENAME_TO_USE is None) or self.keystore_password is None:
+                raise ValueError("You must provide a keystore file containing a private key for this node, and a password to open it.")
             else:
-                if (self.keystore_path is None and KEYSTORE_FILENAME_TO_USE is None) or self.keystore_password is None:
-                    raise ValueError("You must provide a keystore file containing a private key for this node, and a password to open it.")
+                if self.keystore_path is not None:
+                    self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(self.keystore_path, self.keystore_password))
                 else:
-                    if self.keystore_path is None is not None:
-                        self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(self.keystore_path, self.keystore_password))
-                    else:
-                        self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile('keystore/'+KEYSTORE_FILENAME_TO_USE, self.keystore_password))
+                    absolute_dir = os.path.dirname(os.path.realpath(__file__))
+                    absolute_keystore_path = absolute_dir + '/keystore/'
+                    self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(absolute_keystore_path + KEYSTORE_FILENAME_TO_USE, self.keystore_password))
 
         return self._node_private_helios_key
 
@@ -355,8 +367,14 @@ class ChainConfig:
             with path.open('r') as peer_file:
                 existing_peers_raw = peer_file.read()
                 existing_peers = json.loads(existing_peers_raw)
+
+            # only allow one per port. Delete any conflicts.
+            for j in range(len(existing_peers)-1, -1, -1):
+                if existing_peers[j][2] == udp_port or existing_peers[j][3] == tcp_port:
+                    existing_peers.pop(j)
+
             #append the new one
-            if not new_peer in existing_peers:
+            if new_peer not in existing_peers:
                 existing_peers.append(new_peer)
 
         except FileNotFoundError:

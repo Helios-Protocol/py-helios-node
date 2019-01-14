@@ -555,12 +555,12 @@ class Consensus(BaseService, PeerSubscriber):
 
         with self.subscribe(self.peer_pool):
             self.run_daemon_task(self.get_missing_stake_from_bootnode_loop())
-            self.run_daemon_task(self._sync_min_gas_price_system_loop())
-            self.run_daemon_task(self.peer_node_health_syncer_loop())
-            self.run_daemon_task(self.staking_reward_loop())
-            self.run_daemon_task(self.receive_peer_block_choices_loop())
-            self.run_daemon_task(self.receive_peer_chain_head_root_hash_timestamps_loop())
-            self.run_daemon_task(self.send_get_consensus_statistics_loop())
+            # self.run_daemon_task(self._sync_min_gas_price_system_loop())
+            # self.run_daemon_task(self.peer_node_health_syncer_loop())
+            # self.run_daemon_task(self.staking_reward_loop())
+            # self.run_daemon_task(self.receive_peer_block_choices_loop())
+            # self.run_daemon_task(self.receive_peer_chain_head_root_hash_timestamps_loop())
+            # self.run_daemon_task(self.send_get_consensus_statistics_loop())
             while self.is_operational:
                 #self.logger.debug("Our historical root hashes = {}".format(self.chain_head_db.get_historical_root_hashes()))
 
@@ -1196,15 +1196,19 @@ class Consensus(BaseService, PeerSubscriber):
                 if await peer.stake == None:
                     if peer.wallet_address not in self.peer_stake_from_bootstrap_node:
                         addresses_needing_stake.append(peer.wallet_address)
-                        
+
         if addresses_needing_stake == []:
             return
 
+        print('BBBBBBB')
+        print(self.peer_pool.connected_nodes)
+        print(self.bootstrap_nodes)
         for boot_node in self.bootstrap_nodes:
             try:
+                print('XXXXXXX')
                 boot_node_peer = self.peer_pool.connected_nodes[boot_node]
                 #lets just ask the first bootnode we find that we are connected to.
-                self.logger.debug("Asking bootnode for missing stake")
+                self.logger.debug("Asking bootnode for missing stake, {}".format(addresses_needing_stake))
                 boot_node_peer.sub_proto.send_get_stake_for_addresses(addresses_needing_stake)
                 return
             except KeyError:

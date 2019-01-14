@@ -99,4 +99,54 @@ Py-helios-node install instructions:
         $ pip3 install rlp-cython
 
 
-Further instructions coming soon.
+
+Configure
+---------
+The Helios Protocol consensus mechanism is partially based on PoS. This requires that all nodes are associated
+with a wallet address that has a non-zero stake in order to run. So at this point, you have to configure
+the node software to use your wallet as a source of coins to stake.
+
+1)  Create keystore file. This is an encrypted file that stores your private key. You will be able to create this
+    with our wallet when it is released. But for now, you can just create a new wallet using
+    `MyEtherWallet <http://myetherwallet.com>`_, then save the wallet file. This file will work with
+    Helios Protocol.
+2)  Place keystore file within the directory helios/keystore
+3)  Configure node to use your keystore file. Copy helios/keystore_config.template.py to helios/keystore_config.py.
+    Then edit the new file and tell it the filename of your keystore file to use.
+
+Open Ports in Firewall
+----------------------
+The node software needs to have an open path for communication with other nodes on the network. If you
+have firewall software enabled, such as iptables, then you might have to open some ports to ensure this.
+The default installation of Ubuntu and Debian probably already have the ports open. Other distros such as Centos
+likely have most ports closed by default.
+
+Debian and Ubuntu
+
+.. code:: bash
+
+    $ sudo iptables -I INPUT -p tcp -m tcp --dport 30303 -j ACCEPT
+    $ sudo iptables -I INPUT -p tcp -m tcp --dport 30304 -j ACCEPT
+    $ sudo iptables-save
+
+Centos 7
+
+.. code:: bash
+
+    $ sudo firewall-cmd --permanent –zone=public --add-port=30303/tcp
+    $ sudo firewall-cmd --permanent –zone=public --add-port=30304/tcp
+    $ sudo firewall-cmd --reload
+
+
+Start the node
+--------------
+
+.. code:: bash
+
+    $ helios
+
+Then enter your keystore password when prompted. This password is never saved, it is only used to initially decrypt your keystore
+file.
+
+
+This document is still a work in progress. More details will come soon.

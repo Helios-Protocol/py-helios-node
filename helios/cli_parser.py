@@ -315,17 +315,27 @@ chain_parser.add_argument(
 
 chain_parser.add_argument(
     '--rand_db',
-    type=int,
+    action='store_true',
+    dest='rand_db',
     help=(
         "generate a random blockchain database"
     ),
 )
+
 
 chain_parser.add_argument(
     '--keystore_password',
     type=str,
     help=(
         "Password for the keystore containing the private key for this node."
+    ),
+)
+
+chain_parser.add_argument(
+    '--keystore_path',
+    type=str,
+    help=(
+        "Path to the directory containing the keystore file."
     ),
 )
 

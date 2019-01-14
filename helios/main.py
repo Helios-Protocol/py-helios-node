@@ -1,4 +1,5 @@
 from argparse import ArgumentParser, Namespace
+import getpass
 import os
 import sys
 import asyncio
@@ -126,6 +127,39 @@ def main() -> None:
     plugin_manager.amend_argparser_config(parser, subparser)
     args = parser.parse_args()
 
+    #
+    # Dev testing stuff
+    #
+    if args.rand_db:
+        os.environ["GENERATE_RANDOM_DATABASE"] = 'true'
+    if args.instance is not None:
+        from helios.utils.xdg import get_xdg_helios_root
+        args.port = args.port + args.instance * 2
+
+        if args.instance != 0:
+            args.do_rpc_http_server = False
+        subdir = 'instance_' + str(args.instance)
+        absolute_path = get_xdg_helios_root() / subdir
+
+        absolute_dir = os.path.dirname(os.path.realpath(__file__))
+        absolute_keystore_path = absolute_dir + '/keystore/'
+        args.keystore_path = absolute_keystore_path + subdir
+
+        args.keystore_password = 'dev'
+
+        os.environ["HELIOS_DATA_DIR"] = str(absolute_path.resolve())
+        os.environ["INSTANCE_NUMBER"] = str(args.instance)
+
+
+    #
+    #
+    #
+    if not args.keystore_password:
+        password = getpass.getpass(prompt='Keystore Password: ')
+        args.keystore_password = password
+
+
+
     if args.network_id not in PRECONFIGURED_NETWORKS:
         raise NotImplementedError(
             "Unsupported network id: {0}.  Only the ropsten and mainnet "
@@ -173,8 +207,9 @@ def main() -> None:
 
     #log_levels['hp2p'] = logging.INFO
 
-    log_levels['hp2p.peer'] = logging.INFO
-    log_levels['hp2p.peer.PeerPool'] = logging.INFO
+
+    log_levels['hp2p.peer'] = logging.DEBUG
+    log_levels['hp2p.peer.PeerPool'] = logging.DEBUG
     log_levels['hp2p.consensus.Consensus'] = logging.DEBUG
     log_levels['hp2p.SmartContractChainManager'] = logging.DEBUG
     log_levels['hp2p.kademlia.KademliaProtocol'] = logging.INFO
@@ -183,6 +218,8 @@ def main() -> None:
     log_levels['hp2p.nat.UPnPService'] = logging.CRITICAL
     log_levels['connectionpool'] = logging.CRITICAL
     log_levels['hp2p.protocol'] = logging.DEBUG
+    log_levels['hp2p.protocol.Protocol'] = logging.DEBUG
+
 
     #log_levels['helios'] = logging.INFO
     log_levels['helios.rpc.ipc'] = logging.INFO
@@ -190,6 +227,7 @@ def main() -> None:
     log_levels['helios.sync'] = logging.DEBUG
     log_levels['helios.protocol'] = logging.INFO
     log_levels['helios.protocol.common'] = logging.DEBUG
+    log_levels['helios.protocol.hls.peer.HLSPeer'] = 5
 
     log_levels['hp2p.hls'] = logging.INFO
     log_levels['helios.server.FullServer'] = logging.DEBUG
@@ -202,21 +240,7 @@ def main() -> None:
     setup_log_levels(log_levels = log_levels)
 
 
-    #
-    # Dev testing stuff
-    #
-    if args.rand_db == 1:
-        os.environ["GENERATE_RANDOM_DATABASE"] = 'true'
-    if args.instance is not None:
-        from helios.utils.xdg import get_xdg_helios_root
-        args.port = args.port + args.instance*2
-        if args.instance != 0:
-            args.do_rpc_http_server = False
-        subdir = 'instance_'+str(args.instance)
-        absolute_path = get_xdg_helios_root() / subdir
 
-        os.environ["HELIOS_DATA_DIR"] = str(absolute_path.resolve())
-        os.environ["INSTANCE_NUMBER"] = str(args.instance)
 
 
     try:
@@ -255,7 +279,8 @@ def main() -> None:
     min_configured_log_level = min(
         stderr_logger.level,
         file_logger.level,
-        *(args.log_levels or {}).values()
+        *(args.log_levels or {}).values(),
+        *(log_levels or {}).values()
     )
 
 

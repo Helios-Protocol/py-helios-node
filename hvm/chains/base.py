@@ -1798,7 +1798,7 @@ class Chain(BaseChain):
         hist_min_gas_price = self.chaindb.load_historical_minimum_gas_price()
         hist_tpc_cap = self.chaindb.load_historical_network_tpc_capability()
         hist_tx_per_centisecond = self.chaindb.load_historical_tx_per_centisecond()
-        
+
         if hist_min_gas_price is not None:
             init_min_gas_price = hist_min_gas_price[-1][1]
         else:
@@ -1942,7 +1942,7 @@ class Chain(BaseChain):
         temp()
         duration = time.time()-start_time
         #self.logger.debug('duration = {} seconds'.format(duration))
-        tx_per_centisecond = 100/duration
+        tx_per_centisecond = int(100/duration)
         return tx_per_centisecond
         
 
