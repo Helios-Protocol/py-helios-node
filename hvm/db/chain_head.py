@@ -730,7 +730,13 @@ class ChainHeadDB():
         #if root_hashes[-1][0] == 1534567000:
         #    exit()
         # Automatically sort when saving. This way we can always assume they are sorted when loading
-        root_hashes.sort()
+
+        try:
+            root_hashes.sort()
+        except TypeError:
+            root_hashes = list(root_hashes)
+            root_hashes.sort()
+
 
         if len(root_hashes) > 1000:
             root_hashes = root_hashes[-1000:]

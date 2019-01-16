@@ -11,6 +11,12 @@ class VMNotFound(PyEVMError):
     """
     pass
 
+class NoGenesisBlockPresent(PyEVMError):
+    """
+    Raised when a block is imported but there is no genesis block.
+    """
+    pass
+
 
 class StateRootNotFound(PyEVMError):
     """

@@ -8,7 +8,7 @@ from random import shuffle
 
 from lahja import Endpoint
 
-from helios.exceptions import AlreadyWaiting, NoCandidatePeers
+from helios.exceptions import AlreadyWaiting, NoCandidatePeers, SyncingError
 from helios.protocol.common.constants import ROUND_TRIP_TIMEOUT
 from helios.protocol.common.exchanges import BaseExchange
 from helios.protocol.hls.sync import get_sync_stage_for_block_timestamp
@@ -186,434 +186,6 @@ class WaitingPeers:
         return peer
 
 
-# class ChainRequestInfo():
-#     def __init__(self, peer, head_root_timestamp, head_root_hash, head_hash_of_last_chain, window_start, window_length,
-#                  timestamp_sent):
-#         self.peer = peer
-#         self.head_root_timestamp = head_root_timestamp
-#         self.head_root_hash = head_root_hash
-#         self.head_hash_of_last_chain = head_hash_of_last_chain
-#         self.window_start = window_start
-#         self.window_length = window_length
-#         self.timestamp_sent = timestamp_sent
-
-
-
-# class FastChainSyncer(BaseService, PeerSubscriber):
-#     """
-#     Sync with the Ethereum network by fetching/storing block headers, bodies and receipts.
-#
-#     Here, the run() method will execute the sync loop until our local head is the same as the one
-#     with the highest TD announced by any of our peers.
-#     """
-#
-#     subscription_msg_types: Set[Type[Command]] = {
-#         commands.GetChains,
-#         commands.NewBlock,
-#         commands.GetChronologicalBlockWindow,
-#         commands.ChronologicalBlockWindow,
-#         commands.GetChainSegment,
-#         commands.GetBlocks,
-#         commands.GetHashFragments,
-#     }
-#
-#
-#
-#     msg_queue_maxsize = 500
-#
-#     # We'll only sync if we are connected to at least min_peers_to_sync.
-#     min_peers_to_sync = 1
-#     # TODO: Instead of a fixed timeout, we should use a variable one that gets adjusted based on
-#     # the round-trip times from our download requests.
-#     _reply_timeout = 10
-#     current_syncing_root_timestamp = None
-#     current_syncing_root_hash = None
-#     head_hash_of_last_chain = ZERO_HASH32
-#     last_window_start = 0
-#     last_window_length = 0
-#     base_db: AsyncBaseDB
-#     chain: AsyncChain
-#     chaindb: AsyncChainDB
-#     chain_head_db: AsyncChainHeadDB
-#     consensus: Consensus
-#
-#
-#     def __init__(self,
-#                  context: ChainContext,
-#                  peer_pool: HLSPeerPool,
-#                  consensus: Consensus,
-#                  node,
-#                  event_bus: Endpoint = None,
-#                  token: CancelToken = None) -> None:
-#         super().__init__(token)
-#         self.node: Node = node
-#         self.consensus = consensus
-#
-#         self.event_bus = event_bus
-#         self.chain = context.chain
-#         self.chaindb = context.chaindb
-#         self.chain_head_db = context.chain_head_db
-#         self.base_db = context.base_db
-#         self.peer_pool = peer_pool
-#         self._syncing = False
-#         self._sync_complete = asyncio.Event()
-#         self._sync_requests: asyncio.Queue[HLSPeer] = asyncio.Queue()
-#         self._idle_peers: asyncio.Queue[HLSPeer] = asyncio.Queue()
-#         self._idle_peers_in_consensus: asyncio.Queue[HLSPeer] = asyncio.Queue()
-#         self._new_headers: asyncio.Queue[List[BlockHeader]] = asyncio.Queue()
-#         self._new_blocks_to_import: asyncio.Queue[List[NewBlockQueueItem]] = asyncio.Queue()
-#         # Those are used by our msg handlers and _download_block_parts() in order to track missing
-#         # bodies/receipts for a given chain segment.
-#         self._downloaded_receipts: asyncio.Queue[
-#             Tuple[HLSPeer, List[DownloadedBlockPart]]] = asyncio.Queue()  # noqa: E501
-#         self._downloaded_bodies: asyncio.Queue[
-#             Tuple[HLSPeer, List[DownloadedBlockPart]]] = asyncio.Queue()  # noqa: E501
-#
-#         # [{peer_wallet_address: ChainRequestInfo},{peer_wallet_address: ChainRequestInfo}...]
-#         self.pending_chain_requests = {}
-#         self.failed_chain_requests = {}
-#
-#         # [{peer_wallet_address: num_chains_received},{peer_wallet_address: num_chains_received}...]
-#         self.num_chains_returned_in_incomplete_requests = {}
-#
-#         # number of chains ahead of the last chain we requested. Inclusive
-#         self.chain_request_num_ahead = 0
-#
-#         self.syncer_initialized = asyncio.Event()
-#         self.received_final_chain = asyncio.Event()
-#
-#         self.writing_chain_request_vars = asyncio.Lock()
-#
-#         self.logger.debug('this node wallet address = {}'.format(self.consensus.chain_config.node_wallet_address))
-#
-#     @property
-#     def is_ready_for_regular_syncer(self):
-#         '''
-#         Returns true if we are synced enough to go into regular chain syncer
-#         :return:
-#         '''
-#         latest_synced_timestamp = self.chain_head_db.get_latest_timestamp()
-#         return latest_synced_timestamp > (int(time.time()) - NUMBER_OF_HEAD_HASH_TO_SAVE * TIME_BETWEEN_HEAD_HASH_SAVE)
-#
-#     def register_peer(self, peer: HLSPeer) -> None:
-#         #        self.logger.debug("Registering peer. Their root_hash_timestamps: {}, our current root hash: {}, and timestamp {}".format(peer.chain_head_root_hashes,
-#         #                                                                                                                                  self.current_syncing_root_hash,
-#         #                                                                                                                                  self.current_syncing_root_timestamp ))
-#         if self.current_syncing_root_timestamp is None:
-#             last_synced_timestamp, last_synced_root_hash = self.chain_head_db.get_last_complete_historical_root_hash()
-#             if last_synced_timestamp == None:
-#                 self._idle_peers.put_nowait(peer)
-#                 self.logger.debug("Added peer {} to non-consensus queue1".format(peer.wallet_address))
-#                 return
-#
-#             timestamp_to_check = last_synced_timestamp
-#             root_hash_to_check = last_synced_root_hash
-#         else:
-#             timestamp_to_check = self.current_syncing_root_timestamp
-#             root_hash_to_check = self.current_syncing_root_hash
-#
-#         self.logger.debug("timestamp used for registering peer in consensus = {}".format(timestamp_to_check))
-#         if peer.chain_head_root_hashes is not None:
-#             peer_root_hash_timestamps = SortedDict(peer.chain_head_root_hashes)
-#
-#             try:
-#                 if (peer_root_hash_timestamps[timestamp_to_check] == root_hash_to_check):
-#                     self._idle_peers_in_consensus.put_nowait(peer)
-#                     self.logger.debug("Added peer {} to consensus queue2".format(peer.wallet_address))
-#                 else:
-#                     self._idle_peers.put_nowait(peer)
-#                     self.logger.debug("Added peer {} to non-consensus queue3".format(peer.wallet_address))
-#                     self.logger.debug(
-#                         "our timestamp and root hash: {} {}".format(timestamp_to_check, root_hash_to_check))
-#                     self.logger.debug("their  root hash: {}".format(peer_root_hash_timestamps[timestamp_to_check]))
-#             except KeyError:
-#                 # ours may be newer than theirs, but still matching. check their latest one and see if it matches
-#                 if peer_root_hash_timestamps.values()[-1] == root_hash_to_check:
-#                     self._idle_peers_in_consensus.put_nowait(peer)
-#                     self.logger.debug("Added peer {} to consensus queue6".format(peer.wallet_address))
-#                 else:
-#                     self._idle_peers.put_nowait(peer)
-#                     self.logger.debug("Added peer {} to non-consensus queue4".format(peer.wallet_address))
-#         else:
-#             self._idle_peers.put_nowait(peer)
-#             self.logger.debug("Added peer {} to non-consensus queue5".format(peer.wallet_address))
-#
-#     def re_register_peers(self):
-#         peers = []
-#         # empty the two queues
-#         while True:
-#             try:
-#                 peers.append(self._idle_peers_in_consensus.get_nowait())
-#             except asyncio.QueueEmpty:
-#                 break
-#
-#         while True:
-#             try:
-#                 peers.append(self._idle_peers.get_nowait())
-#             except asyncio.QueueEmpty:
-#                 break
-#
-#         # then requeue them all again
-#         for peer in peers:
-#             self.register_peer(peer)
-#
-#     async def _handle_msg_loop(self) -> None:
-#         while self.is_running:
-#             try:
-#                 peer, cmd, msg = await self.wait(self.msg_queue.get())
-#             except OperationCancelled:
-#                 break
-#
-#             # Our handle_msg() method runs cpu-intensive tasks in sub-processes so that the main
-#             # loop can keep processing msgs, and that's why we use ensure_future() instead of
-#             # awaiting for it to finish here.
-#             asyncio.ensure_future(self.handle_msg(peer, cmd, msg))
-#
-#     async def handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
-#                          msg: protocol._DecodedMsgType) -> None:
-#         try:
-#             await self._handle_msg(peer, cmd, msg)
-#         except OperationCancelled:
-#             # Silently swallow OperationCancelled exceptions because we run unsupervised (i.e.
-#             # with ensure_future()). Our caller will also get an OperationCancelled anyway, and
-#             # there it will be handled.
-#             pass
-#         except Exception:
-#             self.logger.exception("Unexpected error when processing msg from %s", peer)
-#
-#     async def _run(self) -> None:
-#         self.logger.debug("Starting chain. waiting for consensus and chain config to initialize.")
-#         self.run_task(self._handle_msg_loop())
-#
-#         consensus_ready = await self.consensus.coro_is_ready.wait()
-#         if consensus_ready:
-#             self.logger.debug("consensus ready")
-#             sync_parameters_ready = await self.initialize_sync_parameters()
-#             if sync_parameters_ready:
-#                 self.logger.debug("Syncing parameters set")
-#                 with self.subscribe(self.peer_pool):
-#                     self.run_daemon_task(self.re_queue_timeout_peers())
-#                     while self.is_operational:
-#                         await self.wait_first(self.send_chain_requests(), self._sync_complete.wait())
-#                         # await self.send_chain_requests()
-#
-#                         if self._sync_complete.is_set():
-#                             self.finalize_complete_fast_sync()
-#                             self.logger.info("fast sync complete")
-#                             return
-#
-#     def finalize_complete_fast_sync(self):
-#         self.chain_head_db.initialize_historical_root_hashes(self.current_syncing_root_hash,
-#                                                              self.current_syncing_timestamp)
-#
-#     # step 1) determine which root hash to sync too
-#     # step 2) connect to peers that have that root hash
-#     async def initialize_sync_parameters(self):
-#         while not self.syncer_initialized.is_set():
-#             if self.current_syncing_root_timestamp != None:
-#                 if self.current_syncing_root_timestamp < int(
-#                         time.time()) - NUMBER_OF_HEAD_HASH_TO_SAVE * TIME_BETWEEN_HEAD_HASH_SAVE:
-#                     # it is too old, we have to choose a new one and restart the sync
-#                     self.current_syncing_root_timestamp, self.current_syncing_root_hash = await self.consensus.get_closest_root_hash_consensus(
-#                         int(time.time()) - FAST_SYNC_CUTOFF_PERIOD)
-#                     if self.current_syncing_root_timestamp is not None:
-#                         self.chain_head_db.set_current_syncing_info(self.current_syncing_root_timestamp,
-#                                                                     self.current_syncing_root_hash)
-#
-#             else:
-#                 # look it up from db
-#                 syncing_info = self.chain_head_db.get_current_syncing_info()
-#                 self.logger.debug("syncing_info: {}".format(syncing_info))
-#                 if syncing_info == None:
-#                     self.current_syncing_root_timestamp, self.current_syncing_root_hash = await self.consensus.get_closest_root_hash_consensus(
-#                         int(time.time()) - FAST_SYNC_CUTOFF_PERIOD)
-#                     self.head_hash_of_last_chain = ZERO_HASH32
-#                     if self.current_syncing_root_timestamp is not None:
-#                         self.chain_head_db.set_current_syncing_info(self.current_syncing_root_timestamp,
-#                                                                     self.current_syncing_root_hash)
-#
-#
-#                 else:
-#                     timestamp = syncing_info.timestamp
-#                     root_hash = syncing_info.head_root_hash
-#                     head_hash_of_last_chain = syncing_info.head_hash_of_last_chain
-#
-#                     if timestamp < int(time.time()) - NUMBER_OF_HEAD_HASH_TO_SAVE * TIME_BETWEEN_HEAD_HASH_SAVE:
-#                         self.current_syncing_root_timestamp, self.current_syncing_root_hash = await self.consensus.get_closest_root_hash_consensus(
-#                             int(time.time()) - FAST_SYNC_CUTOFF_PERIOD)
-#                         if self.current_syncing_root_timestamp is not None:
-#                             self.chain_head_db.set_current_syncing_info(self.current_syncing_root_timestamp,
-#                                                                         self.current_syncing_root_hash)
-#
-#                     else:
-#                         self.current_syncing_root_timestamp, self.current_syncing_root_hash, self.head_hash_of_last_chain = timestamp, root_hash, head_hash_of_last_chain
-#
-#             if self.current_syncing_root_timestamp is not None:
-#                 self.syncer_initialized.set()
-#             else:
-#                 self.logger.debug("could not initialize sync parameters yet. waiting 5 seconds to try again")
-#                 await asyncio.sleep(5)
-#         return True
-#
-#     async def re_queue_timeout_peers(self):
-#         while not self._sync_complete.is_set() and self.is_running:
-#             with await self.writing_chain_request_vars:
-#                 for chain_request_wallet_address, chain_request_info in self.pending_chain_requests.copy().items():
-#                     self.logger.debug("checking peer timeouts, chain_request_timestamp = {}, timeout time = {}".format(
-#                         chain_request_info.timestamp_sent, (int(time.time()) - self._reply_timeout)))
-#                     if chain_request_info.timestamp_sent < int(time.time()) - self._reply_timeout:
-#                         # delete the request
-#                         self.failed_chain_requests[chain_request_wallet_address] = chain_request_info
-#                         del (self.pending_chain_requests[chain_request_wallet_address])
-#                         # re-queue peer
-#                         self.register_peer(chain_request_info.peer)
-#                         self.logger.debug("Requeuing a peer")
-#
-#             await asyncio.sleep(self._reply_timeout)
-#
-#     # send a request to a peer asking for the next chain. if it is not found, then it must be older. it cant be newer because of how we initialized sync.
-#
-#     async def send_chain_requests(self):
-#         while not self._sync_complete.is_set() and self.is_running:
-#             peer = await self.wait(self._idle_peers_in_consensus.get())
-#             if peer.is_running:
-#                 self.logger.debug("Found a peer to send chain requests to")
-#             else:
-#                 self.logger.info("%s disconnected, aborting sync", peer)
-#                 break
-#
-#             with await self.writing_chain_request_vars:
-#                 # first check if any requests failed, and send them out again
-#                 failed_chain_requests = list(self.failed_chain_requests.values())
-#                 if len(failed_chain_requests) > 0:
-#                     shuffle(failed_chain_requests)
-#                     window_start = failed_chain_requests[0].window_start
-#                     window_length = failed_chain_requests[0].window_length
-#                     head_hash_of_last_chain = failed_chain_requests[0].head_hash_of_last_chain
-#                     del (self.failed_chain_requests[failed_chain_requests[0].peer.wallet_address])
-#                     self.logger.debug("Resending failed chain request")
-#                 else:
-#                     if self.received_final_chain.is_set():
-#                         # only send new chain requests if we havent gotten to the final one, or if we are re-requesting a failed request.
-#                         break
-#                     self.last_window_start = self.last_window_start + self.last_window_length
-#                     window_start = self.last_window_start
-#
-#                     self.last_window_length = FAST_SYNC_NUM_CHAINS_TO_REQUEST
-#                     window_length = self.last_window_length
-#
-#                     head_hash_of_last_chain = self.head_hash_of_last_chain
-#                 self.logger.info(
-#                     "Sending chain request to {}, window_start {}, window_length {}".format(peer.wallet_address,
-#                                                                                             window_start,
-#                                                                                             window_length))
-#
-#                 new_chain_request_info = ChainRequestInfo(peer,
-#                                                           self.current_syncing_root_timestamp,
-#                                                           self.current_syncing_root_hash,
-#                                                           head_hash_of_last_chain,
-#                                                           window_start,
-#                                                           window_length,
-#                                                           timestamp_sent=int(time.time()))
-#                 peer.sub_proto.send_get_chains_syncing(new_chain_request_info)
-#                 self.pending_chain_requests[peer.wallet_address] = new_chain_request_info
-#
-#
-#
-#     async def _cleanup(self) -> None:
-#         # We don't need to cancel() anything, but we yield control just so that the coroutines we
-#         # run in the background notice the cancel token has been triggered and return.
-#         await asyncio.sleep(0)
-#
-#     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
-#                           msg: protocol._DecodedMsgType) -> None:
-#
-#         if isinstance(cmd, commands.GetChains):
-#             await self._handle_get_chains_syncing(peer, cast(Dict[str, Any], msg))
-#         elif isinstance(cmd, commands.Chain):
-#             await self._handle_chain(peer, cast(Dict[str, Any], msg))
-#         else:
-#             # self.logger.debug("Ignoring %s message from %s: msg %r", cmd, peer, msg)
-#             pass
-#
-#
-#     async def _handle_get_chains_syncing(self,
-#                                          peer: HLSPeer,
-#                                          chain_request: Dict[str, Any]) -> None:
-#         self.logger.debug("Peer %s made chains syncing request: %s", peer.wallet_address, chain_request)
-#
-#         next_head_hashes = await self.chain_head_db.coro_get_next_n_head_block_hashes(
-#             chain_request['head_hash_of_last_chain'],
-#             chain_request['window_start'],
-#             chain_request['window_length'],
-#             root_hash=chain_request['head_root_hash'])
-#         if len(next_head_hashes) < chain_request['window_length']:
-#             contains_last_chain = True
-#         else:
-#             contains_last_chain = False
-#
-#         is_last_chain = False
-#
-#         if next_head_hashes is not None:
-#             for head_hash in next_head_hashes:
-#
-#                 chain_address = await self.chaindb.coro_get_chain_wallet_address_for_block_hash(head_hash)
-#                 # whole_chain = await self.chaindb.coro_get_all_blocks_on_chain(self.chain.get_vm().get_block_class(), chain_address)
-#                 whole_chain = await self.chaindb.coro_get_all_blocks_on_chain(P2PBlock, chain_address)
-#
-#                 if contains_last_chain:
-#                     if head_hash == next_head_hashes[-1]:
-#                         is_last_chain = True
-#
-#                 peer.sub_proto.send_chain(whole_chain, is_last_chain)
-#                 self.logger.debug(
-#                     "sending chain with chain address {}, is_last? {}".format(chain_address, is_last_chain))
-#
-#     async def _handle_chain(self,
-#                             peer: HLSPeer,
-#                             msg: Dict[str, Any]) -> None:
-#
-#         with await self.writing_chain_request_vars:
-#             try:
-#                 num_chains_expected = self.pending_chain_requests[peer.wallet_address].window_length
-#                 # update the timestamp so that it doesnt time out.
-#                 self.pending_chain_requests[peer.wallet_address].timestamp_sent = int(time.time())
-#             except KeyError:
-#                 self.logger.debug("was sent a chain that we didn't request")
-#                 return
-#
-#             try:
-#                 num_chains_received = self.num_chains_returned_in_incomplete_requests[peer.wallet_address]
-#             except KeyError:
-#                 num_chains_received = 0
-#
-#             if num_chains_expected <= num_chains_received:
-#                 self.logger.debug("was sent too many chains")
-#                 return
-#
-#             # now lets save it to database overwriting any chain that we have
-#             self.logger.debug("importing chain now")
-#             await self.chain.coro_import_chain(block_list=msg['blocks'], save_block_head_hash_timestamp=False)
-#             try:
-#                 self.num_chains_returned_in_incomplete_requests[peer.wallet_address] += 1
-#             except KeyError:
-#                 self.num_chains_returned_in_incomplete_requests[peer.wallet_address] = 1
-#
-#             if self.num_chains_returned_in_incomplete_requests[peer.wallet_address] == num_chains_expected:
-#                 del (self.pending_chain_requests[peer.wallet_address])
-#                 del (self.num_chains_returned_in_incomplete_requests[peer.wallet_address])
-#                 self.register_peer(peer)
-#
-#             if msg['is_last'] == True:
-#                 # if this is set, we won't receive any more chains from this peer
-#                 # even if we havent received the number of chains we asked for
-#                 del (self.pending_chain_requests[peer.wallet_address])
-#                 self.received_final_chain.set()
-#
-#                 if len(self.pending_chain_requests) == 0:
-#                     self._sync_complete.set()
-#
-
 class RegularChainSyncer(BaseService, PeerSubscriber):
     """
     Sync with the Ethereum network by fetching/storing block headers, bodies and receipts.
@@ -756,6 +328,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         self.logger.debug("request_blocks_then_priority_import")
 
         for i in range(0, len(block_hash_list), self.num_blocks_to_request_at_once):
+            self.logger.debug("requesting {} blocks from peer {}".format(len(block_hash_list), peer))
+
             current_request_hashes = block_hash_list[i: i + self.num_blocks_to_request_at_once]
 
             received_blocks, peer = await self.handle_getting_request_from_peers(request_function_name="get_blocks",
@@ -980,6 +554,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
                     required_block_hashes = cast(List[Hash32], fragment_bundle.fragments)
 
+                    if len(required_block_hashes) == 0:
+                        raise SyncingError("Need to sync up to a chronological window timestamp, but there are no blocks to request. This is an empty window that cant possibly bring us to sync.")
+
                     peer_to_sync_with = await self.request_blocks_then_priority_import(block_hash_list = required_block_hashes,
                                                                                          peer = peer_to_sync_with,
                                                                                          additional_candidate_peers = additional_candidate_peers)
@@ -1123,8 +700,23 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                             their_hash_fragments=their_fragment_list,
                                                                                             )
 
+            # we will delete the chains we have that they dont here first instead of doing it after one sync because that could be
+            # very time consuming.
+            if len(hash_positions_of_ours_that_they_need) > 0:
+                self.logger.debug("Fast sync: deleting chains we have that are not in consensus.")
+                for idx in hash_positions_of_ours_that_they_need:
+                    chain_head_hash = our_block_hashes[idx]
+                    chain_block_hashes = await self.chaindb.coro_get_all_block_hashes_on_chain_by_head_block_hash(chain_head_hash)
 
-
+                    # by removing the genesis block on the chain, the vm will remove all children blocks automatically.
+                    # But if this is the genesis chain then we cannot delete the first block, must go for the 2nd
+                    try:
+                        await self.remove_block_by_hash(chain_block_hashes[0])
+                    except TriedDeletingGenesisBlock:
+                        try:
+                            await self.remove_block_by_hash(chain_block_hashes[1])
+                        except IndexError:
+                            pass
 
             fast_sync_parameters = FastSyncParameters(their_fragment_list, list(hash_positions_of_theirs_that_we_need))
 
@@ -1163,22 +755,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                                     their_hash_fragments=their_fragment_list,
                                                                                                 )
 
-                if len(hash_positions_of_ours_that_they_need) > 0:
-                    self.logger.debug("Fast sync: deleting chains we have that are not in consensus.")
-                    for idx in hash_positions_of_ours_that_they_need:
-                        chain_head_hash = our_block_hashes[idx]
-                        chain_block_hashes = await self.chaindb.coro_get_all_block_hashes_on_chain_by_head_block_hash(
-                            chain_head_hash)
 
-                        # by removing the genesis block on the chain, the vm will remove all children blocks automatically.
-                        # But if this is the genesis chain then we cannot delete the first block, must go for the 2nd
-                        try:
-                            await self.remove_block_by_hash(chain_block_hashes[0])
-                        except TriedDeletingGenesisBlock:
-                            try:
-                                await self.remove_block_by_hash(chain_block_hashes[1])
-                            except IndexError:
-                                pass
 
 
             fragment_length += 1
@@ -1265,7 +842,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
     #
     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
-        if self._latest_sync_stage >= 2:
+        if self.consensus.is_network_startup_node or self._latest_sync_stage >= 2:
             # if isinstance(cmd, commands.GetChronologicalBlockWindow):
             #     await self._handle_get_chronological_block_window(peer, cast(Dict[str, Any], msg))
             # elif isinstance(cmd, commands.ChronologicalBlockWindow):
@@ -1279,7 +856,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             elif isinstance(cmd, commands.GetHashFragments):
                 await self._handle_get_hash_fragments(peer, cast(Dict[str, Any], msg))
             elif isinstance(cmd, commands.NewBlock):
-                if self._latest_sync_stage >= 3:
+                if self.consensus.is_network_startup_node or self._latest_sync_stage >= 3:
                     await self._handle_new_block(peer, cast(Dict[str, Any], msg))
 
 

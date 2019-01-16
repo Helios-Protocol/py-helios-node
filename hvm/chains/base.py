@@ -93,7 +93,7 @@ from hvm.exceptions import (
     NoChronologicalBlocks,
     RewardProofSenderBlockMissing,
 
-    RewardAmountRoundsToZero, TriedDeletingGenesisBlock)
+    RewardAmountRoundsToZero, TriedDeletingGenesisBlock, NoGenesisBlockPresent)
 from eth_keys.exceptions import (
     BadSignature,
 )
@@ -1018,11 +1018,14 @@ class Chain(BaseChain):
         self.chain_head_db.delete_block_hash_from_chronological_window(descendant_block_hash, descendant_block_header.timestamp)
         self.chaindb.remove_block_from_all_parent_child_lookups(descendant_block_header, vm.get_block_class().receive_transaction_class)
         self.chaindb.delete_all_block_children(descendant_block_hash)
-        
+
         #for every one, re-add pending receive transaction for all receive transactions only if sending block still exists
         #make all blocks unprocessed so that receivable transactions are not saved that came from one of the non-canonical blocks.
         vm.reverse_pending_transactions(descendant_block_header)
 
+        # remove the block from the canonical chain. This must be done last because reversing the pending transactions requires that it
+        # is still in the canonical chain to look up transactions
+        self.chaindb.delete_block_from_canonical_chain(descendant_block_hash)
         #self.chaindb.save_unprocessed_block_lookup(descendant_block_hash)
  
     def purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32) -> None:
@@ -1081,9 +1084,13 @@ class Chain(BaseChain):
 
             self.revert_block(existing_block_header.hash, self.get_vm(refresh = False))
 
+            #TODO: delete block and transactions. This is to avoid duplicate transactions overwriting references from other transaction.
+
             #persist changes
             self.get_vm(refresh = False).state.account_db.persist()
             self.chain_head_db.persist(True)
+
+            self.reinitialize()
         
     
     def purge_unprocessed_block(self, block_hash, purge_children_too = True):
@@ -1120,6 +1127,9 @@ class Chain(BaseChain):
         
     def import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp, save_block_head_hash_timestamp:bool = True, allow_unprocessed:bool =False) -> None:
         validate_uint256(window_start_timestamp, title='timestamp')
+
+        if block_list is None or len(block_list) == 0:
+            return
 
         #if we are given a block that is not one of the two allowed classes, try converting it.
         if len(block_list) > 0 and not isinstance(block_list[0], self.get_vm().get_block_class()):
@@ -1166,7 +1176,6 @@ class Chain(BaseChain):
     
     def import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
         self.logger.debug("importing chain")
-        
         #if we are given a block that is not one of the two allowed classes, try converting it.
         if len(block_list) > 0 and not isinstance(block_list[0], self.get_vm().get_block_class()):
             self.logger.debug("converting chain to correct class")
@@ -1175,8 +1184,8 @@ class Chain(BaseChain):
                 corrected_block = self.get_vm().convert_block_to_correct_class(block)
                 corrected_block_list.append(corrected_block)
             block_list = corrected_block_list
-            
-        #the wallet address is always the sender of the genesis block. Even for smart contracts
+
+
         wallet_address = block_list[0].header.chain_address
         for block in block_list:
             self.import_block(block, 
@@ -1190,20 +1199,22 @@ class Chain(BaseChain):
 
         # First make sure the whole chain imported correctly. If not, then we don't need to do anything
 
-        imported_canonical_head = block_list[-1].header
-        local_canonical_head = self.chaindb.get_canonical_head(wallet_address)
-        if imported_canonical_head.block_number < local_canonical_head.block_number:
-            local_block_header_at_location_of_imported_canonical_head = self.chaindb.get_canonical_block_header_by_number(BlockNumber(imported_canonical_head.block_number), wallet_address)
-            if imported_canonical_head.hash == local_block_header_at_location_of_imported_canonical_head.hash:
-                # Our chain is the same as the imported one, but we have some extra blocks on top. In this case, we would like to prune our chain
-                # to match the imported one.
-                # We only need to purge the next block after the imported chain. The vm will automatically purge all children
-                self.logger.debug("After importing a chain, our local chain is identical except with additional blocks on top. We will prune the top blocks to bring"
-                                  " our chain in line with the imported one.")
-                block_number_to_purge = imported_canonical_head.block_number + 1
-                hash_to_purge = self.chaindb.get_canonical_block_hash(BlockNumber(block_number_to_purge), wallet_address)
-                self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(hash_to_purge)
-
+        try:
+            local_canonical_head = self.chaindb.get_canonical_head(wallet_address)
+            imported_canonical_head = block_list[-1].header
+            if imported_canonical_head.block_number < local_canonical_head.block_number:
+                local_block_header_at_location_of_imported_canonical_head = self.chaindb.get_canonical_block_header_by_number(BlockNumber(imported_canonical_head.block_number), wallet_address)
+                if imported_canonical_head.hash == local_block_header_at_location_of_imported_canonical_head.hash:
+                    # Our chain is the same as the imported one, but we have some extra blocks on top. In this case, we would like to prune our chain
+                    # to match the imported one.
+                    # We only need to purge the next block after the imported chain. The vm will automatically purge all children
+                    self.logger.debug("After importing a chain, our local chain is identical except with additional blocks on top. We will prune the top blocks to bring"
+                                      " our chain in line with the imported one.")
+                    block_number_to_purge = imported_canonical_head.block_number + 1
+                    hash_to_purge = self.chaindb.get_canonical_block_hash(BlockNumber(block_number_to_purge), wallet_address)
+                    self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(hash_to_purge)
+        except CanonicalHeadNotFound:
+            pass
 
             
     # async def coro_import_block(self, *args, **kwargs):
@@ -1238,6 +1249,7 @@ class Chain(BaseChain):
             if wallet_address != self.wallet_address:
                 self.set_new_wallet_address(wallet_address = wallet_address)
                 
+
         journal_enabled = False
         
         #if we are given a block that is not one of the two allowed classes, try converting it.
@@ -1248,7 +1260,11 @@ class Chain(BaseChain):
             block = self.get_vm(refresh=False).convert_block_to_correct_class(block)
         
         if not isinstance(block, self.get_vm(refresh=False).get_queue_block_class()) and block.header.chain_address == self.genesis_wallet_address and block.header.block_number == 0:
-            our_genesis_hash = self.chaindb.get_canonical_block_header_by_number(BlockNumber(0), self.genesis_wallet_address).hash
+            try:
+                our_genesis_hash = self.chaindb.get_canonical_block_header_by_number(BlockNumber(0), self.genesis_wallet_address).hash
+            except HeaderNotFound:
+                raise NoGenesisBlockPresent("Tried importing a block, but we have no genesis block loaded. Need to load a genesis block first.")
+
             if block.header.hash == our_genesis_hash:
                 return block
             else:
@@ -1286,7 +1302,6 @@ class Chain(BaseChain):
                 journal_enabled = True
                 
                 self.purge_unprocessed_block(existing_unprocessed_block_hash)
-                
 
 
         #check to see if this is the same hash that was already saved as unprocessed
@@ -1321,14 +1336,13 @@ class Chain(BaseChain):
         if block.number == self.header.block_number and block.number != 0:
             if block.header.parent_hash != self.chaindb.get_canonical_head_hash(wallet_address = self.wallet_address):
                 raise ParentNotFound()
-        
-        
-        
-        
+
+
         if block.number < self.header.block_number:
             if not allow_replacement:
                 raise ReplacingBlocksNotAllowed()
-                
+
+
             self.logger.debug("went into block replacing mode")
             self.logger.debug("block.number = {}, self.header.block_number = {}".format(block.number,self.header.block_number))
             self.logger.debug("this chains wallet address = {}, this block's sender = {}".format(self.wallet_address, block.sender))

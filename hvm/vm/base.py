@@ -392,83 +392,85 @@ class VM(BaseVM):
                                                                              receive_transaction.send_transaction_hash)
 
         if receivable_tx_key is None:
-            # now check for that shit
-            if self.chaindb.exists(receive_transaction.sender_block_hash):
-                try:
-                    block_hash, index, is_receive = self.chaindb.get_transaction_index(receive_transaction.send_transaction_hash)
-                    if block_hash != receive_transaction.sender_block_hash:
-                        raise ValidationError(
-                            'Receive transaction is invalid. We have the sender block, but it didn\'t contain the send transaction')
-                except TransactionNotFound:
+            # There is no receivable transaction that matches this one.
+            # now check to see if the block is in the canonical chain, but didnt have the transaction in it
+            try:
+                block_hash, index, is_receive = self.chaindb.get_transaction_index(receive_transaction.send_transaction_hash)
+                if block_hash != receive_transaction.sender_block_hash:
+                    raise ValidationError(
+                        'Receive transaction is invalid. We have already imported this transaction, but it was from another block.')
+            except TransactionNotFound:
+                if self.chaindb.is_in_canonical_chain(receive_transaction.sender_block_hash):
                     raise ValidationError(
                         'Receive transaction is invalid. We have the sender block, but it didn\'t contain the send transaction')
-            else:
-                raise ReceivableTransactionNotFound()
 
-        #now lets get all of the relevant transactions in this chain
-        try:
-
-            if receive_transaction.is_refund:
-                #this is a refund transaction. We need to load the receive_transaction containing the refund and the send_transaction
-                refund_transaction = receive_transaction
-
-                block_hash, index, is_receive = self.chaindb.get_transaction_index(refund_transaction.send_transaction_hash)
-
-                if block_hash != refund_transaction.sender_block_hash:
-                    raise ValidationError("The sender_block_hash of this refund transaction doesn't match the block of the receive transaction")
-
-                if not is_receive:
-                    raise ValidationError("This refund transaction references a send transaction. This is not allowed.")
-
-                receive_transaction = self.chaindb.get_receive_transaction_by_index_and_block_hash(
-                    block_hash,
-                    index,
-                    self.get_receive_transaction_class(),
-                )
-            else:
-                refund_transaction = None
-
-
-
-            block_hash, index, is_receive = self.chaindb.get_transaction_index(receive_transaction.send_transaction_hash)
-
-            if block_hash != receive_transaction.sender_block_hash:
-                raise ValidationError(
-                    "The sender_block_hash of this receive transaction doesn't match the block of the send transaction")
-
-            if is_receive:
-                raise ValidationError(
-                    "This receive transaction references another receive transaction. This is not allowed.")
-
-            send_transaction = self.chaindb.get_transaction_by_index_and_block_hash(
-                block_hash,
-                index,
-                self.get_transaction_class(),
-            )
-
-        except TransactionNotFound:
             raise ReceivableTransactionNotFound()
 
-
-
-        # we assume past this point that, if it is a receive transaction, the send transaction exists in account
-        computation, processed_transaction = self.state.apply_transaction(send_transaction=send_transaction,
-                                                   caller_chain_address=caller_chain_address,
-                                                   receive_transaction=receive_transaction,
-                                                   refund_transaction=refund_transaction,
-                                                   validate=validate)
-
-        if validate:
-            receipt = self.make_receipt(header, computation, send_transaction, receive_transaction, refund_transaction)
-
-            new_header = header.copy(
-                bloom=int(BloomFilter(header.bloom) | receipt.bloom),
-                gas_used=receipt.gas_used,
-            )
-
-            return new_header, receipt, computation, processed_transaction
         else:
-            return None, None, computation, processed_transaction
+            #now lets get all of the relevant transactions in this chain
+            try:
+
+                if receive_transaction.is_refund:
+                    #this is a refund transaction. We need to load the receive_transaction containing the refund and the send_transaction
+                    refund_transaction = receive_transaction
+
+                    block_hash, index, is_receive = self.chaindb.get_transaction_index(refund_transaction.send_transaction_hash)
+
+                    if block_hash != refund_transaction.sender_block_hash:
+                        raise ValidationError("The sender_block_hash of this refund transaction doesn't match the block of the receive transaction")
+
+                    if not is_receive:
+                        raise ValidationError("This refund transaction references a send transaction. This is not allowed.")
+
+                    receive_transaction = self.chaindb.get_receive_transaction_by_index_and_block_hash(
+                        block_hash,
+                        index,
+                        self.get_receive_transaction_class(),
+                    )
+                else:
+                    refund_transaction = None
+
+
+
+                block_hash, index, is_receive = self.chaindb.get_transaction_index(receive_transaction.send_transaction_hash)
+
+                if block_hash != receive_transaction.sender_block_hash:
+                    raise ValidationError(
+                        "The sender_block_hash of this receive transaction doesn't match the block of the send transaction")
+
+                if is_receive:
+                    raise ValidationError(
+                        "This receive transaction references another receive transaction. This is not allowed.")
+
+                send_transaction = self.chaindb.get_transaction_by_index_and_block_hash(
+                    block_hash,
+                    index,
+                    self.get_transaction_class(),
+                )
+
+            except TransactionNotFound:
+                raise ReceivableTransactionNotFound()
+
+
+
+            # we assume past this point that, if it is a receive transaction, the send transaction exists in account
+            computation, processed_transaction = self.state.apply_transaction(send_transaction=send_transaction,
+                                                       caller_chain_address=caller_chain_address,
+                                                       receive_transaction=receive_transaction,
+                                                       refund_transaction=refund_transaction,
+                                                       validate=validate)
+
+            if validate:
+                receipt = self.make_receipt(header, computation, send_transaction, receive_transaction, refund_transaction)
+
+                new_header = header.copy(
+                    bloom=int(BloomFilter(header.bloom) | receipt.bloom),
+                    gas_used=receipt.gas_used,
+                )
+
+                return new_header, receipt, computation, processed_transaction
+            else:
+                return None, None, computation, processed_transaction
 
     def _apply_reward_bundle(self, reward_bundle: StakeRewardBundle, block_timestamp: Timestamp, wallet_address: Address = None) -> None:
 

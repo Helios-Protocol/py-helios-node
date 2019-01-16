@@ -165,6 +165,9 @@ class BaseChainDB(metaclass=ABCMeta):
     def is_in_canonical_chain(self, block_hash: Hash32) -> bool:
         raise NotImplementedError("ChainDB classes must implement this method")
 
+    @abstractmethod
+    def delete_block_from_canonical_chain(self, block_hash: Hash32) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
     #
     # Header API
     #
@@ -506,6 +509,31 @@ class ChainDB(BaseChainDB):
             header.hash,
             rlp.encode(header),
         )
+
+    def delete_block_from_canonical_chain(self, block_hash: Hash32) -> None:
+        '''
+        warning, this will only delete the block and transactions, it will not set the current head number of the chain.
+        '''
+        try:
+            header_to_remove = self.get_block_header_by_hash(block_hash)
+
+            # first check to see if it is in the canonical chain
+            canonical_block_hash = self.get_canonical_block_hash(header_to_remove.block_number, header_to_remove.chain_address)
+
+            #if the block doesnt match the canonical block, then it has already been removed from the canonical chain.
+            if block_hash == canonical_block_hash:
+
+                for transaction_hash in self.get_block_transaction_hashes(header_to_remove):
+                    self._remove_transaction_from_canonical_chain(transaction_hash)
+                for transaction_hash in self.get_block_receive_transaction_hashes(header_to_remove):
+                    self._remove_transaction_from_canonical_chain(transaction_hash)
+
+                self.remove_block_from_canonical_block_hash_lookup(header_to_remove.block_number, wallet_address= header_to_remove.chain_address)
+
+        except HeaderNotFound:
+            pass
+
+        #todo: check if you can look up block by number once canonical chain is deleted below
 
 
     def delete_canonical_chain(self, wallet_address = None):
@@ -1148,6 +1176,7 @@ class ChainDB(BaseChainDB):
                 return count
             count += 1
 
+
     @functools.lru_cache(maxsize=32)
     @to_list
     def _get_block_transactions(
@@ -1282,7 +1311,7 @@ class ChainDB(BaseChainDB):
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         try:
-            return rlp.decode(self.db[block_children_lookup_key], sedes=rlp.sedes.CountableList(hash32))
+            return rlp.decode(self.db[block_children_lookup_key], sedes=rlp.sedes.FCountableList(hash32))
         except KeyError:
             return None
 
@@ -1315,10 +1344,9 @@ class ChainDB(BaseChainDB):
 
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
-        self.db[block_children_lookup_key] = rlp.encode(block_children, sedes=rlp.sedes.CountableList(hash32))
+        self.db[block_children_lookup_key] = rlp.encode(block_children, sedes=rlp.sedes.FCountableList(hash32))
 
     def delete_all_block_children(self, parent_block_hash: Hash32):
-
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         try:

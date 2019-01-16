@@ -57,3 +57,9 @@ class NoCandidatePeers(BaseHeliosError):
     Raised when there are no peers to send a request to
     """
     pass
+
+class SyncingError(BaseHeliosError):
+    """
+    Raised when there is an error while syncing
+    """
+    pass

@@ -547,7 +547,7 @@ class Consensus(BaseService, PeerSubscriber):
             await asyncio.sleep(MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD)
 
     async def _run(self) -> None:
-        if self.chain_config.network_startup_node:
+        if self.is_network_startup_node:
             self.logger.debug('re-initializing min gas system')
             self.chain.re_initialize_historical_minimum_gas_price_at_genesis()
 

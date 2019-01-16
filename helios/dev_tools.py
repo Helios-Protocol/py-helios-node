@@ -126,7 +126,11 @@ def create_dev_test_random_blockchain_database(base_db):
 #        receivable_tx = sender_chain.get_vm().state.account_db.get_receivable_transactions(receiver_privkey.public_key.to_canonical_address())
 #        print('receivable_tx from account = {}'.format([encode_hex(x.sender_block_hash) for x in receivable_tx]))
 #        exit()
-        
+
+        if privkey == GENESIS_PRIVATE_KEY:
+            current_genesis_chain_head_number = sender_chain.chaindb.get_canonical_head(privkey.public_key.to_canonical_address()).block_number
+            print('genesis head block number', current_genesis_chain_head_number)
+
         order_of_chains.append(encode_hex(privkey.public_key.to_canonical_address()))
         
         #logger.debug("Receiving ")
