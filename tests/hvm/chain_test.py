@@ -663,3 +663,62 @@ def test_import_chronolgical_block_windows():
     import_chronological_block_window(testdb1, testdb2)
 
 # test_import_chronolgical_block_windows()
+
+
+#TODO: add some refund transaction tests
+# add reward bundle tests
+def test_importing_p2p_type_block():
+    from hvm.rlp.sedes import (
+        hash32
+    )
+    import rlp_cython as rlp
+    from rlp_cython import sedes
+    from hvm.rlp.transactions import BaseTransaction
+    from helios.rlp_templates.hls import P2PSendTransaction, P2PReceiveTransaction, P2PBlock
+    from hvm.rlp.consensus import StakeRewardBundle
+    from hvm.rlp.blocks import BaseBlock
+    from hvm.rlp.transactions import BaseTransaction, BaseReceiveTransaction
+
+    testdb1 = MemoryDB()
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+
+    transactions = []
+    for i in range(5):
+        transaction = P2PSendTransaction(
+            nonce=i+1,
+            gas_price=0x01,
+            gas=0x0c3500,
+            to=RECEIVER.public_key.to_canonical_address(),
+            value=0x01,
+            data=b"",
+            v=0,
+            r=0,
+            s=0
+        )
+        transactions.append(transaction)
+
+    receive_transactions = []
+    for i in range(5):
+        receive_transaction = P2PReceiveTransaction(sender_block_hash=ZERO_HASH32,
+                                                    send_transaction_hash=ZERO_HASH32,
+                                                    is_refund = False,
+                                                    remaining_refund = 0)
+        receive_transactions.append(receive_transaction)
+
+    reward_bundle = StakeRewardBundle()
+
+    block = P2PBlock(chain.header, transactions, receive_transactions, reward_bundle)
+
+    converted_block = chain.get_vm().convert_block_to_correct_class(block)
+
+    assert(isinstance(converted_block, BaseBlock))
+
+    for tx in converted_block.transactions:
+        assert(isinstance(tx, BaseTransaction))
+
+    for tx in converted_block.receive_transactions:
+        assert(isinstance(tx, BaseReceiveTransaction))
+
+    assert(isinstance(reward_bundle, StakeRewardBundle))
+
+# test_importing_p2p_type_block()
