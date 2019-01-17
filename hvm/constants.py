@@ -203,8 +203,8 @@ REWARD_TYPE_2_WALLET_ADDRESS=b'\x00' * 19 + b'\x02'
 SLASH_WALLET_ADDRESS  =b'\x00' * 19 + b'\x03'
 MIN_TIME_BETWEEN_BLOCKS= 0 #1 for testing. change to 10 after
 GENESIS_ACCOUNT_HASH = ZERO_HASH32
-NUMBER_OF_HEAD_HASH_TO_SAVE = 1000
-TIME_BETWEEN_HEAD_HASH_SAVE = 1000 #seconds
+NUMBER_OF_HEAD_HASH_TO_SAVE = 1000 #Max number of chronological root hash timestamps to keep.
+TIME_BETWEEN_HEAD_HASH_SAVE = 1000 #seconds. This is the time between chronological block windows and the time between each historical root hash timestamp.
 
 FAST_SYNC_CUTOFF = 60 * 60 * 24
 #todo testing

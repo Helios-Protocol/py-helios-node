@@ -124,5 +124,3 @@ def add_sample_to_average(previous_average: int, new_sample: int, new_n: int) ->
         new_average = previous_average*(new_n-1)/new_n + new_sample/new_n
         return new_average
     
-    
-    

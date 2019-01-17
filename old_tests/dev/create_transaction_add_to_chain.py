@@ -1341,7 +1341,7 @@ def test_min_allowed_gas_system():
     #testdb1 = JournalDB(testdb1)
             
     node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
-    
+
     while True:
         print('loading historical transactions per centisecond')
         historical_tpc = node_1.chaindb.load_historical_tx_per_centisecond(sort = True)
@@ -2382,7 +2382,7 @@ def test_smart_contract_deploy_system():
 
 def test_keystore_load_save():
     import eth_keyfile
-    file_location = '/d:/Google Drive/forex/blockchain_coding/Helios/prototype_laptop/py-helios-node/keystore/UTC--2019-01-03T21-04-40.210Z--f7c6563c0978073d5b521e602e25f2b7e72ea176'
+    file_location = ''
     json_data = eth_keyfile.load_keyfile(file_location)
 
     print(json_data)

@@ -1,25 +1,31 @@
 import bisect
 import time
 import random
+from itertools import groupby as itergroupby
+from cytoolz import groupby
 
-test_timestamp_value_list = []
-for i in range(1000):
-    number = random.randint(100, 10000000)
-    test_timestamp_value_list.append([number, 'sadfsadfasdf'])
+test = []
+for i in range(100000):
+    test.append([i, random.randint(0,10000)])
+
+print(test)
+
+spacing = 100
+
+start_time = time.time()
+grouped = itergroupby(test, key = lambda x: int(x[0]/spacing)*spacing)
+
+grouped_sum
+
+print("itertoolz took", format(time.time() - start_time))
 
 
-
-print(test_timestamp_value_list)
-start_timestamp = time.time()
-for i in range(1000):
-    #test_timestamp_value_list = sorted(test_timestamp_value_list)
-    test_timestamp_value_list.sort()
-    timestamps = [x[0] for x in test_timestamp_value_list]
-
-    index = bisect.bisect_right(timestamps, 100000)-1
-
-    what = test_timestamp_value_list[index]
-
-print(what)
-print(time.time()-start_timestamp)
-
+# start_time = time.time()
+# grouped = groupby(key = lambda x: int(x[0]/spacing)*spacing, seq = test)
+#
+# # print(grouped)
+# # for index, group in grouped.items():
+# #     print(index)
+# #     print(list(group))
+#
+# print("cytoolz took", format(time.time() - start_time))

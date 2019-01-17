@@ -26,10 +26,7 @@ from typing import (  # noqa: F401
 
 import logging
 
-from cytoolz import (
-    assoc,
-    groupby,
-)
+from itertools import groupby
 
 from hvm.types import Timestamp
 
@@ -1844,7 +1841,7 @@ class Chain(BaseChain):
         
         
     
-    def update_tpc_from_chronological(self, update_min_gas_price = True):
+    def update_tpc_from_chronological(self, update_min_gas_price: bool = True):
         #start at the newest window, if the same tps stop. but if different tps keep going back
         self.logger.debug("Updating tpc from chronological")
         current_historical_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
@@ -1854,7 +1851,7 @@ class Chain(BaseChain):
         #hist_tpc = self.chaindb.load_historical_tx_per_centisecond()
         
 
-        end_outer = current_historical_window-60*100
+        end_outer = current_historical_window-6*TIME_BETWEEN_HEAD_HASH_SAVE
 
 
         for historical_window_timestamp in range(current_historical_window,
@@ -1869,9 +1866,9 @@ class Chain(BaseChain):
             if historical_window_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE < current_centisecond:
                 end = historical_window_timestamp +TIME_BETWEEN_HEAD_HASH_SAVE
             else:
-                end = current_centisecond
+                end = current_centisecond+100
                 
-            for timestamp in range(historical_window_timestamp, end+100, 100):
+            for timestamp in range(historical_window_timestamp, end, 100):
                 tpc_sum_dict[timestamp] = 0
             
             if chronological_block_window is not None:
@@ -1883,8 +1880,7 @@ class Chain(BaseChain):
                     centisecond_window_for_block = int(timestamp_block_hash[0]/100) * 100
                     if centisecond_window_for_block <= end:
                         tpc_sum_dict[centisecond_window_for_block] += num_tx_in_block
-            
-            
+
             same_as_database = self._update_tpc_from_chronological(tpc_sum_dict)
             
             if same_as_database == True:
@@ -1911,13 +1907,14 @@ class Chain(BaseChain):
         else:
             hist_tpc_dict = dict(hist_tpc)
             for timestamp, tpc in new_hist_tpc_dict.items():
+
                 if timestamp not in hist_tpc_dict or hist_tpc_dict[timestamp] != tpc:
                     #if tpc != 0:
                     difference_found = True
                 hist_tpc_dict[timestamp] = tpc
             hist_tpc = list(hist_tpc_dict.items())
             
-        
+        #print(hist_tpc)
         #save it to db
         self.chaindb.save_historical_tx_per_centisecond(hist_tpc, de_sparse = False)
         

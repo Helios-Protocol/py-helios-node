@@ -1501,15 +1501,11 @@ class ChainDB(BaseChainDB):
         validate_uint256(current_tpc_capability, title="current_tpc_capability")
         existing = self.load_historical_network_tpc_capability()
         current_centisecond = int(time.time()/100) * 100
-        existing.append([current_centisecond, current_tpc_capability])
+        if existing is None:
+            existing = [[current_centisecond, current_tpc_capability]]
+        else:
+            existing.append([current_centisecond, current_tpc_capability])
         self.save_historical_network_tpc_capability(existing, de_sparse = True)
-
-
-#    def update_historical_network_tpc_capability(self, timestamp, network_tpc_cap, perform_validation = True):
-#        if perform_validation:
-#            validate_centisecond_timestamp(timestamp, title="timestamp")
-#            validate_uint256(network_tpc_cap, title="network_tpc_cap")
-
 
 
 

@@ -5,6 +5,12 @@ from hvm.constants import (
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
 )
+from helios.sync.common.constants import (
+    FAST_SYNC_STAGE_ID,
+    CONSENSUS_MATCH_SYNC_STAGE_ID,
+    ADDITIVE_SYNC_STAGE_ID,
+    FULLY_SYNCED_STAGE_ID,
+)
 
 
 
@@ -50,13 +56,13 @@ def get_sync_stage_for_historical_root_hash_timestamp(timestamp: Timestamp) -> i
     current_window = last_finished_window + TIME_BETWEEN_HEAD_HASH_SAVE
 
     if timestamp < current_window - NUMBER_OF_HEAD_HASH_TO_SAVE * TIME_BETWEEN_HEAD_HASH_SAVE + TIME_BETWEEN_HEAD_HASH_SAVE:
-        return 1
+        return FAST_SYNC_STAGE_ID
     elif timestamp < int(time.time()) - MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED:
-        return 2
+        return CONSENSUS_MATCH_SYNC_STAGE_ID
     elif timestamp < int(time.time()) - SYNC_STAGE_4_START_OFFSET:
-        return 3
+        return ADDITIVE_SYNC_STAGE_ID
     else:
-        return 4
+        return FULLY_SYNCED_STAGE_ID
 
 
 def get_sync_stage_for_chronological_block_window_timestamp(timestamp: Timestamp) -> int:

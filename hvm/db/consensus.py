@@ -88,13 +88,16 @@ class ConsensusDB():
 
     logger = logging.getLogger('hvm.db.consensus.ConsensusDB')
 
-    def __init__(self, db:BaseDB, chain: 'BaseChain', chaindb:'BaseChainDB'):
+    def __init__(self, db:BaseDB, chain: 'BaseChain', chaindb:'BaseChainDB' = None):
         """
         Binary trie database for storing the hash of the head block of each wallet address.
         """
         self.db = db
         self.chain = chain
-        self.chaindb = chaindb
+        if chaindb is None:
+            self.chaindb = chain.chaindb
+        else:
+            self.chaindb = chaindb
 
         self.logger.debug("starting consensus db")
 

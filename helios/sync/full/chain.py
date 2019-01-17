@@ -12,6 +12,8 @@ from helios.exceptions import AlreadyWaiting, NoCandidatePeers, SyncingError
 from helios.protocol.common.constants import ROUND_TRIP_TIMEOUT
 from helios.protocol.common.exchanges import BaseExchange
 from helios.protocol.hls.sync import get_sync_stage_for_block_timestamp
+from helios.sync.common.constants import CHRONOLOGICAL_BLOCK_HASH_FRAGMENT_TYPE_ID, \
+    CHAIN_HEAD_BLOCK_HASH_FRAGMENT_TYPE_ID
 from hp2p.events import NewBlockEvent
 
 from hvm.utils.blocks import get_block_average_transaction_gas_price
@@ -225,18 +227,18 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
               node,
               event_bus: Endpoint = None,
               token: CancelToken = None) -> None:
-     super().__init__(token)
-     self.node: Node = node
-     self.consensus = consensus
+        super().__init__(token)
+        self.node: Node = node
+        self.consensus = consensus
+        self.context = context
+        self.event_bus = event_bus
+        self.chain: AsyncChain = context.chain
+        self.chaindb: AsyncChainDB = context.chaindb
+        self.chain_head_db: AsyncChainHeadDB = context.chain_head_db
+        self.base_db = context.base_db
+        self.peer_pool = peer_pool
 
-     self.event_bus = event_bus
-     self.chain: AsyncChain = context.chain
-     self.chaindb: AsyncChainDB = context.chaindb
-     self.chain_head_db: AsyncChainHeadDB = context.chain_head_db
-     self.base_db = context.base_db
-     self.peer_pool = peer_pool
-
-     self._new_blocks_to_import: asyncio.Queue[List[NewBlockQueueItem]] = asyncio.Queue()
+        self._new_blocks_to_import: asyncio.Queue[List[NewBlockQueueItem]] = asyncio.Queue()
 
     def register_peer(self, peer: HLSPeer) -> None:
         pass
@@ -661,7 +663,6 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         fragment_length = 3
         additional_candidate_peers = list(sync_parameters.peers_to_sync_with)
         peer_to_sync_with = additional_candidate_peers.pop()
-        chronological_window_timestamp = sync_parameters.timestamp_for_chronoligcal_block_window
         historical_root_hash_timestamp = sync_parameters.timestamp_for_root_hash
         consensus_root_hash = sync_parameters.consensus_root_hash
 
@@ -683,17 +684,23 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
             try:
                 their_fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
-                                                                                                         request_function_parameters = {'timestamp': chronological_window_timestamp,
+                                                                                                         request_function_parameters = {'timestamp': historical_root_hash_timestamp,
                                                                                                                                         'fragment_length':fragment_length,
-                                                                                                                                        'hash_type_id': 2},
+                                                                                                                                        'hash_type_id': CHAIN_HEAD_BLOCK_HASH_FRAGMENT_TYPE_ID},
                                                                                                          peer = peer_to_sync_with,
                                                                                                          additional_candidate_peers = additional_candidate_peers)
             except NoCandidatePeers:
                 return
 
 
+
+
             their_fragment_bundle = cast(HashFragmentBundle, their_fragment_bundle)
             their_fragment_list = their_fragment_bundle.fragments
+
+            # self.logger.debug('AAAAAAAAAAAAAAAA')
+            # self.logger.debug(our_block_hashes)
+            # self.logger.debug(their_fragment_list)
 
             hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
                                                                                             our_hash_fragments=our_fragment_list,
@@ -842,7 +849,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
     #
     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
-        if self.consensus.is_network_startup_node or self._latest_sync_stage >= 2:
+        if self.context.chain_config.network_startup_node or self._latest_sync_stage >= 2:
             # if isinstance(cmd, commands.GetChronologicalBlockWindow):
             #     await self._handle_get_chronological_block_window(peer, cast(Dict[str, Any], msg))
             # elif isinstance(cmd, commands.ChronologicalBlockWindow):
@@ -856,7 +863,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             elif isinstance(cmd, commands.GetHashFragments):
                 await self._handle_get_hash_fragments(peer, cast(Dict[str, Any], msg))
             elif isinstance(cmd, commands.NewBlock):
-                if self.consensus.is_network_startup_node or self._latest_sync_stage >= 3:
+                if self.context.chain_config.network_startup_node or self._latest_sync_stage >= 3:
                     await self._handle_new_block(peer, cast(Dict[str, Any], msg))
 
 
@@ -1149,7 +1156,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         self.logger.debug("Got a request for hash fragments type {} with fragment length {} for timestamp {}".format(hash_type_id, fragment_length, timestamp))
 
-        if hash_type_id == 1:
+        if hash_type_id == CHRONOLOGICAL_BLOCK_HASH_FRAGMENT_TYPE_ID:
 
             #They want the hash fragments of all of the blocks in a chronological window
             if msg['entire_window']:
@@ -1199,14 +1206,20 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                        hexary_trie_root_hash_of_complete_window=peer.hash_fragment_request_history_type_1.hexary_trie_root_hash_of_complete_window,
                                                        hash_type_id=hash_type_id)
 
-        elif hash_type_id == 2:
+        elif hash_type_id == CHAIN_HEAD_BLOCK_HASH_FRAGMENT_TYPE_ID:
             #They want the hash fragments of all of the head blocks of the chains.
 
             chain_head_root_hash = await self.chain_head_db.coro_get_historical_root_hash(timestamp)
 
+            # all_root_hashes = await self.chain_head_db.coro_get_historical_root_hashes()
+            # self.logger.debug("AAAAAAAAAAAAA")
+            # self.logger.debug(all_root_hashes[-3:])
+            # self.logger.debug(timestamp)
+
             if msg['entire_window']:
 
                 block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list(chain_head_root_hash)
+
 
                 if len(block_hashes) == 0:
                     peer.sub_proto.send_hash_fragments(fragments=[],

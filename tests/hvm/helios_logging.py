@@ -11,7 +11,7 @@ from typing import Tuple, Callable
 
 
 def setup_helios_logging(level: int) -> Tuple[Logger, Queue, handlers.QueueListener]:
-    from mp import ctx
+    from tests.hvm.mp import ctx
 
     log_queue = ctx.Queue()
 
