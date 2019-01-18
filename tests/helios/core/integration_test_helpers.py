@@ -7,6 +7,7 @@ from helios.db.chain_head import AsyncChainHeadDB
 from helios.db.consensus import AsyncConsensusDB
 from helios.nodes.full import FullNode
 from helios.protocol.common.datastructures import SyncParameters
+from hp2p.consensus import Consensus
 from hvm import MainnetChain
 from hvm.db.backends.level import LevelDB
 from hvm.db.backends.memory import MemoryDB
@@ -150,10 +151,20 @@ def get_random_long_time_blockchain_db(length_in_centiseconds = 50):
 
 
 
-class MockConsensusService():
+class MockConsensusService(Consensus):
 
-    def __init__(self, sync_parameters = None, block_conflict_choices = None):
-        self.sync_parameters = sync_parameters
+    def __init__(self,
+                 chain_head_db = None,
+                 peer_pool = None,
+                 sync_parameters = None,
+                 block_conflict_choices = None,
+                 peer_root_hash_timestamps = None,
+                 sync_stage_override = None
+    ):
+        if chain_head_db is None and peer_pool is None and sync_parameters is None:
+            raise Exception("you must define chain_head_db and peer_pool or sync_parameters")
+
+        self._sync_parameters = sync_parameters
         self.coro_is_ready = asyncio.Event()
         self.coro_min_gas_system_ready = asyncio.Event()
 
@@ -162,8 +173,54 @@ class MockConsensusService():
 
         self.block_conflict_choices = block_conflict_choices
 
+        self._peer_root_hash_timestamps = peer_root_hash_timestamps
+
+        self.chain_head_db = chain_head_db
+
+        self.peer_pool = peer_pool
+
+        self._sync_stage_override = sync_stage_override
+
+    def get_chain_head_root_hash_for_peer(self, peer_wallet_address, timestamp):
+        peer_root_hash_timestamps_dict = dict(self._peer_root_hash_timestamps)
+        try:
+            return peer_root_hash_timestamps_dict[timestamp]
+        except KeyError:
+            return None
+
+    async def coro_get_root_hash_consensus(self, timestamp, local_root_hash_timestamps=None):
+        '''
+        It will always assume the peer is in consensus and we need to sync to them unless
+        they dont have the root hash for the given timestamp.
+        :param timestamp:
+        :param local_root_hash_timestamps:
+        :return:
+        '''
+        local_root_hash_timestamps_dict = dict(self.local_root_hash_timestamps)
+        peer_root_hash_timestamps_dict = dict(self._peer_root_hash_timestamps)
+        try:
+            return peer_root_hash_timestamps_dict[timestamp]
+        except KeyError:
+            try:
+                return local_root_hash_timestamps_dict[timestamp]
+            except KeyError:
+                return None
+
+
     async def get_blockchain_sync_parameters(self):
-        return self.sync_parameters
+        if self._sync_parameters is not None:
+            if self._sync_parameters == "fully-synced":
+                return None
+            else:
+                return self._sync_parameters
+        else:
+            sync_parameters = await super().get_blockchain_sync_parameters()
+
+            if self._sync_stage_override is not None:
+                if sync_parameters is not None:
+                    sync_parameters.sync_stage = self._sync_stage_override
+
+            return sync_parameters
 
     async def get_correct_block_conflict_choice_where_we_differ_from_consensus(self):
         return self.block_conflict_choices

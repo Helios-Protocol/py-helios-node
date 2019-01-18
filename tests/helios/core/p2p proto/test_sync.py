@@ -61,7 +61,7 @@ logger.propagate = False
 
 
 @pytest.mark.asyncio
-async def _test_sync(request, event_loop, client_db, server_db, timestamp_to_sync_to, sync_stage_id, validation_function):
+async def _test_sync_with_fixed_sync_parameters(request, event_loop, client_db, server_db, timestamp_to_sync_to, sync_stage_id, validation_function):
     client_peer, server_peer = await get_directly_linked_peers(
         request, event_loop,
         alice_db=client_db,
@@ -88,7 +88,7 @@ async def _test_sync(request, event_loop, client_db, server_db, timestamp_to_syn
                                             [client_peer],
                                             sync_stage_id)
 
-    client_consensus = MockConsensusService(client_sync_parameters)
+    client_consensus = MockConsensusService(sync_parameters=client_sync_parameters)
 
     client = RegularChainSyncer(
         context = client_peer.context,
@@ -104,7 +104,7 @@ async def _test_sync(request, event_loop, client_db, server_db, timestamp_to_syn
 
     server_peer_pool = MockPeerPoolWithConnectedPeers([server_peer])
 
-    server_consensus = MockConsensusService()
+    server_consensus = MockConsensusService(sync_parameters = "fully-synced")
 
     server_context = server_peer.context
     server_context.chain_config.node_type = 4
@@ -134,47 +134,113 @@ async def _test_sync(request, event_loop, client_db, server_db, timestamp_to_syn
     await wait_for_chain_head_hash(client.chain_head_db, expected_root_hash, timestamp_to_sync_to)
 
     validation_function(server_db, client_db)
+
+
+
+@pytest.mark.asyncio
+async def _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, validation_function, sync_stage_id_override = None):
+    client_peer, server_peer = await get_directly_linked_peers(
+        request, event_loop,
+        alice_db=client_db,
+        bob_db=server_db)
+
+    client_node = FakeMainnetFullNode(
+        base_db = client_peer.context.base_db,
+        priv_key = client_peer.context.chain.private_key,
+    )
+
+    client_peer_pool = MockPeerPoolWithConnectedPeers([client_peer])
+
+    expected_root_hash_timestamp = server_peer.chain_head_db.get_historical_root_hashes()[-1]
+
+    client_consensus = MockConsensusService(client_peer.chain_head_db,
+                                            client_peer_pool,
+                                            peer_root_hash_timestamps=server_peer.chain_head_db.get_dense_historical_root_hashes(),
+                                            sync_stage_override = sync_stage_id_override)
+
+
+    client = RegularChainSyncer(
+        context = client_peer.context,
+        peer_pool = client_peer_pool,
+        consensus = client_consensus,
+        node = client_node,
+    )
+
+    server_node = FakeMainnetFullNode(
+        base_db=server_peer.context.base_db,
+        priv_key=server_peer.context.chain.private_key,
+    )
+
+    server_peer_pool = MockPeerPoolWithConnectedPeers([server_peer])
+
+    server_consensus = MockConsensusService(sync_parameters="fully-synced")
+
+    server_context = server_peer.context
+    server_context.chain_config.node_type = 4
+    server_context.chain_config.network_startup_node = True
+    server = RegularChainSyncer(
+        context=server_peer.context,
+        peer_pool=server_peer_pool,
+        consensus=server_consensus,
+        node=server_node,
+    )
+
+    asyncio.ensure_future(server.run())
+
+    def finalizer():
+        event_loop.run_until_complete(asyncio.gather(
+            client.cancel(),
+            server.cancel(),
+            loop=event_loop,
+        ))
+        # Yield control so that client/server.run() returns, otherwise asyncio will complain.
+        event_loop.run_until_complete(asyncio.sleep(0.1))
+    request.addfinalizer(finalizer)
+
+    asyncio.ensure_future(client.run())
+
+    #await client.run()
+    await wait_for_chain_head_hash(client.chain_head_db, expected_root_hash_timestamp[1], expected_root_hash_timestamp[0])
+
+    validation_function(server_db, client_db)
     #ensure_blockchain_databases_identical(server_db, client_db)
 
-# @pytest.mark.asyncio
-# async def test_fast_sync_1(request, event_loop, db_fresh, db_random_long_time):
-#     # Test where the server with lots of blocks is in consensus. So the client must download them.
-#     node_1 = MainnetChain(db_random_long_time, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-#     newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
-#     # print('AAAAAAAAAA')
-#     # print(newest_timestamp)
-#     # await asyncio.sleep(10)
-#     await _test_sync(request, event_loop, db_fresh, db_random_long_time, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
-#
-# @pytest.mark.asyncio
-# async def test_fast_sync_2(request, event_loop, db_fresh, db_random_long_time):
-#     # Test where the server with no blocks is in consensus. The blocks that the client has are not in consensus.
-#     # So the client must realize that and delete all of their chains to agree with consensus.
-#     node_1 = MainnetChain(db_fresh, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-#     newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
-#     await _test_sync(request, event_loop, db_random_long_time, db_fresh, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+
+@pytest.mark.asyncio
+async def test_fast_sync_1(request, event_loop, db_fresh, db_random_long_time):
+    # Test where the server with lots of blocks is in consensus. So the client must download them.
+    node_1 = MainnetChain(db_random_long_time, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
+    # print('AAAAAAAAAA')
+    # print(newest_timestamp)
+    # await asyncio.sleep(10)
+    await _test_sync_with_fixed_sync_parameters(request, event_loop, db_fresh, db_random_long_time, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+
+@pytest.mark.asyncio
+async def test_fast_sync_2(request, event_loop, db_fresh, db_random_long_time):
+    # Test where the server with no blocks is in consensus. The blocks that the client has are not in consensus.
+    # So the client must realize that and delete all of their chains to agree with consensus.
+    node_1 = MainnetChain(db_fresh, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
+    await _test_sync_with_fixed_sync_parameters(request, event_loop, db_random_long_time, db_fresh, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+
+@pytest.mark.asyncio
+async def test_consensus_match_sync(request, event_loop, db_fresh, db_random_long_time):
+    client_db, server_db = db_fresh, db_random_long_time
+    # only have a database where the newest chronological block window is different. That way, once it syncs
+    # this single window, the databases will be the same, so we can validate that.
+    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
+    await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical,  ADDITIVE_SYNC_STAGE_ID)
 
 # @pytest.mark.asyncio
 # async def test_consensus_match_sync(request, event_loop, db_fresh, db_random):
-#     client_db, server_db = db_fresh, db_random
+#     client_db, server_db = db_random, db_fresh
 #     # only have a database where the newest chronological block window is different. That way, once it syncs
 #     # this single window, the databases will be the same, so we can validate that.
 #     node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-#     node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-#     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
-#     newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
-#     await _test_sync(request, event_loop, client_db, server_db, newest_timestamp, ADDITIVE_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
-
-@pytest.mark.asyncio
-async def test_consensus_match_sync(request, event_loop, db_fresh, db_random):
-    client_db, server_db = db_random, db_fresh
-    # only have a database where the newest chronological block window is different. That way, once it syncs
-    # this single window, the databases will be the same, so we can validate that.
-    node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
-    newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
-    await _test_sync(request, event_loop, client_db, server_db, newest_timestamp, ADDITIVE_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+#     node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
+#     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical, ADDITIVE_SYNC_STAGE_ID)
 
 
 

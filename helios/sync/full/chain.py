@@ -13,7 +13,8 @@ from helios.protocol.common.constants import ROUND_TRIP_TIMEOUT
 from helios.protocol.common.exchanges import BaseExchange
 from helios.protocol.hls.sync import get_sync_stage_for_block_timestamp
 from helios.sync.common.constants import CHRONOLOGICAL_BLOCK_HASH_FRAGMENT_TYPE_ID, \
-    CHAIN_HEAD_BLOCK_HASH_FRAGMENT_TYPE_ID
+    CHAIN_HEAD_BLOCK_HASH_FRAGMENT_TYPE_ID, CONSENSUS_MATCH_SYNC_STAGE_ID, ADDITIVE_SYNC_STAGE_ID, \
+    FULLY_SYNCED_STAGE_ID, FAST_SYNC_STAGE_ID
 from hp2p.events import NewBlockEvent
 
 from hvm.utils.blocks import get_block_average_transaction_gas_price
@@ -33,7 +34,7 @@ from hp2p.constants import (
     REPLY_TIMEOUT,
     CONSENSUS_SYNC_TIME_PERIOD,
     MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED,
-)
+    SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD)
 
 from hp2p.exceptions import (
     OperationCancelled,
@@ -212,7 +213,6 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
     importing_blocks_lock = asyncio.Lock()
     num_blocks_to_request_at_once = 10000
     _max_fast_sync_workers = 5
-    _latest_sync_stage = 0
 
     # This is the current index in the list of chains that we require. This may not correspond to the index of the chain.
     # For example, if we need the chains: [0,4,6,76,192], then when _fast_sync_required_chain_list_idx = 2 corresponds to chain 6.
@@ -316,12 +316,21 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         return result, peer
 
 
-    async def request_blocks_then_priority_import(self, block_hash_list: List[Hash32], peer: HLSPeer, additional_candidate_peers: List[HLSPeer], force_replace_existing_blocks = True) -> HLSPeer:
+    async def request_blocks_then_priority_import(self,
+                                                  block_hash_list: List[Hash32],
+                                                  peer: HLSPeer,
+                                                  additional_candidate_peers: List[HLSPeer],
+                                                  force_replace_existing_blocks: bool = True,
+                                                  allow_import_for_expired_timestamp: bool = False) -> HLSPeer:
         '''
         Requests the blocks from peer in manageable chunks. If peer doesn't respond it cycles through additional_candidate_peers.
         It then imports the blocks to our chain.
         If it runs out of peers to request from then it raises NoCandidatePeers()
         This also assumes that we want these new blocks, so by default we replace any existing blocks that they might conflict with.
+
+        It is safe to allow_import_for_expired_timestamp when trying to sync with consensus match sync stage because handle_getting_request_from_peers
+        will check to make sure only the requested hashes were returned. ie. it is impossible for an attacker to send us an old block unless it is
+        one of the ones we requested, which is already in consensus.
         :param block_hash_list:
         :param peer:
         :param additional_candidate_peers:
@@ -346,7 +355,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                 peer=peer,
                                                 propogate_to_network=False,
                                                 from_rpc=False,
-                                                force_replace_existing_blocks = force_replace_existing_blocks)
+                                                force_replace_existing_blocks = force_replace_existing_blocks,
+                                                allow_import_for_expired_timestamp=allow_import_for_expired_timestamp)
 
         return peer
 
@@ -449,7 +459,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 new_block_queue_item = await self.wait(self._new_blocks_to_import.get())
             except OperationCancelled:
                 break
-            if self._latest_sync_stage >= 3:
+            if await self.consensus.current_sync_stage >= ADDITIVE_SYNC_STAGE_ID:
                 self.logger.debug('found new block to import in queue. sending to handling function')
                 # we await for the import block function here to make sure that we are only importing one block at a time.
                 # later we will add multiprocessing with multiple instances of this object to import in parallel.
@@ -501,7 +511,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         while self.is_operational:
             await self.sync_with_consensus()
-            await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
+            await asyncio.sleep(SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD)
 
     async def sync_block_conflict_with_consensus_loop(self):
         self.logger.debug("sync_block_conflict_with_consensus_loop starting")
@@ -522,16 +532,16 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             fragment_length = 3
             if sync_parameters is None:
                 self.logger.debug("We are fully synced. Skipping sync loop and pausing before checking again.")
-                self._latest_sync_stage = 4
+                self.consensus.current_sync_stage = 4
                 return
 
             sync_stage = sync_parameters.sync_stage
-            self._latest_sync_stage = sync_stage
-            if sync_stage >= 4:
+            self.consensus.current_sync_stage = sync_stage
+            if sync_stage >= FULLY_SYNCED_STAGE_ID:
                 self.logger.debug("We are synced up to stage 4. Skipping sync loop and pausing before checking again.")
                 return
 
-            if sync_stage == 1:
+            if sync_stage == FAST_SYNC_STAGE_ID:
                 await self.fast_sync_main(sync_parameters)
                 return
 
@@ -560,8 +570,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                         raise SyncingError("Need to sync up to a chronological window timestamp, but there are no blocks to request. This is an empty window that cant possibly bring us to sync.")
 
                     peer_to_sync_with = await self.request_blocks_then_priority_import(block_hash_list = required_block_hashes,
-                                                                                         peer = peer_to_sync_with,
-                                                                                         additional_candidate_peers = additional_candidate_peers)
+                                                                                        peer = peer_to_sync_with,
+                                                                                        additional_candidate_peers = additional_candidate_peers,
+                                                                                        allow_import_for_expired_timestamp=True)
                 except NoCandidatePeers:
                     return
 
@@ -613,14 +624,15 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
                                 peer_to_sync_with = await self.request_blocks_then_priority_import(block_hash_list = required_block_hashes,
                                                                                                    peer = peer_to_sync_with,
-                                                                                                   additional_candidate_peers = additional_candidate_peers)
+                                                                                                   additional_candidate_peers = additional_candidate_peers,
+                                                                                                   allow_import_for_expired_timestamp=True)
 
 
                             if len(hash_positions_of_ours_that_they_need) > 0:
                                 for idx in hash_positions_of_ours_that_they_need:
                                     #send these to all peers
                                     block_hash = our_block_hashes[idx]
-                                    if sync_stage <= 2:
+                                    if sync_stage <= CONSENSUS_MATCH_SYNC_STAGE_ID:
                                         # We need to delete any blocks that they do not have, this will bring us in line with consensus.
                                         try:
                                             self.logger.debug("Deleting chronological block that is not in consensus.")
@@ -852,7 +864,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
     #
     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
-        if self.context.chain_config.network_startup_node or self._latest_sync_stage >= 2:
+        if self.context.chain_config.network_startup_node or await self.consensus.current_sync_stage >= CONSENSUS_MATCH_SYNC_STAGE_ID:
             # if isinstance(cmd, commands.GetChronologicalBlockWindow):
             #     await self._handle_get_chronological_block_window(peer, cast(Dict[str, Any], msg))
             # elif isinstance(cmd, commands.ChronologicalBlockWindow):
@@ -866,7 +878,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             elif isinstance(cmd, commands.GetHashFragments):
                 await self._handle_get_hash_fragments(peer, cast(Dict[str, Any], msg))
             elif isinstance(cmd, commands.NewBlock):
-                if self.context.chain_config.network_startup_node or self._latest_sync_stage >= 3:
+                if self.context.chain_config.network_startup_node or await self.consensus.current_sync_stage >= ADDITIVE_SYNC_STAGE_ID:
                     await self._handle_new_block(peer, cast(Dict[str, Any], msg))
 
 
@@ -975,24 +987,34 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
     async def handle_new_block(self, new_block: P2PBlock, peer: HLSPeer = None,
                                propogate_to_network: bool = True, from_rpc: bool = False,
-                               force_replace_existing_blocks = False) -> Optional[bool]:
+                               force_replace_existing_blocks:bool = False,
+                               allow_import_for_expired_timestamp: bool = False) -> Optional[bool]:
         # TODO. Here we need to validate the block as much as we can. Try to do this in a way where we can run it in another process to speed it up.
         # No point in doing anything if the block is invalid.
         # or to speed up transaction throughput we could just rely on the import to validate.
         # if we do that, we just cant re-broadcast the blocks until we have successfully imported. So if the block goes to unprocessed
         # run the validator before sending out. lets make sure everything is validated in chain before saving as unprocessed.
 
+
         '''
         This returns true if the block is imported successfully, False otherwise
         If the block comes from RPC, we need to treat it differently. If it is invalid for any reason whatsoever, we just delete.
         '''
+        if get_sync_stage_for_block_timestamp(new_block.header.timestamp) <= CONSENSUS_MATCH_SYNC_STAGE_ID:
+            # Normally, blocks that are this old are not allowed to be imported. However, we may need to import blocks this old
+            # if we are performing a fresh sync, or if this node gets out of sync with the network for too long. In that case,
+            # the syncer will know which blocks are required to reach consensus and mark them with allow_import_for_expired_timestamp = True
+
+            if not allow_import_for_expired_timestamp:
+                self.logger.debug("Tried importing a block that has an expired timestamp. Not allowing.")
+
         chain_address = new_block.header.chain_address
 
         self.logger.debug("handling new block")
         chain = self.node.get_new_chain()
 
         #we only check the min gas requirements for sync stage 3, 4
-        if get_sync_stage_for_block_timestamp(new_block.header.timestamp) > 2 and len(new_block.transactions) != 0:
+        if get_sync_stage_for_block_timestamp(new_block.header.timestamp) >= ADDITIVE_SYNC_STAGE_ID and len(new_block.transactions) != 0:
             try:
                 required_min_gas_price = self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)
             except HistoricalMinGasPriceError:

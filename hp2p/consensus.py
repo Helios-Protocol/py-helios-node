@@ -94,7 +94,7 @@ from hp2p.constants import (
     MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD,
     MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG,
     MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED,
-    PEER_STAKE_GONE_STALE_TIME_PERIOD, CONSENSUS_CHECK_CURRENT_SYNC_STAGE_PERIOD)
+    PEER_STAKE_GONE_STALE_TIME_PERIOD, CONSENSUS_CHECK_CURRENT_SYNC_STAGE_PERIOD, SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD)
 
 from hp2p import protocol
 
@@ -328,7 +328,7 @@ class Consensus(BaseService, PeerSubscriber):
         Returns the current sync stage id
         '''
 
-        if self._last_check_if_syncing_time < (int(time.time()) - CONSENSUS_CHECK_CURRENT_SYNC_STAGE_PERIOD):
+        if self._last_check_if_syncing_time < (int(time.time()) - SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD):
             if not self.coro_is_ready.is_set():
                 self._current_sync_stage = 0
             else:
