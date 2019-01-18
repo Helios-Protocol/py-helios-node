@@ -462,8 +462,8 @@ class ChainHeadDB():
             if starting_timestamp is None:
                 #this means there is no saved root hash that is at this time or before it. 
                 #so we have no root hash to load
-                self.logger.debug("tried appending block hash to timestamp for time earlier than earliest timestamp."
-                                  "Adding to timestamp {}. Existing historical_roots {}".format(timestamp, historical_roots))
+                self.logger.debug("Tried appending block hash to timestamp for time earlier than earliest timestamp. "
+                                  "Adding to timestamp {}. ".format(timestamp))
             else:
 
                 new_blockchain_head_db = ChainHeadDB(self.db, existing_root_hash)
@@ -496,7 +496,7 @@ class ChainHeadDB():
         #effeciently do this by starting from the end and working back. we can assume
         if historical_roots[-1][0] > timestamp:
             self.logger.debug("propogating historical root hash timestamps forward")
-            for i in range(len(historical_roots)-1, 0, -1):
+            for i in range(len(historical_roots)-1, -1, -1):
                 if historical_roots[i][0] <= timestamp:
                     break
                 

@@ -8,6 +8,7 @@ from eth_utils import decode_hex
 
 from hp2p.consensus import Consensus
 from hvm import constants
+from hvm import MainnetChain
 from hvm.vm.forks.helios_testnet import HeliosTestnetVM
 from tests.hvm.helios_logging import (
     setup_helios_logging,
@@ -36,6 +37,14 @@ from helios.sync.common.constants import (
     FULLY_SYNCED_STAGE_ID,
 )
 
+from tests.integration_test_helpers import (
+    ensure_blockchain_databases_identical,
+    ensure_chronological_block_hashes_are_identical
+)
+from hvm.chains.mainnet import (
+    GENESIS_PRIVATE_KEY,
+)
+
 log_level = getattr(logging, 'DEBUG')
 logger, log_queue, listener = setup_helios_logging(log_level)
 logger.propagate = False
@@ -51,13 +60,12 @@ logger.propagate = False
 #     monkeypatch.setattr(constants, 'MAX_BODIES_FETCH', 5)
 
 
-# The server peer has the random db, and is also a bootnode.
 @pytest.mark.asyncio
-async def test_fast_syncer(request, event_loop, db_fresh, db_random_long_time):
+async def _test_sync(request, event_loop, client_db, server_db, timestamp_to_sync_to, sync_stage_id, validation_function):
     client_peer, server_peer = await get_directly_linked_peers(
         request, event_loop,
-        alice_db=db_fresh,
-        bob_db=db_random_long_time)
+        alice_db=client_db,
+        bob_db=server_db)
 
     client_node = FakeMainnetFullNode(
         base_db = client_peer.context.base_db,
@@ -67,15 +75,18 @@ async def test_fast_syncer(request, event_loop, db_fresh, db_random_long_time):
     client_peer_pool = MockPeerPoolWithConnectedPeers([client_peer])
 
     # lets do a fast sync to newest root hash timestamp
-    server_newest_root_hash_timestamp = server_peer.chain_head_db.get_historical_root_hashes()[-1]
-    client_newest_root_hash_timestamp = client_peer.chain_head_db.get_historical_root_hashes()[-1]
+    expected_root_hash = server_peer.chain_head_db.get_historical_root_hash(timestamp_to_sync_to)
+    existing_root_hash = client_peer.chain_head_db.get_historical_root_hash(timestamp_to_sync_to)
 
+    # print("AAAAAAAAAA")
+    # print(server_peer.chain_head_db.get_historical_root_hashes()[-3:])
+    # await asyncio.sleep(5)
 
-    client_sync_parameters = SyncParameters(server_newest_root_hash_timestamp[0],
-                                            client_newest_root_hash_timestamp[1],
-                                            server_newest_root_hash_timestamp[1],
+    client_sync_parameters = SyncParameters(timestamp_to_sync_to,
+                                            existing_root_hash,
+                                            expected_root_hash,
                                             [client_peer],
-                                            FAST_SYNC_STAGE_ID)
+                                            sync_stage_id)
 
     client_consensus = MockConsensusService(client_sync_parameters)
 
@@ -120,11 +131,54 @@ async def test_fast_syncer(request, event_loop, db_fresh, db_random_long_time):
     asyncio.ensure_future(client.run())
 
     #await client.run()
-    await wait_for_chain_head_hash(client.chain_head_db, server.chain_head_db.get_historical_root_hashes()[-1][1])
+    await wait_for_chain_head_hash(client.chain_head_db, expected_root_hash, timestamp_to_sync_to)
 
-    client_chain_head_hash = client.chain_head_db.get_historical_root_hashes()[-1][1]
-    server_chain_head_hash = server.chain_head_db.get_historical_root_hashes()[-1][1]
-    assert(client_chain_head_hash == server_chain_head_hash)
+    validation_function(server_db, client_db)
+    #ensure_blockchain_databases_identical(server_db, client_db)
+
+# @pytest.mark.asyncio
+# async def test_fast_sync_1(request, event_loop, db_fresh, db_random_long_time):
+#     # Test where the server with lots of blocks is in consensus. So the client must download them.
+#     node_1 = MainnetChain(db_random_long_time, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#     newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
+#     # print('AAAAAAAAAA')
+#     # print(newest_timestamp)
+#     # await asyncio.sleep(10)
+#     await _test_sync(request, event_loop, db_fresh, db_random_long_time, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+#
+# @pytest.mark.asyncio
+# async def test_fast_sync_2(request, event_loop, db_fresh, db_random_long_time):
+#     # Test where the server with no blocks is in consensus. The blocks that the client has are not in consensus.
+#     # So the client must realize that and delete all of their chains to agree with consensus.
+#     node_1 = MainnetChain(db_fresh, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#     newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
+#     await _test_sync(request, event_loop, db_random_long_time, db_fresh, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+
+# @pytest.mark.asyncio
+# async def test_consensus_match_sync(request, event_loop, db_fresh, db_random):
+#     client_db, server_db = db_fresh, db_random
+#     # only have a database where the newest chronological block window is different. That way, once it syncs
+#     # this single window, the databases will be the same, so we can validate that.
+#     node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#     node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
+#     newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
+#     await _test_sync(request, event_loop, client_db, server_db, newest_timestamp, ADDITIVE_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+
+@pytest.mark.asyncio
+async def test_consensus_match_sync(request, event_loop, db_fresh, db_random):
+    client_db, server_db = db_random, db_fresh
+    # only have a database where the newest chronological block window is different. That way, once it syncs
+    # this single window, the databases will be the same, so we can validate that.
+    node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
+    newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
+    await _test_sync(request, event_loop, client_db, server_db, newest_timestamp, ADDITIVE_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+
+
+
+
 
 
 @pytest.fixture
@@ -136,7 +190,7 @@ def db_random():
     return get_random_blockchain_db()
 
 @pytest.fixture
-def db_random_long_time(length_in_centiseconds = 50):
+def db_random_long_time(length_in_centiseconds = 25):
     return get_random_long_time_blockchain_db(length_in_centiseconds)
 
 
@@ -174,14 +228,14 @@ class HeliosTestnetVMChain(FakeAsyncMainnetChain):
     chaindb_class = FakeAsyncChainDB
     network_id = 1
 
-async def wait_for_chain_head_hash(chain_head_db, expected_head_hash):
+async def wait_for_chain_head_hash(chain_head_db, expected_head_hash, at_timestamp):
     # A full header sync may involve several round trips, so we must be willing to wait a little
     # bit for them.
     HEADER_SYNC_TIMEOUT = 1000
 
     async def wait_loop():
-        while expected_head_hash != chain_head_db.get_historical_root_hashes()[-1][1]:
-            print("Waiting for db's to sync. Expected root hash = ", expected_head_hash, "actual root hash = ", chain_head_db.get_historical_root_hashes()[-1][1])
+        while expected_head_hash != chain_head_db.get_historical_root_hash(at_timestamp):
+            #print("Waiting for db's to sync. Expected root hash = ", expected_head_hash, "actual root hash = ", chain_head_db.get_historical_root_hashes()[-1][1])
             await asyncio.sleep(0.1)
     await asyncio.wait_for(wait_loop(), HEADER_SYNC_TIMEOUT)
 

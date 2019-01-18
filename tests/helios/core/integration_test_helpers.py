@@ -69,6 +69,7 @@ class FakeAsyncChainDB(AsyncChainDB):
     coro_get_receipts = async_passthrough('get_receipts')
     coro_get_all_block_hashes_on_chain_by_head_block_hash = async_passthrough('get_all_block_hashes_on_chain_by_head_block_hash')
     coro_get_all_blocks_on_chain_by_head_block_hash = async_passthrough('get_all_blocks_on_chain_by_head_block_hash')
+    coro_get_block_by_hash= async_passthrough('get_block_by_hash')
 
 class FakeAsyncChainHeadDB(AsyncChainHeadDB):
     coro_get_dense_historical_root_hashes = async_passthrough('get_dense_historical_root_hashes')

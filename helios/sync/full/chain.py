@@ -407,8 +407,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                   allow_replacement=allow_replacement)
                 except ReplacingBlocksNotAllowed:
                     self.logger.debug('ReplacingBlocksNotAllowed error when importing chain.')
-                except ParentNotFound:
-                    self.logger.debug('ParentNotFound error when importing chain.')
+                except ParentNotFound as e:
+                    self.logger.debug('ParentNotFound error when importing chain. {}'.format(e))
                 except ValidationError as e:
                     self.logger.debug('ValidationError error when importing chain. Error: {}'.format(e))
                 except ValueError as e:
@@ -541,7 +541,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             peer_to_sync_with = additional_candidate_peers.pop()
             chronological_window_timestamp = sync_parameters.timestamp_for_chronoligcal_block_window
 
-            #TODO: NEED TO CONFIRM THAT THESE BLOCKS ACTUALLY BRING US TO THE CORRECT ROOT HASH
+
             timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(chronological_window_timestamp)
             if timestamp_block_hashes is None:
                 # we have no blocks for this window. So just request all of them automatically.
@@ -698,9 +698,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             their_fragment_bundle = cast(HashFragmentBundle, their_fragment_bundle)
             their_fragment_list = their_fragment_bundle.fragments
 
-            # self.logger.debug('AAAAAAAAAAAAAAAA')
-            # self.logger.debug(our_block_hashes)
-            # self.logger.debug(their_fragment_list)
+
 
             hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
                                                                                             our_hash_fragments=our_fragment_list,
@@ -715,15 +713,16 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                     chain_head_hash = our_block_hashes[idx]
                     chain_block_hashes = await self.chaindb.coro_get_all_block_hashes_on_chain_by_head_block_hash(chain_head_hash)
 
-                    # by removing the genesis block on the chain, the vm will remove all children blocks automatically.
-                    # But if this is the genesis chain then we cannot delete the first block, must go for the 2nd
-                    try:
-                        await self.remove_block_by_hash(chain_block_hashes[0])
-                    except TriedDeletingGenesisBlock:
+                    if len(chain_block_hashes) > 0:
+                        # by removing the genesis block on the chain, the vm will remove all children blocks automatically.
+                        # But if this is the genesis chain then we cannot delete the first block, must go for the 2nd
                         try:
-                            await self.remove_block_by_hash(chain_block_hashes[1])
-                        except IndexError:
-                            pass
+                            await self.remove_block_by_hash(chain_block_hashes[0])
+                        except TriedDeletingGenesisBlock:
+                            try:
+                                await self.remove_block_by_hash(chain_block_hashes[1])
+                            except IndexError:
+                                pass
 
             fast_sync_parameters = FastSyncParameters(their_fragment_list, list(hash_positions_of_theirs_that_we_need))
 
@@ -740,27 +739,27 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 break
 
 
-            # Now that we have given the system a chance to update chain differences, we may be left with additional
-            # chains that we have that they don't have. Lets delete them.
-            # TODO: before deleting blocks, get all children chains and add them to the chains we need to request.
-            # Actually we don't really need to do this. It will just request those on the next loop...
-            # This is because when blocks are deleted,
-            # Also, only delete if we have more chains then them. This will work if when importing a chain, we delete any
-            # additional blocks we have that arent on the imported chain. If our chain is 1,2,3,4,5, and we import
-            # 1,2,3, but they are the same as ours, delete 4,5
-            if len(our_fragment_list) >= len(their_fragment_list) and len(their_fragment_list) > 0:
-
-                self.chain_head_db.load_saved_root_hash()
-                our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list()
-
-                self._fast_sync_required_chain_list_idx = 0
-
-                our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
-
-                hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
-                                                                                                    our_hash_fragments=our_fragment_list,
-                                                                                                    their_hash_fragments=their_fragment_list,
-                                                                                                )
+            # # Now that we have given the system a chance to update chain differences, we may be left with additional
+            # # chains that we have that they don't have. Lets delete them.
+            # # TODO: before deleting blocks, get all children chains and add them to the chains we need to request.
+            # # Actually we don't really need to do this. It will just request those on the next loop...
+            # # This is because when blocks are deleted,
+            # # Also, only delete if we have more chains then them. This will work if when importing a chain, we delete any
+            # # additional blocks we have that arent on the imported chain. If our chain is 1,2,3,4,5, and we import
+            # # 1,2,3, but they are the same as ours, delete 4,5
+            # if len(our_fragment_list) >= len(their_fragment_list) and len(their_fragment_list) > 0:
+            #
+            #     self.chain_head_db.load_saved_root_hash()
+            #     our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list()
+            #
+            #     self._fast_sync_required_chain_list_idx = 0
+            #
+            #     our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
+            #
+            #     hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
+            #                                                                                         our_hash_fragments=our_fragment_list,
+            #                                                                                         their_hash_fragments=their_fragment_list,
+            #                                                                                     )
 
 
 
@@ -768,6 +767,10 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             fragment_length += 1
             if fragment_length >= 16:
                 self.logger.debug("Fast sync checked up to max fragment length and our db still incorrect.")
+                self.logger.debug('BBBBB')
+                self.logger.debug(our_fragment_list)
+                self.logger.debug(their_fragment_list)
+
                 break
 
 

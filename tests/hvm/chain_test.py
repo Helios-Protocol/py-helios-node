@@ -82,6 +82,11 @@ from hvm.utils.profile import profile
 from hvm.constants import random_private_keys
 from hvm.vm.forks.helios_testnet.blocks import MicroBlock, HeliosTestnetBlock
 
+from tests.integration_test_helpers import (
+    ensure_blockchain_databases_identical,
+    ensure_chronological_block_hashes_are_identical
+)
+
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 
@@ -501,49 +506,18 @@ def import_chain(testdb1, testdb2):
     next_head_hashes = node_1.chain_head_db.get_next_n_head_block_hashes(ZERO_HASH32, 0, 99999)
     print("IMPORTING {} CHAINS".format(len(next_head_hashes)))
 
-    i = 0
-    wallet_addresses = []
+
     for next_head_hash in next_head_hashes:
         chain_address = node_1.chaindb.get_chain_wallet_address_for_block_hash(next_head_hash)
-        # print(chain_address)
-        wallet_addresses.append(chain_address)
 
         chain_to_import = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(), chain_address)
 
         node_2 = MainnetChain(testdb2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
-        print("IMPORTING CHAIN number {}".format(i))
         node_2.import_chain(block_list=chain_to_import)
-        i += 1
-
-    # print("finished importing chain. now printing the number of chains")
-    next_head_hashes_node_2 = node_2.chain_head_db.get_next_n_head_block_hashes(ZERO_HASH32, 0, 99999)
-    assert (next_head_hashes == next_head_hashes_node_2)
-    print("passed chain head hash check")
-
-    for wallet_address in wallet_addresses:
-
-        # Compare all properties of each account with the hashes
-        node_1_account_hash = node_1.get_vm().state.account_db.get_account_hash(wallet_address)
-        node_2_account_hash = node_2.get_vm().state.account_db.get_account_hash(wallet_address)
-        assert (node_1_account_hash == node_2_account_hash)
-
-        # Compare all chains in database
-        node_1_chain = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm(refresh=False).get_block_class(),
-                                                              wallet_address)
-        node_2_chain = node_2.chaindb.get_all_blocks_on_chain(node_2.get_vm(refresh=False).get_block_class(),
-                                                              wallet_address)
-        assert (node_1_chain == node_2_chain)
-
-        for i in range(len(node_1_chain)):
-            assert (node_1_chain[i].hash == node_2_chain[i].hash)
-            assert (node_1.chaindb.get_all_descendant_block_hashes(node_1_chain[i].hash) == node_2.chaindb.get_all_descendant_block_hashes(node_2_chain[i].hash))
 
 
-    # Make sure historical root hashes match
-    node_1_hist_root_hashes = node_1.chain_head_db.get_historical_root_hashes()
-    node_2_hist_root_hashes = node_2.chain_head_db.get_historical_root_hashes()
-
-    assert(node_1_hist_root_hashes == node_2_hist_root_hashes)
+    ensure_blockchain_databases_identical(testdb1, testdb2)
+    ensure_chronological_block_hashes_are_identical(testdb1, testdb2)
 
 
 def test_import_chain():
@@ -596,51 +570,8 @@ def import_chronological_block_window(testdb1, testdb2):
         # make sure propogate_block_head_hash_timestamp_to_present = True and False works
         node_2.import_chronological_block_window(chronological_blocks, timestamp_root_hash[0])
 
-    new_node_2_historical_root_hashes = node_2.chain_head_db.get_historical_root_hashes()
-
-    assert (node_1_historical_root_hashes[-1] == new_node_2_historical_root_hashes[-1])
-
-    #Lets make sure everything else matches too
-    next_head_hashes = node_1.chain_head_db.get_next_n_head_block_hashes(ZERO_HASH32, 0, 99999)
-
-    wallet_addresses = []
-    for next_head_hash in next_head_hashes:
-        chain_address = node_1.chaindb.get_chain_wallet_address_for_block_hash(next_head_hash)
-        wallet_addresses.append(chain_address)
-
-
-    # print("finished importing chain. now printing the number of chains")
-    next_head_hashes_node_2 = node_2.chain_head_db.get_next_n_head_block_hashes(ZERO_HASH32, 0, 99999)
-    assert (next_head_hashes == next_head_hashes_node_2)
-    print("passed chain head hash check")
-
-    for wallet_address in wallet_addresses:
-
-        # Compare all properties of each account with the hashes
-        node_1_account_hash = node_1.get_vm().state.account_db.get_account_hash(wallet_address)
-        node_2_account_hash = node_2.get_vm().state.account_db.get_account_hash(wallet_address)
-        assert (node_1_account_hash == node_2_account_hash)
-
-        # Compare all chains in database
-        node_1_chain = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm(refresh=False).get_block_class(),
-                                                              wallet_address)
-        node_2_chain = node_2.chaindb.get_all_blocks_on_chain(node_2.get_vm(refresh=False).get_block_class(),
-                                                              wallet_address)
-        assert (node_1_chain == node_2_chain)
-
-        for i in range(len(node_1_chain)):
-            assert (node_1_chain[i].hash == node_2_chain[i].hash)
-            assert (node_1.chaindb.get_all_descendant_block_hashes(
-                node_1_chain[i].hash) == node_2.chaindb.get_all_descendant_block_hashes(node_2_chain[i].hash))
-
-    # Make sure historical root hashes match
-    node_1_hist_root_hashes = node_1.chain_head_db.get_historical_root_hashes()
-    node_2_hist_root_hashes = node_2.chain_head_db.get_historical_root_hashes()
-
-    assert (node_1_hist_root_hashes == node_2_hist_root_hashes)
-
-
-    print('passed chronolgical import test')
+    ensure_blockchain_databases_identical(testdb1, testdb2)
+    ensure_chronological_block_hashes_are_identical(testdb1, testdb2)
 
 
 def test_import_chronolgical_block_windows():
@@ -722,3 +653,6 @@ def test_importing_p2p_type_block():
     assert(isinstance(reward_bundle, StakeRewardBundle))
 
 # test_importing_p2p_type_block()
+
+
+#TODO: make test where block is imported that overwrites a different unprocessed block.

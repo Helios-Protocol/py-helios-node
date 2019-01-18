@@ -1274,7 +1274,7 @@ class ChainDB(BaseChainDB):
         block_children = self.get_block_children(parent_block_hash)
 
         if block_children is None or child_block_hash not in block_children:
-            self.logger.debug("tried to remove a block child that doesnt exist")
+            self.logger.debug("tried to remove a block child that doesnt exist. It was likely already deleted when that block was purged.")
         else:
             block_children = make_mutable(block_children)
             block_children.remove(child_block_hash)
@@ -1311,9 +1311,12 @@ class ChainDB(BaseChainDB):
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         try:
-            return rlp.decode(self.db[block_children_lookup_key], sedes=rlp.sedes.FCountableList(hash32))
+            to_return = rlp.decode(self.db[block_children_lookup_key], sedes=rlp.sedes.FCountableList(hash32))
+            if to_return == ():
+                return None
         except KeyError:
             return None
+
 
     def get_all_descendant_block_hashes(self, block_hash: Hash32):
         validate_word(block_hash, title="Block_hash")

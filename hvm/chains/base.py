@@ -1026,16 +1026,18 @@ class Chain(BaseChain):
         #self.chaindb.save_unprocessed_block_lookup(descendant_block_hash)
  
     def purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32) -> None:
+
         genesis_block_hash = self.chaindb.get_canonical_block_hash(BlockNumber(0), self.genesis_wallet_address)
         if block_hash_to_delete == genesis_block_hash:
             raise TriedDeletingGenesisBlock("Attempted to delete genesis block. This is not allowed.")
 
         block_header_to_delete = self.chaindb.get_block_header_by_hash(block_hash_to_delete)
-        block_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(block_hash_to_delete)
+        block_wallet_address = block_header_to_delete.chain_address
         self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header_to_delete, wallet_address=block_wallet_address)
 
 
     def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader, wallet_address: Address = None):
+        # First make sure it is actually in the canonical chain. If not, then we don't have anything to do.
         if self.chaindb.is_in_canonical_chain(existing_block_header.hash):
             if wallet_address is not None:
                 #we need to re-initialize the chain for the new wallet address.
@@ -1279,7 +1281,8 @@ class Chain(BaseChain):
         if block.number >= self.header.block_number:
             
             existing_unprocessed_block_hash = self.chaindb.get_unprocessed_block_hash_by_block_number(self.wallet_address, block.number)
-            if existing_unprocessed_block_hash is not None:
+
+            if (existing_unprocessed_block_hash != block.hash) and (existing_unprocessed_block_hash is not None):
                 if not allow_replacement:
                     raise ReplacingBlocksNotAllowed()
                 
@@ -1288,11 +1291,22 @@ class Chain(BaseChain):
 #                    if block.number == self.header.block_number:
 #                        existing_parent_hash = self.chaindb.get_canonical_head_hash(self.wallet_address)
 #                    else:
-                    existing_parent_hash = self.chaindb.get_unprocessed_block_hash_by_block_number(self.wallet_address, block.number-1)
-                        
-                    if block.header.parent_hash != existing_parent_hash:
-                        raise ParentNotFound()
-                    
+                    existing_unprocessed_parent_hash = self.chaindb.get_unprocessed_block_hash_by_block_number(self.wallet_address, block.number-1)
+
+                    if existing_unprocessed_parent_hash is not None:
+                        if block.header.parent_hash != existing_unprocessed_parent_hash:
+                            raise ParentNotFound("Parent is unprocessed. Parent hash = {}, this hash = {}".format(
+                                encode_hex(existing_unprocessed_parent_hash), encode_hex(block.header.parent_hash)))
+
+                    else:
+                        try:
+                            existing_canonical_parent_hash = self.chaindb.get_canonical_block_header_by_number(block.header.block_number-1, block.header.chain_address)
+                            if block.header.parent_hash != existing_canonical_parent_hash:
+                                raise ParentNotFound("Parent is canonical. Parent hash = {}, this hash = {}".format(
+                                    encode_hex(existing_canonical_parent_hash), encode_hex(block.header.parent_hash)))
+                        except HeaderNotFound:
+                            pass
+
                 #lets delete the unprocessed block, and its children, then import
                 self.enable_journal_db()
                 journal_record = self.record_journal()
@@ -1326,13 +1340,13 @@ class Chain(BaseChain):
                 return return_block
                 
             else:
-                raise ParentNotFound()
+                raise ParentNotFound('Parent is unprocessed 2')
                 
 
         #now, if it is the head of the chain, lets make sure the parent hash is correct.
         if block.number == self.header.block_number and block.number != 0:
             if block.header.parent_hash != self.chaindb.get_canonical_head_hash(wallet_address = self.wallet_address):
-                raise ParentNotFound()
+                raise ParentNotFound("Block is at the head of the chain")
 
 
         if block.number < self.header.block_number:
