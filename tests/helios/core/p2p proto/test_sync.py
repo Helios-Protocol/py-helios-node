@@ -250,7 +250,7 @@ async def test_consensus_match_sync_1(request, event_loop, db_fresh, db_random_l
 @pytest.mark.asyncio
 async def test_consensus_match_sync_2(request, event_loop, capsys):
     # with capsys.disabled():
-    server_db, client_db = get_fresh_db(), get_random_blockchain_db()
+    server_db, client_db = get_fresh_db(), get_random_long_time_blockchain_db(25)
     # only have a database where the newest chronological block window is different. That way, once it syncs
     # this single window, the databases will be the same, so we can validate that.
     node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
