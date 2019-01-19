@@ -145,7 +145,15 @@ def create_dev_test_random_blockchain_database(base_db):
         imported_block_from_db = receiver_chain.chaindb.get_block_by_number(imported_block.header.block_number, receiver_chain.get_vm().get_block_class(),receiver_privkey.public_key.to_canonical_address())
 
         #logger.debug("finished creating block group {}".format(i))
-    
+
+    # sender_chain = MainnetChain(base_db, privkey.public_key.to_canonical_address(), privkey)
+    # test1 = sender_chain.chain_head_db.get_historical_root_hashes()[-1][1]
+    # test2 = sender_chain.chain_head_db.root_hash
+    #
+    # print('AAAAAAAAAAA')
+    # print(test1)
+    # print(test2)
+    # exit()
     order_of_chains.append(encode_hex(receiver_privkey.public_key.to_canonical_address()))
     
     #print("order_of_chains")

@@ -948,6 +948,8 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
     def __aiter__(self) -> AsyncIterator[BasePeer]:
         return ConnectedPeersIterator(tuple(self.connected_nodes.values()))
 
+    # Returns peers sorted by least stake to most stake. pop() will give the peer with highest stake.
+    # iterating through this list will start at lowest stake and go to highest. Make sure to reverse if doing that.
     def sort_peers_by_stake(self, peers=None):
         if peers is None:
             if not self.connected_nodes:
@@ -955,9 +957,11 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
             peers = self.peers
 
         peers_with_stake = [peer for peer in peers if peer._stake is not None]
+        peers_without_stake = [peer for peer in peers if peer._stake is None]
         peers_with_stake.sort(key=lambda x: x._stake)
         #sorted_peers = SortedList(key=lambda x: x.stake, iterable=peers)
-        return peers_with_stake
+        peers_without_stake.extend(peers_with_stake)
+        return peers_without_stake
 
 
     async def _periodically_report_stats(self) -> None:

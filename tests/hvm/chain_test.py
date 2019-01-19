@@ -49,7 +49,7 @@ from helios_logging import (
 
 from eth_utils import (
     encode_hex,
-    decode_hex,        
+    decode_hex,
 )
 from helios.dev_tools import create_dev_test_random_blockchain_database
 from eth_keys import keys
@@ -96,7 +96,7 @@ RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
 RECEIVER4 = get_primary_node_private_helios_key(4)
 
-log_level = getattr(logging, 'INFO')
+log_level = getattr(logging, 'DEBUG')
 #log_level = getattr(logging, 'INFO')
 logger, log_queue, listener = setup_helios_logging(log_level)
 logger.propagate = False
@@ -112,13 +112,15 @@ def test_block_children_stake_calculation():
 
         testdb = MemoryDB()
         sender_chain = MainnetChain.from_genesis(testdb, SENDER.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
-    
+
+
+
         current_genesis_chain_head_number = sender_chain.chaindb.get_canonical_head(SENDER.public_key.to_canonical_address()).block_number
-        
+
         assert(current_genesis_chain_head_number == 0)
         genesis_chain_next_head_block_number = sender_chain.header.block_number
         assert (genesis_chain_next_head_block_number == current_genesis_chain_head_number + 1)
-        
+
         """
         Send 2 blocks
         """
@@ -151,7 +153,7 @@ def test_block_children_stake_calculation():
         assert (current_genesis_chain_head_number == 1)
         genesis_chain_next_head_block_number = sender_chain.header.block_number
         assert (genesis_chain_next_head_block_number == current_genesis_chain_head_number + 1)
-        
+
         """
         Receive all tx in one block - genesis block must receive
         """
@@ -178,12 +180,12 @@ def test_block_children_stake_calculation():
 
 
         sender_chain.import_current_queue_block()
-        
+
         current_genesis_chain_head_number = sender_chain.chaindb.get_canonical_head(SENDER.public_key.to_canonical_address()).block_number
         assert (current_genesis_chain_head_number == 2)
         genesis_chain_next_head_block_number = sender_chain.header.block_number
         assert (genesis_chain_next_head_block_number == current_genesis_chain_head_number + 1)
-        
+
 
         receiver3_chain = MainnetChain(testdb, RECEIVER3.public_key.to_canonical_address(), RECEIVER3)
         receiver3_chain.populate_queue_block_with_receive_tx()
@@ -280,6 +282,8 @@ def test_send_transaction_then_receive():
         r=0,
         s=0
     )
+
+
     # print('initial root_hash = ',sender_chain.chain_head_db.get_root_hash())
     # print(sender_chain.chain_head_db.get_historical_root_hashes())
     balance_1 = sender_chain.get_vm().state.account_db.get_balance(SENDER.public_key.to_canonical_address())
@@ -493,6 +497,8 @@ def test_send_transaction_then_receive():
 
 
 
+# test_send_transaction_then_receive()
+# sys.exit()
 
 def import_chain(testdb1, testdb2):
     '''
@@ -518,6 +524,7 @@ def import_chain(testdb1, testdb2):
 
     ensure_blockchain_databases_identical(testdb1, testdb2)
     ensure_chronological_block_hashes_are_identical(testdb1, testdb2)
+
 
 
 def test_import_chain():
@@ -552,7 +559,7 @@ def test_import_chain():
         import_chain(testdb1, testdb2)
 
 
-# test_import_chain()
+#test_import_chain()
 
 
 def import_chronological_block_window(testdb1, testdb2):

@@ -1314,6 +1314,7 @@ class ChainDB(BaseChainDB):
             to_return = rlp.decode(self.db[block_children_lookup_key], sedes=rlp.sedes.FCountableList(hash32))
             if to_return == ():
                 return None
+            return to_return
         except KeyError:
             return None
 

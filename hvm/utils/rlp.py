@@ -117,11 +117,17 @@ ensure_imported_block_unchanged = ensure_rlp_objects_are_equal(
     obj_b_name="imported block",
 )
 
-def make_mutable(value):
-    if isinstance(value, tuple):
-        return list(make_mutable(item) for item in value)
+def make_mutable(value, force_deep_check = False):
+    if force_deep_check:
+        if isinstance(value, tuple) or isinstance(value, list):
+            return list(make_mutable(item) for item in value)
+        else:
+            return value
     else:
-        return value
+        if isinstance(value, tuple):
+            return list(make_mutable(item) for item in value)
+        else:
+            return value
     
 def convert_rlp_to_correct_class(wanted_class, given_object):
 

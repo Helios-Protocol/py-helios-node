@@ -7,7 +7,7 @@ from helios.db.chain_head import AsyncChainHeadDB
 from helios.db.consensus import AsyncConsensusDB
 from helios.nodes.full import FullNode
 from helios.protocol.common.datastructures import SyncParameters
-from hp2p.consensus import Consensus
+from hp2p.consensus import Consensus, BlockConflictInfo, BlockConflictChoice
 from hvm import MainnetChain
 from hvm.db.backends.level import LevelDB
 from hvm.db.backends.memory import MemoryDB
@@ -70,7 +70,8 @@ class FakeAsyncChainDB(AsyncChainDB):
     coro_get_receipts = async_passthrough('get_receipts')
     coro_get_all_block_hashes_on_chain_by_head_block_hash = async_passthrough('get_all_block_hashes_on_chain_by_head_block_hash')
     coro_get_all_blocks_on_chain_by_head_block_hash = async_passthrough('get_all_blocks_on_chain_by_head_block_hash')
-    coro_get_block_by_hash= async_passthrough('get_block_by_hash')
+    coro_get_block_by_hash = async_passthrough('get_block_by_hash')
+    coro_get_blocks_on_chain = async_passthrough('get_blocks_on_chain')
 
 class FakeAsyncChainHeadDB(AsyncChainHeadDB):
     coro_get_dense_historical_root_hashes = async_passthrough('get_dense_historical_root_hashes')
@@ -157,9 +158,9 @@ class MockConsensusService(Consensus):
                  chain_head_db = None,
                  peer_pool = None,
                  sync_parameters = None,
-                 block_conflict_choices = None,
-                 peer_root_hash_timestamps = None,
-                 sync_stage_override = None
+                 sync_stage_override = None,
+                 chain_to_sync_to = None,
+                 is_server = False,
     ):
         if chain_head_db is None and peer_pool is None and sync_parameters is None:
             raise Exception("you must define chain_head_db and peer_pool or sync_parameters")
@@ -171,22 +172,21 @@ class MockConsensusService(Consensus):
         self.coro_is_ready.set()
         self.coro_min_gas_system_ready.set()
 
-        self.block_conflict_choices = block_conflict_choices
-
-        self._peer_root_hash_timestamps = peer_root_hash_timestamps
-
         self.chain_head_db = chain_head_db
 
         self.peer_pool = peer_pool
 
         self._sync_stage_override = sync_stage_override
 
+        self.chain_to_sync_to = chain_to_sync_to
+
+        self.block_conflicts = set()
+
+        self.is_server = is_server
+
     def get_chain_head_root_hash_for_peer(self, peer_wallet_address, timestamp):
-        peer_root_hash_timestamps_dict = dict(self._peer_root_hash_timestamps)
-        try:
-            return peer_root_hash_timestamps_dict[timestamp]
-        except KeyError:
-            return None
+        return self.chain_to_sync_to.chain_head_db.get_historical_root_hash(timestamp)
+
 
     async def coro_get_root_hash_consensus(self, timestamp, local_root_hash_timestamps=None):
         '''
@@ -197,10 +197,16 @@ class MockConsensusService(Consensus):
         :return:
         '''
         local_root_hash_timestamps_dict = dict(self.local_root_hash_timestamps)
-        peer_root_hash_timestamps_dict = dict(self._peer_root_hash_timestamps)
-        try:
-            return peer_root_hash_timestamps_dict[timestamp]
-        except KeyError:
+        if self.is_server:
+            try:
+                return local_root_hash_timestamps_dict[timestamp]
+            except KeyError:
+                return None
+
+        peer_root_hash = self.chain_to_sync_to.chain_head_db.get_historical_root_hash(timestamp)
+        if peer_root_hash is not None:
+            return peer_root_hash
+        else:
             try:
                 return local_root_hash_timestamps_dict[timestamp]
             except KeyError:
@@ -222,5 +228,24 @@ class MockConsensusService(Consensus):
 
             return sync_parameters
 
+    def get_peers_who_have_conflict_block(self, block_hash):
+        if self.is_server:
+            return None
+        else:
+            return list(self.peer_pool.peers)
+
     async def get_correct_block_conflict_choice_where_we_differ_from_consensus(self):
-        return self.block_conflict_choices
+        if self.is_server:
+            return None
+        else:
+            to_change = []
+            print("BBBBBBBBBBBBBB", self.block_conflicts)
+            for block_conflict_info in self.block_conflicts:
+                hash_of_correct_block = self.chain_to_sync_to.chaindb.get_canonical_block_hash(block_conflict_info.block_number, block_conflict_info.chain_address)
+                to_change.append(BlockConflictChoice(block_conflict_info.chain_address, block_conflict_info.block_number, hash_of_correct_block))
+
+            return to_change
+
+    def add_block_conflict(self, chain_wallet_address, block_number) -> None:
+        if not self.is_server:
+            super().add_block_conflict(chain_wallet_address, block_number)

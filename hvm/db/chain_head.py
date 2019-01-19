@@ -729,14 +729,6 @@ class ChainHeadDB():
     def save_historical_root_hashes(self, root_hashes):
         #if root_hashes[-1][0] == 1534567000:
         #    exit()
-        # Automatically sort when saving. This way we can always assume they are sorted when loading
-
-        try:
-            root_hashes.sort()
-        except TypeError:
-            root_hashes = list(root_hashes)
-            root_hashes.sort()
-
 
         if len(root_hashes) > 1000:
             root_hashes = root_hashes[-1000:]
@@ -783,9 +775,13 @@ class ChainHeadDB():
         :param after_timestamp:
         :return:
         '''
+
+        # Automatically sort when loading because we know the data will never be a mix of lists and tuples
+
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
         try:
             data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([f_big_endian_int, hash32])), use_list=True)
+            data.sort()
         except KeyError:
             return None
 
@@ -799,25 +795,10 @@ class ChainHeadDB():
         if len(to_return) == 0:
             return None
 
+
         return to_return
 
-        #         mutable = data
-        #         mutable_old_removed = list(mutable)
-        #         num_deleted = 0
-        #         for i in range(len(mutable)):
-        #             if mutable[i][0] < after_timestamp:
-        #                 del(mutable_old_removed[i-num_deleted])
-        #                 num_deleted += 1
-        #
-        #         if mutable_old_removed == []:
-        #             return None
-        #             to_return = mutable_old_removed
-        #
-        # except KeyError:
-        #     return None
-        #
-        # #to_return.sort()
-        #return to_return
+
 
     def get_dense_historical_root_hashes(self, after_timestamp: Timestamp = None) -> Optional[List[List[Union[Timestamp, Hash32]]]]:
         '''

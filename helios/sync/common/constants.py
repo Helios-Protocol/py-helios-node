@@ -6,3 +6,9 @@ FULLY_SYNCED_STAGE_ID = 4
 
 CHRONOLOGICAL_BLOCK_HASH_FRAGMENT_TYPE_ID = 1
 CHAIN_HEAD_BLOCK_HASH_FRAGMENT_TYPE_ID = 2
+
+# Number of seconds that the syncer will remember which blocks have been imported to prevent it from requesting
+# the same blocks repeatedly.
+SYNCER_CACHE_TO_PREVENT_MULTIPLE_IMPORTS_OF_SAME_BLOCKS_EXPIRE_TIME = 10
+
+SYNCER_RECENTLY_IMPORTED_BLOCK_MEMORY_EXPIRE_CHECK_LOOP_PERIOD = 2

@@ -143,13 +143,13 @@ from eth_keys.datatypes import(
 )
 
 from hvm.utils.numeric import (
-    effecient_diff, 
+    effecient_diff,
     are_items_in_list_equal,
 )
 
 from sortedcontainers import (
     SortedList,
-    SortedDict,      
+    SortedDict,
 )
 from hvm.rlp.consensus import NodeStakingScore
 
@@ -208,7 +208,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     @abstractmethod
     def get_chain_at_block_parent(self, block: BaseBlock) -> 'BaseChain':
         raise NotImplementedError("Chain classes must implement this method")
-    
+
     #
     # VM API
     #
@@ -237,7 +237,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         if cls.vm_configuration is None:
             raise AttributeError("Chain classes must define the VMs in vm_configuration")
         validate_uint256(timestamp)
-        
+
         for start_timestamp, vm_class in reversed(cls.vm_configuration):
             if timestamp >= start_timestamp:
                 return vm_class
@@ -439,7 +439,7 @@ class Chain(BaseChain):
     vm = None
     _journaldb = None
     num_journal_records_for_block_import = 0
-    
+
     chaindb_class = ChainDB  # type: Type[BaseChainDB]
     chain_head_db_class = ChainHeadDB
     consensus_db_class = ConsensusDB
@@ -454,17 +454,17 @@ class Chain(BaseChain):
             )
         else:
             validate_vm_configuration(self.vm_configuration)
-            
-        
-        validate_canonical_address(wallet_address, "Wallet Address") 
-    
+
+
+        validate_canonical_address(wallet_address, "Wallet Address")
+
         self.db = base_db
         self.private_key = private_key
         self.wallet_address = wallet_address
         self.chaindb = self.get_chaindb_class()(self.db, self.wallet_address)
         self.chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(self.db)
         self.consensus_db = self.get_consensus_db_class()(self.db, self, self.chaindb)
-        
+
         try:
             self.header = self.create_header_from_parent(self.get_canonical_head())
         except CanonicalHeadNotFound:
@@ -474,23 +474,23 @@ class Chain(BaseChain):
 
 
         self.queue_block = self.get_block()
-        
+
         if self.gas_estimator is None:
             self.gas_estimator = get_gas_estimator()  # type: ignore
-      
+
     def reinitialize(self):
         self.__init__(self.db, self.wallet_address, self.private_key)
-        
+
     def set_new_wallet_address(self, wallet_address: Address, private_key: BaseKey=None):
         self.logger.debug('setting new wallet address')
         self.wallet_address = wallet_address
         self.private_key = private_key
         self.reinitialize()
-        
-    
+
+
     #
     # Global Record and discard API
-    # 
+    #
     def enable_journal_db(self):
         if self._journaldb is None:
             self.base_db = self.db
@@ -499,15 +499,15 @@ class Chain(BaseChain):
             self.db = self._journaldb
             #reinitialize to ensure chain and chain_head_db have the new journaldb
             self.reinitialize()
-        
+
     def disable_journal_db(self):
         if self._journaldb is not None:
             self.db = self.base_db
             self._journaldb = None
-            
+
             #reinitialize to ensure chain and chain_head_db have the new journaldb
             self.reinitialize()
-        
+
     def record_journal(self) -> UUID:
         if self._journaldb is not None:
             return (self._journaldb.record())
@@ -533,8 +533,8 @@ class Chain(BaseChain):
             self._journaldb.persist()
         else:
             raise JournalDbNotActivated()
-    
-            
+
+
     #
     # Helpers
     #
@@ -555,7 +555,7 @@ class Chain(BaseChain):
         if cls.consensus_db_class is None:
             raise AttributeError("`chaindb_class` not set")
         return cls.consensus_db_class
-    
+
     @classmethod
     def get_genesis_wallet_address(cls) -> Address:
         if cls.genesis_wallet_address is None:
@@ -566,8 +566,8 @@ class Chain(BaseChain):
     #
     # Chain API
     #
-    
-    
+
+
     @classmethod
     def create_genesis_header(cls,
                      base_db: BaseDB,
@@ -576,7 +576,7 @@ class Chain(BaseChain):
                      genesis_params: Dict[str, HeaderParams],
                      genesis_state: AccountState=None,
                      ) -> 'BaseChain':
-        
+
         genesis_vm_class = cls.get_vm_class_for_block_timestamp()
 
         account_db = genesis_vm_class.get_state_class().get_account_db_class()(base_db)
@@ -589,12 +589,12 @@ class Chain(BaseChain):
         account_db.persist(save_account_hash = True, wallet_address = wallet_address)
         genesis_params['account_hash'] = account_db.get_account_hash(wallet_address)
         genesis_header = BlockHeader(**genesis_params)
-        
+
         signed_genesis_header = genesis_header.get_signed(private_key, cls.network_id)
         chaindb = cls.get_chaindb_class()(base_db, wallet_address = wallet_address)
         chaindb.persist_header(signed_genesis_header)
         return signed_genesis_header
-        
+
     @classmethod
     def from_genesis(cls,
                      base_db: BaseDB,
@@ -606,7 +606,7 @@ class Chain(BaseChain):
         """
         Initializes the Chain from a genesis state.
         """
-        
+
         genesis_vm_class = cls.get_vm_class_for_block_timestamp()
 
         account_db = genesis_vm_class.get_state_class().get_account_db_class()(
@@ -619,11 +619,11 @@ class Chain(BaseChain):
         # mutation
         account_db = apply_state_dict(account_db, genesis_state)
         account_db.persist(save_account_hash = True, wallet_address = cls.genesis_wallet_address)
-        
+
         genesis_header = BlockHeader(**genesis_params)
         return cls.from_genesis_header(base_db, wallet_address = wallet_address, private_key = private_key, genesis_header = genesis_header)
 
-        
+
     @classmethod
     def from_genesis_header(cls,
                             base_db: BaseDB,
@@ -634,19 +634,19 @@ class Chain(BaseChain):
         """
         Initializes the chain from the genesis header.
         """
-        
+
         chaindb = cls.get_chaindb_class()(base_db, wallet_address = cls.genesis_wallet_address)
         chaindb.persist_header(genesis_header)
-        
+
         chain_head_db = cls.get_chain_head_db_class()(base_db)
-        
+
         #window_for_this_block = math.ceil((genesis_header.timestamp+1)/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
         window_for_this_block = int(genesis_header.timestamp / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE + TIME_BETWEEN_HEAD_HASH_SAVE
         chain_head_db.set_chain_head_hash(cls.genesis_wallet_address, genesis_header.hash)
         chain_head_db.initialize_historical_root_hashes(chain_head_db.root_hash, window_for_this_block)
         chain_head_db.persist(save_current_root_hash = True, append_current_root_hash_to_historical = False)
         #chain_head_db.add_block_hash_to_chronological_window(genesis_header.hash, genesis_header.timestamp)
-        
+
         return cls(base_db, wallet_address = wallet_address, private_key=private_key)
 
     def get_chain_at_block_parent(self, block: BaseBlock) -> BaseChain:
@@ -663,7 +663,7 @@ class Chain(BaseChain):
 
         init_header = self.create_header_from_parent(parent_header)
         return type(self)(self.chaindb.db, self.wallet_address, self.private_key, init_header)
-    
+
     #
     # VM API
     #
@@ -684,7 +684,7 @@ class Chain(BaseChain):
             return self.vm
         else:
             vm_class = self.get_vm_class_for_block_timestamp(header.timestamp)
-        
+
             return vm_class(header=header,
                             chaindb=self.chaindb,
                             consensus_db = self.consensus_db,
@@ -798,19 +798,19 @@ class Chain(BaseChain):
 #            else:
 #                self.chain_head_db.add_block_hash_to_timestamp_without_propogating_to_present(self.wallet_address, block_header.hash, window_for_this_block)
 
-    
 
-        
+
+
     #
     # Queueblock API
     #
     def add_transaction_to_queue_block(self, transaction) -> None:
         if self.queue_block is None:
             self.queue_block = self.get_block()
-            
+
         validate_is_queue_block(self.queue_block, title='self.queue_block')
-        
-                
+
+
         if isinstance(transaction, BaseTransaction):
             if not self.queue_block.contains_transaction(transaction):
                 self.queue_block = self.queue_block.add_transaction(transaction)
@@ -829,19 +829,19 @@ class Chain(BaseChain):
         else:
             for tx in transactions:
                 self.add_transaction_to_queue_block(tx)
-    
+
     def sign_queue_block(self, *args: Any, **kwargs: Any) -> BaseQueueBlock:
         """
         Passthrough helper to the current VM class.
         """
         return self.get_vm().sign_queue_block(*args, **kwargs)
-    
+
     def sign_header(self, *args: Any, **kwargs: Any) -> BlockHeader:
         """
         Passthrough helper to the current VM class.
         """
         return self.get_vm().sign_header(*args, **kwargs)
-    
+
 
     #
     # Transaction API
@@ -855,11 +855,11 @@ class Chain(BaseChain):
         found in the main chain.
         """
         (block_hash, index, is_receive) = self.chaindb.get_transaction_index(transaction_hash)
-        
+
         block_header = self.get_block_header_by_hash(block_hash)
-        
+
         VM = self.get_vm_class_for_block_timestamp(block_header.timestamp)
-        
+
         if is_receive == False:
             transaction = self.chaindb.get_transaction_by_index_and_block_hash(
                 block_hash,
@@ -888,12 +888,12 @@ class Chain(BaseChain):
         Passthrough helper to the current VM class.
         """
         return self.get_vm().create_transaction(*args, **kwargs)
-    
+
     def create_and_sign_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         transaction = self.create_transaction(*args, **kwargs)
         signed_transaction = transaction.get_signed(self.private_key, self.network_id)
         return signed_transaction
-    
+
     def create_and_sign_transaction_for_queue_block(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         tx_nonce = self.get_current_queue_block_nonce()
 
@@ -901,14 +901,14 @@ class Chain(BaseChain):
 
         self.add_transactions_to_queue_block(transaction)
         return transaction
-    
+
     def get_current_queue_block_nonce(self) -> int:
         if self.queue_block is None or self.queue_block.current_tx_nonce is None:
             tx_nonce = self.get_vm().state.account_db.get_nonce(self.wallet_address)
         else:
             tx_nonce =self.queue_block.current_tx_nonce
         return tx_nonce
-        
+
     def create_receive_transaction(self, *args: Any, **kwargs: Any) -> BaseReceiveTransaction:
         """
         Passthrough helper to the current VM class.
@@ -925,7 +925,7 @@ class Chain(BaseChain):
             tx = self.get_canonical_transaction(tx_key.transaction_hash)
             transactions.append(tx)
         return transactions, tx_keys
-    
+
     def create_receivable_transactions(self) -> List[BaseReceiveTransaction]:
         tx_keys = self.get_vm().state.account_db.get_receivable_transactions(self.wallet_address)
         if len(tx_keys) == 0:
@@ -944,7 +944,7 @@ class Chain(BaseChain):
 
             receive_transactions.append(re_tx)
         return receive_transactions
-    
+
     def populate_queue_block_with_receive_tx(self) -> List[BaseReceiveTransaction]:
         receive_tx = self.create_receivable_transactions()
         self.add_transactions_to_queue_block(receive_tx)
@@ -973,8 +973,8 @@ class Chain(BaseChain):
         with self.get_vm(at_header).state_in_temp_block() as state:
             return self.gas_estimator(state, transaction)
 
-    
-            
+
+
 
     def validate_time_between_blocks(self,block):
         if not block.is_genesis:
@@ -990,25 +990,26 @@ class Chain(BaseChain):
                     self.logger.debug("not enough time between blocks. We require {0} seconds. Since it is a queueblock, we will wait for {1} seconds and then import.".format(constants.MIN_TIME_BETWEEN_BLOCKS, time_wait))
                     time.sleep(time_wait)
                 else:
-                    raise NotEnoughTimeBetweenBlocks()     
+                    raise NotEnoughTimeBetweenBlocks()
         return
-    
+
     #
     # Reverting block functions
     #
-    
+
     def delete_canonical_chain(self, wallet_address, vm):
         self.chain_head_db.delete_chain(wallet_address)
         self.chaindb.delete_canonical_chain(wallet_address)
         vm.state.clear_account_keep_receivable_transactions_and_persist(wallet_address)
-        
+
     def set_parent_as_canonical_head(self, existing_block_header, wallet_address, vm):
+        self.logger.debug("Setting new parent as canonical head after reverting blocks. Chain address {}".format(encode_hex(wallet_address)))
         block_parent_header = self.chaindb.get_block_header_by_hash(existing_block_header.parent_hash)
         self.save_chain_head_hash_to_trie_for_time_period(block_parent_header)
         self.chain_head_db.set_chain_head_hash(wallet_address, block_parent_header.hash)
         self.chaindb._set_as_canonical_chain_head(block_parent_header, wallet_address = wallet_address)
         vm.state.revert_account_to_hash_keep_receivable_transactions_and_persist(block_parent_header.account_hash, wallet_address)
-        
+
     def revert_block(self, descendant_block_hash, vm):
         self.logger.debug('Reverting block with hash {}'.format(encode_hex(descendant_block_hash)))
         descendant_block_header = self.chaindb.get_block_header_by_hash(descendant_block_hash)
@@ -1024,7 +1025,7 @@ class Chain(BaseChain):
         # is still in the canonical chain to look up transactions
         self.chaindb.delete_block_from_canonical_chain(descendant_block_hash)
         #self.chaindb.save_unprocessed_block_lookup(descendant_block_hash)
- 
+
     def purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32) -> None:
 
         genesis_block_hash = self.chaindb.get_canonical_block_hash(BlockNumber(0), self.genesis_wallet_address)
@@ -1090,8 +1091,8 @@ class Chain(BaseChain):
             self.chain_head_db.persist(True)
 
             self.reinitialize()
-        
-    
+
+
     def purge_unprocessed_block(self, block_hash, purge_children_too = True):
         '''
         Deletes all unprocessed block lookups, and unprocessed children lookups for this block and all children blocks.
@@ -1108,22 +1109,22 @@ class Chain(BaseChain):
                         #this includes the child in this actual chain as well as children from send transactions.
                         if not self.chaindb.is_block_unprocessed(child_block_hash):
                             raise UnprocessedBlockChildIsProcessed("In process of deleting children of unprocessed block, and found one that is processed. This should never happen")
-                        
+
                         else:
-                            
+
                             self.purge_unprocessed_block(child_block_hash)
-                        
+
         try:
-            block = self.chaindb.get_block_by_hash(block_hash, self.get_vm(refresh=False).get_block_class()) 
+            block = self.chaindb.get_block_by_hash(block_hash, self.get_vm(refresh=False).get_block_class())
             chain = encode_hex(block.header.chain_address)
-            self.logger.debug("deleting unprocessed child block number {} on chain {}".format(block.number, chain))               
+            self.logger.debug("deleting unprocessed child block number {} on chain {}".format(block.number, chain))
             self.chaindb.remove_block_from_unprocessed(block)
         except HeaderNotFound:
             pass
-        
-        
-        
-        
+
+
+
+
     def import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp, save_block_head_hash_timestamp:bool = True, allow_unprocessed:bool =False) -> None:
         validate_uint256(window_start_timestamp, title='timestamp')
 
@@ -1138,23 +1139,23 @@ class Chain(BaseChain):
                 corrected_block = self.get_vm().convert_block_to_correct_class(block)
                 corrected_block_list.append(corrected_block)
             block_list = corrected_block_list
-        
+
 
         #first we delete any blocks we have in the same window that are not in the new block list
         local_chronological_timestamp_block_window = self.chain_head_db.load_chronological_block_window(window_start_timestamp)
-        
+
         if local_chronological_timestamp_block_window is not None:
             local_block_hash_list = [x[1] for x in local_chronological_timestamp_block_window]
-            
+
             new_block_hash_list = [block.hash for block in block_list]
-            
+
             block_hashes_to_delete = effecient_diff(new_block_hash_list, local_block_hash_list)
             if len(block_hashes_to_delete) > 0:
                 self.logger.debug("deleting existing blocks in chronological window {}".format(block_hashes_to_delete))
-            
+
             for block_hash_to_delete in block_hashes_to_delete:
                 self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(block_hash_to_delete)
-    
+
         if len(block_list) > 0:
             self.logger.debug("starting block import for chronological block window")
             #if block list is empty, load the local historical root hashes and delete them all
@@ -1172,7 +1173,7 @@ class Chain(BaseChain):
                 except AppendHistoricalRootHashTooOld:
                     self.logger.debug("Tried to propogate the previous historical root hash but there was none. This shouldn't happen")
         #self.logger.debug("historical root hashes after chronological block import {}".format(self.chain_head_db.get_historical_root_hashes()))
-    
+
     def import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
         self.logger.debug("importing chain")
         #if we are given a block that is not one of the two allowed classes, try converting it.
@@ -1187,9 +1188,9 @@ class Chain(BaseChain):
 
         wallet_address = block_list[0].header.chain_address
         for block in block_list:
-            self.import_block(block, 
-                              perform_validation = perform_validation, 
-                              save_block_head_hash_timestamp = save_block_head_hash_timestamp, 
+            self.import_block(block,
+                              perform_validation = perform_validation,
+                              save_block_head_hash_timestamp = save_block_head_hash_timestamp,
                               wallet_address = wallet_address,
                               allow_replacement = allow_replacement)
 
@@ -1215,7 +1216,7 @@ class Chain(BaseChain):
         except CanonicalHeadNotFound:
             pass
 
-            
+
     # async def coro_import_block(self, *args, **kwargs):
     #     loop = asyncio.get_event_loop()
     #
@@ -1229,7 +1230,7 @@ class Chain(BaseChain):
     def import_block_with_profiler(self, *args, **kwargs):
         self.import_block(*args, **kwargs)
 
-    
+
     def import_block(self, block: BaseBlock,
                      perform_validation: bool=True,
                      save_block_head_hash_timestamp = True,
@@ -1237,7 +1238,7 @@ class Chain(BaseChain):
                      allow_unprocessed = True,
                      allow_replacement = True,
                      ensure_block_unchanged:bool = True) -> BaseBlock:
-         
+
         #we handle replacing blocks here
         #this includes deleting any blocks that it might be replacing
         #then we start the journal db
@@ -1247,17 +1248,17 @@ class Chain(BaseChain):
             #we need to re-initialize the chain for the new wallet address.
             if wallet_address != self.wallet_address:
                 self.set_new_wallet_address(wallet_address = wallet_address)
-                
+
 
         journal_enabled = False
-        
+
         #if we are given a block that is not one of the two allowed classes, try converting it.
-        #There is no reason why this should be a queueblock, because a queueblock would never come over the network, it 
+        #There is no reason why this should be a queueblock, because a queueblock would never come over the network, it
         #it always generated locally, and should have the correct class.
         if not isinstance(block, self.get_vm(refresh=False).get_block_class()):
             self.logger.debug("converting block to correct class")
             block = self.get_vm(refresh=False).convert_block_to_correct_class(block)
-        
+
         if not isinstance(block, self.get_vm(refresh=False).get_queue_block_class()) and block.header.chain_address == self.genesis_wallet_address and block.header.block_number == 0:
             try:
                 our_genesis_hash = self.chaindb.get_canonical_block_header_by_number(BlockNumber(0), self.genesis_wallet_address).hash
@@ -1279,13 +1280,13 @@ class Chain(BaseChain):
         #if we are adding to the top of the chain, or beyond, we need to check for unprocessed blocks
         #handle deleting any unprocessed blocks that will be replaced.
         if block.number >= self.header.block_number:
-            
+
             existing_unprocessed_block_hash = self.chaindb.get_unprocessed_block_hash_by_block_number(self.wallet_address, block.number)
 
             if (existing_unprocessed_block_hash != block.hash) and (existing_unprocessed_block_hash is not None):
                 if not allow_replacement:
                     raise ReplacingBlocksNotAllowed()
-                
+
                 #check to make sure the parent matches the one we have
                 if block.number != 0:
 #                    if block.number == self.header.block_number:
@@ -1311,7 +1312,7 @@ class Chain(BaseChain):
                 self.enable_journal_db()
                 journal_record = self.record_journal()
                 journal_enabled = True
-                
+
                 self.purge_unprocessed_block(existing_unprocessed_block_hash)
 
 
@@ -1328,20 +1329,20 @@ class Chain(BaseChain):
                     #save as unprocessed
                     if not allow_unprocessed:
                         raise UnprocessedBlockNotAllowed()
-                        
+
                     return_block = self.save_block_as_unprocessed(block, self.wallet_address)
-                    
+
                 if journal_enabled:
                     self.logger.debug('commiting journal')
                     self.commit_journal(journal_record)
                     self.persist_journal()
                     self.disable_journal_db()
-                    
+
                 return return_block
-                
+
             else:
                 raise ParentNotFound('Parent is unprocessed 2')
-                
+
 
         #now, if it is the head of the chain, lets make sure the parent hash is correct.
         if block.number == self.header.block_number and block.number != 0:
@@ -1363,17 +1364,17 @@ class Chain(BaseChain):
             existing_block_header = self.chaindb.get_canonical_block_header_by_number(block.number, self.wallet_address)
 
             if existing_block_header.hash == block.header.hash:
-                self.logger.debug("tried to import a block that has a hash that matches the local block. no import required.")                    
-                return
+                self.logger.debug("tried to import a block that has a hash that matches the local block. no import required.")
+                return block
             else:
-                
+
                 self.enable_journal_db()
                 journal_record = self.record_journal()
                 journal_enabled = True
-                
+
                 self.purge_block_and_all_children_and_set_parent_as_chain_head(existing_block_header)
-                
-                
+
+
 
         try:
             return_block = self._import_block(block = block,
@@ -1382,23 +1383,23 @@ class Chain(BaseChain):
                                               wallet_address = wallet_address,
                                               allow_unprocessed = allow_unprocessed,
                                               ensure_block_unchanged= ensure_block_unchanged)
-        
+
         except Exception as e:
             if journal_enabled:
                 self.logger.debug('discarding journal')
                 self.discard_journal(journal_record)
                 self.disable_journal_db()
             raise e
-            
+
         if journal_enabled:
             self.logger.debug('commiting journal')
             self.commit_journal(journal_record)
             self.persist_journal()
             self.disable_journal_db()
-         
+
         return return_block
-    
-         
+
+
     def _import_block(self, block: BaseBlock,
                       perform_validation: bool=True,
                       save_block_head_hash_timestamp = True,
@@ -1414,25 +1415,25 @@ class Chain(BaseChain):
             if wallet_address != self.wallet_address:
                 self.logger.debug("setting new wallet address for chain")
                 self.set_new_wallet_address(wallet_address = wallet_address)
-                
+
         self.logger.debug("importing block number {}".format(block.number))
-        
+
         self.validate_time_between_blocks(block)
-            
+
         if isinstance(block, self.get_vm(refresh=False).get_queue_block_class()):
             # If it was a queueblock, then the header will have changed after importing
             perform_validation = False
             ensure_block_unchanged = False
-            
-        
+
+
         if not self.chaindb.is_block_unprocessed(block.header.parent_hash):
-            
+
             #this part checks to make sure the parent exists
             try:
                 vm = self.get_vm(block.header)
                 imported_block = vm.import_block(block)
-               
-                
+
+
                 # Validate the imported block.
                 if ensure_block_unchanged:
                     self.logger.debug('ensuring block unchanged')
@@ -1442,9 +1443,9 @@ class Chain(BaseChain):
                 if perform_validation:
                     self.validate_block(imported_block)
 
-                
+
                 #self.chain_head_db.set_chain_head_hash(self.wallet_address, imported_block.header.hash)
-                
+
                 if save_block_head_hash_timestamp:
                     self.chain_head_db.add_block_hash_to_chronological_window(imported_block.header.hash, imported_block.header.timestamp)
                     self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
@@ -1476,12 +1477,12 @@ class Chain(BaseChain):
                                                save_block_head_hash_timestamp = save_block_head_hash_timestamp,
                                                allow_unprocessed = True)
 
-                
+
                 #finally, remove unprocessed database lookups for this block
                 self.chaindb.delete_unprocessed_children_blocks_lookup(imported_block.hash)
-                
+
                 return_block = imported_block
-                
+
 
             except (ReceivableTransactionNotFound, RewardProofSenderBlockMissing):
                 # print('AAAAAAAAAAAA')
@@ -1493,18 +1494,18 @@ class Chain(BaseChain):
             if not allow_unprocessed:
                 raise UnprocessedBlockNotAllowed()
             return_block = self.save_block_as_unprocessed(block, self.wallet_address)
-                
-        
+
+
         return return_block
-                            
- 
-        
+
+
+
     def import_unprocessed_children(self, block, *args, **kwargs):
         """
         Checks all block children for unprocessed blocks that were waiting for this one to be processed.
         This includes children via transactions, and the children on this chain.
         If it finds any unprocessed blocks it will, along with import_block, recursively import all unprocessed children.
-        it ignores errors so that it can make it through all of the children without stopping 
+        it ignores errors so that it can make it through all of the children without stopping
         """
         if self.chaindb.has_unprocessed_children(block.hash):
             self.logger.debug("HAS UNPROCESSED BLOCKS")
@@ -1530,28 +1531,28 @@ class Chain(BaseChain):
                             #todo need to delete child block and all of its children
                             raise e
                             #pass
-                        
-                        
+
+
     def save_block_as_unprocessed(self, block, wallet_address):
         #if it is already saved as unprocesessed, do nothing
         if self.chaindb.is_block_unprocessed(block.hash):
             return block
-        
+
         #before adding to unprocessed blocks, make sure the receive transactions are valid
         # for receive_transaction in block.receive_transactions:
         #     #there must be at least 1 to get this far
         #     receive_transaction.validate()
-            
+
         #now we add it to unprocessed blocks
         self.chaindb.save_block_as_unprocessed(block, wallet_address)
-    
-        
+
+
         #save the transactions to db
         vm = self.get_vm(refresh=True)
         vm.save_items_to_db_as_trie(block.transactions, block.header.transaction_root)
         vm.save_items_to_db_as_trie(block.receive_transactions, block.header.receive_transaction_root)
-        
-        #we don't want to persist because that will add it to the canonical chain. 
+
+        #we don't want to persist because that will add it to the canonical chain.
         #We just want to save it to the database so we can process it later if needbe.
         self.chaindb.persist_non_canonical_block(block, wallet_address)
         #self.chaindb.persist_block(block)
@@ -1560,18 +1561,18 @@ class Chain(BaseChain):
             self.header = self.create_header_from_parent(self.get_canonical_head())
         except CanonicalHeadNotFound:
             self.header = self.get_vm_class_for_block_timestamp().create_genesis_block(self.wallet_address).header
-            
+
         self.queue_block = None
-        
+
         self.logger.debug(
             'SAVED_BLOCK_AS_UNPROCESSED: number %s | hash %s',
             block.number,
             encode_hex(block.hash),
         )
         return block
-        
+
     def import_current_queue_block(self) -> BaseBlock:
-        
+
         return self.import_block(self.queue_block)
 
     def import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
@@ -1583,7 +1584,7 @@ class Chain(BaseChain):
         self.queue_block = self.queue_block.copy(reward_bundle = reward_bundle)
 
         return self.import_current_queue_block()
-    
+
     def get_all_chronological_blocks_for_window(self, window_timestamp:Timestamp) -> List[BaseBlock]:
         validate_uint256(window_timestamp, title='timestamp')
         chronological_blocks = self.chain_head_db.load_chronological_block_window(window_timestamp)
@@ -1595,9 +1596,9 @@ class Chain(BaseChain):
                 block_hash = chronological_block[1]
                 new_block = self.chaindb.get_block_by_hash(block_hash, self.get_vm().get_block_class())
                 list_of_blocks.append(new_block)
-                
+
             return list_of_blocks
-        
+
     #
     # Validation API
     #
@@ -1638,43 +1639,43 @@ class Chain(BaseChain):
             signatures of send transaction within receive transactions
             send transaction root matches transactions
             receive transaction root matches transactions
-            
+
         '''
-        
+
         if not isinstance(block, self.get_vm(refresh=False).get_block_class()):
             self.logger.debug("converting block to correct class")
             block = self.get_vm(refresh=False).convert_block_to_correct_class(block)
-            
+
         block.header.check_signature_validity()
-        
+
         for transaction in block.transactions:
             transaction.validate()
-        
+
         for transaction in block.receive_transactions:
             transaction.validate()
-            
+
         send_tx_root_hash, _ = make_trie_root_and_nodes(block.transactions)
-        
+
         if block.header.transaction_root != send_tx_root_hash:
             raise ValidationError("Block has invalid transaction root")
-            
+
         receive_tx_root_hash, _ = make_trie_root_and_nodes(block.receive_transactions)
         if block.header.receive_transaction_root != receive_tx_root_hash:
             raise ValidationError("Block has invalid receive transaction root")
-        
+
         return True
-        
-        
+
+
     #
     # Stake API
     #
     #this doesnt count the stake of the origin chain
     def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
         validate_word(block_hash, title="Block Hash")
-        
+
         children_chain_wallet_addresses = self.chaindb.get_block_children_chains(block_hash, exclude_chains)
         self.logger.debug("get_block_stake_from_children. children wallet addresses: {}".format(children_chain_wallet_addresses))
-        
+
         if children_chain_wallet_addresses is None:
             return 0
         else:
@@ -1682,7 +1683,7 @@ class Chain(BaseChain):
             for wallet_address in children_chain_wallet_addresses:
                total_stake += self.get_mature_stake(wallet_address)
             return total_stake
-                
+
 
 
     # def get_mature_stake(self, wallet_address: Address = None) -> int:
@@ -1751,13 +1752,13 @@ class Chain(BaseChain):
 
         return 0
 
-    
+
     def get_immature_receive_balance(self, wallet_address: Union[bytes, type(None)] = None):
         if wallet_address is None:
             wallet_address = self.wallet_address
-        
+
         validate_canonical_address(wallet_address, title="Wallet Address")
-   
+
         canonical_head = self.chaindb.get_canonical_head(wallet_address = wallet_address)
 
         total = 0
@@ -1769,14 +1770,14 @@ class Chain(BaseChain):
             for receive_transaction in block_receive_transactions:
                 send_transaction = self.get_canonical_transaction(receive_transaction.send_transaction_hash)
                 total += send_transaction.value
-        
+
         previous_header = canonical_head
         while True:
             if previous_header.parent_hash == constants.GENESIS_PARENT_HASH:
                 break
-            
+
             parent_header = self.chaindb.get_block_header_by_hash(previous_header.parent_hash)
-            
+
             if parent_header.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:
                 break
             block_receive_transactions = self.chaindb.get_block_receive_transactions(parent_header,transaction_class)
@@ -1785,7 +1786,7 @@ class Chain(BaseChain):
                 total += send_transaction.value
 
             previous_header = parent_header
-        
+
         return total
 
     def get_new_block_hash_to_test_peer_node_health(self) -> Hash32:
@@ -1811,11 +1812,11 @@ class Chain(BaseChain):
 
         #if we get to here then we don't have any blocks within all chronological block windows...
         raise NoChronologicalBlocks()
-    
+
     #
     # Min Block Gas API used for throttling the network
     #
-    
+
     def re_initialize_historical_minimum_gas_price_at_genesis(self) -> None:
         '''
         re-initializes system with last set min gas price and net tpc cap
@@ -1828,63 +1829,63 @@ class Chain(BaseChain):
             init_min_gas_price = hist_min_gas_price[-1][1]
         else:
             init_min_gas_price = 1
-            
+
         if hist_tpc_cap is not None:
             init_tpc_cap = hist_tpc_cap[-1][1]
         else:
             init_tpc_cap = self.get_local_tpc_cap()
-            
+
         if hist_tx_per_centisecond is not None:
             init_tpc = hist_tx_per_centisecond[-1][1]
         else:
             init_tpc = None
-            
+
         self.chaindb.initialize_historical_minimum_gas_price_at_genesis(init_min_gas_price, init_tpc_cap, init_tpc)
-            
+
     def update_current_network_tpc_capability(self, current_network_tpc_cap: int, update_min_gas_price:bool = True) -> None:
         validate_uint256(current_network_tpc_cap, title="current_network_tpc_cap")
         self.chaindb.save_current_historical_network_tpc_capability(current_network_tpc_cap)
-        
+
         if update_min_gas_price:
             current_centisecond = int(time.time()/100) * 100
             timestamp_min_gas_price_updated = self.update_tpc_from_chronological(update_min_gas_price = True)
-            
+
             if timestamp_min_gas_price_updated > current_centisecond:
                 self.chaindb.recalculate_historical_mimimum_gas_price(current_centisecond)
-            
-        
-        
-    
+
+
+
+
     def update_tpc_from_chronological(self, update_min_gas_price: bool = True):
         #start at the newest window, if the same tps stop. but if different tps keep going back
         self.logger.debug("Updating tpc from chronological")
         current_historical_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
         current_centisecond = int(time.time()/100) * 100
-        
+
         #load this once to find out if its None. If it is None, then the node just started, lets only go back 50 steps
         #hist_tpc = self.chaindb.load_historical_tx_per_centisecond()
-        
+
 
         end_outer = current_historical_window-6*TIME_BETWEEN_HEAD_HASH_SAVE
 
 
         for historical_window_timestamp in range(current_historical_window,
-                                                 end_outer, 
+                                                 end_outer,
                                                  -TIME_BETWEEN_HEAD_HASH_SAVE):
-        
+
             tpc_sum_dict = {}
             chronological_block_window = self.chain_head_db.load_chronological_block_window(historical_window_timestamp)
-            
+
             self.logger.debug('loading chronological block window for timestamp {}'.format(historical_window_timestamp))
             #zero the dictionary
             if historical_window_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE < current_centisecond:
                 end = historical_window_timestamp +TIME_BETWEEN_HEAD_HASH_SAVE
             else:
                 end = current_centisecond+100
-                
+
             for timestamp in range(historical_window_timestamp, end, 100):
                 tpc_sum_dict[timestamp] = 0
-            
+
             if chronological_block_window is not None:
                 for timestamp_block_hash in chronological_block_window:
                     #first count up the tx in the block
@@ -1896,15 +1897,15 @@ class Chain(BaseChain):
                         tpc_sum_dict[centisecond_window_for_block] += num_tx_in_block
 
             same_as_database = self._update_tpc_from_chronological(tpc_sum_dict)
-            
+
             if same_as_database == True:
                 break
-            
+
         if update_min_gas_price:
             self.chaindb.recalculate_historical_mimimum_gas_price(historical_window_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE)
-            
+
         return historical_window_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE
-                    
+
 
     def _update_tpc_from_chronological(self, new_hist_tpc_dict):
         '''
@@ -1912,10 +1913,10 @@ class Chain(BaseChain):
         '''
         if not isinstance(new_hist_tpc_dict, dict):
             raise ValidationError("Expected a dict. Didn't get a dict.")
-            
+
         hist_tpc = self.chaindb.load_historical_tx_per_centisecond()
         difference_found = False
-        
+
         if hist_tpc is None:
             hist_tpc = list(new_hist_tpc_dict.items())
         else:
@@ -1927,14 +1928,14 @@ class Chain(BaseChain):
                     difference_found = True
                 hist_tpc_dict[timestamp] = tpc
             hist_tpc = list(hist_tpc_dict.items())
-            
+
         #print(hist_tpc)
         #save it to db
         self.chaindb.save_historical_tx_per_centisecond(hist_tpc, de_sparse = False)
-        
+
         return not difference_found
-            
-    
+
+
     def get_local_tpc_cap(self) -> int:
         #base it on the time it takes to import a block
 
@@ -1949,14 +1950,14 @@ class Chain(BaseChain):
             MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT,
         )
         from hvm.constants import random_private_keys
-                
+
         db = MemoryDB()
-        chain = MainnetChain.from_genesis(db, 
-                                          TPC_CAP_TEST_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), 
-                                          MAINNET_TPC_CAP_TEST_GENESIS_PARAMS, 
-                                          MAINNET_TPC_CAP_TEST_GENESIS_STATE, 
+        chain = MainnetChain.from_genesis(db,
+                                          TPC_CAP_TEST_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                          MAINNET_TPC_CAP_TEST_GENESIS_PARAMS,
+                                          MAINNET_TPC_CAP_TEST_GENESIS_STATE,
                                           private_key = TPC_CAP_TEST_GENESIS_PRIVATE_KEY)
-        
+
         block_to_import = chain.get_vm().get_block_class().from_dict(MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT)
 
 
@@ -1969,12 +1970,12 @@ class Chain(BaseChain):
         #self.logger.debug('duration = {} seconds'.format(duration))
         tx_per_centisecond = int(100/duration)
         return tx_per_centisecond
-        
 
-        
 
-    
-    
+
+
+
+
 # This class is a work in progress; its main purpose is to define the API of an asyncio-compatible
 # Chain implementation.
 class AsyncChain(Chain):

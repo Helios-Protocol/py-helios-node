@@ -50,7 +50,7 @@ def generate_random_private_key():
 def get_chain_context(base_db, privkey):
     chain = FakeAsyncMainnetChain(base_db, privkey.public_key.to_canonical_address(), privkey)
     chaindb = FakeAsyncChainDB(base_db, privkey.public_key.to_canonical_address())
-    chain_head_db = FakeAsyncChainHeadDB(base_db)
+    chain_head_db = FakeAsyncChainHeadDB.load_from_saved_root_hash(base_db)
     consensus_db = FakeAsyncConsensusDB(base_db, chain)
 
     chain_config = ChainConfig(network_id=MAINNET_NETWORK_ID)

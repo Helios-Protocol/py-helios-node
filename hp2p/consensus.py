@@ -992,101 +992,6 @@ class Consensus(BaseService, PeerSubscriber):
             # finally, update the peer block choices
             self.peer_root_hash_timestamps[peer_wallet_address] = [new_peer_stake, new_root_hash_timestamps]
 
-    # async def receive_sync_messages(self):
-    #     try:
-    #         block_choices_or_chain_head_root_hash_timestamps = await self.wait_first(
-    #             self._new_peer_block_choices.get(),
-    #             self._new_peer_chain_head_root_hash_timestamps.get(),
-    #             token=self.cancel_token,
-    #             timeout=CONSENSUS_SYNC_TIME_PERIOD)
-    #     except TimeoutError:
-    #         self.logger.warn("Timeout waiting for block choices or chain head root hash timestamps")
-    #         return
-    #
-    #
-    #     #here we need to check the instance to determine which it is.
-    #     #we will also be receiving blocks that syncer requests, so make sure we check that it is one of the blocks we asked for.
-    #     if isinstance(block_choices_or_chain_head_root_hash_timestamps, PeerBlockChoice):
-    #         block_choices = block_choices_or_chain_head_root_hash_timestamps
-    #         peer_wallet_address = block_choices.peer_wallet_address
-    #         new_peer_stake = block_choices.stake
-    #         new_block_hash_keys = block_choices.msg
-    #
-    #         #lets only update diff for this peer to reduce overhead.
-    #         if peer_wallet_address in self.peer_block_choices:
-    #             previous_peer_stake = self.peer_block_choices[peer_wallet_address][0]
-    #             previous_block_hash_keys = self.peer_block_choices[peer_wallet_address][1]
-    #
-    #             #lets just find the difference this way. should be more effectient. hopefully.
-    #             stake_sub, stake_add = self.calc_stake_difference(previous_block_hash_keys, new_block_hash_keys)
-    #             #first we subtract the previous stake
-    #             for previous_block_hash_key in stake_sub:
-    #                 self.delta_block_choice_statistics(previous_block_hash_key.wallet_address,
-    #                                                    previous_block_hash_key.block_number,
-    #                                                    previous_block_hash_key.block_hash,
-    #                                                    -1*previous_peer_stake)
-    #
-    #             #now add the new stake with new choices
-    #             for new_block_hash_key in stake_add:
-    #                 self.delta_block_choice_statistics(new_block_hash_key.wallet_address,
-    #                                                    new_block_hash_key.block_number,
-    #                                                    new_block_hash_key.block_hash,
-    #                                                    new_peer_stake)
-    #
-    #
-    #         else:
-    #             #this is the first message from them, we don't have any previous choices, so lets just add the new stake
-    #             for new_block_hash_key in new_block_hash_keys:
-    #                 self.delta_block_choice_statistics(new_block_hash_key.wallet_address,
-    #                                                    new_block_hash_key.block_number,
-    #                                                    new_block_hash_key.block_hash,
-    #                                                    new_peer_stake)
-    #
-    #         #finally, update the peer block choices
-    #         self.peer_block_choices[peer_wallet_address] = [new_peer_stake, new_block_hash_keys]
-    #
-    #         #TODO: calculate consensus, and remove all data for anything that has reached consensus.
-    #     else:
-    #         root_hash_timestamp_item = block_choices_or_chain_head_root_hash_timestamps
-    #         peer_wallet_address = root_hash_timestamp_item.peer_wallet_address
-    #         new_peer_stake = root_hash_timestamp_item.stake
-    #         new_root_hash_timestamps = root_hash_timestamp_item.msg
-    #         #self.logger.debug("dealing with new root_hash_timestamps {}".format(new_root_hash_timestamps))
-    #
-    #         #first we check to see if we have an entry for this peer:
-    #         if peer_wallet_address in self.peer_root_hash_timestamps:
-    #             previous_peer_stake = self.peer_root_hash_timestamps[peer_wallet_address][0]
-    #             previous_root_hash_timestamps = self.peer_root_hash_timestamps[peer_wallet_address][1]
-    #
-    #             #lets just find the difference this way. should be more effectient. hopefully.
-    #             stake_sub, stake_add = self.calc_stake_difference(previous_root_hash_timestamps, new_root_hash_timestamps)
-    #
-    #             #self.logger.debug("subtracting stake {} from timestamps {}".format(previous_peer_stake, [x[0] for x in stake_sub]))
-    #             #self.logger.debug("adding stake {} from timestamps {}".format(new_peer_stake, [x[0] for x in stake_add]))
-    #             #first we subtract the previous stake
-    #             for previous_root_hash_timestamp in stake_sub:
-    #                 self.delta_root_hash_timestamp_statistics(
-    #                                                    previous_root_hash_timestamp[0], #timestamp
-    #                                                    previous_root_hash_timestamp[1], #root_hash
-    #                                                    -1*previous_peer_stake)
-    #
-    #             #now add the new stake with new choices
-    #             for new_root_hash_timestamp in stake_add:
-    #                 self.delta_root_hash_timestamp_statistics(
-    #                                                    new_root_hash_timestamp[0], #timestamp
-    #                                                    new_root_hash_timestamp[1], #root_hash
-    #                                                    new_peer_stake)
-    #         else:
-    #             #now add the new stake with new choices
-    #             for new_root_hash_timestamp in new_root_hash_timestamps:
-    #                 self.delta_root_hash_timestamp_statistics(
-    #                                                    new_root_hash_timestamp[0], #timestamp
-    #                                                    new_root_hash_timestamp[1], #root_hash
-    #                                                    new_peer_stake)
-    #         #finally, update the peer block choices
-    #         self.peer_root_hash_timestamps[peer_wallet_address] = [new_peer_stake, new_root_hash_timestamps]
-                
-
 
 
     async def calculate_average_network_tpc_cap(self):
@@ -1301,6 +1206,7 @@ class Consensus(BaseService, PeerSubscriber):
         '''
         When a conflict block is found, add it to the consensus check using this function
         '''
+        self.logger.debug("Adding block conflict. Chain address {} block_number {}".format(encode_hex(chain_wallet_address), block_number))
         new_block_conflict = BlockConflictInfo(chain_wallet_address, block_number)
         self.block_conflicts.add(new_block_conflict)
         

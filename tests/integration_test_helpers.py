@@ -106,14 +106,14 @@ def ensure_blockchain_databases_identical(base_db_1, base_db_2):
     node_2 = MainnetChain(base_db_2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
 
     # Get all of the addresses of every chain
-    next_head_hashes = node_1.chain_head_db.get_next_n_head_block_hashes(ZERO_HASH32, 0, 999999)
+    next_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
 
     wallet_addresses = []
     for next_head_hash in next_head_hashes:
         chain_address = node_1.chaindb.get_chain_wallet_address_for_block_hash(next_head_hash)
         wallet_addresses.append(chain_address)
 
-    next_head_hashes_node_2 = node_2.chain_head_db.get_next_n_head_block_hashes(ZERO_HASH32, 0, 999999)
+    next_head_hashes_node_2 = node_2.chain_head_db.get_head_block_hashes_list()
 
     # This gaurantees both have all the same chains
     assert (next_head_hashes == next_head_hashes_node_2)
