@@ -79,7 +79,12 @@ from eth_keys.datatypes import(
         PrivateKey
 )
 
-import matplotlib.pyplot as plt
+# try:
+#     import matplotlib.pyplot as plt
+# except ModuleNotFoundError:
+#     import matplotlib
+#     matplotlib.use('agg')
+#     import matplotlib.pyplot as plt
 
 from hvm.utils.profile import profile
 

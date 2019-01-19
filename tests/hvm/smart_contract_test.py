@@ -75,7 +75,7 @@ from eth_keys.datatypes import(
         PrivateKey
 )
 
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 from hvm.utils.profile import profile
 
