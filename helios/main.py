@@ -111,7 +111,7 @@ HELIOS_AMBIGIOUS_FILESYSTEM_INFO = (
     "   * --data-dir command line argument is passed\n"
     "\n"
     "   In case the data directory is outside of the helios root directory\n"
-    "   Make sure all paths are pre-initialized as Helios won't attempt\n"
+    "   Make sure all paths are pre-initialized as Helios won'setup_helios_stderr_loggingt attempt\n"
     "   to create directories outside of the helios root directory\n"
 )
 

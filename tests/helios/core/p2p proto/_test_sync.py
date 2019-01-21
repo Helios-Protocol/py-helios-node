@@ -10,9 +10,6 @@ from hp2p.consensus import Consensus
 from hvm import constants
 from hvm import MainnetChain
 from hvm.vm.forks.helios_testnet import HeliosTestnetVM
-from tests.hvm.helios_logging import (
-    setup_helios_logging,
-)
 
 from helios.sync.full.chain import RegularChainSyncer
 
@@ -45,20 +42,12 @@ from hvm.chains.mainnet import (
     GENESIS_PRIVATE_KEY,
 )
 
-log_level = getattr(logging, 'DEBUG')
-logger, log_queue, listener = setup_helios_logging(log_level)
-logger.propagate = False
+from helios.utils.logging import disable_logging, enable_logging, setup_helios_stderr_logging
+# logger = logging.getLogger('helios')
 
-
-# This causes the chain syncers to request/send small batches of things, which will cause us to
-# exercise parts of the code that wouldn't otherwise be exercised if the whole sync was completed
-# by requesting a single batch.
-# @pytest.fixture(autouse=True)
-# def small_header_batches(monkeypatch):
-#     from helios.protocol.hls import constants
-#     monkeypatch.setattr(constants, 'MAX_HEADERS_FETCH', 10)
-#     monkeypatch.setattr(constants, 'MAX_BODIES_FETCH', 5)
-
+# log_level = getattr(logging, 'DEBUG')
+# logger, _, _ = setup_helios_stderr_logging(log_level)
+# logger.propagate = False
 
 @pytest.mark.asyncio
 async def _test_sync_with_fixed_sync_parameters(request, event_loop, client_db, server_db, timestamp_to_sync_to, sync_stage_id, validation_function):
@@ -104,7 +93,7 @@ async def _test_sync_with_fixed_sync_parameters(request, event_loop, client_db, 
 
     server_peer_pool = MockPeerPoolWithConnectedPeers([server_peer])
 
-    server_consensus = MockConsensusService(sync_parameters = "fully-synced")
+    server_consensus = MockConsensusService(sync_parameters ="fully-synced")
 
     server_context = server_peer.context
     server_context.chain_config.node_type = 4
@@ -213,11 +202,13 @@ async def _test_sync_with_variable_sync_parameters(request, event_loop, client_d
 
 
 @pytest.mark.asyncio
-async def test_fast_sync_1(request, event_loop, db_fresh, db_random_long_time):
+async def test_fast_sync_1(request, event_loop):
+    client_db, server_db = get_fresh_db(), get_random_long_time_blockchain_db(25)
+    #client_db, server_db = get_fresh_db(), get_random_blockchain_db()
     # Test where the server with lots of blocks is in consensus. So the client must download them.
-    node_1 = MainnetChain(db_random_long_time, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
-    await _test_sync_with_fixed_sync_parameters(request, event_loop, db_fresh, db_random_long_time, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+    await _test_sync_with_fixed_sync_parameters(request, event_loop, client_db, server_db, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
 
 @pytest.mark.asyncio
 async def test_fast_sync_2(request, event_loop, db_fresh, db_random_long_time):
@@ -292,7 +283,8 @@ async def test_additive_sync_2(request, event_loop, db_fresh, db_random_long_tim
 # their missing blocks, which the node wont import yet because it waits for the consensus object to decide which block is in
 # consensus. The sync loop will loop indefinitely until the conflicts are resolved by consensus.
 # So this bubbles down to the conflict block system to resolve the conflicts and bring the nodes into sync.
-# # TODO: come back to this after tests are complete for conflict block system
+# This currently tests the block conflict system adequately as well. Will make more block conflict system tests
+# later after optimizing the code.
 @pytest.mark.asyncio
 async def test_additive_sync_3(request, event_loop):
     client_db, server_db = get_random_long_time_blockchain_db(25), get_random_long_time_blockchain_db(25)
@@ -378,10 +370,10 @@ async def wait_for_both_nodes_to_be_synced(chain_head_db_1, chain_head_db_2):
         while chain_head_db_1.get_historical_root_hashes()[-1][1] != chain_head_db_2.get_historical_root_hashes()[-1][1]:
             #print("Waiting for db's to sync. Expected root hash = ", expected_head_hash, "actual root hash = ", chain_head_db.get_historical_root_hashes()[-1][1])
 
-            next_head_hashes_1 = chain_head_db_1.get_head_block_hashes_list()
-            next_head_hashes_2 = chain_head_db_2.get_head_block_hashes_list()
-            head_block_hashes_list_in_agreement = (next_head_hashes_1 == next_head_hashes_2)
-            print("waiting for db's to sync. Are head block hashes in agreement? {}".format(head_block_hashes_list_in_agreement))
+            # next_head_hashes_1 = chain_head_db_1.get_head_block_hashes_list()
+            # next_head_hashes_2 = chain_head_db_2.get_head_block_hashes_list()
+            # head_block_hashes_list_in_agreement = (next_head_hashes_1 == next_head_hashes_2)
+            # print("waiting for db's to sync. Are head block hashes in agreement? {}".format(head_block_hashes_list_in_agreement))
             await asyncio.sleep(0.1)
     await asyncio.wait_for(wait_loop(), HEADER_SYNC_TIMEOUT)
 

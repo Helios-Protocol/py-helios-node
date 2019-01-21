@@ -1,6 +1,7 @@
-# from hls.utils.logging import TRACE_LEVEL_NUM
-
+from hvm.utils.logging import TRACE_LEVEL_NUM
+import sys
 import pytest
+import logging
 
 from eth_utils import (
     decode_hex,
@@ -17,42 +18,63 @@ from hvm.db.atomic import AtomicDB
 # TODO: tests should not be locked into one set of VM rules.  Look at expanding
 # to all mainnet vms.
 from hvm.vm.forks.helios_testnet import HeliosTestnetVM
+from helios.utils.logging import (
+    setup_helios_stderr_logging,
+)
+
+log_level = getattr(logging, 'DEBUG')
+logger, _, handler_stream = setup_helios_stderr_logging(log_level)
+logger.propagate = False
+
+# logger = logging.getLogger('hp2p')
+# logger.setLevel(logging.DEBUG)
+# logger.addHandler(handler_stream)
+#
+# logger = logging.getLogger('hvm')
+# logger.setLevel(logging.DEBUG)
+# logger.addHandler(handler_stream)
+
+# logger = logging.getLogger('hp2p')
+# logger.setLevel(logging.DEBUG)
+# handler_stream = logging.StreamHandler(sys.stderr)
+# logger.addHandler(handler_stream)
+
 
 
 # Uncomment this to have logs from tests written to a file.  This is useful for
 # debugging when you need to dump the VM output from test runs.
-"""
-@pytest.yield_fixture(autouse=True)
-def _file_logging(request):
-    import datetime
-    import os
 
-    logger = logging.getLogger('hls')
+# @pytest.yield_fixture(autouse=True)
+# def _file_logging(request):
+#     import datetime
+#     import os
+#
+#     logger = logging.getLogger('hls')
+#
+#     level = TRACE_LEVEL_NUM
+#     #level = logging.DEBUG
+#     #level = logging.INFO
+#
+#     logger.setLevel(level)
+#
+#     fixture_data = request.getfuncargvalue('fixture_data')
+#     fixture_path = fixture_data[0]
+#     logfile_name = 'logs/{0}-{1}.log'.format(
+#         '-'.join(
+#             [os.path.basename(fixture_path)] +
+#             [str(value) for value in fixture_data[1:]]
+#         ),
+#         datetime.datetime.now().isoformat(),
+#     )
+#
+#     with open(logfile_name, 'w') as logfile:
+#         handler = logging.StreamHandler(logfile)
+#         logger.addHandler(handler)
+#         try:
+#             yield logger
+#         finally:
+#             logger.removeHandler(handler)
 
-    level = TRACE_LEVEL_NUM
-    #level = logging.DEBUG
-    #level = logging.INFO
-
-    logger.setLevel(level)
-
-    fixture_data = request.getfuncargvalue('fixture_data')
-    fixture_path = fixture_data[0]
-    logfile_name = 'logs/{0}-{1}.log'.format(
-        '-'.join(
-            [os.path.basename(fixture_path)] +
-            [str(value) for value in fixture_data[1:]]
-        ),
-        datetime.datetime.now().isoformat(),
-    )
-
-    with open(logfile_name, 'w') as logfile:
-        handler = logging.StreamHandler(logfile)
-        logger.addHandler(handler)
-        try:
-            yield logger
-        finally:
-            logger.removeHandler(handler)
-"""
 
 
 @pytest.fixture

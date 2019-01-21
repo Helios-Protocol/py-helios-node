@@ -67,9 +67,25 @@ def setup_log_levels(log_levels: Dict[str, int]) -> None:
         logger = logging.getLogger(name)
         logger.setLevel(level)
 
+def disable_logging(logger: logging.Logger = None, name: str = None) -> None:
+    if logger is not None:
+        logger = logger
+    elif name is not None:
+        logger = logging.getLogger(name)
+    else:
+        logger = logging.getLogger('helios')
+    logger.manager.disable = 50
 
-def setup_helios_stderr_logging(level: int=None,
-                                ) -> Tuple[Logger, Formatter, StreamHandler]:
+def enable_logging(logger: logging.Logger = None, name: str = None) -> None:
+    if logger is not None:
+        logger = logger
+    elif name is not None:
+        logger = logging.getLogger(name)
+    else:
+        logger = logging.getLogger('helios')
+    logger.manager.disable = 0
+
+def setup_helios_stderr_logging(level: int=None) -> Tuple[Logger, Formatter, StreamHandler]:
     if level is None:
         level = logging.DEBUG
     logger = logging.getLogger('helios')

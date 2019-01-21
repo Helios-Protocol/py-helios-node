@@ -61,11 +61,6 @@ from hvm.rlp.sedes import(
 
 )
 
-from hvm.utils.msgpack import (
-    hm_encode,
-    hm_decode,
-)
-
 
 
 # Use lru-dict instead of functools.lru_cache because the latter doesn't let us invalidate a single

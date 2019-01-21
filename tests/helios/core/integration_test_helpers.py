@@ -1,5 +1,7 @@
 import asyncio
 
+import logging
+
 from cancel_token import OperationCancelled
 
 from helios.config import ChainConfig
@@ -23,7 +25,7 @@ from hvm.chains.mainnet import (
 )
 
 from helios.dev_tools import create_dev_test_random_blockchain_database, \
-    create_blockchain_database_for_exceeding_tpc_cap
+    create_blockchain_database_for_exceeding_tpc_cap, create_predefined_blockchain_database
 
 
 async def connect_to_peers_loop(peer_pool, nodes):
@@ -72,6 +74,10 @@ class FakeAsyncChainDB(AsyncChainDB):
     coro_get_all_blocks_on_chain_by_head_block_hash = async_passthrough('get_all_blocks_on_chain_by_head_block_hash')
     coro_get_block_by_hash = async_passthrough('get_block_by_hash')
     coro_get_blocks_on_chain = async_passthrough('get_blocks_on_chain')
+    coro_load_historical_minimum_gas_price = async_passthrough('load_historical_minimum_gas_price')
+    coro_get_canonical_head_hash = async_passthrough('get_canonical_head_hash')
+    coro_get_latest_reward_block_number = async_passthrough('get_latest_reward_block_number')
+    coro_get_canonical_block_header_by_number = async_passthrough('get_canonical_block_header_by_number')
 
 class FakeAsyncChainHeadDB(AsyncChainHeadDB):
     coro_get_dense_historical_root_hashes = async_passthrough('get_dense_historical_root_hashes')
@@ -105,6 +111,7 @@ class FakeAsyncMainnetChain(MainnetChain):
     coro_validate_receipt = async_passthrough('validate_receipt')
     coro_get_mature_stake = async_passthrough('get_mature_stake')
     coro_get_local_tpc_cap = async_passthrough('get_local_tpc_cap')
+
 
 
 class FakeMainnetFullNode():
@@ -149,8 +156,10 @@ def get_random_long_time_blockchain_db(length_in_centiseconds = 50):
     create_blockchain_database_for_exceeding_tpc_cap(testdb1,1,length_in_centiseconds, use_real_genesis = True)
     return testdb1
 
-
-
+def get_predefined_blockchain_db(instance_number):
+    testdb1 = MemoryDB()
+    create_predefined_blockchain_database(testdb1, instance=instance_number)
+    return testdb1
 
 class MockConsensusService(Consensus):
 
@@ -239,7 +248,6 @@ class MockConsensusService(Consensus):
             return None
         else:
             to_change = []
-            print("BBBBBBBBBBBBBB", self.block_conflicts)
             for block_conflict_info in self.block_conflicts:
                 hash_of_correct_block = self.chain_to_sync_to.chaindb.get_canonical_block_hash(block_conflict_info.block_number, block_conflict_info.chain_address)
                 to_change.append(BlockConflictChoice(block_conflict_info.chain_address, block_conflict_info.block_number, hash_of_correct_block))

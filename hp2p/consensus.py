@@ -14,6 +14,7 @@ from hvm.rlp.consensus import NodeStakingScore
 
 from lahja import Endpoint
 
+from hvm.utils.chain_head_db import round_down_to_nearest_historical_window
 from hvm.utils.numeric import (
     effecient_diff,
     stake_weighted_average,
@@ -1084,6 +1085,7 @@ class Consensus(BaseService, PeerSubscriber):
         
 
     async def _get_missing_stake_from_bootnode(self):
+        # self.logger.debug("Getting missing stake from bootnode loop start")
         addresses_needing_stake = []
         if await self.current_sync_stage < 3:
 
@@ -1105,8 +1107,11 @@ class Consensus(BaseService, PeerSubscriber):
         if addresses_needing_stake == []:
             return
 
+        # self.logger.debug(self.bootstrap_nodes)
+        # self.logger.debug(self.peer_pool.connected_nodes.keys())
         for boot_node in self.bootstrap_nodes:
             try:
+
                 boot_node_peer = self.peer_pool.connected_nodes[boot_node]
                 #lets just ask the first bootnode we find that we are connected to.
                 boot_node_peer.sub_proto.send_get_stake_for_addresses(addresses_needing_stake)
@@ -1400,12 +1405,14 @@ class Consensus(BaseService, PeerSubscriber):
             self._local_root_hash_timestamps = None
         
         return self._local_root_hash_timestamps
-    
+
     async def coro_get_root_hash_consensus(self, timestamp, local_root_hash_timestamps = None):
         '''
         Returns the consensus root hash for a given timestamp
         '''
-        
+
+
+        timestamp = round_down_to_nearest_historical_window(timestamp)
         if local_root_hash_timestamps is None:
             local_root_hash_timestamps = self.local_root_hash_timestamps
             
@@ -1416,8 +1423,7 @@ class Consensus(BaseService, PeerSubscriber):
                 local_root_hash = None
         else:
             local_root_hash = None
-           
-        
+
         try:
             root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
             peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
@@ -1594,58 +1600,58 @@ class Consensus(BaseService, PeerSubscriber):
 
 
 
-    async def get_latest_root_hash_before_conflict(self,
-                                                   before_timestamp: Optional[Timestamp] = None,
-                                                   after_timestamp: Optional[Timestamp] = None) -> Tuple[Optional[Hash32], Optional[Timestamp]]:
-        '''
-        If one of our root hash timestamps is in conflict with consensus, then this returns the root hash and timestamp for the 
-        latest one before that where we were still in consensus
-
-        Returns None, None if no conflicts are found
-        
-        if before_timestamp is set, it only looks at root hashes with timestamp earlier than before_timestamp
-        '''
-
-        if before_timestamp is not None and after_timestamp is not None:
-            if before_timestamp < after_timestamp:
-                raise ValueError("If before_timestamp and after_timestamp are both defined, then before_timestamp must be greater than after_timestamp")
-
-        local_root_hash_timestamps = self.local_root_hash_timestamps
-        if local_root_hash_timestamps is None:
-            raise NoLocalRootHashTimestamps()
-           
-        sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x)*-1, local_root_hash_timestamps)
-        #sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
-
-        disagreement_found = False
-        #it now goes from newest to oldest
-        for timestamp, local_root_hash in sorted_local_root_hash_timestamps.items():
-            if before_timestamp is not None:
-                if timestamp > before_timestamp:
-                    continue
-
-            if after_timestamp is not None:
-                if timestamp < before_timestamp:
-                    continue
-
-            consensus_root_hash = await self.coro_get_root_hash_consensus(timestamp, local_root_hash_timestamps = local_root_hash_timestamps)
-            
-            if local_root_hash == consensus_root_hash:
-                if disagreement_found:
-                    #this is the first agreeing one after some disagreeing ones. This is what we return
-                    return local_root_hash, timestamp
-                else:
-                    #we are in agreemenet from the newest roothash without any disagreements, we break and return none
-                    break
-            else:
-                disagreement_found = True
-                #if we get to the end, and disagreements were found, that means the entire database is in disagreement. 
-                #Will throw an error below.
-            
-        if disagreement_found:
-            raise DatabaseResyncRequired()
-        else:
-            return None, None
+    # async def get_latest_root_hash_before_conflict(self,
+    #                                                before_timestamp: Optional[Timestamp] = None,
+    #                                                after_timestamp: Optional[Timestamp] = None) -> Tuple[Optional[Hash32], Optional[Timestamp]]:
+    #     '''
+    #     If one of our root hash timestamps is in conflict with consensus, then this returns the root hash and timestamp for the
+    #     latest one before that where we were still in consensus
+    #
+    #     Returns None, None if no conflicts are found
+    #
+    #     if before_timestamp is set, it only looks at root hashes with timestamp earlier than before_timestamp
+    #     '''
+    #
+    #     if before_timestamp is not None and after_timestamp is not None:
+    #         if before_timestamp < after_timestamp:
+    #             raise ValueError("If before_timestamp and after_timestamp are both defined, then before_timestamp must be greater than after_timestamp")
+    #
+    #     local_root_hash_timestamps = self.local_root_hash_timestamps
+    #     if local_root_hash_timestamps is None:
+    #         raise NoLocalRootHashTimestamps()
+    #
+    #     sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x)*-1, local_root_hash_timestamps)
+    #     #sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
+    #
+    #     disagreement_found = False
+    #     #it now goes from newest to oldest
+    #     for timestamp, local_root_hash in sorted_local_root_hash_timestamps.items():
+    #         if before_timestamp is not None:
+    #             if timestamp > before_timestamp:
+    #                 continue
+    #
+    #         if after_timestamp is not None:
+    #             if timestamp < before_timestamp:
+    #                 continue
+    #
+    #         consensus_root_hash = await self.coro_get_root_hash_consensus(timestamp, local_root_hash_timestamps = local_root_hash_timestamps)
+    #
+    #         if local_root_hash == consensus_root_hash:
+    #             if disagreement_found:
+    #                 #this is the first agreeing one after some disagreeing ones. This is what we return
+    #                 return local_root_hash, timestamp
+    #             else:
+    #                 #we are in agreemenet from the newest roothash without any disagreements, we break and return none
+    #                 break
+    #         else:
+    #             disagreement_found = True
+    #             #if we get to the end, and disagreements were found, that means the entire database is in disagreement.
+    #             #Will throw an error below.
+    #
+    #     if disagreement_found:
+    #         raise DatabaseResyncRequired()
+    #     else:
+    #         return None, None
             
         
     

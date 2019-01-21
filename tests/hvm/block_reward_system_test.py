@@ -43,11 +43,6 @@ from hvm.rlp.transactions import BaseTransaction
 
 import rlp as rlp
 
-from helios_logging import (
-    setup_helios_logging,
-    with_queued_logging,
-)
-
 from eth_utils import (
     encode_hex,
     decode_hex,        
@@ -93,10 +88,6 @@ RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
 RECEIVER4 = get_primary_node_private_helios_key(4)
-
-log_level = getattr(logging, 'INFO')
-logger, log_queue, listener = setup_helios_logging(log_level)
-logger.propagate = False
 
 
 def test_block_rewards_system():

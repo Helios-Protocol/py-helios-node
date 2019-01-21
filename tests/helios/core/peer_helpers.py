@@ -122,6 +122,7 @@ async def _setup_alice_and_bob_factories(
     return alice_factory, bob_factory
 
 
+
 async def get_directly_linked_peers_without_handshake(
         alice_db=None, bob_db=None):
     alice_factory, bob_factory = await _setup_alice_and_bob_factories(
@@ -136,10 +137,18 @@ async def get_directly_linked_peers_without_handshake(
 
 async def get_directly_linked_peers(
         request, event_loop,
-        alice_db=None, bob_db=None):
+        alice_db=None, bob_db=None,
+        alice_private_helios_key = None, bob_private_helios_key = None):
     alice_factory, bob_factory = await _setup_alice_and_bob_factories(
         alice_db, bob_db,
     )
+
+    # Set their private keys before doing the handshake
+    if alice_private_helios_key is not None:
+        alice_factory.context.chain_config._node_private_helios_key = alice_private_helios_key
+
+    if bob_private_helios_key is not None:
+        bob_factory.context.chain_config._node_private_helios_key = bob_private_helios_key
 
     return await _get_directly_linked_peers(
         request, event_loop,

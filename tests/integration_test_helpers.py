@@ -74,6 +74,10 @@ from hvm.utils.profile import profile
 from hvm.constants import random_private_keys
 from hvm.vm.forks.helios_testnet.blocks import MicroBlock, HeliosTestnetBlock
 
+
+
+
+
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 

@@ -6,16 +6,27 @@ from cytoolz import groupby
 from hvm.utils.rlp import make_mutable
 
 
-test_dict = {'a':1, 'b':2, 'c':3}
+class test_class:
+    pass
 
-test_set = {'b','b','d'}
+filler_list = [1,2,3,4,5,6,7]
 
-print(test_set - test_dict.keys())
+buckets = []
+
+for i in range(5):
+    test_list = []
+    test_list_2 = []
+
+    test_list.append(filler_list[i])
+    test_list_2.append(test_list)
+    bucket = test_class()
+    bucket.test_list = test_list
+    bucket.test_list_2 = test_list
+    buckets.append(bucket)
 
 
-
-
-
+print([bucket.test_list for bucket in buckets])
+print([bucket.test_list_2 for bucket in buckets])
 
 
 

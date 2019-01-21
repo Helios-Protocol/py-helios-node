@@ -79,7 +79,7 @@ CONSENSUS_CHECK_READY_TIME_PERIOD = 2
 FAST_SYNC_NUM_CHAINS_TO_REQUEST = 5
 ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD = 60*24 #testing
 
-CONSENSUS_SYNC_TIME_PERIOD = 1 #the amount of time between checking that we are in sync with peers
+CONSENSUS_SYNC_TIME_PERIOD = 3 #the amount of time between checking that we are in sync with peers
 CONSENSUS_CHECK_MIN_GAS_SYSTEM_READY_TIME_PERIOD = 5
 CONSENSUS_CHECK_CURRENT_SYNC_STAGE_PERIOD = 1 #amount of time to cache current sync stage in consensus service
 CONSENSUS_CHECK_LOCAL_TPC_CAP_PERIOD = 60

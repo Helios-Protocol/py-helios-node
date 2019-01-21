@@ -24,10 +24,6 @@ from hvm.utils.pickle import (
     hp_decode,
 )
 
-from hvm.utils.msgpack import (
-    hm_encode,
-    hm_decode,
-)
 
 from hvm.utils.profile import profile
 
