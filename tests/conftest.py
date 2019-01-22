@@ -26,9 +26,9 @@ log_level = getattr(logging, 'DEBUG')
 logger, _, handler_stream = setup_helios_stderr_logging(log_level)
 logger.propagate = False
 
-# logger = logging.getLogger('hp2p')
-# logger.setLevel(logging.DEBUG)
-# logger.addHandler(handler_stream)
+logger = logging.getLogger('hp2p')
+logger.setLevel(logging.DEBUG)
+logger.addHandler(handler_stream)
 #
 # logger = logging.getLogger('hvm')
 # logger.setLevel(logging.DEBUG)

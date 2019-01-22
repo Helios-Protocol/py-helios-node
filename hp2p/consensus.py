@@ -8,6 +8,7 @@ from helios.db.chain_head import AsyncChainHeadDB
 from helios.protocol.hls import commands
 from helios.protocol.hls.sync import get_earliest_required_time_for_min_gas_system, \
     get_sync_stage_for_historical_root_hash_timestamp
+from helios.sync.common.constants import ADDITIVE_SYNC_STAGE_ID
 from helios.utils.queues import empty_queue
 from hp2p.events import NewBlockEvent
 from hvm.rlp.consensus import NodeStakingScore
@@ -380,7 +381,7 @@ class Consensus(BaseService, PeerSubscriber):
     
         
     async def get_accurate_stake(self, peer: HLSPeer):
-        if await self.current_sync_stage < 3 or await peer.stake == None:
+        if await self.current_sync_stage < ADDITIVE_SYNC_STAGE_ID or await peer.stake == None:
             try:
                 return self.peer_stake_from_bootstrap_node[peer.wallet_address]
             except KeyError:
@@ -547,7 +548,21 @@ class Consensus(BaseService, PeerSubscriber):
 
             await asyncio.sleep(MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD)
 
+    @property
+    async def peers_with_known_stake(self) -> List:
+        peers_to_return = []
+        for peer in self.peer_pool.peers:
+            try:
+                stake = await self.get_accurate_stake(peer)
+                peers_to_return.append(peer)
+            except UnknownPeerStake:
+                # If we don't know their stake yet. Don't add it to the statistics.
+                pass
+        return peers_to_return
+
+
     async def _run(self) -> None:
+        self.logger.info("Starting consensus service")
         if self.is_network_startup_node:
             self.logger.debug('re-initializing min gas system')
             self.chain.re_initialize_historical_minimum_gas_price_at_genesis()
@@ -848,14 +863,14 @@ class Consensus(BaseService, PeerSubscriber):
             #sync peer block choices and chain head root hashes
             self.logger.info("Sending syncing consensus messages to all connected peers")
 
-            self.send_block_conflict_messages(self.block_conflicts)
+            await self.send_block_conflict_messages(self.block_conflicts)
 
-            for peer in self.peer_pool.peers:
+            for peer in await self.peers_with_known_stake:
                 peer.sub_proto.send_get_chain_head_root_hash_timestamps(0)
 
             await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
         
-    def send_block_conflict_messages(self, block_conflicts: Iterable[BlockConflictInfo]) -> None:
+    async def send_block_conflict_messages(self, block_conflicts: Iterable[BlockConflictInfo]) -> None:
         
         self.logger.debug("Sending out messages to all peers asking for block conflict choices.")
         # if not isinstance(block_conflicts, list) and not isinstance(block_conflicts, set):
@@ -864,10 +879,8 @@ class Consensus(BaseService, PeerSubscriber):
         block_number_keys = []
         for conflict in block_conflicts:
             block_number_keys.append(BlockNumberKey(wallet_address = conflict.chain_address, block_number = conflict.block_number))
-                
-        for peer in self.peer_pool.peers:
-            #send message , and log time that message was sent. Be sure not to send a message to any node that we have a pending response for
-            #TODO: delete pending responses longer than 60 seconds, and resend.
+
+        for peer in await self.peers_with_known_stake:
             if len(block_number_keys) > 0:
                 peer.sub_proto.send_get_unordered_block_header_hash(block_number_keys)
         
@@ -1216,7 +1229,7 @@ class Consensus(BaseService, PeerSubscriber):
         self.block_conflicts.add(new_block_conflict)
         
         #lets also immediately ask peers what they have
-        self.send_block_conflict_messages([new_block_conflict])
+        asyncio.ensure_future(self.send_block_conflict_messages([new_block_conflict]))
 
     def remove_block_conflict(self, chain_wallet_address: Address, block_number: BlockNumber) -> None:
         new_block_conflict = BlockConflictInfo(chain_wallet_address, block_number)
@@ -1731,7 +1744,7 @@ class Consensus(BaseService, PeerSubscriber):
             await self._handle_stake_for_addresses(peer, cast(Dict[str, Any], msg))
             
         elif isinstance(cmd, GetStakeForAddresses):
-            if await self.current_sync_stage >= 2:
+            if await self.current_sync_stage >= 2 or self.chain_config.network_startup_node:
                 await self._handle_get_stake_for_addresses(peer, cast(Dict[str, Any], msg))
             
         elif isinstance(cmd, GetMinGasParameters):
@@ -1741,7 +1754,7 @@ class Consensus(BaseService, PeerSubscriber):
             await self._handle_min_gas_parameters(peer, cast(Dict[str, Any], msg))
 
         elif isinstance(cmd, GetNodeStakingScore):
-            if await self.current_sync_stage >= 4:
+            if await self.current_sync_stage >= 4 or self.chain_config.network_startup_node:
                 await self._handle_get_node_staking_score(peer, cast(NodeStakingScore, msg))
 
 

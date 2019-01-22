@@ -10,6 +10,8 @@ from typing import cast
 from eth_keys import keys
 from eth_utils import decode_hex
 
+from helios.dev_tools import create_dev_test_blockchain_database_with_given_transactions, \
+    add_transactions_to_blockchain_db
 from hvm.db.backends.memory import MemoryDB
 
 from hp2p.consensus import Consensus
@@ -32,7 +34,7 @@ from tests.helios.core.peer_helpers import (
     MockPeerPoolWithConnectedPeers,
 )
 from helios.protocol.common.datastructures import SyncParameters
-
+from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE
 from helios.sync.common.constants import (
     FAST_SYNC_STAGE_ID,
     CONSENSUS_MATCH_SYNC_STAGE_ID,
@@ -40,6 +42,7 @@ from helios.sync.common.constants import (
     FULLY_SYNCED_STAGE_ID,
 )
 
+from helios.dev_tools import create_new_genesis_params_and_state
 from tests.integration_test_helpers import (
     ensure_blockchain_databases_identical,
     ensure_chronological_block_hashes_are_identical
@@ -106,7 +109,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
         for j in range(len(dbs_for_linking)):
             # Don't link it with itself
             if i == j:
-                pass
+                continue
 
             if linked_peer_array[i][j] is None and linked_peer_array[j][i] is None:
                 peer_db = dbs_for_linking[j]
@@ -124,7 +127,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
 
     bootstrap_nodes = [linked_peer_array[1][0].remote]
 
-    node_index_to_listen_with_logger = 0
+    node_index_to_listen_with_logger = 1
     consensus_services = []
     for i in range(len(dbs_for_linking)):
         if i == 0:
@@ -147,6 +150,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
         if i != node_index_to_listen_with_logger:
             # disable logger by renaming it to one we arent listening to
             consensus.logger = logging.getLogger('dummy')
+            pass
 
         consensus_services.append(consensus)
 
@@ -172,7 +176,90 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
     await wait_for_consensus_all(consensus_services)
 
     print("WAITING FUNCTION FIRED")
+
+    await asyncio.sleep(1000)
     await validation_function(consensus_services)
+
+
+# @pytest.mark.asyncio
+# async def test_consensus_root_hash_choice_2(request, event_loop):
+#     num_peers_in_swarm = 15
+#
+#     client_db, server_db = get_fresh_db(), get_predefined_blockchain_db(0)
+#
+#     peer_dbs = []
+#     for i in range(num_peers_in_swarm):
+#         peer_dbs.append(MemoryDB(server_db.kv_store.copy()))
+#
+#     server_node = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#     server_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+#
+#     consensus_root_hash_timestamps = server_node.chain_head_db.get_historical_root_hashes()
+#
+#     async def validation(consensus_services):
+#         client_consensus = consensus_services[1]
+#         for timestamp, root_hash in consensus_root_hash_timestamps:
+#             client_consensus_choice = await client_consensus.coro_get_root_hash_consensus(timestamp)
+#             assert (client_consensus_choice == root_hash)
+#
+#     await _test_consensus_swarm(request, event_loop, server_db, client_db, peer_dbs, validation)
+
+
+@pytest.mark.asyncio
+async def test_consensus_root_hash_choice_3(request, event_loop):
+    num_peers_in_swarm = 15
+
+    base_db = MemoryDB()
+
+    genesis_block_timestamp = int(time.time()/1000)*1000 - 1000*1000
+
+
+    private_keys = []
+    for i in range(len(random_private_keys)):
+        private_keys.append(keys.PrivateKey(random_private_keys[i]))
+
+    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, int(10000000 * 10 ** 18), genesis_block_timestamp)
+
+    # import genesis block
+    MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
+
+    # Client db has only the genesis block
+    client_db = MemoryDB(base_db.kv_store.copy())
+
+    tx_list = [
+        *[[GENESIS_PRIVATE_KEY, private_keys[i], 1000000-1000*i, genesis_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]
+    ]
+
+    add_transactions_to_blockchain_db(base_db, tx_list)
+
+    peer_dbs = []
+    for i in range(int(num_peers_in_swarm/2)):
+        peer_dbs.append(MemoryDB(base_db.kv_store.copy()))
+
+    last_block_timestamp = tx_list[-1][-1]
+    additional_tx_list_for_competing_db = [
+        [private_keys[4], private_keys[1], 100, last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * 1],
+        [private_keys[4], private_keys[2], 100, last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * 2],
+        [private_keys[4], private_keys[3], 100, last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * 3],
+    ]
+
+    competing_base_db = MemoryDB(base_db.kv_store.copy())
+    add_transactions_to_blockchain_db(competing_base_db, additional_tx_list_for_competing_db)
+
+    for i in range(int(num_peers_in_swarm / 2),num_peers_in_swarm):
+        peer_dbs.append(MemoryDB(competing_base_db.kv_store.copy()))
+
+    bootstrap_node = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    bootstrap_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    consensus_root_hash_timestamps = bootstrap_node.chain_head_db.get_historical_root_hashes()
+
+    async def validation(consensus_services):
+        client_consensus = consensus_services[1]
+        for timestamp, root_hash in consensus_root_hash_timestamps:
+            client_consensus_choice = await client_consensus.coro_get_root_hash_consensus(timestamp)
+            assert (client_consensus_choice == root_hash)
+
+    await _test_consensus_swarm(request, event_loop, base_db, client_db, peer_dbs, validation)
 
 
 # @pytest.mark.asyncio
@@ -196,93 +283,72 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
 #             assert (client_consensus_choice == root_hash)
 #
 #     await _test_consensus(request, event_loop, server_db, client_db, peer_dbs, validation)
+#
+
+
 
 
 @pytest.mark.asyncio
-async def test_consensus_root_hash_choice_2(request, event_loop):
-    num_peers_in_swarm =10
-
-    client_db, server_db = get_fresh_db(), get_predefined_blockchain_db(0)
-
-    peer_dbs = []
-    for i in range(num_peers_in_swarm):
-        peer_dbs.append(MemoryDB(server_db.kv_store.copy()))
-
-    server_node = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    server_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
-
-    consensus_root_hash_timestamps = server_node.chain_head_db.get_historical_root_hashes()
-
-    async def validation(consensus_services):
-        client_consensus = consensus_services[1]
-        for timestamp, root_hash in consensus_root_hash_timestamps:
-            client_consensus_choice = await client_consensus.coro_get_root_hash_consensus(timestamp)
-            assert (client_consensus_choice == root_hash)
-
-    await _test_consensus_swarm(request, event_loop, server_db, client_db, peer_dbs, validation)
+async def _test_consensus(request, event_loop, bootnode_db, client_db, peer_swarm, validation_function):
+    client_db = client_db
+    server_db = bootnode_db
 
 
-#
-# @pytest.mark.asyncio
-# async def _test_consensus(request, event_loop, bootnode_db, client_db, peer_swarm, validation_function):
-#     client_db = client_db
-#     server_db = bootnode_db
-#
-#
-#     client_peer, server_peer = await get_directly_linked_peers(
-#         request, event_loop,
-#         alice_db=client_db,
-#         bob_db=bootnode_db,
-#         alice_private_helios_key=keys.PrivateKey(random_private_keys[0]),
-#         bob_private_helios_key=GENESIS_PRIVATE_KEY)
-#
-#
-#     client_peer_pool = MockPeerPoolWithConnectedPeers([client_peer])
-#
-#     client_node = FakeMainnetFullNode(client_db, client_peer.context.chain_config.node_private_helios_key)
-#
-#     client_consensus = Consensus(context = client_peer.context,
-#                                                  peer_pool = client_peer_pool,
-#                                                  bootstrap_nodes = [client_peer.remote],
-#                                                  node = client_node
-#                                                  )
-#     #client_consensus.logger = logging.getLogger('dummy')
-#
-#     server_peer_pool = MockPeerPoolWithConnectedPeers([server_peer])
-#
-#     server_node = FakeMainnetFullNode(server_db, server_peer.context.chain_config.node_private_helios_key)
-#
-#     server_context = server_peer.context
-#     server_context.chain_config.node_type = 4
-#     server_context.chain_config.network_startup_node = True
-#
-#     server_consensus = Consensus(context=server_peer.context,
-#                                  peer_pool=server_peer_pool,
-#                                  bootstrap_nodes=[],
-#                                  node=server_node
-#                                  )
-#     server_consensus.logger = logging.getLogger('dummy')
-#
-#     asyncio.ensure_future(server_consensus.run())
-#
-#     def finalizer():
-#         event_loop.run_until_complete(asyncio.gather(
-#             client_consensus.cancel(),
-#             server_consensus.cancel(),
-#             loop=event_loop,
-#         ))
-#         # Yield control so that client/server.run() returns, otherwise asyncio will complain.
-#         event_loop.run_until_complete(asyncio.sleep(0.1))
-#     request.addfinalizer(finalizer)
-#
-#
-#     asyncio.ensure_future(client_consensus.run())
-#
-#
-#     await wait_for_consensus(server_consensus, client_consensus)
-#
-#     await validation_function(client_consensus)
-#
+    client_peer, server_peer = await get_directly_linked_peers(
+        request, event_loop,
+        alice_db=client_db,
+        bob_db=bootnode_db,
+        alice_private_helios_key=keys.PrivateKey(random_private_keys[0]),
+        bob_private_helios_key=GENESIS_PRIVATE_KEY)
+
+
+    client_peer_pool = MockPeerPoolWithConnectedPeers([client_peer])
+
+    client_node = FakeMainnetFullNode(client_db, client_peer.context.chain_config.node_private_helios_key)
+
+    client_consensus = Consensus(context = client_peer.context,
+                                                 peer_pool = client_peer_pool,
+                                                 bootstrap_nodes = [client_peer.remote],
+                                                 node = client_node
+                                                 )
+    client_consensus.logger = logging.getLogger('dummy')
+
+    server_peer_pool = MockPeerPoolWithConnectedPeers([server_peer])
+
+    server_node = FakeMainnetFullNode(server_db, server_peer.context.chain_config.node_private_helios_key)
+
+    server_context = server_peer.context
+    server_context.chain_config.node_type = 4
+    server_context.chain_config.network_startup_node = True
+
+    server_consensus = Consensus(context=server_peer.context,
+                                 peer_pool=server_peer_pool,
+                                 bootstrap_nodes=[],
+                                 node=server_node
+                                 )
+    server_consensus.logger = logging.getLogger('dummy')
+
+    asyncio.ensure_future(server_consensus.run())
+
+    def finalizer():
+        event_loop.run_until_complete(asyncio.gather(
+            client_consensus.cancel(),
+            server_consensus.cancel(),
+            loop=event_loop,
+        ))
+        # Yield control so that client/server.run() returns, otherwise asyncio will complain.
+        event_loop.run_until_complete(asyncio.sleep(0.1))
+    request.addfinalizer(finalizer)
+
+
+    asyncio.ensure_future(client_consensus.run())
+
+
+    await wait_for_consensus(server_consensus, client_consensus)
+
+    await asyncio.sleep(1000)
+    await validation_function(client_consensus)
+
 
 # @pytest.mark.asyncio
 # async def test_consensus_root_hash_choice(request, event_loop):

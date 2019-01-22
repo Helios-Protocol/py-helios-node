@@ -3,6 +3,8 @@ import random
 import logging
 import json
 
+from typing import List
+
 from hvm import MainnetChain
 from hvm import constants
 from hvm.chains.mainnet import (
@@ -160,22 +162,10 @@ def create_dev_test_random_blockchain_database(base_db):
     #print(order_of_chains)
     #print(sender_chain.chain_head_db.get_historical_root_hashes())
 
-#tx_list = [from priv_key, to priv_key, amount, timestamp]
-def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list: list, use_real_genesis = False):
 
+def add_transactions_to_blockchain_db(base_db, tx_list: List):
     # sort by time
     tx_list.sort(key=lambda x: x[3])
-
-    earliest_timestamp = tx_list[0][3]
-    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+1000*10**18
-
-    if use_real_genesis:
-        import_genesis_block(base_db)
-    else:
-        genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply, earliest_timestamp - 100000)
-
-        # import genesis block
-        MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
 
     for tx_key in tx_list:
         sender_priv_key = tx_key[0]
@@ -184,7 +174,8 @@ def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list
         tx_timestamp = tx_key[3]
 
         sender_chain = MainnetChain(base_db, sender_priv_key.public_key.to_canonical_address(), sender_priv_key)
-        dummy_sender_chain = MainnetChain(JournalDB(base_db), sender_priv_key.public_key.to_canonical_address(), sender_priv_key)
+        dummy_sender_chain = MainnetChain(JournalDB(base_db), sender_priv_key.public_key.to_canonical_address(),
+                                          sender_priv_key)
 
         dummy_sender_chain.create_and_sign_transaction_for_queue_block(
             gas_price=0x01,
@@ -201,18 +192,43 @@ def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list
         imported_block = dummy_sender_chain.import_current_queue_block()
 
         # altering block timestamp and importing again
-        timestamp_modified_imported_block = imported_block.copy(header=imported_block.header.copy(timestamp=tx_timestamp).get_signed(GENESIS_PRIVATE_KEY, dummy_sender_chain.network_id))
+        timestamp_modified_imported_block = imported_block.copy(
+            header=imported_block.header.copy(timestamp=tx_timestamp).get_signed(sender_priv_key,
+                                                                                 dummy_sender_chain.network_id))
         sender_chain.import_block(timestamp_modified_imported_block, allow_unprocessed=False)
 
         # then receive the transactions
         receiver_chain = MainnetChain(base_db, receive_priv_key.public_key.to_canonical_address(), receive_priv_key)
-        dummy_receiver_chain = MainnetChain(JournalDB(base_db), receive_priv_key.public_key.to_canonical_address(), receive_priv_key)
+        dummy_receiver_chain = MainnetChain(JournalDB(base_db), receive_priv_key.public_key.to_canonical_address(),
+                                            receive_priv_key)
         dummy_receiver_chain.populate_queue_block_with_receive_tx()
         imported_block = dummy_receiver_chain.import_current_queue_block()
 
         # altering block timestamp and importing again
-        timestamp_modified_imported_block = imported_block.copy(header=imported_block.header.copy(timestamp=tx_timestamp).get_signed(receive_priv_key, dummy_receiver_chain.network_id))
+        timestamp_modified_imported_block = imported_block.copy(
+            header=imported_block.header.copy(timestamp=tx_timestamp).get_signed(receive_priv_key,
+                                                                                 dummy_receiver_chain.network_id))
         receiver_chain.import_block(timestamp_modified_imported_block, allow_unprocessed=False)
+
+#tx_list = [from priv_key, to priv_key, amount, timestamp]
+def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list: List, use_real_genesis = False):
+
+    # sort by time
+    tx_list.sort(key=lambda x: x[3])
+
+    earliest_timestamp = tx_list[0][3]
+    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+1000*10**18
+
+    if use_real_genesis:
+        import_genesis_block(base_db)
+    else:
+        genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply, earliest_timestamp - 100000)
+
+        # import genesis block
+        MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
+
+    add_transactions_to_blockchain_db(base_db, tx_list)
+
 
 
 #key_balance_dict = {priv_key: (balance, timestamp)}
