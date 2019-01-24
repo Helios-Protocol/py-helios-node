@@ -78,6 +78,9 @@ class FakeAsyncChainDB(AsyncChainDB):
     coro_get_canonical_head_hash = async_passthrough('get_canonical_head_hash')
     coro_get_latest_reward_block_number = async_passthrough('get_latest_reward_block_number')
     coro_get_canonical_block_header_by_number = async_passthrough('get_canonical_block_header_by_number')
+    coro_load_historical_network_tpc_capability = async_passthrough('load_historical_network_tpc_capability')
+    coro_save_historical_minimum_gas_price = async_passthrough('save_historical_minimum_gas_price')
+    coro_save_historical_network_tpc_capability = async_passthrough('save_historical_network_tpc_capability')
 
 class FakeAsyncChainHeadDB(AsyncChainHeadDB):
     coro_get_dense_historical_root_hashes = async_passthrough('get_dense_historical_root_hashes')
@@ -91,7 +94,8 @@ class FakeAsyncChainHeadDB(AsyncChainHeadDB):
 
 
 class FakeAsyncConsensusDB(AsyncConsensusDB):
-    pass
+    coro_get_signed_peer_score_string_private_key = async_passthrough('get_signed_peer_score_string_private_key')
+
 
 
 async def coro_import_block(chain, block, perform_validation=True):

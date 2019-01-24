@@ -818,7 +818,18 @@ class ChainHeadDB():
         historical = self.get_historical_root_hashes()
         if historical is None:
             return 0
+
+        latest_root_hash = historical[-1][1]
         latest_timestamp = historical[-1][0]
+        # In most cases this should be the newest timestamp. But there might be cases where a root hash is propogated
+        # forward but there havent been any new blocks. In this case, we just go back and find the earliest occurance
+        # of this root hash. This should be rare so we don't have to worry about the for loop slowness.
+        for i in range(len(historical)-1, -1, -1):
+            if historical[-1][0] != latest_root_hash:
+                break
+            latest_root_hash = historical[i][1]
+            latest_timestamp = historical[i][0]
+
         return latest_timestamp
         
     

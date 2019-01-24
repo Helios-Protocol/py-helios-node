@@ -90,11 +90,12 @@ RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
 RECEIVER4 = get_primary_node_private_helios_key(4)
+RECEIVER5 = get_primary_node_private_helios_key(5)
 
 
 def test_block_children_stake_calculation():
     if COIN_MATURE_TIME_FOR_STAKING <= 5:
-        #    0-------------------------0    total stake should be receiver 1, 2, 3, 4 = 1+1+10000000000-21000-1+1 = 9999979002
+        #    0-------------------------0    total stake should be receiver 1, 2, 3, 4 = 1+1+10000000000-21001-21000+0 = 9999979002
         #      \ \      \             /
         #       \ ---1   --3--       /
         #        ----2        \     /
@@ -187,7 +188,7 @@ def test_block_children_stake_calculation():
                     gas_price=0x01,
                     gas=0x0c3500,
                     to=RECEIVER4.public_key.to_canonical_address(),
-                    value=1,
+                    value=21001,
                     data=b"",
                     v=0,
                     r=0,
@@ -201,6 +202,20 @@ def test_block_children_stake_calculation():
         receiver4_chain.populate_queue_block_with_receive_tx()
         receiver4_chain.import_current_queue_block()
 
+        receiver4_chain = MainnetChain(testdb, RECEIVER4.public_key.to_canonical_address(), RECEIVER4)
+        receiver4_chain.create_and_sign_transaction_for_queue_block(
+            gas_price=0x01,
+            gas=21000,
+            to=RECEIVER5.public_key.to_canonical_address(),
+            value=1,
+            data=b"",
+            v=0,
+            r=0,
+            s=0
+        )
+
+        receiver4_chain.import_current_queue_block()
+
         time.sleep(COIN_MATURE_TIME_FOR_STAKING+1)
 
         print("getting balance of receiver2")
@@ -208,12 +223,12 @@ def test_block_children_stake_calculation():
         print("getting current stake")
         assert(receiver_chain.get_mature_stake() == 1), "{}".format(receiver_chain.get_mature_stake())
         assert(receiver2_chain.get_mature_stake() == 1), "{}".format(receiver2_chain.get_mature_stake())
-        assert(receiver3_chain.get_mature_stake() == 9999978999), "{}".format(receiver3_chain.get_mature_stake())
-        assert(receiver4_chain.get_mature_stake() == 1), "{}".format(receiver4_chain.get_mature_stake())
+        assert(receiver3_chain.get_mature_stake() == 10000000000-21001-21000), "{}".format(receiver3_chain.get_mature_stake())
+        assert(receiver4_chain.get_mature_stake() == 0), "{}".format(receiver4_chain.get_mature_stake())
 
         #lets get the children stake of the genesis block
         genesis_block_hash = sender_chain.chaindb.get_canonical_block_hash(0)
-        assert(receiver_chain.get_block_stake_from_children(genesis_block_hash) == 9999979002), "{}".format(receiver_chain.get_block_stake_from_children(genesis_block_hash))
+        assert(receiver4_chain.get_block_stake_from_children(genesis_block_hash) == 9999958001), "{}".format(receiver_chain.get_block_stake_from_children(genesis_block_hash))
 
         print("All stake maturity tests passed")
         print("All block children stake test passed")

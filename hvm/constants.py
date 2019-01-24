@@ -206,9 +206,9 @@ GENESIS_ACCOUNT_HASH = ZERO_HASH32
 NUMBER_OF_HEAD_HASH_TO_SAVE = 1000 #Max number of chronological root hash timestamps to keep.
 TIME_BETWEEN_HEAD_HASH_SAVE = 1000 #seconds. This is the time between chronological block windows and the time between each historical root hash timestamp.
 
-FAST_SYNC_CUTOFF = 60 * 60 * 24
-#todo testing
-#COIN_MATURE_TIME_FOR_STAKING = 60 * 60 * 72
+
+# For stable operation, this must always be older than the transition from consensus match sync and additive sync modes.
+# The time for that transition is stored as ADDITIVE_SYNC_MODE_CUTOFF in hp2p.constants for now.
 COIN_MATURE_TIME_FOR_STAKING = 60*60*72
 
 
@@ -221,8 +221,8 @@ random_private_keys = [b'n\xdb\xbd\xf4\xe1\xa6\xe4\x15\xb2\x94D\xd3\x86u6Og\xae\
 MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY = 5  #this is the delay in centiseconds. The running average window for average tx/centisecond goes up until this time.
 MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH = 6 #centisecond
 MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE = 9 #centisecond. This is the total number of centisecond that must pass before the minimum price of gas can change.
-from hp2p.constants import MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED
-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP = int(MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED/100+100)
+from hp2p.constants import ADDITIVE_SYNC_MODE_CUTOFF
+MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP = int(ADDITIVE_SYNC_MODE_CUTOFF / 100 + 100)
 
 
 

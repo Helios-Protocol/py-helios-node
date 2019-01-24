@@ -5,30 +5,25 @@ from itertools import groupby as itergroupby
 from cytoolz import groupby
 from hvm.utils.rlp import make_mutable
 
+from sortedcontainers import SortedDict
 
-class test_class:
-    pass
+unsorted_dict = {}
+for i in range(10000):
+    key = random.randint(1000000000,10000000000)
+    val = random.randint(1000000000, 10000000000)
+    unsorted_dict[key] = val
 
-filler_list = [1,2,3,4,5,6,7]
+start_time = time.time()
 
-buckets = []
+sorted_dict = SortedDict(lambda x: int(x) * -1, unsorted_dict)
 
-for i in range(5):
-    test_list = []
-    test_list_2 = []
+print("sorteddict took", format(time.time() - start_time))
 
-    test_list.append(filler_list[i])
-    test_list_2.append(test_list)
-    bucket = test_class()
-    bucket.test_list = test_list
-    bucket.test_list_2 = test_list
-    buckets.append(bucket)
+start_time = time.time()
+#sorted_list = [[key, unsorted_dict[key]] for key in sorted(unsorted_dict)]
+{k: unsorted_dict[k] for k in sorted(unsorted_dict, key=lambda x: int(x) * -1)}
 
-
-print([bucket.test_list for bucket in buckets])
-print([bucket.test_list_2 for bucket in buckets])
-
-
+print("my thing took", format(time.time() - start_time))
 
 # test = []
 # for i in range(100000):

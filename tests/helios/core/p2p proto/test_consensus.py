@@ -12,6 +12,7 @@ from eth_utils import decode_hex
 
 from helios.dev_tools import create_dev_test_blockchain_database_with_given_transactions, \
     add_transactions_to_blockchain_db
+from hp2p.constants import TIME_OFFSET_TO_FAST_SYNC_TO
 from hvm.db.backends.memory import MemoryDB
 
 from hp2p.consensus import Consensus
@@ -125,7 +126,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
                 linked_peer_array[i][j] = client_peer
                 linked_peer_array[j][i] = server_peer
 
-    bootstrap_nodes = [linked_peer_array[1][0].remote]
+
 
     node_index_to_listen_with_logger = 1
     consensus_services = []
@@ -134,8 +135,10 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
             context = linked_peer_array[i][1].context
             context.chain_config.node_type = 4
             context.chain_config.network_startup_node = True
+            bootstrap_nodes = []
         else:
             context = linked_peer_array[i][0].context
+            bootstrap_nodes = [linked_peer_array[i][0].remote]
 
         peer_pool = MockPeerPoolWithConnectedPeers([x for x in linked_peer_array[i] if x is not None])
 
@@ -177,7 +180,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
 
     print("WAITING FUNCTION FIRED")
 
-    await asyncio.sleep(1000)
+    #await asyncio.sleep(1000)
     await validation_function(consensus_services)
 
 
@@ -205,32 +208,70 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
 #     await _test_consensus_swarm(request, event_loop, server_db, client_db, peer_dbs, validation)
 
 
+
 @pytest.mark.asyncio
-async def test_consensus_root_hash_choice_3(request, event_loop):
-    num_peers_in_swarm = 15
+async def _test_consensus_root_hash_choice_diverging_in_fast_sync_window(request, event_loop,
+                                                                        genesis_block_timestamp = int(time.time()/1000)*1000 - 1000*1000 + 1000,
+                                                                        gap_between_genesis_block_and_first_transaction = 1000):
+    '''
+    This one creates a swarm of 4 nodes with one database, and 4 nodes with another database, then asks
+    consensus which ones to choose. It checks to make sure they choose the correct one.
+    :param request:
+    :param event_loop:
+    :return:
+    '''
+
+
+    num_peers_in_swarm = 8
+
+    # If this is less than TIME_BETWEEN_HEAD_HASH_SAVE, it will result in FAST SYNC MODE because even the first
+    # chronological block hash will be different.
+    #gap_between_genesis_block_and_first_transaction = 1000
 
     base_db = MemoryDB()
 
-    genesis_block_timestamp = int(time.time()/1000)*1000 - 1000*1000
-
+    #genesis_block_timestamp = int(time.time()/1000)*1000 - 1000*1000 + 1000
+    #genesis_block_timestamp = 1547288000
 
     private_keys = []
     for i in range(len(random_private_keys)):
         private_keys.append(keys.PrivateKey(random_private_keys[i]))
 
-    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, int(10000000 * 10 ** 18), genesis_block_timestamp)
+
+    tx_list = [
+        *[[GENESIS_PRIVATE_KEY, private_keys[i], 1000000-1000*i, genesis_block_timestamp + gap_between_genesis_block_and_first_transaction + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]
+    ]
+
+
+    genesis_chain_stake = 100
+
+    required_total_supply = sum([x[2]+21000 for x in tx_list if x[0] == GENESIS_PRIVATE_KEY]) + genesis_chain_stake
+
+    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply,
+                                                                        genesis_block_timestamp)
 
     # import genesis block
-    MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
+    MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params,
+                              genesis_state)
+
 
     # Client db has only the genesis block
     client_db = MemoryDB(base_db.kv_store.copy())
 
-    tx_list = [
-        *[[GENESIS_PRIVATE_KEY, private_keys[i], 1000000-1000*i, genesis_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]
-    ]
-
     add_transactions_to_blockchain_db(base_db, tx_list)
+
+    # stake for the first half of chains should be from node 1 to node n:
+    # 100
+    # 1000000
+    # 999000
+    # 998000
+    # 997000
+    # 996000
+    # 995000
+    # 994000
+    # 993000
+    # 992000
+
 
     peer_dbs = []
     for i in range(int(num_peers_in_swarm/2)):
@@ -238,13 +279,28 @@ async def test_consensus_root_hash_choice_3(request, event_loop):
 
     last_block_timestamp = tx_list[-1][-1]
     additional_tx_list_for_competing_db = [
-        [private_keys[4], private_keys[1], 100, last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * 1],
-        [private_keys[4], private_keys[2], 100, last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * 2],
-        [private_keys[4], private_keys[3], 100, last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * 3],
+        [private_keys[4], private_keys[1], 100, last_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS * 1],
+        [private_keys[4], private_keys[2], 100, last_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS * 2],
+        [private_keys[4], private_keys[3], 100, last_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS * 3],
     ]
 
     competing_base_db = MemoryDB(base_db.kv_store.copy())
     add_transactions_to_blockchain_db(competing_base_db, additional_tx_list_for_competing_db)
+
+    # stake for the second half of chains should be from node 1 to node n:
+    # 100
+    # 1000000
+    # 999100
+    # 998100
+    # 997100
+    # 932700
+    # 995000
+    # 994000
+    # 993000
+    # 992000
+
+    # for peer node 7 for root hash 1
+    # 100 + 997100 + 996100 + 995100 + 930700
 
     for i in range(int(num_peers_in_swarm / 2),num_peers_in_swarm):
         peer_dbs.append(MemoryDB(competing_base_db.kv_store.copy()))
@@ -253,14 +309,175 @@ async def test_consensus_root_hash_choice_3(request, event_loop):
     bootstrap_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
     consensus_root_hash_timestamps = bootstrap_node.chain_head_db.get_historical_root_hashes()
 
+
     async def validation(consensus_services):
-        client_consensus = consensus_services[1]
-        for timestamp, root_hash in consensus_root_hash_timestamps:
-            client_consensus_choice = await client_consensus.coro_get_root_hash_consensus(timestamp)
-            assert (client_consensus_choice == root_hash)
+        for i in range(len(consensus_services)):
+            client_consensus = consensus_services[i]
+            for timestamp, root_hash in consensus_root_hash_timestamps:
+                client_consensus_choice = await client_consensus.coro_get_root_hash_consensus(timestamp)
+                assert (client_consensus_choice == root_hash)
+
+            if i in [0, 2, 3, 4, 5]:
+                assert await client_consensus.get_blockchain_sync_parameters() == None
+            if i == 1:
+                sync_parameters = await client_consensus.get_blockchain_sync_parameters(debug = True)
+                if (genesis_block_timestamp + gap_between_genesis_block_and_first_transaction) < int(time.time()/1000)*1000-1000*1000 or gap_between_genesis_block_and_first_transaction < TIME_BETWEEN_HEAD_HASH_SAVE:
+                    assert sync_parameters.timestamp_for_root_hash == int((time.time() - TIME_OFFSET_TO_FAST_SYNC_TO) / 1000) * 1000
+                else:
+                    assert sync_parameters.timestamp_for_root_hash == int((genesis_block_timestamp + gap_between_genesis_block_and_first_transaction)/1000)*1000 + 1000
+            if i in [6,7,8,9]:
+                timestamp = int(last_block_timestamp/1000)*1000 + 2000
+                sync_parameters = await client_consensus.get_blockchain_sync_parameters(debug=True)
+                assert sync_parameters.timestamp_for_root_hash == timestamp
+
+
 
     await _test_consensus_swarm(request, event_loop, base_db, client_db, peer_dbs, validation)
 
+
+# @pytest.mark.asyncio
+# async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_1(request, event_loop):
+#     #FAST SYNC REGION with mismatching first root hash timestamp
+#     genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000*1000
+#     await _test_consensus_root_hash_choice_diverging_in_fast_sync_window(request, event_loop,
+#                                                                    gap_between_genesis_block_and_first_transaction=0,
+#                                                                    genesis_block_timestamp = genesis_block_timestamp)
+#
+# @pytest.mark.asyncio
+# async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_2(request, event_loop):
+#     # FAST SYNC REGION with matching first root hash timestamp
+#     genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000
+#     await _test_consensus_root_hash_choice_diverging_in_fast_sync_window(request, event_loop,
+#                                                                    gap_between_genesis_block_and_first_transaction=1000,
+#                                                                    genesis_block_timestamp = genesis_block_timestamp)
+#
+# @pytest.mark.asyncio
+# async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_3(request, event_loop):
+#     # CONSENSUS_MATCH_REGION with mismatching first root hash timestamp
+#     genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000*1000 + 1000
+#
+#     await _test_consensus_root_hash_choice_diverging_in_fast_sync_window(request, event_loop,
+#                                                                    gap_between_genesis_block_and_first_transaction=0,
+#                                                                    genesis_block_timestamp=genesis_block_timestamp)
+#
+# @pytest.mark.asyncio
+# async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_4(request, event_loop):
+#     # CONSENSUS_MATCH_REGION with matching first root hash timestamp
+#     genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000 + 1000
+#     await _test_consensus_root_hash_choice_diverging_in_fast_sync_window(request, event_loop,
+#                                                                    gap_between_genesis_block_and_first_transaction=1000,
+#                                                                    genesis_block_timestamp=genesis_block_timestamp)
+#
+
+@pytest.mark.asyncio
+async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_5(request, event_loop):
+    # GENESIS IN FAST SYNC REGION BUT TX IN CONSENSUS MATCH with matching first root hash timestamp
+    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000 - 1000*10
+    await _test_consensus_root_hash_choice_diverging_in_fast_sync_window(request, event_loop,
+                                                                   gap_between_genesis_block_and_first_transaction=1000*30,
+                                                                   genesis_block_timestamp=genesis_block_timestamp)
+
+#
+# @pytest.mark.asyncio
+# async def test_consensus_root_hash_choice_3(request, event_loop):
+#     '''
+#     This one creates a swarm of 4 nodes with one database, and 4 nodes with another database, then asks
+#     consensus which ones to choose. It checks to make sure they choose the correct one.
+#     :param request:
+#     :param event_loop:
+#     :return:
+#     '''
+#     num_peers_in_swarm = 8
+#
+#     base_db = MemoryDB()
+#
+#     #genesis_block_timestamp = int(time.time()/1000)*1000 - 1000*1000
+#     genesis_block_timestamp = 1547288000
+#
+#     private_keys = []
+#     for i in range(len(random_private_keys)):
+#         private_keys.append(keys.PrivateKey(random_private_keys[i]))
+#
+#
+#     tx_list = [
+#         *[[GENESIS_PRIVATE_KEY, private_keys[i], 1000000-1000*i, genesis_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]
+#     ]
+#
+#
+#     genesis_chain_stake = 100
+#
+#     required_total_supply = sum([x[2]+21000 for x in tx_list if x[0] == GENESIS_PRIVATE_KEY]) + genesis_chain_stake
+#
+#     genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply,
+#                                                                         genesis_block_timestamp)
+#
+#     # import genesis block
+#     MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params,
+#                               genesis_state)
+#
+#
+#     # Client db has only the genesis block
+#     client_db = MemoryDB(base_db.kv_store.copy())
+#
+#     add_transactions_to_blockchain_db(base_db, tx_list)
+#
+#     # stake for the first half of chains should be from node 1 to node n:
+#     # 100
+#     # 1000000
+#     # 999000
+#     # 998000
+#     # 997000
+#     # 996000
+#     # 995000
+#     # 994000
+#     # 993000
+#     # 992000
+#
+#
+#     peer_dbs = []
+#     for i in range(int(num_peers_in_swarm/2)):
+#         peer_dbs.append(MemoryDB(base_db.kv_store.copy()))
+#
+#     last_block_timestamp = tx_list[-1][-1]
+#     additional_tx_list_for_competing_db = [
+#         [private_keys[4], private_keys[1], 100, last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * 1],
+#         [private_keys[4], private_keys[2], 100, last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * 2],
+#         [private_keys[4], private_keys[3], 100, last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS * 3],
+#     ]
+#
+#     competing_base_db = MemoryDB(base_db.kv_store.copy())
+#     add_transactions_to_blockchain_db(competing_base_db, additional_tx_list_for_competing_db)
+#
+#     # stake for the second half of chains should be from node 1 to node n:
+#     # 100
+#     # 1000000
+#     # 999100
+#     # 998100
+#     # 997100
+#     # 932700
+#     # 995000
+#     # 994000
+#     # 993000
+#     # 992000
+#
+#     # for peer node 7 for root hash 1
+#     # 100 + 997100 + 996100 + 995100 + 930700
+#
+#     for i in range(int(num_peers_in_swarm / 2),num_peers_in_swarm):
+#         peer_dbs.append(MemoryDB(competing_base_db.kv_store.copy()))
+#
+#     bootstrap_node = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#     bootstrap_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+#     consensus_root_hash_timestamps = bootstrap_node.chain_head_db.get_historical_root_hashes()
+#
+#     async def validation(consensus_services):
+#         #client_consensus = consensus_services[1]
+#         for client_consensus in consensus_services:
+#             for timestamp, root_hash in consensus_root_hash_timestamps:
+#                 client_consensus_choice = await client_consensus.coro_get_root_hash_consensus(timestamp)
+#                 assert (client_consensus_choice == root_hash)
+#
+#     await _test_consensus_swarm(request, event_loop, base_db, client_db, peer_dbs, validation)
 
 # @pytest.mark.asyncio
 # async def test_consensus_root_hash_choice_1(request, event_loop):
@@ -450,7 +667,7 @@ async def wait_for_consensus_all(consensus_services):
             # server_root_hash = await server_consensus.coro_get_root_hash_consensus(int(time.time()))
             # client_root_hash = await client_consensus.coro_get_root_hash_consensus(int(time.time()))
             print('AAAAAAAAAAAAAA')
-            print([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time())) for rest in consensus_services])
+            print([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time()), debug=True) for rest in consensus_services])
             await asyncio.sleep(1)
 
     await asyncio.wait_for(wait_loop(), SYNC_TIMEOUT)

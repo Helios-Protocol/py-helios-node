@@ -179,7 +179,7 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
 
         dummy_sender_chain.create_and_sign_transaction_for_queue_block(
             gas_price=0x01,
-            gas=0x0c3500,
+            gas=21000,
             to=receive_priv_key.public_key.to_canonical_address(),
             value=amount,
             data=b"",
@@ -216,8 +216,10 @@ def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list
     # sort by time
     tx_list.sort(key=lambda x: x[3])
 
+    genesis_chain_stake = 100
+
     earliest_timestamp = tx_list[0][3]
-    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+1000*10**18
+    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+genesis_chain_stake
 
     if use_real_genesis:
         import_genesis_block(base_db)

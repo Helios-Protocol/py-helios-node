@@ -1,4 +1,4 @@
-from hp2p.constants import MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED, SYNC_STAGE_4_START_OFFSET
+from hp2p.constants import ADDITIVE_SYNC_MODE_CUTOFF, SYNC_STAGE_4_START_OFFSET
 from hvm.types import Timestamp
 import time
 from hvm.constants import (
@@ -19,7 +19,7 @@ def get_earliest_required_time_for_min_gas_system() -> Timestamp:
     Blocks are only checked against the minimum allowed gas price for sync stage 3, 4
     :return:
     '''
-    last_allowed_hist_root_hash = int(time.time()) - MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED
+    last_allowed_hist_root_hash = int(time.time()) - ADDITIVE_SYNC_MODE_CUTOFF
     chronological_block_window_for_this_root_hash = last_allowed_hist_root_hash-TIME_BETWEEN_HEAD_HASH_SAVE
     return chronological_block_window_for_this_root_hash
 
@@ -57,7 +57,7 @@ def get_sync_stage_for_historical_root_hash_timestamp(timestamp: Timestamp) -> i
 
     if timestamp < current_window - NUMBER_OF_HEAD_HASH_TO_SAVE * TIME_BETWEEN_HEAD_HASH_SAVE + TIME_BETWEEN_HEAD_HASH_SAVE:
         return FAST_SYNC_STAGE_ID
-    elif timestamp < int(time.time()) - MOVING_WINDOW_WHERE_HISTORICAL_ROOT_HASH_NOT_SYNCED:
+    elif timestamp < int(time.time()) - ADDITIVE_SYNC_MODE_CUTOFF:
         return CONSENSUS_MATCH_SYNC_STAGE_ID
     elif timestamp < int(time.time()) - SYNC_STAGE_4_START_OFFSET:
         return ADDITIVE_SYNC_STAGE_ID
