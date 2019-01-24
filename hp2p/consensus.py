@@ -1039,8 +1039,12 @@ class Consensus(BaseService, PeerSubscriber):
             if len(all_candidate_item_stake) == 0:
                 return None
 
-            average_network_tpc_cap = int(stake_weighted_average(all_candidate_item_stake))
-            return average_network_tpc_cap
+            try:
+                average_network_tpc_cap = int(stake_weighted_average(all_candidate_item_stake))
+                return average_network_tpc_cap
+            except ZeroDivisionError:
+                self.logger.debug("Divided by zero when calculating average network tpc cap. all_candidate_item_stake = {}".format(all_candidate_item_stake))
+                return None
         else:
             return None
 
