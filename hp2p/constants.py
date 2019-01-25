@@ -90,8 +90,8 @@ ADDITIVE_SYNC_MODE_CUTOFF = 60 * 5 #This is the amount of time we allow the netw
 SYNC_STAGE_4_START_OFFSET = 200 # The number of seconds before the current time where we cut off the sync stage 4. If this was 0, then every 1000 seconds
                                 # as we move to the next window, we would temporarily go to stage 3 and communication would stop.
 
-PEER_STAKE_GONE_STALE_TIME_PERIOD = 60 # The amount of time that needs to pass before we re-update the peer stake from the
-                                        # blockchain database.
+PEER_STAKE_GONE_STALE_TIME_PERIOD = 60*5 # The amount of time that needs to pass before we re-update the peer stake from the
+                                        # blockchain database or bootnode
 SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD = 1 # The amount of time between each main loop of the syncer
 
 # When doing a fast sync, it will try to sync up until this many seconds ago.

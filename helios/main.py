@@ -154,7 +154,7 @@ def main() -> None:
     #
     #
     #
-    if not args.keystore_password:
+    if not args.keystore_password and not hasattr(args, 'func'):
         password = getpass.getpass(prompt='Keystore Password: ')
         args.keystore_password = password
 

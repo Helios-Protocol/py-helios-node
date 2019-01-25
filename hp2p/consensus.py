@@ -10,7 +10,7 @@ from helios.protocol.hls.sync import get_earliest_required_time_for_min_gas_syst
     get_sync_stage_for_historical_root_hash_timestamp
 from helios.sync.common.constants import ADDITIVE_SYNC_STAGE_ID
 from helios.utils.queues import empty_queue
-from hp2p.events import NewBlockEvent
+from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, StakeFromBootnodeResponse
 from hvm.rlp.consensus import NodeStakingScore
 
 from lahja import Endpoint
@@ -379,16 +379,40 @@ class Consensus(BaseService, PeerSubscriber):
             self._last_check_local_tpc_cap_time = int(time.time())
         
         return self._local_tpc_cap
-    
-        
-    async def get_accurate_stake(self, peer: HLSPeer):
+
+    async def needs_stake_from_bootnode(self, peer):
         time_for_stake_maturity = int(time.time()) - COIN_MATURE_TIME_FOR_STAKING
         latest_timestamp = self.chain_head_db.get_latest_timestamp()
+
         if (latest_timestamp < time_for_stake_maturity or await peer.stake == None):
+            return True
+        return False
+
+    async def get_accurate_stake_for_this_node(self):
+        time_for_stake_maturity = int(time.time()) - COIN_MATURE_TIME_FOR_STAKING
+        latest_timestamp = self.chain_head_db.get_latest_timestamp()
+
+        if latest_timestamp < time_for_stake_maturity and not self.chain_config.network_startup_node:
             try:
-                return self.peer_stake_from_bootstrap_node[peer.wallet_address]
+                return self.peer_stake_from_bootstrap_node[self.chain_config.node_wallet_address]
             except KeyError:
                 raise UnknownPeerStake()
+        else:
+            return await self.chain.coro_get_mature_stake(wallet_address=self.chain_config.node_wallet_address)
+
+    async def get_accurate_stake(self, peer: HLSPeer):
+        if self.chain_config.network_startup_node:
+            to_return = await peer.stake
+            if to_return == None:
+                return 0
+            else:
+                return to_return
+        else:
+            if await self.needs_stake_from_bootnode(peer):
+                try:
+                    return self.peer_stake_from_bootstrap_node[peer.wallet_address]
+                except KeyError:
+                    raise UnknownPeerStake()
         return await peer.stake
 
  
@@ -580,10 +604,16 @@ class Consensus(BaseService, PeerSubscriber):
             self.run_daemon_task(self.receive_peer_block_choices_loop())
             self.run_daemon_task(self.receive_peer_chain_head_root_hash_timestamps_loop())
             self.run_daemon_task(self.send_get_consensus_statistics_loop())
+            if self.event_bus is not None:
+                self.run_daemon_task(self.handle_event_bus_events())
+
             while self.is_operational:
                 #self.logger.debug("Our historical root hashes = {}".format(self.chain_head_db.get_historical_root_hashes()))
+                try:
+                    self.logger.debug("This node's stake = {}".format(await self.get_accurate_stake_for_this_node()))
+                except UnknownPeerStake:
+                    self.logger.debug("This node's stake = {}".format("unknown"))
 
-                self.logger.debug("This node's stake = {}".format(self.chain.get_mature_stake(self.chain_config.node_wallet_address)))
                 self.logger.debug("Number of connected peers = {}".format(len(self.peer_pool)))
                 wallet_stake = [(peer.wallet_address, await peer.stake) for peer in self.peer_pool.peers]
                 self.logger.debug("{}".format(wallet_stake))
@@ -1109,22 +1139,17 @@ class Consensus(BaseService, PeerSubscriber):
     async def _get_missing_stake_from_bootnode(self):
         # self.logger.debug("Getting missing stake from bootnode loop start")
         addresses_needing_stake = []
-        if await self.current_sync_stage < 3:
 
-            #in this case, lets ask for the stake of all peers because ours is inaccurate
-            for peer in self.peer_pool.peers:
-                #if they already exist in peer_stake_from_bootstrap_node, then we already received a reply from the bootnode.
-                #since this is only nessisary while sincing, it should be a short time ad the stake should still be accurate.
-                #no need to refresh.
-                if peer.wallet_address not in self.peer_stake_from_bootstrap_node:
-                    addresses_needing_stake.append(peer.wallet_address)
+        for peer in self.peer_pool.peers:
+            if await self.needs_stake_from_bootnode(peer):
+                addresses_needing_stake.append(peer.wallet_address)
+
+
+        time_for_stake_maturity = int(time.time()) - COIN_MATURE_TIME_FOR_STAKING
+        latest_timestamp = self.chain_head_db.get_latest_timestamp()
+
+        if latest_timestamp < time_for_stake_maturity:
             addresses_needing_stake.append(self.chain_config.node_wallet_address)
-        else:
-        
-            for peer in self.peer_pool.peers:
-                if await peer.stake == None:
-                    if peer.wallet_address not in self.peer_stake_from_bootstrap_node:
-                        addresses_needing_stake.append(peer.wallet_address)
 
         if addresses_needing_stake == []:
             return
@@ -1260,7 +1285,12 @@ class Consensus(BaseService, PeerSubscriber):
 #                self.timestamp = timestamp
 #                
         #first get our local stake once
-        local_node_stake = self.chain.get_mature_stake(self.chain_config.node_wallet_address)
+        #local_node_stake = self.chain.get_mature_stake(self.chain_config.node_wallet_address)
+        try:
+            local_node_stake = await self.get_accurate_stake_for_this_node()
+        except UnknownPeerStake:
+            # If we don't know our own stake then we cant accurately calculate consensus
+            return None
         
         #now we calculate the same for conflict blocks
         consensus_block_choices_differing_from_ours = []
@@ -1353,57 +1383,57 @@ class Consensus(BaseService, PeerSubscriber):
         return None, None
     
     
-    def get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(self, timestamp):
-        '''
-        Returns the next consensus root hash that differs from our local root hash at the given timestamp
-        '''
-        initial_local_root_hash_at_timestamp = self.local_root_hash_timestamps[timestamp]
-        #self.logger.debug("initial root hash = {}".format(initial_local_root_hash_at_timestamp))
-        #self.logger.debug("consensus root hash at initial timestamp = {}".format(self.get_root_hash_consensus(timestamp)))
-        sorted_root_hash_timestamps = SortedDict(self.root_hash_timestamps_statistics)
-        #goes from smallest to greatest
-        for available_timestamp in sorted_root_hash_timestamps.keys():
-            if available_timestamp > timestamp:
-                to_return =  available_timestamp, self.get_root_hash_consensus(available_timestamp)
-                if to_return[1] != initial_local_root_hash_at_timestamp:
-                    return to_return
-                
-        if self.is_network_startup_node:
-            self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
-            local_root_hash_timestamps = self.local_root_hash_timestamps
-            sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
-            for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
-                if available_timestamp > timestamp:
-                    to_return =  available_timestamp, root_hash
-                    if to_return[1] != initial_local_root_hash_at_timestamp:
-                        return to_return
-                    
-        return None, None
+    # def get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(self, timestamp):
+    #     '''
+    #     Returns the next consensus root hash that differs from our local root hash at the given timestamp
+    #     '''
+    #     initial_local_root_hash_at_timestamp = self.local_root_hash_timestamps[timestamp]
+    #     #self.logger.debug("initial root hash = {}".format(initial_local_root_hash_at_timestamp))
+    #     #self.logger.debug("consensus root hash at initial timestamp = {}".format(self.get_root_hash_consensus(timestamp)))
+    #     sorted_root_hash_timestamps = SortedDict(self.root_hash_timestamps_statistics)
+    #     #goes from smallest to greatest
+    #     for available_timestamp in sorted_root_hash_timestamps.keys():
+    #         if available_timestamp > timestamp:
+    #             to_return =  available_timestamp, self.get_root_hash_consensus(available_timestamp)
+    #             if to_return[1] != initial_local_root_hash_at_timestamp:
+    #                 return to_return
+    #
+    #     if self.is_network_startup_node:
+    #         self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
+    #         local_root_hash_timestamps = self.local_root_hash_timestamps
+    #         sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
+    #         for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
+    #             if available_timestamp > timestamp:
+    #                 to_return =  available_timestamp, root_hash
+    #                 if to_return[1] != initial_local_root_hash_at_timestamp:
+    #                     return to_return
+    #
+    #     return None, None
     
-    def get_next_consensus_root_hash_after_timestamp(self, timestamp):
-        '''
-        Returns the next consensus root hash that differs from our local root hash at the given timestamp
-        '''
-        #initial_local_root_hash_at_timestamp = self.local_root_hash_timestamps[timestamp]
-        #self.logger.debug("initial root hash = {}".format(initial_local_root_hash_at_timestamp))
-        #self.logger.debug("consensus root hash at initial timestamp = {}".format(self.get_root_hash_consensus(timestamp)))
-        sorted_root_hash_timestamps = SortedDict(self.root_hash_timestamps_statistics)
-        #goes from smallest to greatest
-        for available_timestamp in sorted_root_hash_timestamps.keys():
-            if available_timestamp > timestamp:
-                to_return =  available_timestamp, self.get_root_hash_consensus(available_timestamp)
-                return to_return
-        
-        if self.is_network_startup_node:
-            self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
-            local_root_hash_timestamps = self.local_root_hash_timestamps
-            sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
-            for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
-                if available_timestamp > timestamp:
-                    to_return =  available_timestamp, root_hash
-                    return to_return
-                    
-        return None, None
+    # def get_next_consensus_root_hash_after_timestamp(self, timestamp):
+    #     '''
+    #     Returns the next consensus root hash that differs from our local root hash at the given timestamp
+    #     '''
+    #     #initial_local_root_hash_at_timestamp = self.local_root_hash_timestamps[timestamp]
+    #     #self.logger.debug("initial root hash = {}".format(initial_local_root_hash_at_timestamp))
+    #     #self.logger.debug("consensus root hash at initial timestamp = {}".format(self.get_root_hash_consensus(timestamp)))
+    #     sorted_root_hash_timestamps = SortedDict(self.root_hash_timestamps_statistics)
+    #     #goes from smallest to greatest
+    #     for available_timestamp in sorted_root_hash_timestamps.keys():
+    #         if available_timestamp > timestamp:
+    #             to_return =  available_timestamp, self.get_root_hash_consensus(available_timestamp)
+    #             return to_return
+    #
+    #     if self.is_network_startup_node:
+    #         self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
+    #         local_root_hash_timestamps = self.local_root_hash_timestamps
+    #         sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
+    #         for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
+    #             if available_timestamp > timestamp:
+    #                 to_return =  available_timestamp, root_hash
+    #                 return to_return
+    #
+    #     return None, None
         
         
         
@@ -1447,88 +1477,69 @@ class Consensus(BaseService, PeerSubscriber):
         else:
             local_root_hash = None
 
-        if debug:
-            self.logger.debug("coro_get_root_hash_consensus local_root_hash_prev = {}".format(local_root_hash_timestamps[timestamp-1000]))
-            self.logger.debug("coro_get_root_hash_consensus local_root_hash = {}".format(local_root_hash))
-            self.logger.debug("coro_get_root_hash_consensus peer_stake_from_bootstrap_node = {}".format(self.peer_stake_from_bootstrap_node))
-
-
         try:
             root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
             peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
         except KeyError:
             return local_root_hash
 
-        if debug:
-            peer_choices = []
-            for wallet_address, stake_timestamps in self.peer_root_hash_timestamps.items():
-                stake = stake_timestamps[0]
-                timestamps = stake_timestamps[1]
-                timestamps = make_mutable(timestamps, force_deep_check=True)
-                timestamps.sort(key=lambda x: x[0])
-                peer_choices.append([encode_hex(wallet_address), stake, timestamps[-1]])
-
-            self.logger.debug("coro_get_root_hash_consensus peer_choices = {}".format(peer_choices))
-            self.logger.debug("coro_get_root_hash_consensus root_hash_stakes = {}".format(root_hash_stakes))
-            self.logger.debug("coro_get_root_hash_consensus peer_root_hash, peer_stake_for_peer_root_hash = {}, {}".format(peer_root_hash, peer_stake_for_peer_root_hash))
-
         if peer_root_hash == local_root_hash or local_root_hash is None:
             return peer_root_hash
         else:
-            our_stake_for_local_hash = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
+            try:
+                our_stake_for_local_hash = await self.get_accurate_stake_for_this_node()
+            except UnknownPeerStake:
+                # In this case, we have no blockchain for this node, and we havent recevied our stake from the bootnode yet.
+                return None
             try:
                 peer_stake_for_local_hash = self.root_hash_timestamps_statistics[timestamp][local_root_hash]
             except KeyError:
                 peer_stake_for_local_hash = 0
             total_stake_for_local_hash = our_stake_for_local_hash + peer_stake_for_local_hash
 
-            if debug:
-                self.logger.debug("coro_get_root_hash_consensus peer_stake_for_local_hash = {}".format(peer_stake_for_local_hash))
-                self.logger.debug("coro_get_root_hash_consensus total_stake_for_local_hash = {}".format(total_stake_for_local_hash))
 
             to_return = self.get_winner_stake_binary_compare(peer_root_hash,
                                                         peer_stake_for_peer_root_hash, 
                                                         local_root_hash, 
                                                         total_stake_for_local_hash)
-            if debug:
-                self.logger.debug("coro_get_root_hash_consensus to_return = {}".format(to_return))
+
             return to_return
             
-    def get_root_hash_consensus(self, timestamp, local_root_hash_timestamps = None):
-        '''
-        Returns the consensus root hash for a given timestamp
-        '''
-        if local_root_hash_timestamps is None:
-            local_root_hash_timestamps = self.local_root_hash_timestamps
-        if local_root_hash_timestamps is not None:
-            try:
-                local_root_hash = local_root_hash_timestamps[timestamp]
-            except KeyError:
-                local_root_hash = None
-        else:
-            local_root_hash = None
-           
-        
-        try:
-            root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
-            peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
-        except KeyError:
-            return local_root_hash
-        
-        if peer_root_hash == local_root_hash or local_root_hash is None:
-            return peer_root_hash
-        else:
-            our_stake_for_local_hash = self.chain.get_mature_stake(self.chain_config.node_wallet_address)
-            try:
-                peer_stake_for_local_hash = self.root_hash_timestamps_statistics[timestamp][local_root_hash]
-            except KeyError:
-                peer_stake_for_local_hash = 0
-            total_stake_for_local_hash = our_stake_for_local_hash + peer_stake_for_local_hash
-            
-            return self.get_winner_stake_binary_compare(peer_root_hash, 
-                                                        peer_stake_for_peer_root_hash, 
-                                                        local_root_hash, 
-                                                        total_stake_for_local_hash)
+    # def get_root_hash_consensus(self, timestamp, local_root_hash_timestamps = None):
+    #     '''
+    #     Returns the consensus root hash for a given timestamp
+    #     '''
+    #     if local_root_hash_timestamps is None:
+    #         local_root_hash_timestamps = self.local_root_hash_timestamps
+    #     if local_root_hash_timestamps is not None:
+    #         try:
+    #             local_root_hash = local_root_hash_timestamps[timestamp]
+    #         except KeyError:
+    #             local_root_hash = None
+    #     else:
+    #         local_root_hash = None
+    #
+    #
+    #     try:
+    #         root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
+    #         peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
+    #     except KeyError:
+    #         return local_root_hash
+    #
+    #     if peer_root_hash == local_root_hash or local_root_hash is None:
+    #         return peer_root_hash
+    #     else:
+    #         our_stake_for_local_hash = self.chain.get_mature_stake(self.chain_config.node_wallet_address)
+    #         try:
+    #             peer_stake_for_local_hash = self.root_hash_timestamps_statistics[timestamp][local_root_hash]
+    #         except KeyError:
+    #             peer_stake_for_local_hash = 0
+    #         total_stake_for_local_hash = our_stake_for_local_hash + peer_stake_for_local_hash
+    #
+    #         return self.get_winner_stake_binary_compare(peer_root_hash,
+    #                                                     peer_stake_for_peer_root_hash,
+    #                                                     local_root_hash,
+    #                                                     total_stake_for_local_hash)
 
     async def get_blockchain_sync_parameters(self, debug = False) -> Optional[SyncParameters]:
         '''
@@ -1704,7 +1715,12 @@ class Consensus(BaseService, PeerSubscriber):
                 #However, we don't want to count any nodes that have voted here incase their vote changed
                 exclude_chains = list(self.peer_block_choices.keys())
                 children_stake_for_local_block = await self.chain.coro_get_block_stake_from_children(local_block_hash, exclude_chains = exclude_chains)
-                our_stake_for_local_block = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
+
+                try:
+                    our_stake_for_local_block = await self.get_accurate_stake_for_this_node()
+                except UnknownPeerStake:
+                    # In this case, we have no blockchain for this node, and we havent recevied our stake from the bootnode yet.
+                    return None
 
                 try:
                     peer_stake_for_local_block = self.block_choice_statistics[chain_wallet_address][block_number][local_block_hash]
@@ -1881,9 +1897,17 @@ class Consensus(BaseService, PeerSubscriber):
             self.logger.debug("Sending node staking score.")
             peer.sub_proto.send_node_staking_score(node_staking_score)
 
+    #
+    # Event bus functions
+    #
+    async def handle_event_bus_events(self) -> None:
+        async def f() -> None:
+            # FIXME: There must be a way to cancel event_bus.stream() when our token is triggered,
+            # but for the time being we just wrap everything in self.wait().
+            async for req in self.event_bus.stream(StakeFromBootnodeRequest):
+                self.event_bus.broadcast(StakeFromBootnodeResponse(self.peer_stake_from_bootstrap_node), req.broadcast_config())
 
-
-
+        await self.wait(f())
 
 
                 

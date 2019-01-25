@@ -1,5 +1,7 @@
 from typing import (
     Type,
+    Dict,
+    Any,
 )
 
 from lahja import (
@@ -23,6 +25,18 @@ class PeerCountRequest(BaseRequestResponseEvent[PeerCountResponse]):
     @staticmethod
     def expected_response_type() -> Type[PeerCountResponse]:
         return PeerCountResponse
+
+class StakeFromBootnodeResponse(BaseEvent):
+
+    def __init__(self, peer_stake_from_bootstrap_node: Dict[Any,Any]) -> None:
+        self.peer_stake_from_bootstrap_node = peer_stake_from_bootstrap_node
+
+class StakeFromBootnodeRequest(BaseRequestResponseEvent[StakeFromBootnodeResponse]):
+
+    @staticmethod
+    def expected_response_type() -> Type[StakeFromBootnodeResponse]:
+        return StakeFromBootnodeResponse
+
 
 class NoResponse(BaseEvent):
 

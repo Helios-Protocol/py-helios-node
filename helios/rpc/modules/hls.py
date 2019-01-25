@@ -38,7 +38,7 @@ import asyncio
 
 from typing import cast
 
-from hp2p.events import NewBlockEvent
+from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest
 
 from hvm.rlp.consensus import StakeRewardBundle
 from hvm.vm.forks.helios_testnet.blocks import MicroBlock
@@ -411,4 +411,21 @@ class Hls(RPCModule):
         )
 
         return True
+
+    async def getBlockchainDBDetails(self):
+        chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+        head_block_hashes = chain.chain_head_db.get_head_block_hashes()
+
+        return [encode_hex(head_block_hash) for head_block_hash in head_block_hashes]
+
+    async def getCurrentStakeFromBootnodeList(self):
+        '''
+        Returns the current list of node stakes that this node has already retrieved.
+        For debugging purposes
+        :return:
+        '''
+        stake_from_bootnode_response = await self._event_bus.request(
+            StakeFromBootnodeRequest()
+        )
+        return [(encode_hex(address), stake) for address, stake in stake_from_bootnode_response.peer_stake_from_bootstrap_node.items()]
 
