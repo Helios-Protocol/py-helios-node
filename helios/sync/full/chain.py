@@ -369,7 +369,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
     async def request_chain_segment_then_priority_import(self, chain_address: Address,
                                                          block_number_start: int,
-                                                         block_number_end: int, peer: HLSPeer,
+                                                         block_number_end: int,
+                                                         peer: HLSPeer,
                                                          additional_candidate_peers: List[HLSPeer] = [],
                                                          force_replace_existing_blocks = False) -> HLSPeer:
         '''
@@ -1048,7 +1049,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             # the syncer will know which blocks are required to reach consensus and mark them with allow_import_for_expired_timestamp = True
 
             if not allow_import_for_expired_timestamp:
-                self.logger.debug("Tried importing a block that has an expired timestamp. Not allowing.")
+                self.logger.debug("Tried importing a block that has an expired timestamp. Not allowing. Block hash {}".format(encode_hex(new_block.header.hash)))
+                return False
 
         chain_address = new_block.header.chain_address
 
@@ -1120,19 +1122,29 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 # lets keep it simple, just send this same peer a request for the new blocks that we need, plus this one again.
 
                 if peer is not None:
-                    if canonical_head is None:
-                        block_number_start = 0
-                    else:
-                        block_number_start = canonical_head.block_number + 1
-                    self.logger.debug('asking peer for the rest of missing chian')
-                    asyncio.ensure_future(self.request_chain_segment_then_priority_import(chain_address,
+                    peer_to_request_from = peer
+                    additional_candidate_peers = self.peer_pool.sort_peers_by_stake()
+                else:
+                    # The block probably came from RPC because there is no peer.
+                    # But we are missing the parents of the chain. We need to ask our peers if they have the chain.
+                    additional_candidate_peers = self.peer_pool.sort_peers_by_stake()
+                    peer_to_request_from = additional_candidate_peers.pop()
+
+                if canonical_head is None:
+                    block_number_start = 0
+                else:
+                    block_number_start = canonical_head.block_number + 1
+                self.logger.debug('asking peer for the rest of missing chian')
+                asyncio.ensure_future(self.request_chain_segment_then_priority_import(chain_address,
                                                                                         block_number_start,
                                                                                         new_block.header.block_number,
-                                                                                        peer))
+                                                                                        peer_to_request_from,
+                                                                                        additional_candidate_peers=additional_candidate_peers))
 
-                    # peer.sub_proto.send_get_chain_segment(chain_address, block_number_start,
-                    #                                       new_block.header.block_number)
-                    return False
+                return False
+
+
+
 
         if from_rpc:
             # blocks from RPC will be missing fields such as receipts. So they will fail a validation check.
@@ -1163,7 +1175,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
             return False
         except ParentNotFound:
-            self.logger.debug('ParentNotFound error. adding to block conflicts')
+            self.logger.debug('ParentNotFound error. adding to block conflicts. Block number {} on chain {} with parent hash {}'.format(
+                                new_block.header.block_number, encode_hex(new_block.header.chain_address), encode_hex(new_block.header.parent_hash)))
             if not from_rpc:
                 # it has not been validated yet
 

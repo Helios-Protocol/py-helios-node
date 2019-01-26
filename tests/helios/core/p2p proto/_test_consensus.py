@@ -301,47 +301,47 @@ async def _build_test_consensus(request, event_loop,
 
     await _test_consensus_swarm(request, event_loop, base_db, client_db, peer_dbs, validation)
 
-#
-# @pytest.mark.asyncio
-# async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_1(request, event_loop):
-#     #FAST SYNC REGION with mismatching first root hash timestamp
-#     genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000*1000
-#     await _build_test_consensus(request, event_loop,
-#                                                                    gap_between_genesis_block_and_first_transaction=0,
-#                                                                    genesis_block_timestamp = genesis_block_timestamp)
-#
-# @pytest.mark.asyncio
-# async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_2(request, event_loop):
-#     # FAST SYNC REGION with matching first root hash timestamp
-#     genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000
-#     await _build_test_consensus(request, event_loop,
-#                                                                    gap_between_genesis_block_and_first_transaction=1000,
-#                                                                    genesis_block_timestamp = genesis_block_timestamp)
-#
-# @pytest.mark.asyncio
-# async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_3(request, event_loop):
-#     # GENESIS IN FAST SYNC REGION BUT TX IN CONSENSUS MATCH with matching first root hash timestamp
-#     genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000 - 1000*10
-#     await _build_test_consensus(request, event_loop,
-#                                                                    gap_between_genesis_block_and_first_transaction=1000*30,
-#                                                                    genesis_block_timestamp=genesis_block_timestamp)
-#
-# @pytest.mark.asyncio
-# async def test_consensus_root_hash_choice_diverging_in_consensus_match_window_1(request, event_loop):
-#     # CONSENSUS_MATCH_REGION with mismatching first root hash timestamp
-#     genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000*1000 + 1000
-#
-#     await _build_test_consensus(request, event_loop,
-#                                                                    gap_between_genesis_block_and_first_transaction=0,
-#                                                                    genesis_block_timestamp=genesis_block_timestamp)
-#
-# @pytest.mark.asyncio
-# async def test_consensus_root_hash_choice_diverging_in_consensus_match_window_2(request, event_loop):
-#     # CONSENSUS_MATCH_REGION with matching first root hash timestamp
-#     genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000 + 1000
-#     await _build_test_consensus(request, event_loop,
-#                                                                    gap_between_genesis_block_and_first_transaction=1000,
-#                                                                    genesis_block_timestamp=genesis_block_timestamp)
+
+@pytest.mark.asyncio
+async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_1(request, event_loop):
+    #FAST SYNC REGION with mismatching first root hash timestamp
+    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000*1000
+    await _build_test_consensus(request, event_loop,
+                                                                   gap_between_genesis_block_and_first_transaction=0,
+                                                                   genesis_block_timestamp = genesis_block_timestamp)
+
+@pytest.mark.asyncio
+async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_2(request, event_loop):
+    # FAST SYNC REGION with matching first root hash timestamp
+    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000
+    await _build_test_consensus(request, event_loop,
+                                                                   gap_between_genesis_block_and_first_transaction=1000,
+                                                                   genesis_block_timestamp = genesis_block_timestamp)
+
+@pytest.mark.asyncio
+async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_3(request, event_loop):
+    # GENESIS IN FAST SYNC REGION BUT TX IN CONSENSUS MATCH with matching first root hash timestamp
+    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000 - 1000*10
+    await _build_test_consensus(request, event_loop,
+                                                                   gap_between_genesis_block_and_first_transaction=1000*30,
+                                                                   genesis_block_timestamp=genesis_block_timestamp)
+
+@pytest.mark.asyncio
+async def test_consensus_root_hash_choice_diverging_in_consensus_match_window_1(request, event_loop):
+    # CONSENSUS_MATCH_REGION with mismatching first root hash timestamp
+    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000*1000 + 1000
+
+    await _build_test_consensus(request, event_loop,
+                                                                   gap_between_genesis_block_and_first_transaction=0,
+                                                                   genesis_block_timestamp=genesis_block_timestamp)
+
+@pytest.mark.asyncio
+async def test_consensus_root_hash_choice_diverging_in_consensus_match_window_2(request, event_loop):
+    # CONSENSUS_MATCH_REGION with matching first root hash timestamp
+    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000 + 1000
+    await _build_test_consensus(request, event_loop,
+                                                                   gap_between_genesis_block_and_first_transaction=1000,
+                                                                   genesis_block_timestamp=genesis_block_timestamp)
 
 
 

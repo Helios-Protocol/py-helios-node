@@ -29,10 +29,10 @@ logger.propagate = False
 logger = logging.getLogger('hp2p')
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler_stream)
-#
-# logger = logging.getLogger('hvm')
-# logger.setLevel(logging.DEBUG)
-# logger.addHandler(handler_stream)
+
+logger = logging.getLogger('hvm')
+logger.setLevel(logging.DEBUG)
+logger.addHandler(handler_stream)
 
 # logger = logging.getLogger('hp2p')
 # logger.setLevel(logging.DEBUG)

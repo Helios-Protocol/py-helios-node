@@ -26,6 +26,7 @@ from hvm.chains.mainnet import (
 
 from helios.dev_tools import create_dev_test_random_blockchain_database, \
     create_blockchain_database_for_exceeding_tpc_cap, create_predefined_blockchain_database
+from hvm.exceptions import HeaderNotFound
 
 
 async def connect_to_peers_loop(peer_pool, nodes):
@@ -253,8 +254,11 @@ class MockConsensusService(Consensus):
         else:
             to_change = []
             for block_conflict_info in self.block_conflicts:
-                hash_of_correct_block = self.chain_to_sync_to.chaindb.get_canonical_block_hash(block_conflict_info.block_number, block_conflict_info.chain_address)
-                to_change.append(BlockConflictChoice(block_conflict_info.chain_address, block_conflict_info.block_number, hash_of_correct_block))
+                try:
+                    hash_of_correct_block = self.chain_to_sync_to.chaindb.get_canonical_block_hash(block_conflict_info.block_number, block_conflict_info.chain_address)
+                    to_change.append(BlockConflictChoice(block_conflict_info.chain_address, block_conflict_info.block_number, hash_of_correct_block))
+                except HeaderNotFound:
+                    pass
 
             return to_change
 
