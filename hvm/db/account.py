@@ -130,6 +130,13 @@ class BaseAccountDB(metaclass=ABCMeta):
     def delete_receivable_transaction(self, address: Address, transaction_hash: Hash32) -> None:
         raise NotImplementedError("Must be implemented by subclasses")
 
+    #
+    # Nonce
+    #
+
+    @abstractmethod
+    def get_nonce(self, address: Address) -> int:
+        raise NotImplementedError("Must be implemented by subclasses")
 
     #
     # Code
@@ -293,7 +300,7 @@ class AccountDB(BaseAccountDB):
     #
     # Nonce
     #
-    def get_nonce(self, address):
+    def get_nonce(self, address: Address) -> int:
         validate_canonical_address(address, title="Storage Address")
 
         account = self._get_account(address)

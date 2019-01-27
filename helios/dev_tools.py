@@ -39,7 +39,7 @@ from hvm.db.hash_trie import HashTrie
 
 from hvm.db.chain_head import ChainHeadDB
 
-from hvm.constants import random_private_keys
+from hvm.constants import random_private_keys, GAS_TX
 
 logger = logging.getLogger("dev_tools_testing")
 
@@ -173,13 +173,19 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
         amount = tx_key[2]
         tx_timestamp = tx_key[3]
 
+        if len(tx_key) > 4:
+            gas_price = tx_key[4]
+        else:
+            gas_price = 1
+
+        total_gas = gas_price
         sender_chain = MainnetChain(base_db, sender_priv_key.public_key.to_canonical_address(), sender_priv_key)
         dummy_sender_chain = MainnetChain(JournalDB(base_db), sender_priv_key.public_key.to_canonical_address(),
                                           sender_priv_key)
 
         dummy_sender_chain.create_and_sign_transaction_for_queue_block(
-            gas_price=0x01,
-            gas=21000,
+            gas_price=gas_price,
+            gas=GAS_TX*gas_price,
             to=receive_priv_key.public_key.to_canonical_address(),
             value=amount,
             data=b"",
@@ -219,7 +225,7 @@ def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list
     genesis_chain_stake = 100
 
     earliest_timestamp = tx_list[0][3]
-    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+genesis_chain_stake
+    required_total_supply = sum([x[2]+GAS_TX for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+genesis_chain_stake
 
     if use_real_genesis:
         import_genesis_block(base_db)

@@ -35,7 +35,7 @@ from tests.helios.core.peer_helpers import (
     MockPeerPoolWithConnectedPeers,
 )
 from helios.protocol.common.datastructures import SyncParameters
-from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE
+from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE, GAS_TX
 from helios.sync.common.constants import (
     FAST_SYNC_STAGE_ID,
     CONSENSUS_MATCH_SYNC_STAGE_ID,
@@ -163,7 +163,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
 
     print("WAITING FUNCTION FIRED")
 
-    #await asyncio.sleep(1000)
+    await asyncio.sleep(1)
     await validation_function(consensus_services)
 
 
@@ -204,7 +204,7 @@ async def _build_test_consensus(request, event_loop,
 
     genesis_chain_stake = 100
 
-    required_total_supply = sum([x[2]+21000 for x in tx_list if x[0] == GENESIS_PRIVATE_KEY]) + genesis_chain_stake
+    required_total_supply = sum([x[2]+GAS_TX for x in tx_list if x[0] == GENESIS_PRIVATE_KEY]) + genesis_chain_stake
 
     genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply,
                                                                         genesis_block_timestamp)
@@ -344,7 +344,6 @@ async def test_consensus_root_hash_choice_diverging_in_consensus_match_window_2(
                                                                    genesis_block_timestamp=genesis_block_timestamp)
 
 
-
 @pytest.mark.asyncio
 async def test_consensus_root_hash_choice_diverging_in_additive_sync_window_1(request, event_loop):
     # GENESIS IN FAST SYNC REGION BUT TX IN ADDITIVE with matching first root hash timestamp
@@ -436,7 +435,7 @@ class HeliosTestnetVMChain(FakeAsyncMainnetChain):
     network_id = 1
 
 async def wait_for_consensus(server_consensus, client_consensus):
-    SYNC_TIMEOUT = 1000
+    SYNC_TIMEOUT = 100
 
     async def wait_loop():
 
@@ -452,13 +451,13 @@ async def wait_for_consensus(server_consensus, client_consensus):
     await asyncio.wait_for(wait_loop(), SYNC_TIMEOUT)
 
 async def wait_for_consensus_all(consensus_services):
-    SYNC_TIMEOUT = 1000
+    SYNC_TIMEOUT = 100
 
     async def wait_loop():
         while not all([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time())) for rest in consensus_services]):
             # server_root_hash = await server_consensus.coro_get_root_hash_consensus(int(time.time()))
             # client_root_hash = await client_consensus.coro_get_root_hash_consensus(int(time.time()))
-            print('AAAAAAAAAAAAAA')
+            #print('AAAAAAAAAAAAAA')
             print([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time()), debug=True) for rest in consensus_services])
             await asyncio.sleep(1)
 

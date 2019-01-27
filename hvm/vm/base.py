@@ -11,6 +11,7 @@ from typing import (  # noqa: F401
     Type,
     Tuple,
     Optional,
+    Union,
 )
 
 import time
@@ -92,16 +93,16 @@ from hvm.types import Timestamp
 from hvm.vm.computation import BaseComputation
 
 class BaseVM(Configurable, metaclass=ABCMeta):
-    block = None  # type: BaseBlock
-    block_class = None  # type: Type[BaseBlock]
-    queue_block_class = None
-    block_conflict_message_class = None
-    fork = None  # type: str
-    chaindb = None  # type: BaseChainDB
-    _state_class = None  # type: Type[BaseState]
-    network_id = 0
+    block_class: Type[BaseBlock] = None
+    queue_block_class: Type[BaseQueueBlock] = None
+    fork: str = None
+    chaindb: BaseChainDB = None
+    _state_class: Type[BaseState] = None
+    network_id: int = 0
     state: BaseState = None
-    
+    block: BaseBlock = None
+    queue_block: BaseQueueBlock = None
+
     @abstractmethod
     def __init__(self, header, chaindb):
         pass
@@ -290,8 +291,10 @@ class VM(BaseVM):
         - ``block_class``: The :class:`~hvm.rlp_templates.blocks.Block` class for blocks in this VM ruleset.
         - ``_state_class``: The :class:`~hvm.vm.state.State` class used by this VM for execution.
     """
-    state: BaseState = None
-
+    header: BlockHeader = None
+    _block: BaseBlock = None
+    _queue_block: BaseQueueBlock = None
+    _state: BaseState = None
 
     def __init__(self, header:BlockHeader, chaindb: BaseChainDB, consensus_db: ConsensusDB, wallet_address:Address, private_key: BaseKey, network_id: int):
         self.chaindb = chaindb
@@ -299,38 +302,49 @@ class VM(BaseVM):
         self.wallet_address = wallet_address
         self.private_key = private_key
         self.network_id = network_id
-        
-        # new for helios: we want to make sure the newly created block is a queueblock
-        # TODO: make sure the VM doesnt need this to be a normal block under normal operations
-        # When a new block is imported, it just replaces self.block with a normal block.
-        # apply transactions doesnt, though. So will need to have some check there.
-        # also check to make sure the code below gives the correct type of block
-        if chaindb.header_exists(header.hash):
-            self.block = self.get_block_class().from_header(header=header, chaindb=self.chaindb)
-            if self.block.header.sender != self.wallet_address:
-                raise BlockOnWrongChain("Block sender doesnt match chain wallet address")
-            self.logger.debug("Initializing VM with completed block")
-        else:
-            #this will also find unprocessed headers
-            if chaindb.header_exists(header.parent_hash):
-                self.block = self.get_queue_block_class().from_header(header=header)
-                self.logger.debug("Initializing VM with queue block")
-            elif header.parent_hash == GENESIS_PARENT_HASH and header.block_number == 0:
-                self.block = self.get_queue_block_class().from_header(header=header)
-                self.logger.debug("Initializing VM with queue block")
-            else:
-                raise ParentNotFound()
-            
-        
+        self.header = header
 
-        self.state = self.get_state_class()(db=self.chaindb.db, execution_context=self.block.header.create_execution_context(self.previous_hashes))
-        
+        if self.header.chain_address != self.wallet_address:
+            raise BlockOnWrongChain("Header chain address doesnt match chain wallet address")
+
+
     #
     # Logging
     #
     @property
     def logger(self):
         return logging.getLogger('hvm.vm.base.VM.{0}'.format(self.__class__.__name__))
+
+    @property
+    def block(self) -> BaseBlock:
+        if self._block is None:
+            self._block = self.get_block_class().from_header(header=self.header, chaindb=self.chaindb)
+        return self._block
+
+    @block.setter
+    def block(self, val):
+        self._block = val
+
+    @property
+    def queue_block(self) -> BaseQueueBlock:
+        if self._queue_block is None:
+            self._queue_block = self.get_queue_block_class().from_header(header=self.header)
+        return self._queue_block
+
+    @queue_block.setter
+    def queue_block(self, val):
+        self._queue_block = val
+
+
+    @property
+    def state(self) -> BaseState:
+        if self._state is None:
+            self._state = self.get_state_class()(db=self.chaindb.db, execution_context=self.header.create_execution_context(self.previous_hashes))
+        return self._state
+
+    @state.setter
+    def state(self, val):
+        self._state = val
 
     #
     # Execution
@@ -610,33 +624,40 @@ class VM(BaseVM):
     # Mining
     #
 
-    def import_block(self, block, *args, **kwargs):
+    def import_block(self, block: Union[BaseBlock, BaseQueueBlock], *args, **kwargs):
         """
         Import the given block to the chain.
         """
         if isinstance(block, self.get_queue_block_class()):
             is_queue_block = True
+            head_block = self.queue_block
             block_timestamp = int(time.time())
+            # Replace the head block with a queueblock
+
         else:
             is_queue_block = False
+            head_block = self.block
             block_timestamp = block.header.timestamp
             if (block.sender != self.wallet_address and not (
                 self.state.account_db.account_has_code(block.header.chain_address) or
                 self.state.account_db.has_pending_smart_contract_transactions(block.header.chain_address))):
                 raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
 
-
-        self.block = block.copy(
+        # Base the block off of the existing head block so that parameters are correct. Then after importing we will
+        # check to make sure the block is unchanged to catch any invalid parameters of the original block.
+        block = head_block.copy(
             header=self.configure_header(
                 gas_limit=block.header.gas_limit,
                 gas_used=0,
                 timestamp=block.header.timestamp,
                 extra_data=block.header.extra_data,
-                chain_address=block.header.chain_address,
                 v=block.header.v,
                 r=block.header.r,
                 s=block.header.s,
-            )
+            ),
+            transactions = block.transactions,
+            receive_transactions = block.receive_transactions,
+            reward_bundle = block.reward_bundle
         )
 
 
@@ -645,7 +666,7 @@ class VM(BaseVM):
         self.refresh_state()
         
         #run all of the transactions.
-        last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, self.block.header, self.wallet_address)
+        last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, block.header, self.wallet_address)
         
         
         #then run all receive transactions
@@ -659,28 +680,28 @@ class VM(BaseVM):
         #then combine
         receipts.extend(receive_receipts)
         
-        self.block = self.set_block_transactions(
-            self.block,
+        block = self.set_block_transactions(
+            block,
             last_header,
             block.transactions,
             receipts,
         )
 
-        self.block = self.set_block_receive_transactions(
-            self.block,
-            self.block.header,
+        block = self.set_block_receive_transactions(
+            block,
+            block.header,
             processed_receive_transactions
         )
 
-        self.block = self.set_block_reward_hash(
-            self.block,
-            self.block.header,
+        block = self.set_block_reward_hash(
+            block,
+            block.header,
             block.reward_bundle
         )
 
         
         #TODO: find out if this packing is nessisary
-        packed_block = self.pack_block(self.block, *args, **kwargs)
+        packed_block = self.pack_block(block, *args, **kwargs)
         
         packed_block = self.save_account_hash(packed_block)
 
@@ -693,7 +714,7 @@ class VM(BaseVM):
         )
 
         
-        if isinstance(packed_block, self.get_queue_block_class()):
+        if is_queue_block:
             """
             If it is a queueblock, then it must be signed now.
             It cannot be signed earlier because the header fields were changing
@@ -716,7 +737,6 @@ class VM(BaseVM):
         self.save_recievable_transactions(packed_block.header.hash, send_computations, processed_receive_transactions)
 
 
-        
         # Perform validation
         self.validate_block(packed_block)
         
@@ -968,17 +988,7 @@ class VM(BaseVM):
 
         
         return self.block
-    
-        
-    @classmethod
-    def get_block_conflict_message_class(cls) -> Type['BaseBlock']:
-        """
-        Return the :class:`~hvm.rlp_templates.blocks.Block` class that this VM uses for blocks.
-        """
-        if cls.block_conflict_message_class is None:
-            raise AttributeError("No `block_class` has been set for this VM")
-        else:
-            return cls.block_conflict_message_class
+
     
     @classmethod
     def create_genesis_block(cls, chain_address: Address):
@@ -1132,7 +1142,7 @@ class VM(BaseVM):
     # State
     #
     @classmethod
-    def get_state_class(cls) -> BaseState:
+    def get_state_class(cls) -> Type[BaseState]:
         """
         Return the class that this VM uses for states.
         """

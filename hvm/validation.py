@@ -312,15 +312,25 @@ def validate_gas_limit(gas_limit, parent_gas_limit):
     
 
 
+# ALLOWED_HEADER_FIELDS = {
+#     'account_hash',
+#     'gas_limit',
+#     'gas_used',
+#     'timestamp',
+#     'extra_data',
+#     'transaction_root',
+#     'receipt_root',
+#     'chain_address',
+#     'v',
+#     'r',
+#     's',
+# }
+
 ALLOWED_HEADER_FIELDS = {
-    'account_hash',
     'gas_limit',
     'gas_used',
     'timestamp',
     'extra_data',
-    'transaction_root',
-    'receipt_root',
-    'chain_address',
     'v',
     'r',
     's',

@@ -85,8 +85,12 @@ CONSENSUS_CHECK_CURRENT_SYNC_STAGE_PERIOD = 1 #amount of time to cache current s
 CONSENSUS_CHECK_LOCAL_TPC_CAP_PERIOD = 60
 MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD = 5 #this should be set to 30 after testing
 MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG = 0 #This might as well be left at 0, which will let the node calculate the tpc cap on its own until it connects to more nodes.
-ADDITIVE_SYNC_MODE_CUTOFF = 60*30 #This is the amount of time we allow the network to sync new blocks between nodes.
-                                                           #After this time, the nodes will take the copy of the database that has the most stake.
+
+#This is the amount of time we allow the network to additively sync root hashes. Any root hashes older than this
+# amount of time from now will be synced via the consensus match method. Blocks can be up to 1000 seconds older than this
+# and still be imported.
+#After this time, the nodes will take the copy of the database that has the most stake.
+ADDITIVE_SYNC_MODE_CUTOFF = 60*20
 SYNC_STAGE_4_START_OFFSET = 60*5 # The number of seconds before the current time where we cut off the sync stage 4. If this was 0, then every 1000 seconds
                                 # as we move to the next window, we would temporarily go to stage 3 and communication would stop.
 
