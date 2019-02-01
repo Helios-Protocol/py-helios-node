@@ -373,7 +373,7 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
 
     if instance == 0:
         key_balance_dict = {
-            private_keys[0]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+            private_keys[0]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
             private_keys[1]: (2000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*2),
             private_keys[2]: (3400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*3),
             private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),
@@ -387,7 +387,7 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
         }
     elif instance == 1:
         key_balance_dict = {
-            private_keys[0]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+            private_keys[0]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
             private_keys[1]: (2000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*2),
             private_keys[2]: (3400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*3),
             private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),

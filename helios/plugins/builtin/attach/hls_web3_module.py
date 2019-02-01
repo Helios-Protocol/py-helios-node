@@ -374,8 +374,24 @@ class Hls(Module):
     def devDeploySmartContract(self):
         return self.web3.manager.request_blocking("hls_devDeploySmartContract", [])
 
+    #
+    # Dev tools
+    #
     def getBlockchainDBDetails(self):
         return self.web3.manager.request_blocking("hls_getBlockchainDBDetails", [])
 
     def getCurrentStakeFromBootnodeList(self):
         return self.web3.manager.request_blocking("hls_getCurrentStakeFromBootnodeList", [])
+
+    def getAccountBalances(self):
+        return self.web3.manager.request_blocking("hls_getAccountBalances", [])
+
+
+    #
+    # Gets
+    #
+    def getBlockByHash(self, block_hash, include_transactions = False):
+        return self.web3.manager.request_blocking("hls_getBlockByHash", [block_hash, include_transactions])
+
+    def getBlockByNumber(self, block_number, chain_address, include_transactions = False):
+        return self.web3.manager.request_blocking("hls_getBlockByNumber", [block_number, chain_address, include_transactions])

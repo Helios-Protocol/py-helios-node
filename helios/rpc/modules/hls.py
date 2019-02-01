@@ -1,6 +1,7 @@
 from cytoolz import (
     identity,
 )
+from eth_typing import Hash32
 
 from eth_utils import (
     decode_hex,
@@ -103,15 +104,9 @@ class Hls(RPCModule):
 
         return hex(balance)
 
-    @format_params(decode_hex, identity)
-    def getBlockByHash(self, block_hash, include_transactions):
-        block = self._chain.get_block_by_hash(block_hash)
-        return block_to_dict(block, self._chain, include_transactions)
 
-    @format_params(to_int_if_hex, identity)
-    def getBlockByNumber(self, at_block, chain_address, include_transactions):
-        block = get_block_at_number(self._chain, at_block)
-        return block_to_dict(block, self._chain, include_transactions)
+
+
 
     @format_params(decode_hex)
     def getBlockTransactionCountByHash(self, block_hash):
@@ -359,6 +354,9 @@ class Hls(RPCModule):
         return to_return
 
 
+    #
+    # Gets
+    #
     async def getBlockCreationParams(self, chain_address):
 
         if not is_hex_address(chain_address):
@@ -393,18 +391,29 @@ class Hls(RPCModule):
 
         return to_return
 
+
+    @format_params(decode_hex, identity)
+    async def getBlockByHash(self, block_hash: Hash32, include_transactions: bool = False):
+        chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+        block = chain.chaindb.get_block_by_hash(block_hash, block_class=chain.get_vm().get_block_class())
+        return block_to_dict(block, include_transactions)
+
+
+    @format_params(to_int_if_hex, decode_hex, identity)
+    async def getBlockByNumber(self, at_block, chain_address, include_transactions: bool = False):
+        chain = self._chain_class(self._chain.db, wallet_address=chain_address)
+        block = chain.chaindb.get_block_by_number(at_block, wallet_address=chain_address, block_class=chain.get_vm().get_block_class())
+        return block_to_dict(block, include_transactions)
+
     async def sendRawBlock(self, encoded_micro_block):
-        #print('AAAAAAAAAAAAAAAAAAAAAAA')
 
         encoded_micro_block = decode_hex(encoded_micro_block)
-        #print(encoded_micro_block)
+
         micro_block = rlp.decode(encoded_micro_block, sedes=MicroBlock)
 
         block_class = self._chain_class.get_vm_class_for_block_timestamp().get_block_class()
 
         full_block = block_class.from_micro_block(micro_block)
-
-        #We have to populate all of the fields that the full block has that the microblock doesnt.
 
         self._event_bus.broadcast(
             NewBlockEvent(block=cast(P2PBlock, full_block), from_rpc=True)
@@ -429,3 +438,17 @@ class Hls(RPCModule):
         )
         return [(encode_hex(address), stake) for address, stake in stake_from_bootnode_response.peer_stake_from_bootstrap_node.items()]
 
+    async def getAccountBalances(self):
+        chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+        next_head_hashes = chain.chain_head_db.get_head_block_hashes_list()
+
+        wallet_addresses = []
+        for next_head_hash in next_head_hashes:
+            chain_address = chain.chaindb.get_chain_wallet_address_for_block_hash(next_head_hash)
+            wallet_addresses.append(chain_address)
+
+        out = {}
+        for wallet_address in wallet_addresses:
+            out[encode_hex(wallet_address)] = chain.get_vm().state.account_db.get_balance(wallet_address)
+
+        return out
