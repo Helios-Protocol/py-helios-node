@@ -357,13 +357,15 @@ class Hls(RPCModule):
     #
     # Gets
     #
+    @format_params(decode_hex)
+    async def getBlockNumber(self, chain_address):
+        chain = self._chain_class(self._chain.db, wallet_address=chain_address)
+        canonical_header = chain.chaindb.get_canonical_head(chain_address)
+        return hex(canonical_header.block_number)
+
+
+    @format_params(decode_hex)
     async def getBlockCreationParams(self, chain_address):
-
-        if not is_hex_address(chain_address):
-            return {'error':"invalid chain address",
-                    'given chain address': chain_address}
-
-        chain_address = decode_hex(chain_address)
 
         #create new chain for all requests
         chain = self._chain_class(self._chain.db, wallet_address = chain_address)
@@ -396,14 +398,14 @@ class Hls(RPCModule):
     async def getBlockByHash(self, block_hash: Hash32, include_transactions: bool = False):
         chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
         block = chain.chaindb.get_block_by_hash(block_hash, block_class=chain.get_vm().get_block_class())
-        return block_to_dict(block, include_transactions)
+        return block_to_dict(block, include_transactions, chain)
 
 
     @format_params(to_int_if_hex, decode_hex, identity)
     async def getBlockByNumber(self, at_block, chain_address, include_transactions: bool = False):
         chain = self._chain_class(self._chain.db, wallet_address=chain_address)
         block = chain.chaindb.get_block_by_number(at_block, wallet_address=chain_address, block_class=chain.get_vm().get_block_class())
-        return block_to_dict(block, include_transactions)
+        return block_to_dict(block, include_transactions, chain)
 
     async def sendRawBlock(self, encoded_micro_block):
 

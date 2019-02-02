@@ -26,8 +26,7 @@ from hvm.chains.base import (
     AsyncChain
 )
 from hvm.constants import (
-    CREATE_CONTRACT_ADDRESS,
-)
+    CREATE_CONTRACT_ADDRESS)
 from hvm.rlp.blocks import (
     BaseBlock
 )
@@ -95,17 +94,32 @@ def transactions_to_dict(transactions: List[BaseTransaction]) -> List[Dict[str, 
     return dict_transactions
 
 
-def receive_transaction_to_dict(transaction: BaseReceiveTransaction) -> Dict[str, str]:
+def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: AsyncChain) -> Dict[str, str]:
     dict_to_return = all_rlp_fields_to_dict_camel_case(transaction)
     dict_to_return['hash'] = encode_hex(transaction.hash)
+
+    from_address = chain.get_block_header_by_hash(transaction.sender_block_hash).chain_address
+
+    dict_to_return['from'] = to_hex(from_address)
+
+    originating_transaction = chain.chaindb.get_transaction_by_hash(transaction.send_transaction_hash,
+                                                             send_tx_class = chain.get_vm().get_transaction_class(),
+                                                             receive_tx_class = chain.get_vm().get_receive_transaction_class())
+
+    if transaction.is_refund:
+        value = originating_transaction.remaining_refund
+    else:
+        value = originating_transaction.value
+
+    dict_to_return['value'] = to_hex(value)
     return dict_to_return
 
 
 
-def receive_transactions_to_dict(transactions: List[BaseTransaction]) -> List[Dict[str, str]]:
+def receive_transactions_to_dict(transactions: List[BaseTransaction], chain: AsyncChain) -> List[Dict[str, str]]:
     dict_transactions = []
     for tx in transactions:
-        dict_tx = receive_transaction_to_dict(tx)
+        dict_tx = receive_transaction_to_dict(tx, chain)
         dict_transactions.append(dict_tx)
 
     return dict_transactions
@@ -169,7 +183,8 @@ def header_to_dict(header: BlockHeader) -> Dict[str, str]:
 
 
 def block_to_dict(block: BaseBlock,
-                  include_transactions: bool) -> Dict[str, Union[str, List[str]]]:
+                  include_transactions: bool,
+                  chain:AsyncChain) -> Dict[str, Union[str, List[str]]]:
 
     header_dict = header_to_dict(block.header)
 
@@ -180,7 +195,7 @@ def block_to_dict(block: BaseBlock,
 
     if include_transactions:
         block_dict['transactions'] = transactions_to_dict(block.transactions)
-        block_dict['receiveTransactions'] = receive_transactions_to_dict(block.receive_transactions)
+        block_dict['receiveTransactions'] = receive_transactions_to_dict(block.receive_transactions, chain)
         block_dict['rewardBundle'] = reward_bundle_to_dict(block.reward_bundle)
     else:
         block_dict['transactions'] = [encode_hex(tx.hash) for tx in block.transactions]

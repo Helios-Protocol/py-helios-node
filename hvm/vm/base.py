@@ -245,6 +245,11 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     def get_transaction_class(cls):
         raise NotImplementedError("VM classes must implement this method")
 
+    @classmethod
+    @abstractmethod
+    def get_receive_transaction_class(cls):
+        raise NotImplementedError("VM classes must implement this method")
+
     @abstractmethod
     def save_recievable_transactions(self, block_header_hash: Hash32, computations: List[BaseComputation]) -> None:
         raise NotImplementedError("VM classes must implement this method")
