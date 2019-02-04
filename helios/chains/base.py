@@ -23,6 +23,8 @@ class ChainProxy(BaseProxy):
     coro_get_local_tpc_cap = async_method('get_local_tpc_cap')
     coro_re_initialize_historical_minimum_gas_price_at_genesis = async_method('re_initialize_historical_minimum_gas_price_at_genesis')
     coro_import_current_queue_block_with_reward = async_method('import_current_queue_block_with_reward')
+    coro_get_receipts = async_method('get_receipts')
+
 
     import_block = sync_method('import_block')
     import_chain = sync_method('import_chain')
@@ -39,7 +41,7 @@ class ChainProxy(BaseProxy):
     get_genesis_block_hash = sync_method('get_genesis_block_hash')
     get_genesis_wallet_address = sync_method('get_genesis_wallet_address')
 
-
+    get_receipts = sync_method('get_genesis_wallet_address')
 
     get_vm_configuration = sync_method('get_vm_configuration')
     get_vm_class = sync_method('get_vm_class')

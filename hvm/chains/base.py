@@ -28,6 +28,7 @@ import logging
 
 from itertools import groupby
 
+from hvm.rlp.receipts import Receipt
 from hvm.types import Timestamp
 
 from eth_typing import (
@@ -325,6 +326,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
 
     @abstractmethod
     def get_receive_transactions(self, wallet_address: Address):
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_receipts(self, block_header: BlockHeader) -> Receipt:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -727,6 +732,12 @@ class Chain(BaseChain):
         else:
             return self.chaindb.get_canonical_head()
 
+    #
+    # Receipt API
+    #
+
+    def get_receipts(self, block_header: BlockHeader) -> Receipt:
+        return self.chaindb.get_receipts(block_header, self.get_vm(block_header).get_block_class().receipt_class)
 
     #
     # Block API

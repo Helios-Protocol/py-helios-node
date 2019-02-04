@@ -41,6 +41,7 @@ class HeliosTestnetBlock(BaseBlock):
     receive_transaction_class = HeliosTestnetReceiveTransaction
     header_class = BlockHeader
     reward_bundle_class = StakeRewardBundle
+    receipt_class = Receipt
 
     fields = [
         ('header', header_class),
@@ -144,6 +145,8 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
     transaction_class = HeliosTestnetTransaction
     receive_transaction_class = HeliosTestnetReceiveTransaction
     reward_bundle_class = StakeRewardBundle
+    receipt_class = Receipt
+
     fields = [
         ('header', BlockHeader),
         ('transactions', CountableList(transaction_class)),

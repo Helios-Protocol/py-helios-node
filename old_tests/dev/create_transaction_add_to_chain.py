@@ -331,6 +331,10 @@ def test_send_transaction_then_receive():
     assert((balance_1 - balance_2) == (tx.intrinsic_gas*2+2))
     print("Passed gas and balance test")
 
+    receipts = sender_chain.get_receipts(sender_block_1_imported.header)
+    print([receipt.as_dict() for receipt in receipts])
+    sys.exit()
+
     #print(sender_chain.chain_head_db.get_last_complete_historical_root_hash())
     #print(sender_chain.chain_head_db.get_historical_root_hashes())
     #print(sender_chain.chain_head_db.get_root_hash())
@@ -539,8 +543,8 @@ def test_send_transaction_then_receive():
     
     print(receiver_chain.chain_head_db.get_historical_root_hash(int(time.time())+1000))
     
-# test_send_transaction_then_receive()
-# exit()
+test_send_transaction_then_receive()
+exit()
 
 
 def test_import_chain():

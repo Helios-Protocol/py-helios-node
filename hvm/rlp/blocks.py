@@ -12,7 +12,7 @@ from eth_typing import (
     Hash32,
     Address
 )
-
+from hvm.rlp.receipts import Receipt
 
 from hvm.utils.datatypes import (
     Configurable,
@@ -32,7 +32,7 @@ class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
     transaction_class: 'Type[BaseTransaction]' = None
     receive_transaction_class: 'Type[BaseReceiveTransaction]' = None
     reward_bundle_class: 'Type[StakeRewardBundle]' = None
-
+    receipt_class: Type[Receipt] = None
 
     @classmethod
     def get_transaction_class(cls) -> Type['BaseTransaction']:
