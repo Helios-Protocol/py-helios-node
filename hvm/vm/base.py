@@ -856,11 +856,7 @@ class VM(BaseVM):
     def set_block_transactions(self, base_block, new_header, transactions, receipts):
         tx_root_hash, tx_kv_nodes = self.save_items_to_db_as_trie(transactions)
         receipt_root_hash, receipt_kv_nodes = self.save_items_to_db_as_trie(receipts)
-#        tx_root_hash, tx_kv_nodes = make_trie_root_and_nodes(transactions)
-#        self.chaindb.persist_trie_data_dict(tx_kv_nodes)
-#
-#        receipt_root_hash, receipt_kv_nodes = make_trie_root_and_nodes(receipts)
-#        self.chaindb.persist_trie_data_dict(receipt_kv_nodes)
+
         
         return base_block.copy(
             transactions=transactions,

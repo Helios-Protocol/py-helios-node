@@ -101,8 +101,6 @@ from hvm.db.journal import (
     JournalDB,
 )
 
-from hvm.utils.rlp import make_mutable
-
 from sortedcontainers import (
     SortedList,
     SortedDict,
@@ -223,6 +221,14 @@ class BaseChainDB(metaclass=ABCMeta):
     def get_receipts(self,
                      header: BlockHeader,
                      receipt_class: Type[Receipt]) -> Iterable[Receipt]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_transaction_receipt(self, tx_hash: Hash32) -> Receipt:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_cumulative_gas_used(self, tx_hash: Hash32) -> int:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -912,7 +918,7 @@ class ChainDB(BaseChainDB):
     #
     # Transaction API
     #
-    def add_receipt(self, block_header: BlockHeader, index_key: int, receipt: Receipt) -> Hash32:
+    def add_receipt(self, block_header: BlockHeader, index_key: int, receipt: Receipt, send_or_receive) -> Hash32:
         """
         Adds the given receipt to the provide block header.
 
@@ -996,10 +1002,31 @@ class ChainDB(BaseChainDB):
         for encoded_transaction in all_encoded_transactions:
             yield keccak(encoded_transaction)
 
+    def get_transaction_receipt(self, tx_hash: Hash32) -> Receipt:
+        block_hash, index, is_receive = self.get_transaction_index(tx_hash)
+        block_header = self.get_block_header_by_hash(block_hash)
+        receipts = self.get_receipts(block_header)
+
+        if not is_receive:
+            return receipts[index]
+        else:
+            num_send_transactions = self.get_number_of_send_tx_in_block(block_hash)
+            return receipts[index+num_send_transactions]
+
+    def get_cumulative_gas_used(self, tx_hash: Hash32) -> int:
+        block_hash, index, is_receive = self.get_transaction_index(tx_hash)
+        block_header = self.get_block_header_by_hash(block_hash)
+        receipts = self.get_receipts(block_header)
+        cumulative = 0
+        for i in range(index+1):
+            cumulative += receipts[i].gas_used
+        return cumulative
+
+
     @to_tuple
     def get_receipts(self,
                      header: BlockHeader,
-                     receipt_class: Type[Receipt]) -> Iterable[Receipt]:
+                     receipt_class: Type[Receipt] = Receipt) -> Iterable[Receipt]:
         """
         Returns an iterable of receipts for the block specified by the given
         block header.
@@ -1276,7 +1303,6 @@ class ChainDB(BaseChainDB):
         if block_children is None or child_block_hash not in block_children:
             self.logger.debug("tried to remove a block child that doesnt exist. It was likely already deleted when that block was purged.")
         else:
-            block_children = make_mutable(block_children)
             block_children.remove(child_block_hash)
             self.save_block_children(parent_block_hash, block_children)
 
@@ -1303,7 +1329,6 @@ class ChainDB(BaseChainDB):
         elif child_block_hash in block_children:
             self.logger.debug("tried adding a child block that was already added")
         else:
-            block_children = make_mutable(block_children)
             block_children.append(child_block_hash)
             self.save_block_children(parent_block_hash, block_children)
 
@@ -1311,8 +1336,8 @@ class ChainDB(BaseChainDB):
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         try:
-            to_return = rlp.decode(self.db[block_children_lookup_key], sedes=rlp.sedes.FCountableList(hash32))
-            if to_return == ():
+            to_return = rlp.decode(self.db[block_children_lookup_key], sedes=rlp.sedes.FCountableList(hash32), use_list=True)
+            if to_return == []:
                 return None
             return to_return
         except KeyError:
@@ -1434,22 +1459,18 @@ class ChainDB(BaseChainDB):
         )
 
 
-    def load_historical_minimum_gas_price(self, mutable:bool = True, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
+    def load_historical_minimum_gas_price(self, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
         '''
         saved as timestamp, min gas price
         '''
         lookup_key = SchemaV1.make_historical_minimum_gas_price_lookup_key()
         try:
-            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
+            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])), use_list = True)
             if sort:
                 if len(data) > 0:
-                    sorted_data = SortedList(data)
-                    data = tuple(sorted_data)
+                    data.sort()
 
-            if mutable:
-                return make_mutable(data)
-            else:
-                return data
+            return data
         except KeyError:
             return None
 
@@ -1468,23 +1489,19 @@ class ChainDB(BaseChainDB):
             encoded_data,
         )
 
-    def load_historical_tx_per_centisecond(self, mutable = True, sort = False):
+    def load_historical_tx_per_centisecond(self, sort = False):
         '''
         returns a list of [timestamp, tx/centisecond]
         '''
 
         lookup_key = SchemaV1.make_historical_tx_per_centisecond_lookup_key()
         try:
-            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
+            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])), use_list=True)
             if sort:
                 if len(data) > 0:
-                    sorted_data = SortedList(data)
-                    data = tuple(sorted_data)
+                    data.sort()
 
-            if mutable:
-                return make_mutable(data)
-            else:
-                return data
+            return data
         except KeyError:
             return None
 
@@ -1513,7 +1530,7 @@ class ChainDB(BaseChainDB):
 
 
 
-    def load_historical_network_tpc_capability(self, mutable:bool = True, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
+    def load_historical_network_tpc_capability(self, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
         '''
         Returns a list of [timestamp, transactions per second]
         :param mutable:
@@ -1522,16 +1539,12 @@ class ChainDB(BaseChainDB):
         '''
         lookup_key = SchemaV1.make_historical_network_tpc_capability_lookup_key()
         try:
-            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
+            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])), use_list = True)
             if sort:
                 if len(data) > 0:
-                    sorted_data = SortedList(data)
-                    data = tuple(sorted_data)
+                    data.sort()
 
-            if mutable:
-                return make_mutable(data)
-            else:
-                return data
+            return data
         except KeyError:
             return None
 
@@ -1733,11 +1746,15 @@ class ChainDB(BaseChainDB):
 
 
 
-    def get_required_block_min_gas_price(self, block_timestamp):
+    def get_required_block_min_gas_price(self, block_timestamp = None):
         '''
         it is important that this doesn't run until our blockchain is up to date. If it is run before that,
         it will give the wrong number.
         '''
+
+        if block_timestamp is None:
+            block_timestamp = int(time.time())
+
         centisecond_window = int(block_timestamp/100) * 100
 
 
@@ -1762,18 +1779,18 @@ class ChainDB(BaseChainDB):
 
 
     def min_gas_system_initialization_required(self):
-        test_1 = self.load_historical_minimum_gas_price(mutable = False)
-        test_3 = self.load_historical_network_tpc_capability(mutable = False)
+        test_1 = self.load_historical_minimum_gas_price()
+        test_3 = self.load_historical_network_tpc_capability()
 
         if test_1 is None or test_3 is None:
             return True
 
         earliest_required_centisecond = int(time.time()) - MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP
         newest_required_centisecond = int(time.time()/100) * 100-100*15
-        sorted_test_3 = SortedList(test_3)
+        test_3.sort()
 
 
-        if sorted_test_3[-1][0] < newest_required_centisecond or sorted_test_3[0][0] > earliest_required_centisecond:
+        if test_3[-1][0] < newest_required_centisecond or test_3[0][0] > earliest_required_centisecond:
             return True
 
         return False

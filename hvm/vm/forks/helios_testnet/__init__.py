@@ -58,7 +58,7 @@ def make_helios_testnet_receipt(base_header: BaseBlockHeader,
     gas_refund = computation.get_gas_refund()
 
     if computation.transaction_context.is_refund:
-        gas_used = base_header.gas_used
+        gas_used = 0
 
     elif computation.transaction_context.is_receive:
         if computation.msg.data != b'' and not computation.msg.is_create:
@@ -69,9 +69,9 @@ def make_helios_testnet_receipt(base_header: BaseBlockHeader,
                 (send_transaction.gas - gas_remaining) // 2,
             )
 
-            gas_used = base_header.gas_used + tx_gas_used
+            gas_used = tx_gas_used
         else:
-            gas_used = base_header.gas_used
+            gas_used = 0
     else:
         if computation.msg.data == b'' or computation.msg.is_create:
             tx_gas_used = (
@@ -81,10 +81,10 @@ def make_helios_testnet_receipt(base_header: BaseBlockHeader,
                 (send_transaction.gas - gas_remaining) // 2,
             )
 
-            gas_used = base_header.gas_used + tx_gas_used
+            gas_used = tx_gas_used
         else:
             #in this case we take max gas temporarily, but it technically isn't used yet... so lets leave it at 0
-            gas_used = base_header.gas_used
+            gas_used = 0
 
     if computation.is_error:
         status_code = EIP658_TRANSACTION_STATUS_CODE_FAILURE

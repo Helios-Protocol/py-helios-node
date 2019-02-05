@@ -16,8 +16,10 @@ from helios.rpc.format import (
     format_params,
     to_int_if_hex,
     transaction_to_dict,
-)
+    receipt_to_dict)
 import rlp_cython as rlp
+
+from hvm.utils.blocks import get_block_average_transaction_gas_price
 
 #from hp2p.chain import NewBlockQueueItem
 
@@ -358,6 +360,32 @@ class Hls(RPCModule):
     # Gets
     #
     @format_params(decode_hex)
+    async def getTransactionReceipt(self, tx_hash):
+        chain = self._chain_class(self._chain.db, wallet_address = self._chain.wallet_address)
+        receipt = chain.chaindb.get_transaction_receipt(tx_hash)
+
+        receipt_dict = receipt_to_dict(receipt, tx_hash, chain)
+
+        print('AAAAAAA')
+        print(receipt_dict)
+        return receipt_dict
+
+    async def getGasPrice(self):
+        required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price()
+        return hex(required_min_gas_price)
+
+    async def getHistoricalGasPrice(self):
+
+        historical_min_gas_price = self._chain.chaindb.load_historical_minimum_gas_price()
+
+        encoded = []
+        for timestamp_gas_price in historical_min_gas_price:
+            encoded.append([hex(timestamp_gas_price[0]), hex(timestamp_gas_price[1])])
+
+        return encoded
+
+
+    @format_params(decode_hex)
     async def getBlockNumber(self, chain_address):
         chain = self._chain_class(self._chain.db, wallet_address=chain_address)
         canonical_header = chain.chaindb.get_canonical_head(chain_address)
@@ -417,12 +445,22 @@ class Hls(RPCModule):
 
         full_block = block_class.from_micro_block(micro_block)
 
+        average_gas_price = get_block_average_transaction_gas_price(full_block)
+        required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price(full_block.header.timestamp)
+
+        if average_gas_price < required_min_gas_price:
+            raise Exception("Block transactions don't meet the minimum gas price requirement of {}".format(required_min_gas_price))
+
         self._event_bus.broadcast(
             NewBlockEvent(block=cast(P2PBlock, full_block), from_rpc=True)
         )
 
         return True
 
+
+    #
+    # Admin tools and dev debugging
+    #
     async def getBlockchainDBDetails(self):
         chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
         head_block_hashes = chain.chain_head_db.get_head_block_hashes()

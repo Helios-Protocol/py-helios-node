@@ -328,9 +328,6 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def get_receive_transactions(self, wallet_address: Address):
         raise NotImplementedError("Chain classes must implement this method")
 
-    @abstractmethod
-    def get_receipts(self, block_header: BlockHeader) -> Receipt:
-        raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
     def create_receivable_transactions(self) -> List[BaseReceiveTransaction]:
@@ -732,12 +729,6 @@ class Chain(BaseChain):
         else:
             return self.chaindb.get_canonical_head()
 
-    #
-    # Receipt API
-    #
-
-    def get_receipts(self, block_header: BlockHeader) -> Receipt:
-        return self.chaindb.get_receipts(block_header, self.get_vm(block_header).get_block_class().receipt_class)
 
     #
     # Block API

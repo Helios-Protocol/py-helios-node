@@ -105,6 +105,8 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         Hook called during instantiation to ensure that all transaction
         parameters pass validation rules.
         """
+        if self.gas_price <= 0:
+            raise ValidationError("Insufficient gas price. Must be at least 1")
         if self.intrinsic_gas > self.gas:
             raise ValidationError("Insufficient gas")
         self.check_signature_validity()

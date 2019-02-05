@@ -11,6 +11,7 @@ from cytoolz import (
     compose,
     merge,
 )
+from eth_typing import Hash32
 
 from eth_utils import (
     apply_formatters_to_dict,
@@ -34,10 +35,13 @@ from hvm.rlp.consensus import StakeRewardBundle
 from hvm.rlp.headers import (
     BlockHeader
 )
+from hvm.rlp.receipts import Receipt
 from hvm.rlp.transactions import (
     BaseTransaction,
     BaseReceiveTransaction
 )
+from hvm.utils.address import generate_contract_address
+
 
 def underscore_to_camel_case(input_string:str) -> str:
     if isinstance(input_string,str):
@@ -77,18 +81,46 @@ def all_rlp_fields_to_dict_camel_case(rlp_object: Union[rlp.Serializable, List, 
         return list_to_return
 
 
+def receipt_to_dict(receipt: Receipt, tx_hash: Hash32, chain: AsyncChain) -> Dict[str, str]:
+    dict_to_return = all_rlp_fields_to_dict_camel_case(receipt)
 
-def transaction_to_dict(transaction: BaseTransaction) -> Dict[str, str]:
+    block_hash, index, is_receive = chain.chaindb.get_transaction_index(tx_hash)
+    dict_to_return['blockHash'] = to_hex(block_hash)
+    dict_to_return['transactionHash'] = to_hex(tx_hash)
+    dict_to_return['isReceive'] = to_hex(is_receive)
+    dict_to_return['transactionIndex'] = to_hex(index)
+
+    block_header = chain.get_block_header_by_hash(block_hash)
+    dict_to_return['blockNumber'] = to_hex(block_header.block_number)
+
+    transaction = chain.get_canonical_transaction(tx_hash)
+
+    if is_receive:
+        dict_to_return['to'] = to_hex(block_header.chain_address)
+        dict_to_return['sender'] = to_hex(chain.chaindb.get_chain_wallet_address_for_block_hash(transaction.sender_block_hash))
+    else:
+        dict_to_return['to'] = to_hex(transaction.to)
+        dict_to_return['sender'] = to_hex(transaction.sender)
+
+        if transaction.to == CREATE_CONTRACT_ADDRESS:
+            dict_to_return['contractAddress'] = to_hex(generate_contract_address(transaction.sender, transaction.nonce))
+
+    dict_to_return['cumulativeGasUsed'] = to_hex(chain.chaindb.get_cumulative_gas_used(tx_hash))
+
+    return dict_to_return
+
+def transaction_to_dict(transaction: BaseTransaction, chain: AsyncChain) -> Dict[str, str]:
     dict_to_return = all_rlp_fields_to_dict_camel_case(transaction)
     dict_to_return['hash'] = encode_hex(transaction.hash)
+    dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction.hash).gas_used)
     return dict_to_return
 
 
 
-def transactions_to_dict(transactions: List[BaseTransaction]) -> List[Dict[str, str]]:
+def transactions_to_dict(transactions: List[BaseTransaction],  chain: AsyncChain) -> List[Dict[str, str]]:
     dict_transactions = []
     for tx in transactions:
-        dict_tx = transaction_to_dict(tx)
+        dict_tx = transaction_to_dict(tx, chain)
         dict_transactions.append(dict_tx)
 
     return dict_transactions
@@ -112,6 +144,9 @@ def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: Asyn
         value = originating_transaction.value
 
     dict_to_return['value'] = to_hex(value)
+
+    dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction.hash).gas_used)
+
     return dict_to_return
 
 
@@ -194,7 +229,7 @@ def block_to_dict(block: BaseBlock,
     )
 
     if include_transactions:
-        block_dict['transactions'] = transactions_to_dict(block.transactions)
+        block_dict['transactions'] = transactions_to_dict(block.transactions, chain)
         block_dict['receiveTransactions'] = receive_transactions_to_dict(block.receive_transactions, chain)
         block_dict['rewardBundle'] = reward_bundle_to_dict(block.reward_bundle)
     else:

@@ -10,7 +10,7 @@ from typing import Type
 
 
 class RPCModule:
-    _chain = None
+    _chain: AsyncChain = None
 
     def __init__(self, chain: AsyncChain, event_bus: Endpoint, chain_class: Type[AsyncChain] = None) -> None:
         self._chain = chain

@@ -147,9 +147,6 @@ from helios.protocol.common.datastructures import SyncParameters
     
 #if syncer finds a conflicting block, it can append it to conflict_blocks
 #make sure this has transactions in it. they are an important part of slashing
-    
-#Todo. remove any conflic blocks that achieve 100% consensus
-from hvm.utils.rlp import make_mutable
 
 
 class BlockConflictInfo():
@@ -1849,7 +1846,7 @@ class Consensus(BaseService, PeerSubscriber):
         
     async def _handle_get_min_gas_parameters(self, peer: HLSPeer, msg) -> None:
         if self.coro_min_gas_system_ready.is_set():
-            hist_min_allowed_gas_price = await self.chaindb.coro_load_historical_minimum_gas_price(mutable = False, sort=True)
+            hist_min_allowed_gas_price = await self.chaindb.coro_load_historical_minimum_gas_price(sort=True)
             
             if msg['num_centiseconds_from_now'] == 0:
                 average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
@@ -1858,7 +1855,7 @@ class Consensus(BaseService, PeerSubscriber):
                     hist_min_allowed_gas_price_new = [[0,hist_min_allowed_gas_price[-1][1]]]
                     peer.sub_proto.send_min_gas_parameters(hist_net_tpc_capability, hist_min_allowed_gas_price_new)
             else:
-                hist_net_tpc_capability = await self.chaindb.coro_load_historical_network_tpc_capability(mutable = False, sort=True)
+                hist_net_tpc_capability = await self.chaindb.coro_load_historical_network_tpc_capability(sort=True)
                 
                 num_centiseconds_to_send = min([len(hist_net_tpc_capability), len(hist_min_allowed_gas_price), msg['num_centiseconds_from_now']])
                 self.logger.debug("sending {} centiseconds of min gas parameters".format(num_centiseconds_to_send))
