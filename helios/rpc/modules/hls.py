@@ -100,9 +100,18 @@ class Hls(RPCModule):
         raise NotImplementedError()
 
     @format_params(decode_hex, to_int_if_hex)
-    def getBalance(self, address, at_block):
-        account_db = account_db_at_block(self._chain, at_block)
-        balance = account_db.get_balance(address)
+    async def getBalance(self, address, at_block):
+        chain = self._chain_class(self._chain.db, wallet_address=address)
+
+        if at_block == 'latest':
+            try:
+                header = chain.chaindb.get_canonical_head(address)
+                balance = header.account_balance
+            except CanonicalHeadNotFound:
+                balance = 0
+        else:
+            header = chain.chaindb.get_canonical_block_header_by_number(at_block)
+            balance = header.account_balance
 
         return hex(balance)
 
