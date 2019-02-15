@@ -16,7 +16,7 @@ from helios.rpc.format import (
     format_params,
     to_int_if_hex,
     transaction_to_dict,
-    receipt_to_dict)
+    receipt_to_dict, receive_transactions_to_dict)
 import rlp_cython as rlp
 
 from hvm.utils.blocks import get_block_average_transaction_gas_price
@@ -368,6 +368,18 @@ class Hls(RPCModule):
     #
     # Gets
     #
+
+
+    @format_params(decode_hex)
+    async def getReceivableTransactions(self, chain_address):
+        # create new chain for all requests
+        chain = self._chain_class(self._chain.db, wallet_address=chain_address)
+
+        receivable_transactions = chain.create_receivable_transactions()
+        receivable_transactions_dict = receive_transactions_to_dict(receivable_transactions, chain)
+
+        return receivable_transactions_dict
+
     @format_params(decode_hex)
     async def getTransactionReceipt(self, tx_hash):
         chain = self._chain_class(self._chain.db, wallet_address = self._chain.wallet_address)
@@ -375,8 +387,6 @@ class Hls(RPCModule):
 
         receipt_dict = receipt_to_dict(receipt, tx_hash, chain)
 
-        print('AAAAAAA')
-        print(receipt_dict)
         return receipt_dict
 
     async def getGasPrice(self):

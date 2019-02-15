@@ -28,6 +28,7 @@ from hvm.chains.base import (
 )
 from hvm.constants import (
     CREATE_CONTRACT_ADDRESS)
+from hvm.exceptions import TransactionNotFound
 from hvm.rlp.blocks import (
     BaseBlock
 )
@@ -145,7 +146,10 @@ def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: Asyn
 
     dict_to_return['value'] = to_hex(value)
 
-    dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction.hash).gas_used)
+    try:
+        dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction.hash).gas_used)
+    except TransactionNotFound:
+        dict_to_return['gasUsed'] = 0
 
     return dict_to_return
 

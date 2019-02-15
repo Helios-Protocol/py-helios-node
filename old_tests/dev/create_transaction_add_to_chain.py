@@ -112,6 +112,14 @@ logger.propagate = False
 #logger.info(HELIOS_HEADER)
 
 
+for i in range(len(primary_private_keys)):
+    print()
+    print("instance number", i)
+    print("private key", encode_hex(primary_private_keys[i]))
+    key = keys.PrivateKey(primary_private_keys[i])
+    print("address",key.public_key.to_checksum_address())
+
+sys.exit()
 """
 Initialize chain from genesis params
 """
