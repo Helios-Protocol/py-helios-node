@@ -106,6 +106,10 @@ def extract_block_header_sender(block_header: BaseBlockHeader) -> bytes:
 
 
 def get_block_average_transaction_gas_price(block):
+    #Always accept blocks with just receive or reward tx.
+    if len(block.transactions) == 0:
+        return float('inf')
+
     total_sum = 0
     num_tx = 0
     for transaction in block.transactions:
