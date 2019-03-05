@@ -435,7 +435,8 @@ class Hls(RPCModule):
         to_return['receive_transactions'] = encoded_receivable_transactions
 
         reward_bundle = chain.consensus_db.create_reward_bundle_for_block(chain_address)
-
+        amount = reward_bundle.reward_type_1.amount + reward_bundle.reward_type_2.amount
+        print("SENDING BLOCK CREATION PARAMS REWARD BUNDLE WITH AMOUNT", amount)
         to_return['reward_bundle'] = encode_hex(rlp.encode(reward_bundle, sedes = StakeRewardBundle))
 
         return to_return
