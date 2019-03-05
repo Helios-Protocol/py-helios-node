@@ -244,14 +244,16 @@ BLANK_REWARD_HASH = ZERO_HASH32
 #Make sure this is less than the allowed time between rewards
 REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE = 300 #5 minutes
 MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS = 60*60*24*7 #once a week
-REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE = 5
+# The allowed difference in time between the block timestamp and when the reward bundle was created.
+# this needs to be non-zero because the wallet application may take time small amount of time to finalize the block.
+# This could also account for differences in server clock with client clock.
+REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE = 60
 REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY = 60*60*2
 
 #testing
 TIME_BETWEEN_PEER_NODE_HEALTH_CHECK = 5
 MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS = 1
 REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE = 300
-REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE = 1
 REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY = 5
 REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF = 100
 REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF = 1
