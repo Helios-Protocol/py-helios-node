@@ -148,7 +148,7 @@ SECPK1_G = (SECPK1_Gx, SECPK1_Gy)
 # keccak(rlp_templates.encode([]))
 EMPTY_UNCLE_HASH = Hash32(b'\x1d\xccM\xe8\xde\xc7]z\xab\x85\xb5g\xb6\xcc\xd4\x1a\xd3\x12E\x1b\x94\x8at\x13\xf0\xa1B\xfd@\xd4\x93G')  # noqa: E501
 
-BLOCK_GAS_LIMIT = 31415926
+BLOCK_GAS_LIMIT = 314159265
 
 #
 # Genesis Data
