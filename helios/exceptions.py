@@ -8,6 +8,7 @@ class BaseHeliosError(Exception):
     pass
 
 
+
 class AmbigiousFileSystem(BaseHeliosError):
     """
     Raised when the file system paths are unclear
@@ -63,3 +64,10 @@ class SyncingError(BaseHeliosError):
     Raised when there is an error while syncing
     """
     pass
+
+class BaseRPCError(BaseHeliosError):
+    """
+    The base class for all RPC errors.
+    """
+    pass
+

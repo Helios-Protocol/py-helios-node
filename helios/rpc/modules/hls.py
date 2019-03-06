@@ -9,7 +9,10 @@ from eth_utils import (
     int_to_big_endian,
     is_integer,
 )
+import time
 
+from helios.exceptions import BaseRPCError
+from helios.rpc.constants import MAX_ALLOWED_AGE_OF_NEW_RPC_BLOCK
 from helios.rpc.format import (
     block_to_dict,
     header_to_dict,
@@ -19,6 +22,7 @@ from helios.rpc.format import (
     receipt_to_dict, receive_transactions_to_dict)
 import rlp_cython as rlp
 
+from hvm.exceptions import CanonicalHeadNotFound
 from hvm.utils.blocks import get_block_average_transaction_gas_price
 
 #from hp2p.chain import NewBlockQueueItem
@@ -456,6 +460,7 @@ class Hls(RPCModule):
         return block_to_dict(block, include_transactions, chain)
 
     async def sendRawBlock(self, encoded_micro_block):
+        chain = self._chain_class(self._chain.db, wallet_address=chain_address)
 
         encoded_micro_block = decode_hex(encoded_micro_block)
 
@@ -464,6 +469,20 @@ class Hls(RPCModule):
         block_class = self._chain_class.get_vm_class_for_block_timestamp().get_block_class()
 
         full_block = block_class.from_micro_block(micro_block)
+
+        # Validate the block here
+        if(full_block.header.timestamp < (int(time.time()) - MAX_ALLOWED_AGE_OF_NEW_RPC_BLOCK)):
+            raise BaseRPCError("The block timestamp is to old. We can only import new blocks over RPC.")
+
+        try:
+            canonical_head = self.chaindb.get_canonical_head(full_block.header.chain_address)
+            if canonical_head.block_number >= full_block.header.block_number:
+                raise BaseRPCError("You are attempting to replace an existing block. This is not allowed.")
+        except CanonicalHeadNotFound:
+            pass
+
+        if(not self._chain.chaindb.is_in_canonical_chain(full_block.header.parent_hash)):
+            raise BaseRPCError("Parent block not found on canonical chain.")
 
         average_gas_price = get_block_average_transaction_gas_price(full_block)
         required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price(full_block.header.timestamp)
