@@ -224,7 +224,7 @@ class Proxy:
 
     def run(self):
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ssl_context.load_cert_chain('/helios/certs/heliosprotocol.io.crt')
+        ssl_context.load_cert_chain('/helios/certs/heliosprotocol_io.crt')
 
         self.conn = get_ipc_connector(self.backend_address)
         self.conn.check_connection(timeout=BACKEND_CONNECTION_TIMEOUT)
