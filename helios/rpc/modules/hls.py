@@ -475,7 +475,7 @@ class Hls(RPCModule):
             raise BaseRPCError("The block timestamp is to old. We can only import new blocks over RPC.")
 
         try:
-            canonical_head = self.chaindb.get_canonical_head(full_block.header.chain_address)
+            canonical_head = self._chain.chaindb.get_canonical_head(full_block.header.chain_address)
             if canonical_head.block_number >= full_block.header.block_number:
                 raise BaseRPCError("You are attempting to replace an existing block. This is not allowed.")
         except CanonicalHeadNotFound:
