@@ -32,6 +32,7 @@ import socket
 import sys
 import time
 import json
+import ssl
 
 from urllib.parse import urlparse
 
@@ -222,10 +223,13 @@ class Proxy:
             await websocket.send(response.decode('utf-8'))
 
     def run(self):
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ssl_context.load_cert_chain('/helios/certs/heliosprotocol.io.crt')
+
         self.conn = get_ipc_connector(self.backend_address)
         self.conn.check_connection(timeout=BACKEND_CONNECTION_TIMEOUT)
 
-        start_server = websockets.serve(self.interface, self.hostname, self.port)
+        start_server = websockets.serve(self.interface, self.hostname, self.port, ssl=ssl_context)
 
         print("JSON-RPC Websocket Proxy: {} -> {}".format(
             self.backend_address, self.websocket_url), file=sys.stderr, flush=True)
