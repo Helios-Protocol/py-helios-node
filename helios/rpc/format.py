@@ -145,6 +145,7 @@ def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: Asyn
         value = originating_transaction.value
 
     dict_to_return['value'] = to_hex(value)
+    dict_to_return['gasPrice'] = to_hex(originating_transaction.gas_price)
 
     try:
         dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction.hash).gas_used)
