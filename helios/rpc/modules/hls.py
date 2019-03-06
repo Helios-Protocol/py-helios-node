@@ -460,7 +460,7 @@ class Hls(RPCModule):
         return block_to_dict(block, include_transactions, chain)
 
     async def sendRawBlock(self, encoded_micro_block):
-        chain = self._chain_class(self._chain.db, wallet_address=chain_address)
+        chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
 
         encoded_micro_block = decode_hex(encoded_micro_block)
 
