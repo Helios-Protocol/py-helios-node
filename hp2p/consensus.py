@@ -10,7 +10,8 @@ from helios.protocol.hls.sync import get_earliest_required_time_for_min_gas_syst
     get_sync_stage_for_historical_root_hash_timestamp
 from helios.sync.common.constants import ADDITIVE_SYNC_STAGE_ID
 from helios.utils.queues import empty_queue
-from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, StakeFromBootnodeResponse
+from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, StakeFromBootnodeResponse, CurrentSyncStageRequest, \
+    CurrentSyncStageResponse
 from hvm.rlp.consensus import NodeStakingScore
 
 from lahja import Endpoint
@@ -761,7 +762,7 @@ class Consensus(BaseService, PeerSubscriber):
         except RewardAmountRoundsToZero:
             self.logger.warning("Tried to import a reward block, but the reward amounts rounded to 0. More time needs to pass before importing a reward block.")
         except Exception as e:
-            raise e
+            self.logger.error("Error when importing reward block: {}".format(e))
 
 
     async def _get_node_staking_score_from_peer(self, peer: HLSPeer, since_block: BlockNumber):
@@ -789,7 +790,7 @@ class Consensus(BaseService, PeerSubscriber):
                 await asyncio.sleep(ROUND_TRIP_TIMEOUT)
                 continue
             except Exception as e:
-                self.logger.debug("Error when receiving staking score from peer. {}".format(e))
+                self.logger.error("Error when receiving staking score from peer. {}".format(e))
                 break
 
 
@@ -1886,25 +1887,33 @@ class Consensus(BaseService, PeerSubscriber):
 
     async def _handle_get_node_staking_score(self, peer: HLSPeer, msg) -> None:
         self.logger.debug("Received request to send node staking score.")
-        try:
-            node_staking_score = await self.consensus_db.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), peer.wallet_address)
-        except (ValueError, CanonicalHeadNotFound) as e:
-            self.logger.warning("Failed to create node staking score for peer {}. Error: {}".format(encode_hex(peer.wallet_address), e))
-        else:
-            self.logger.debug("Sending node staking score.")
-            peer.sub_proto.send_node_staking_score(node_staking_score)
+        if peer.wallet_address != self.chain_config.node_wallet_address:
+            try:
+                node_staking_score = await self.consensus_db.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), peer.wallet_address)
+            except (ValueError, CanonicalHeadNotFound) as e:
+                self.logger.warning("Failed to create node staking score for peer {}. Error: {}".format(encode_hex(peer.wallet_address), e))
+            else:
+                self.logger.debug("Sending node staking score.")
+                peer.sub_proto.send_node_staking_score(node_staking_score)
 
     #
     # Event bus functions
     #
     async def handle_event_bus_events(self) -> None:
-        async def f() -> None:
+        async def stake_from_bootnode_loop() -> None:
             # FIXME: There must be a way to cancel event_bus.stream() when our token is triggered,
             # but for the time being we just wrap everything in self.wait().
             async for req in self.event_bus.stream(StakeFromBootnodeRequest):
                 self.event_bus.broadcast(StakeFromBootnodeResponse(self.peer_stake_from_bootstrap_node), req.broadcast_config())
 
-        await self.wait(f())
+        async def current_sync_stage_loop() -> None:
+            # FIXME: There must be a way to cancel event_bus.stream() when our token is triggered,
+            # but for the time being we just wrap everything in self.wait().
+            async for req in self.event_bus.stream(CurrentSyncStageRequest):
+                self.event_bus.broadcast(CurrentSyncStageResponse(await self.current_sync_stage),
+                                         req.broadcast_config())
+
+        await self.wait_first(stake_from_bootnode_loop(),current_sync_stage_loop())
 
 
                 

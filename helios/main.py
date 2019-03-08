@@ -212,7 +212,7 @@ def main() -> None:
     log_levels['hp2p.peer.PeerPool'] = logging.DEBUG
     log_levels['hp2p.consensus.Consensus'] = logging.DEBUG
     log_levels['hp2p.SmartContractChainManager'] = logging.DEBUG
-    log_levels['hp2p.kademlia.KademliaProtocol'] = logging.INFO
+    log_levels['hp2p.kademlia.KademliaProtocol'] = logging.DEBUG
     log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.INFO
     log_levels['hp2p.discovery.DiscoveryService'] = logging.INFO
     log_levels['hp2p.nat.UPnPService'] = logging.CRITICAL
@@ -428,7 +428,7 @@ def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> N
         base_db = db_class(db_path=chain_config.database_dir)
 
         # TODO:remove
-        base_db = JournalDB(base_db)
+        # base_db = JournalDB(base_db)
 
         manager = get_chaindb_manager(chain_config, base_db)
         server = manager.get_server()  # type: ignore

@@ -37,6 +37,17 @@ class StakeFromBootnodeRequest(BaseRequestResponseEvent[StakeFromBootnodeRespons
     def expected_response_type() -> Type[StakeFromBootnodeResponse]:
         return StakeFromBootnodeResponse
 
+class CurrentSyncStageResponse(BaseEvent):
+
+    def __init__(self, sync_stage: int) -> None:
+        self.sync_stage = sync_stage
+
+class CurrentSyncStageRequest(BaseRequestResponseEvent[CurrentSyncStageResponse]):
+
+    @staticmethod
+    def expected_response_type() -> Type[CurrentSyncStageResponse]:
+        return CurrentSyncStageResponse
+
 
 class NoResponse(BaseEvent):
 

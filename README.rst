@@ -111,7 +111,7 @@ the node software to use your wallet as a source of coins to stake.
     `MyEtherWallet <http://myetherwallet.com>`_, then save the wallet file. This file will work with
     Helios Protocol.
 2)  Place keystore file within the directory helios/keystore
-3)  Configure node to use your keystore file. Copy helios/keystore_config.template.py to helios/keystore_config.py.
+3)  Configure node to use your keystore file. Copy helios/helios_config.template.py to helios/helios_config.py.
     Then edit the new file and tell it the filename of your keystore file to use.
 
 Open Ports in Firewall

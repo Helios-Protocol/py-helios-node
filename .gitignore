@@ -76,5 +76,6 @@ monkeytype.sqlite3
 # keystore files
 helios/keystore/*
 !helios/keystore/.gitkeep
-helios/keystore_config.py
+
+helios/helios_config.py
 

@@ -21,6 +21,7 @@ from helios.rpc.format import (
     transaction_to_dict,
     receipt_to_dict, receive_transactions_to_dict)
 import rlp_cython as rlp
+from helios.sync.common.constants import FULLY_SYNCED_STAGE_ID
 
 from hvm.exceptions import CanonicalHeadNotFound
 from hvm.utils.blocks import get_block_average_transaction_gas_price
@@ -45,7 +46,7 @@ import asyncio
 
 from typing import cast
 
-from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest
+from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStageRequest
 
 from hvm.rlp.consensus import StakeRewardBundle
 from hvm.vm.forks.helios_testnet.blocks import MicroBlock
@@ -88,6 +89,15 @@ class Hls(RPCModule):
 
     Any attribute without an underscore is publicly accessible.
     '''
+
+    #
+    # Tools
+    #
+    async def ping(self) -> bool:
+        """
+        Workaround for keepalive of ws connections in case it is not handled by the ws client.
+        """
+        return True
 
     def accounts(self):
         raise NotImplementedError()
@@ -481,8 +491,16 @@ class Hls(RPCModule):
         except CanonicalHeadNotFound:
             pass
 
-        if(not self._chain.chaindb.is_in_canonical_chain(full_block.header.parent_hash)):
+        if((full_block.header.block_number != 0) and
+            (not self._chain.chaindb.is_in_canonical_chain(full_block.header.parent_hash))):
             raise BaseRPCError("Parent block not found on canonical chain.")
+
+        #Check our current syncing stage. Must be sync stage 4.
+        current_sync_stage_response = await self._event_bus.request(
+            CurrentSyncStageRequest()
+        )
+        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
+            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
 
         average_gas_price = get_block_average_transaction_gas_price(full_block)
         required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price(full_block.header.timestamp)

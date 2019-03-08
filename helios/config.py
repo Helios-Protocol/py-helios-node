@@ -57,9 +57,9 @@ if TYPE_CHECKING:
 DATABASE_DIR_NAME = 'chain'
 
 try:
-    from .keystore_config import KEYSTORE_FILENAME_TO_USE
+    from .helios_config import KEYSTORE_FILENAME_TO_USE
 except ModuleNotFoundError:
-    print("Keystore configuration file required. Please use the template to create a keystore_config.py file. See our github for more details.")
+    print("Keystore configuration file required. Please use the template to create a helios_config.py file. See our github for more details.")
 
 
 class ChainConfig:
@@ -229,12 +229,16 @@ class ChainConfig:
             if (self.keystore_path is None and KEYSTORE_FILENAME_TO_USE is None) or self.keystore_password is None:
                 raise ValueError("You must provide a keystore file containing a private key for this node, and a password to open it.")
             else:
-                if self.keystore_path is not None:
-                    self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(self.keystore_path, self.keystore_password))
-                else:
-                    absolute_dir = os.path.dirname(os.path.realpath(__file__))
-                    absolute_keystore_path = absolute_dir + '/keystore/'
-                    self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(absolute_keystore_path + KEYSTORE_FILENAME_TO_USE, self.keystore_password))
+                try:
+                    if self.keystore_path is not None:
+                        self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(self.keystore_path, self.keystore_password))
+                    else:
+                        absolute_dir = os.path.dirname(os.path.realpath(__file__))
+                        absolute_keystore_path = absolute_dir + '/keystore/'
+                        self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(absolute_keystore_path + KEYSTORE_FILENAME_TO_USE, self.keystore_password))
+                except ValueError:
+                    raise ValueError(
+                        "An error occured when decoding your keyfile. This can be caused by an incorrect password, or damaged keyfile.")
 
         return self._node_private_helios_key
 

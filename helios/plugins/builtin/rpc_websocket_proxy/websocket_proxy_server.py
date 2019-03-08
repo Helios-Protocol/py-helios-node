@@ -34,6 +34,12 @@ import time
 import json
 import ssl
 
+from helios.helios_config import (
+    WEBSOCKET_USE_SSL,
+    WEBSOCKET_SSL_CERT_FILE_PATH,
+    WEBSOCKET_SSL_KEY_FILE_PATH
+)
+
 from urllib.parse import urlparse
 
 try:
@@ -223,16 +229,21 @@ class Proxy:
             await websocket.send(response.decode('utf-8'))
 
     def run(self):
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ssl_context.load_cert_chain('/helios/certs/heliosprotocol_io.crt')
-
         self.conn = get_ipc_connector(self.backend_address)
         self.conn.check_connection(timeout=BACKEND_CONNECTION_TIMEOUT)
 
-        start_server = websockets.serve(self.interface, self.hostname, self.port, ssl=ssl_context)
+        if WEBSOCKET_USE_SSL:
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ssl_context.load_cert_chain(WEBSOCKET_SSL_CERT_FILE_PATH, WEBSOCKET_SSL_KEY_FILE_PATH)
 
-        print("JSON-RPC Websocket Proxy: {} -> {}".format(
-            self.backend_address, self.websocket_url), file=sys.stderr, flush=True)
+            start_server = websockets.serve(self.interface, self.hostname, self.port, ssl=ssl_context)
+            print("JSON-RPC Secure Websocket Proxy: {} -> {}".format(
+                self.backend_address, self.websocket_url), file=sys.stderr, flush=True)
+        else:
+            start_server = websockets.serve(self.interface, self.hostname, self.port)
+
+            print("JSON-RPC Websocket Proxy: {} -> {}".format(
+                self.backend_address, self.websocket_url), file=sys.stderr, flush=True)
 
         asyncio.get_event_loop().run_until_complete(start_server)
         asyncio.get_event_loop().run_forever()
