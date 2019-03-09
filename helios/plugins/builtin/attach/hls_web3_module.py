@@ -386,6 +386,11 @@ class Hls(Module):
     def getAccountBalances(self):
         return self.web3.manager.request_blocking("hls_getAccountBalances", [])
 
+    def getChronologicalBlockWindowTimestampHashes(self, timestamp):
+        return self.web3.manager.request_blocking("hls_getChronologicalBlockWindowTimestampHashes", [timestamp])
+
+    def getCurrentSyncingParameters(self):
+        return self.web3.manager.request_blocking("hls_getCurrentSyncingParameters", [])
 
     #
     # Gets

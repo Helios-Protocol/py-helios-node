@@ -10,6 +10,7 @@ from lahja import (
 )
 
 from eth_typing import Address
+from helios.protocol.common.datastructures import SyncParameters
 
 from helios.rlp_templates.hls import P2PBlock
 
@@ -25,6 +26,19 @@ class PeerCountRequest(BaseRequestResponseEvent[PeerCountResponse]):
     @staticmethod
     def expected_response_type() -> Type[PeerCountResponse]:
         return PeerCountResponse
+
+class CurrentSyncingParametersResponse(BaseEvent):
+
+    def __init__(self, current_syncing_parameters: SyncParameters) -> None:
+        self.current_syncing_parameters = current_syncing_parameters
+
+
+class CurrentSyncingParametersRequest(BaseRequestResponseEvent[CurrentSyncingParametersResponse]):
+
+    @staticmethod
+    def expected_response_type() -> Type[CurrentSyncingParametersResponse]:
+        return CurrentSyncingParametersResponse
+
 
 class StakeFromBootnodeResponse(BaseEvent):
 

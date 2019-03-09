@@ -715,6 +715,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         peer_to_sync_with = additional_candidate_peers.pop()
         historical_root_hash_timestamp = sync_parameters.timestamp_for_root_hash
         consensus_root_hash = sync_parameters.consensus_root_hash
+        local_root_hash = sync_parameters.local_root_hash
 
         # before starting workers, lets figure out which chains we already have.
         # We can make a shared list of chains that the workers can skip
@@ -726,7 +727,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         while self.is_operational:
             self.chain_head_db.load_saved_root_hash()
-            our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list()
+            our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list(local_root_hash)
 
             self._fast_sync_required_chain_list_idx = 0
 
@@ -778,7 +779,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
             worker_tasks = []
             num_workers = min(self._max_fast_sync_workers, len(sync_parameters.peers_to_sync_with))
-            self.logger.debug("Creating {} workers. {}, {}".format(num_workers, self._max_fast_sync_workers, len(sync_parameters.peers_to_sync_with)))
+            self.logger.debug("Creating {} workers. max_fast_sync_workers = {}, number of peers available for syncing = {}".format(num_workers, self._max_fast_sync_workers, len(sync_parameters.peers_to_sync_with)))
             for i in range(num_workers):
                 worker_tasks.append(self.run_task(self.fast_sync_worker(sync_parameters, fast_sync_parameters)))
 
@@ -1007,7 +1008,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         chains = []
         for head_hash in chain_head_hashes:
-            chain = await self.chaindb.coro_get_all_blocks_on_chain_by_head_block_hash(head_hash, P2PBlock)
+            chain = await self.chaindb.coro_get_blocks_on_chain_up_to_block_hash(head_hash, P2PBlock)
             chains.append(chain)
 
         self.logger.debug('sending {} chains'.format(len(chains)))

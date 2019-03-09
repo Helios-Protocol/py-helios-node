@@ -26,6 +26,8 @@ from helios.sync.common.constants import FULLY_SYNCED_STAGE_ID
 from hvm.exceptions import CanonicalHeadNotFound
 from hvm.utils.blocks import get_block_average_transaction_gas_price
 
+from hvm.types import Timestamp
+
 #from hp2p.chain import NewBlockQueueItem
 
 from eth_utils import is_hex_address, to_checksum_address
@@ -46,7 +48,8 @@ import asyncio
 
 from typing import cast
 
-from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStageRequest
+from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStageRequest, \
+    CurrentSyncingParametersRequest
 
 from hvm.rlp.consensus import StakeRewardBundle
 from hvm.vm.forks.helios_testnet.blocks import MicroBlock
@@ -518,6 +521,22 @@ class Hls(RPCModule):
     #
     # Admin tools and dev debugging
     #
+    async def getChronologicalBlockWindowTimestampHashes(self, timestamp: Timestamp):
+        chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+        chronological_block_window = chain.chain_head_db.load_chronological_block_window(timestamp)
+
+        return [[timestamp_root_hash[0], encode_hex(timestamp_root_hash[1])] for timestamp_root_hash in chronological_block_window]
+
+    async def getCurrentSyncingParameters(self):
+        current_syncing_parameters_request = await self._event_bus.request(
+            CurrentSyncingParametersRequest()
+        )
+
+        sync_parameters = current_syncing_parameters_request.current_syncing_parameters
+
+        return sync_parameters.__dict__
+
+
     async def getBlockchainDBDetails(self):
         chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
         head_block_hashes = chain.chain_head_db.get_head_block_hashes()

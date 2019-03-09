@@ -111,6 +111,11 @@ class AsyncChainDB(ChainDB):
     async def coro_get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32, block_class) -> List[BaseBlock]:
         raise NotImplementedError()
 
+    async def coro_get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32, block_class) -> List[BaseBlock]:
+        raise NotImplementedError()
+
+
+
 class ChainDBProxy(BaseProxy):
     coro_get_block_header_by_hash = async_method('get_block_header_by_hash')
     coro_get_canonical_head = async_method('get_canonical_head')
@@ -143,6 +148,7 @@ class ChainDBProxy(BaseProxy):
     coro_get_all_block_hashes_on_chain = async_method('get_all_block_hashes_on_chain')
     coro_get_all_block_hashes_on_chain_by_head_block_hash = async_method('get_all_block_hashes_on_chain_by_head_block_hash')
     coro_get_all_blocks_on_chain_by_head_block_hash = async_method('get_all_blocks_on_chain_by_head_block_hash')
+    coro_get_blocks_on_chain_up_to_block_hash = async_method('get_blocks_on_chain_up_to_block_hash')
 
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')

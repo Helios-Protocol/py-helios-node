@@ -11,7 +11,7 @@ from helios.protocol.hls.sync import get_earliest_required_time_for_min_gas_syst
 from helios.sync.common.constants import ADDITIVE_SYNC_STAGE_ID
 from helios.utils.queues import empty_queue
 from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, StakeFromBootnodeResponse, CurrentSyncStageRequest, \
-    CurrentSyncStageResponse
+    CurrentSyncStageResponse, CurrentSyncingParametersRequest, CurrentSyncingParametersResponse
 from hvm.rlp.consensus import NodeStakingScore
 
 from lahja import Endpoint
@@ -1913,7 +1913,14 @@ class Consensus(BaseService, PeerSubscriber):
                 self.event_bus.broadcast(CurrentSyncStageResponse(await self.current_sync_stage),
                                          req.broadcast_config())
 
-        await self.wait_first(stake_from_bootnode_loop(),current_sync_stage_loop())
+        async def current_syncing_parameters_loop() -> None:
+            # FIXME: There must be a way to cancel event_bus.stream() when our token is triggered,
+            # but for the time being we just wrap everything in self.wait().
+            async for req in self.event_bus.stream(CurrentSyncingParametersRequest):
+                self.event_bus.broadcast(CurrentSyncingParametersResponse(await self.get_blockchain_sync_parameters()),
+                                         req.broadcast_config())
+
+        await self.wait_first(stake_from_bootnode_loop(),current_sync_stage_loop(), current_syncing_parameters_loop())
 
 
                 

@@ -459,6 +459,13 @@ class ChainDB(BaseChainDB):
         chain_address = chain_head_header.chain_address
         return self.get_all_blocks_on_chain(block_class, chain_address)
 
+    def get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32, block_class) -> List['BaseBlock']:
+        chain_head_header = self.get_block_header_by_hash(chain_head_hash)
+        to_block_number = chain_head_header.block_number
+        chain_address = chain_head_header.chain_address
+
+        return self.get_blocks_on_chain(block_class,  0, to_block_number+1, chain_address)
+
 
     #
     # Header API
