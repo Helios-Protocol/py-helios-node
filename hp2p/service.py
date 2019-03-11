@@ -78,6 +78,10 @@ class BaseService(ABC, CancellableMixin):
             # print('setting up logger',logger_name)
         return self._logger
 
+    @logger.setter
+    def logger(self, val):
+        self._logger = val
+
     def get_event_loop(self) -> asyncio.AbstractEventLoop:
         if self._loop is None:
             return asyncio.get_event_loop()

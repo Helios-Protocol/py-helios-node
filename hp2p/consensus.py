@@ -1562,12 +1562,6 @@ class Consensus(BaseService, PeerSubscriber):
             sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x) * -1, local_root_hash_timestamps)
             #we can assume the root hashes are dense and go up to the currently filling window
 
-            if debug:
-                for_debug = []
-                for i in range(10):
-                    for_debug.append(sorted_local_root_hash_timestamps.peekitem(len(sorted_local_root_hash_timestamps)-1-i))
-                self.logger.debug("get_blockchain_sync_parameters local_root_hash_timestamps {}".format(for_debug))
-
             previous_consensus_root_hash = None
             previous_local_root_hash = None
             previous_timestamp = None
@@ -1576,6 +1570,9 @@ class Consensus(BaseService, PeerSubscriber):
             # it now goes from newest to oldest
             for timestamp, local_root_hash in sorted_local_root_hash_timestamps.items():
                 consensus_root_hash = await self.coro_get_root_hash_consensus(timestamp, local_root_hash_timestamps=local_root_hash_timestamps)
+
+                # if debug:
+                #     self.logger.debug("Checking timestamp {}".format(timestamp))
 
                 if local_root_hash == consensus_root_hash:
                     if debug:

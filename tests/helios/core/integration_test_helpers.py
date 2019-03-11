@@ -25,7 +25,8 @@ from hvm.chains.mainnet import (
 )
 
 from helios.dev_tools import create_dev_test_random_blockchain_database, \
-    create_blockchain_database_for_exceeding_tpc_cap, create_predefined_blockchain_database
+    create_blockchain_database_for_exceeding_tpc_cap, create_predefined_blockchain_database, \
+    create_random_blockchain_database_to_time
 from hvm.exceptions import HeaderNotFound
 
 
@@ -82,6 +83,7 @@ class FakeAsyncChainDB(AsyncChainDB):
     coro_load_historical_network_tpc_capability = async_passthrough('load_historical_network_tpc_capability')
     coro_save_historical_minimum_gas_price = async_passthrough('save_historical_minimum_gas_price')
     coro_save_historical_network_tpc_capability = async_passthrough('save_historical_network_tpc_capability')
+    coro_get_blocks_on_chain_up_to_block_hash = async_passthrough('get_blocks_on_chain_up_to_block_hash')
 
 class FakeAsyncChainHeadDB(AsyncChainHeadDB):
     coro_get_dense_historical_root_hashes = async_passthrough('get_dense_historical_root_hashes')
@@ -166,6 +168,11 @@ def get_predefined_blockchain_db(instance_number):
     create_predefined_blockchain_database(testdb1, instance=instance_number)
     return testdb1
 
+def get_random_blockchain_to_time(start_time, end_time):
+    testdb1 = MemoryDB()
+    create_random_blockchain_database_to_time(testdb1, start_time, end_time, tx_per_1000_seconds = 1)
+    return testdb1
+
 class MockConsensusService(Consensus):
 
     def __init__(self,
@@ -198,6 +205,9 @@ class MockConsensusService(Consensus):
 
         self.is_server = is_server
 
+        self._last_check_if_syncing_time = 0
+
+
     def get_chain_head_root_hash_for_peer(self, peer_wallet_address, timestamp):
         return self.chain_to_sync_to.chain_head_db.get_historical_root_hash(timestamp)
 
@@ -227,14 +237,14 @@ class MockConsensusService(Consensus):
                 return None
 
 
-    async def get_blockchain_sync_parameters(self):
+    async def get_blockchain_sync_parameters(self, debug=False):
         if self._sync_parameters is not None:
             if self._sync_parameters == "fully-synced":
                 return None
             else:
                 return self._sync_parameters
         else:
-            sync_parameters = await super().get_blockchain_sync_parameters()
+            sync_parameters = await super().get_blockchain_sync_parameters(debug=debug)
 
             if self._sync_stage_override is not None:
                 if sync_parameters is not None:

@@ -293,9 +293,10 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         num_retries = 0
         while True:
             try:
+                self.logger.debug("starting handle_getting_request_from_peers")
                 result = await getattr(peer.requests, request_function_name)(**request_function_parameters)
             except AttributeError as e:
-                raise(e)
+                self.logger.error("handle_getting_request_from_peers AttributeError {}".format(e))
             except AlreadyWaiting:
                 # put this peer at the beginning of the list and pop the next peer from the end to try with
                 additional_candidate_peers.insert(0, peer)
@@ -518,8 +519,24 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         self.logger.debug("additively_sync_recent_blocks_with_consensus starting")
 
         while self.is_operational:
-            await self.sync_with_consensus()
-            await asyncio.sleep(SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD)
+            try:
+                sync_parameters = await self.consensus.get_blockchain_sync_parameters()
+            except NoEligiblePeers:
+                self.logger.debug("No peers have the data we need to sync with. Skipping sync loop.")
+                await asyncio.sleep(SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD)
+            else:
+                if sync_parameters is None:
+                    self.logger.debug("We are fully synced. Skipping sync loop and pausing before checking again.")
+                    await asyncio.sleep(SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD)
+                elif sync_parameters.sync_stage >= FULLY_SYNCED_STAGE_ID:
+                    self.logger.debug("We are synced up to stage 4. Skipping sync loop and pausing before checking again.")
+                    await asyncio.sleep(SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD)
+                else:
+                    await self.sync_with_consensus(sync_parameters)
+
+
+
+
     #
     # async def _recently_imported_block_memory_expire_loop(self):
     #     self.logger.debug("Syncer recently imported block cache expiry loop started")
@@ -545,159 +562,146 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
     #
     # Core functionality. Methods for performing sync
     #
-    async def sync_with_consensus(self):
-        try:
-            sync_parameters = await self.consensus.get_blockchain_sync_parameters()
-        except NoEligiblePeers:
-            self.logger.debug("No peers have the data we need to sync with. Skipping sync loop.")
+    async def sync_with_consensus(self, sync_parameters):
+
+        fragment_length = 3
+
+        sync_stage = sync_parameters.sync_stage
+
+        if sync_stage == FAST_SYNC_STAGE_ID:
+            await self.fast_sync_main(sync_parameters)
+            return
+
+        self.logger.debug("Syncing loop at sync stage {}".format(sync_stage))
+
+        additional_candidate_peers = list(sync_parameters.peers_to_sync_with)
+        peer_to_sync_with = additional_candidate_peers.pop()
+        chronological_window_timestamp = sync_parameters.timestamp_for_chronoligcal_block_window
+
+        if sync_stage <= CONSENSUS_MATCH_SYNC_STAGE_ID:
+            # The blocks we are downloading are in consensus. So for any conflict blocks, we are at fault.
+            force_replace_existing_blocks = True
+        else:
+            force_replace_existing_blocks = False
+
+
+        timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(chronological_window_timestamp)
+        if timestamp_block_hashes is None:
+            # we have no blocks for this window. So just request all of them automatically.
+            # This is the same for all versions of syncing
+            self.logger.debug("We have no blocks for this chronological block window. Requesting all blocks to add to our database.")
+            try:
+                fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
+                                                                                             request_function_parameters = {'timestamp': chronological_window_timestamp},
+                                                                                             peer = peer_to_sync_with,
+                                                                                             additional_candidate_peers = additional_candidate_peers)
+                fragment_bundle = cast(HashFragmentBundle, fragment_bundle)
+
+                required_block_hashes = cast(List[Hash32], fragment_bundle.fragments)
+
+                if len(required_block_hashes) == 0:
+                    raise SyncingError("Need to sync up to a chronological window timestamp, but there are no blocks to request. This is an empty window that cant possibly bring us to sync.")
+
+                # if sync_stage >= ADDITIVE_SYNC_STAGE_ID:
+                #     required_block_hashes = self.remove_recently_imported_hashes(required_block_hashes)
+
+                peer_to_sync_with = await self.request_blocks_then_priority_import(block_hash_list = required_block_hashes,
+                                                                                   peer = peer_to_sync_with,
+                                                                                   additional_candidate_peers = additional_candidate_peers,
+                                                                                   allow_import_for_expired_timestamp=True,
+                                                                                   force_replace_existing_blocks = force_replace_existing_blocks)
+            except NoCandidatePeers:
+                return
 
         else:
-            fragment_length = 3
-            if sync_parameters is None:
-                self.logger.debug("We are fully synced. Skipping sync loop and pausing before checking again.")
-                self.consensus.current_sync_stage = 4
-                return
+            our_block_hashes = [x[1] for x in timestamp_block_hashes]
+            our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
 
-            sync_stage = sync_parameters.sync_stage
-            self.consensus.current_sync_stage = sync_stage
-            if sync_stage >= FULLY_SYNCED_STAGE_ID:
-                self.logger.debug("We are synced up to stage 4. Skipping sync loop and pausing before checking again.")
-                return
-
-            if sync_stage == FAST_SYNC_STAGE_ID:
-                await self.fast_sync_main(sync_parameters)
-                return
-
-            self.logger.debug("Syncing loop at sync stage {}".format(sync_stage))
-
-            additional_candidate_peers = list(sync_parameters.peers_to_sync_with)
-            peer_to_sync_with = additional_candidate_peers.pop()
-            chronological_window_timestamp = sync_parameters.timestamp_for_chronoligcal_block_window
-
-            if sync_stage <= CONSENSUS_MATCH_SYNC_STAGE_ID:
-                # The blocks we are downloading are in consensus. So for any conflict blocks, we are at fault.
-                force_replace_existing_blocks = True
-            else:
-                force_replace_existing_blocks = False
-
-
-            timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(chronological_window_timestamp)
-            if timestamp_block_hashes is None:
-                # we have no blocks for this window. So just request all of them automatically.
-                # This is the same for all versions of syncing
-                self.logger.debug("We have no blocks for this chronological block window. Requesting all blocks to add to our database.")
-                try:
-                    fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
-                                                                                                 request_function_parameters = {'timestamp': chronological_window_timestamp},
-                                                                                                 peer = peer_to_sync_with,
-                                                                                                 additional_candidate_peers = additional_candidate_peers)
-                    fragment_bundle = cast(HashFragmentBundle, fragment_bundle)
-
-                    required_block_hashes = cast(List[Hash32], fragment_bundle.fragments)
-
-                    if len(required_block_hashes) == 0:
-                        raise SyncingError("Need to sync up to a chronological window timestamp, but there are no blocks to request. This is an empty window that cant possibly bring us to sync.")
-
-                    # if sync_stage >= ADDITIVE_SYNC_STAGE_ID:
-                    #     required_block_hashes = self.remove_recently_imported_hashes(required_block_hashes)
-
-                    peer_to_sync_with = await self.request_blocks_then_priority_import(block_hash_list = required_block_hashes,
-                                                                                       peer = peer_to_sync_with,
-                                                                                       additional_candidate_peers = additional_candidate_peers,
-                                                                                       allow_import_for_expired_timestamp=True,
-                                                                                       force_replace_existing_blocks = force_replace_existing_blocks)
-                except NoCandidatePeers:
-                    return
-
-            else:
-                our_block_hashes = [x[1] for x in timestamp_block_hashes]
-                our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
-
-                try:
-                    while True:
-                        their_fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
-                                                                                                         request_function_parameters = {'timestamp': chronological_window_timestamp,
-                                                                                                                                        'fragment_length':fragment_length},
-                                                                                                         peer = peer_to_sync_with,
-                                                                                                         additional_candidate_peers = additional_candidate_peers)
-                        their_fragment_bundle = cast(HashFragmentBundle, their_fragment_bundle)
-                        their_fragment_list = their_fragment_bundle.fragments
-
-                        hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
-                                                                                                        our_hash_fragments=our_fragment_list,
-                                                                                                        their_hash_fragments=their_fragment_list,
-                                                                                                        )
-
-                        diff_verification_block_hashes = list(our_block_hashes)
-                        if len(hash_positions_of_ours_that_they_need) > 0:
-                            for idx in sorted(hash_positions_of_ours_that_they_need, key= lambda x: -x):
-                                del(diff_verification_block_hashes[idx])
-
-                        # now lets request the missing hashes from them, then verify that adding them to our hashes results in the correct root hash
-                        # We must get these hashes from the same peer. If they don't respond here then we need to start over again.
-                        if len(hash_positions_of_theirs_that_we_need) > 0:
-                            their_fragment_bundle_we_need_to_add, peer_to_sync_with = await self.handle_getting_request_from_peers(
-                                                                                                     request_function_name = "get_hash_fragments",
+            try:
+                while True:
+                    their_fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
                                                                                                      request_function_parameters = {'timestamp': chronological_window_timestamp,
-                                                                                                                                    'only_these_indices':list(hash_positions_of_theirs_that_we_need)},
+                                                                                                                                    'fragment_length':fragment_length},
                                                                                                      peer = peer_to_sync_with,
-                                                                                                     num_attempts_when_no_additional_peers = 3)
+                                                                                                     additional_candidate_peers = additional_candidate_peers)
+                    their_fragment_bundle = cast(HashFragmentBundle, their_fragment_bundle)
+                    their_fragment_list = their_fragment_bundle.fragments
 
-                            their_fragment_bundle_we_need_to_add = cast(HashFragmentBundle, their_fragment_bundle_we_need_to_add)
-                            their_fragment_list_we_need_to_add = their_fragment_bundle_we_need_to_add.fragments
-                            diff_verification_block_hashes.extend(their_fragment_list_we_need_to_add)
+                    hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
+                                                                                                    our_hash_fragments=our_fragment_list,
+                                                                                                    their_hash_fragments=their_fragment_list,
+                                                                                                    )
 
-                        diff_verification_root_hash, _ = _make_trie_root_and_nodes(tuple(diff_verification_block_hashes))
+                    diff_verification_block_hashes = list(our_block_hashes)
+                    if len(hash_positions_of_ours_that_they_need) > 0:
+                        for idx in sorted(hash_positions_of_ours_that_they_need, key= lambda x: -x):
+                            del(diff_verification_block_hashes[idx])
 
-                        if diff_verification_root_hash == their_fragment_bundle.root_hash_of_the_full_hashes:
-                            self.logger.debug("Diff was correct. We need to request {} blocks and send {} blocks.".format(
-                                len(hash_positions_of_theirs_that_we_need), len(hash_positions_of_ours_that_they_need)))
+                    # now lets request the missing hashes from them, then verify that adding them to our hashes results in the correct root hash
+                    # We must get these hashes from the same peer. If they don't respond here then we need to start over again.
+                    if len(hash_positions_of_theirs_that_we_need) > 0:
+                        their_fragment_bundle_we_need_to_add, peer_to_sync_with = await self.handle_getting_request_from_peers(
+                                                                                                 request_function_name = "get_hash_fragments",
+                                                                                                 request_function_parameters = {'timestamp': chronological_window_timestamp,
+                                                                                                                                'only_these_indices':list(hash_positions_of_theirs_that_we_need)},
+                                                                                                 peer = peer_to_sync_with,
+                                                                                                 num_attempts_when_no_additional_peers = 3)
 
-                            if len(hash_positions_of_theirs_that_we_need) > 0:
-                                required_block_hashes = cast(List[Hash32], their_fragment_list_we_need_to_add)
+                        their_fragment_bundle_we_need_to_add = cast(HashFragmentBundle, their_fragment_bundle_we_need_to_add)
+                        their_fragment_list_we_need_to_add = their_fragment_bundle_we_need_to_add.fragments
+                        diff_verification_block_hashes.extend(their_fragment_list_we_need_to_add)
 
-                                # if sync_stage >= ADDITIVE_SYNC_STAGE_ID:
-                                #     required_block_hashes = self.remove_recently_imported_hashes(required_block_hashes)
+                    diff_verification_root_hash, _ = _make_trie_root_and_nodes(tuple(diff_verification_block_hashes))
 
-                                peer_to_sync_with = await self.request_blocks_then_priority_import(block_hash_list = required_block_hashes,
-                                                                                                   peer = peer_to_sync_with,
-                                                                                                   additional_candidate_peers = additional_candidate_peers,
-                                                                                                   allow_import_for_expired_timestamp=True,
-                                                                                                   force_replace_existing_blocks=force_replace_existing_blocks)
+                    if diff_verification_root_hash == their_fragment_bundle.root_hash_of_the_full_hashes:
+                        self.logger.debug("Diff was correct. We need to request {} blocks and send {} blocks.".format(
+                            len(hash_positions_of_theirs_that_we_need), len(hash_positions_of_ours_that_they_need)))
+
+                        if len(hash_positions_of_theirs_that_we_need) > 0:
+                            required_block_hashes = cast(List[Hash32], their_fragment_list_we_need_to_add)
+
+                            # if sync_stage >= ADDITIVE_SYNC_STAGE_ID:
+                            #     required_block_hashes = self.remove_recently_imported_hashes(required_block_hashes)
+
+                            peer_to_sync_with = await self.request_blocks_then_priority_import(block_hash_list = required_block_hashes,
+                                                                                               peer = peer_to_sync_with,
+                                                                                               additional_candidate_peers = additional_candidate_peers,
+                                                                                               allow_import_for_expired_timestamp=True,
+                                                                                               force_replace_existing_blocks=force_replace_existing_blocks)
 
 
-                            if len(hash_positions_of_ours_that_they_need) > 0:
-                                for idx in hash_positions_of_ours_that_they_need:
-                                    #send these to all peers
-                                    block_hash = our_block_hashes[idx]
-                                    if sync_stage <= CONSENSUS_MATCH_SYNC_STAGE_ID:
-                                        # We need to delete any blocks that they do not have, this will bring us in line with consensus.
+                        if len(hash_positions_of_ours_that_they_need) > 0:
+                            for idx in hash_positions_of_ours_that_they_need:
+                                #send these to all peers
+                                block_hash = our_block_hashes[idx]
+                                if sync_stage <= CONSENSUS_MATCH_SYNC_STAGE_ID:
+                                    # We need to delete any blocks that they do not have, this will bring us in line with consensus.
+                                    try:
+                                        self.logger.debug("Deleting chronological block that is not in consensus.")
+                                        await self.remove_block_by_hash(block_hash)
+                                    except TriedDeletingGenesisBlock:
+                                        self.logger.debug("The consensus blockchain database has a different genesis block. This should never happen.")
+                                        return
+                                else:
+                                    # At this stage of syncing, we should send them the blocks they don't have so they can add them too.
+                                    for peer in sync_parameters.peers_to_sync_with:
                                         try:
-                                            self.logger.debug("Deleting chronological block that is not in consensus.")
-                                            await self.remove_block_by_hash(block_hash)
-                                        except TriedDeletingGenesisBlock:
-                                            self.logger.debug("The consensus blockchain database has a different genesis block. This should never happen.")
-                                            return
-                                    else:
-                                        # At this stage of syncing, we should send them the blocks they don't have so they can add them too.
-                                        for peer in sync_parameters.peers_to_sync_with:
-                                            try:
-                                                block = await self.chaindb.coro_get_block_by_hash(block_hash, P2PBlock)
-                                                peer.sub_proto.send_new_block(block)
-                                            except Exception:
-                                                pass
+                                            block = await self.chaindb.coro_get_block_by_hash(block_hash, P2PBlock)
+                                            peer.sub_proto.send_new_block(block)
+                                        except Exception:
+                                            pass
 
-                            self.logger.debug("Successfully synced")
-                            break
+                        self.logger.debug("Successfully synced")
+                        break
 
 
-                        if fragment_length > 16:
-                            self.logger.warning("Diff verification failed even with max fragment length. This is very unlikely to occur and something has probably gone wrong.")
-                            break
-                        self.logger.debug("Diff was incorrect, increasing fragment length and trying again.")
-                        fragment_length += 1
-                except NoCandidatePeers:
-                    return
+                    if fragment_length > 16:
+                        self.logger.warning("Diff verification failed even with max fragment length. This is very unlikely to occur and something has probably gone wrong.")
+                        break
+                    self.logger.debug("Diff was incorrect, increasing fragment length and trying again.")
+                    fragment_length += 1
+            except NoCandidatePeers:
+                return
 
     # If the node crashes during fast sync, we don't need to resume fast sync at the exact same root hash timestamp.
     # This is because the vast majority of chains will be unchanged since the last timestamp. So we can just start
@@ -1009,6 +1013,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         chains = []
         for head_hash in chain_head_hashes:
             chain = await self.chaindb.coro_get_blocks_on_chain_up_to_block_hash(head_hash, P2PBlock)
+            # chain = await self.chaindb.coro_get_all_blocks_on_chain_by_head_block_hash(head_hash, P2PBlock)
             chains.append(chain)
 
         self.logger.debug('sending {} chains'.format(len(chains)))

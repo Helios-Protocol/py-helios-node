@@ -23,7 +23,7 @@ from helios.rpc.main import (
     RPCServer,
 )
 
-MAXIMUM_REQUEST_BYTES = 10000
+MAXIMUM_REQUEST_BYTES = 100000
 
 
 @curry

@@ -35,3 +35,5 @@ class RpcWebsocketProxyPlugin(BaseIsolatedPlugin):
         rpc_websocket_proxy_service = rpc_websocket_proxy(proxy_url, self.context.chain_config.jsonrpc_ipc_path)
         rpc_websocket_proxy_service.run()
 
+
+

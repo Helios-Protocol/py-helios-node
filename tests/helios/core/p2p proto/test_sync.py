@@ -8,7 +8,7 @@ import pytest
 from eth_keys import keys
 from eth_utils import decode_hex
 
-from helios.dev_tools import add_transactions_to_blockchain_db
+from helios.dev_tools import add_transactions_to_blockchain_db, add_random_transactions_to_db_for_time_window
 from hp2p.consensus import Consensus
 from hp2p.constants import ADDITIVE_SYNC_MODE_CUTOFF
 from hvm import constants
@@ -25,7 +25,7 @@ from tests.helios.core.integration_test_helpers import (
     get_random_blockchain_db, get_fresh_db,
     FakeMainnetFullNode,
     MockConsensusService,
-    get_random_long_time_blockchain_db)
+    get_random_long_time_blockchain_db, get_random_blockchain_to_time)
 from tests.helios.core.peer_helpers import (
     get_directly_linked_peers,
     MockPeerPoolWithConnectedPeers,
@@ -38,6 +38,7 @@ from helios.sync.common.constants import (
     ADDITIVE_SYNC_STAGE_ID,
     FULLY_SYNCED_STAGE_ID,
 )
+from hvm.db.backends.memory import MemoryDB
 
 from tests.integration_test_helpers import (
     ensure_blockchain_databases_identical,
@@ -47,12 +48,8 @@ from hvm.chains.mainnet import (
     GENESIS_PRIVATE_KEY,
 )
 
-from helios.utils.logging import disable_logging, enable_logging, setup_helios_stderr_logging
-# logger = logging.getLogger('helios')
+logger = logging.getLogger('helios')
 
-# log_level = getattr(logging, 'DEBUG')
-# logger, _, _ = setup_helios_stderr_logging(log_level)
-# logger.propagate = False
 
 @pytest.mark.asyncio
 async def _test_sync_with_fixed_sync_parameters(request,
@@ -80,9 +77,6 @@ async def _test_sync_with_fixed_sync_parameters(request,
     expected_root_hash = server_peer.chain_head_db.get_historical_root_hash(timestamp_to_sync_to)
     existing_root_hash = client_peer.chain_head_db.get_historical_root_hash(timestamp_to_sync_to)
 
-    # print("AAAAAAAAAA")
-    # print(server_peer.chain_head_db.get_historical_root_hashes()[-3:])
-    # await asyncio.sleep(5)
 
     client_sync_parameters = SyncParameters(timestamp_to_sync_to,
                                             existing_root_hash,
@@ -206,6 +200,8 @@ async def _test_sync_with_variable_sync_parameters(request,
         node=server_node,
     )
 
+    server.logger = logging.getLogger('dummy')
+
     asyncio.ensure_future(server.run())
 
     def finalizer():
@@ -241,23 +237,98 @@ async def _test_sync_with_variable_sync_parameters(request,
 #
 @pytest.mark.asyncio
 async def test_fast_sync_1(request, event_loop):
-    client_db, server_db = get_fresh_db(), get_random_long_time_blockchain_db(25)
-    node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
-    await _test_sync_with_fixed_sync_parameters(request, event_loop, client_db, server_db, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+
+    genesis_time = int(time.time() / 1000) * 1000 - 1000 * 1100
+    equal_to_time = int(time.time() / 1000) * 1000 - 1000 * 1095
+
+    server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
+    client_db = MemoryDB(kv_store=server_db.kv_store.copy())
+
+    add_random_transactions_to_db_for_time_window(server_db, equal_to_time, equal_to_time + 1000 * 5)
+
+    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+
+    await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical, FAST_SYNC_STAGE_ID)
 
 @pytest.mark.asyncio
-async def test_fast_sync_2(request, event_loop, db_fresh, db_random_long_time):
-    node_1 = MainnetChain(db_fresh, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
-    await _test_sync_with_fixed_sync_parameters(request, event_loop, db_random_long_time, db_fresh, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+async def test_fast_sync_2(request, event_loop):
+    genesis_time = int(time.time() / 1000) * 1000 - 1000 * 1100
+    equal_to_time = int(time.time() / 1000) * 1000 - 1000 * 1095
+
+    server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
+    client_db = MemoryDB(kv_store=server_db.kv_store.copy())
+
+    add_random_transactions_to_db_for_time_window(client_db, equal_to_time, equal_to_time + 1000 * 5)
+
+    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+
+    await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db,
+                                                   ensure_blockchain_databases_identical, FAST_SYNC_STAGE_ID)
+
+# @pytest.mark.asyncio
+# async def test_fast_sync_3(request, event_loop):
+#     client_db, server_db = get_random_long_time_blockchain_db(25), get_random_long_time_blockchain_db(25)
+#     node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#     newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
+#     await _test_sync_with_fixed_sync_parameters(request, event_loop, client_db, server_db, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+
 
 @pytest.mark.asyncio
-async def test_fast_sync_3(request, event_loop):
-    client_db, server_db = get_random_long_time_blockchain_db(25), get_random_long_time_blockchain_db(25)
-    node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
-    await _test_sync_with_fixed_sync_parameters(request, event_loop, client_db, server_db, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
+async def test_fast_sync_4(request, event_loop):
+    '''
+    Blockchain databases of client and server match up to a point before chronological block windows starts, but there are additional
+    blocks in the server's db after that time.
+    :param request:
+    :param event_loop:
+    :return:
+    '''
+
+    genesis_time = int(time.time()/1000)*1000-1000*1100
+    equal_to_time = int(time.time()/1000)*1000-1000*1095
+    new_blocks_start_time = int(time.time()/1000)*1000-1000*25
+    new_blocks_end_time = int(time.time() / 1000) * 1000 - 1000*3
+
+    server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
+    client_db = MemoryDB(kv_store = server_db.kv_store.copy())
+
+    add_random_transactions_to_db_for_time_window(server_db, equal_to_time, equal_to_time+1000*5)
+
+    add_random_transactions_to_db_for_time_window(server_db, new_blocks_start_time, new_blocks_end_time)
+
+    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+
+    await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
+
+@pytest.mark.asyncio
+async def test_fast_sync_5(request, event_loop):
+    '''
+    Blockchain databases of client and server match up to a point before chronological block windows starts, but there are additional
+    blocks in the server's db after that time.
+    :param request:
+    :param event_loop:
+    :return:
+    '''
+
+    genesis_time = int(time.time()/1000)*1000-1000*1100
+    equal_to_time = int(time.time()/1000)*1000-1000*1095
+    new_blocks_start_time = int(time.time()/1000)*1000-1000*25
+    new_blocks_end_time = int(time.time() / 1000) * 1000 - 1000*3
+
+    server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
+    client_db = MemoryDB(kv_store = server_db.kv_store.copy())
+
+    add_random_transactions_to_db_for_time_window(client_db, equal_to_time, equal_to_time+1000*5)
+
+    add_random_transactions_to_db_for_time_window(client_db, new_blocks_start_time, new_blocks_end_time)
+
+    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+
+    await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
+
 
 
 @pytest.mark.asyncio
@@ -286,6 +357,36 @@ async def test_consensus_match_sync_3(request, event_loop):
     node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical,  CONSENSUS_MATCH_SYNC_STAGE_ID)
+
+@pytest.mark.asyncio
+async def test_consensus_match_sync_4(request, event_loop):
+    '''
+    Blockchain databases of client and server match up to a point within the consensus match stage, but there are additional
+    blocks in the server's db after that time.
+    :param request:
+    :param event_loop:
+    :return:
+    '''
+
+    genesis_time = int(time.time()/1000)*1000-1000*900
+    equal_to_time = int(time.time()/1000)*1000-1000*890
+    new_blocks_start_time = int(time.time()/1000)*1000-1000*25
+    new_blocks_end_time = int(time.time() / 1000) * 1000 - 1000*3
+
+    server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
+    client_db = MemoryDB(kv_store = server_db.kv_store.copy())
+
+    add_random_transactions_to_db_for_time_window(server_db, equal_to_time, equal_to_time+1000*5)
+
+    add_random_transactions_to_db_for_time_window(server_db, new_blocks_start_time, new_blocks_end_time)
+
+    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+
+    await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
+
+
+
 
 
 @pytest.mark.asyncio
@@ -317,6 +418,99 @@ async def test_additive_sync_3(request, event_loop):
     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical, ADDITIVE_SYNC_STAGE_ID)
 
+
+@pytest.mark.asyncio
+async def test_additive_sync_4(request, event_loop):
+    '''
+    Blockchain databases of client and server match up to a point within the consensus match stage, but there are additional
+    blocks in the server's db after that time.
+    :param request:
+    :param event_loop:
+    :return:
+    '''
+
+    genesis_time = int(time.time()/1000)*1000-1000*25
+    equal_to_time = int(time.time()/1000)*1000-1000*2
+
+    server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
+    client_db = MemoryDB(kv_store = server_db.kv_store.copy())
+
+    tx_list = [[GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()-2000)],
+               [GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() - 1500)],
+               [GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() - 1000)]]
+
+    add_transactions_to_blockchain_db(server_db, tx_list)
+
+    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    server_node = MainnetChain(server_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    server_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+
+    await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
+
+
+@pytest.mark.asyncio
+async def test_sparse_sync_1(request, event_loop):
+    '''
+    Blockchain databases of client and server match up to a point within the consensus match stage, but there are additional
+    blocks in the server's db after that time.
+    :param request:
+    :param event_loop:
+    :return:
+    '''
+
+    genesis_time = int(time.time()/1000)*1000-1000*900
+    equal_to_time = int(time.time()/1000)*1000-1000*890
+
+    server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
+    client_db = MemoryDB(kv_store = server_db.kv_store.copy())
+
+    add_random_transactions_to_db_for_time_window(server_db, equal_to_time, equal_to_time+1000*5)
+
+    tx_list = [[GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()/1000)*1000-1000*800],
+               [GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()/1000)*1000-1000*700],
+               [GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()/1000)*1000-1000*100],
+               [GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()/1000)*1000-1000*5],
+               [GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()/1000)*1000-1000*1]]
+
+    add_transactions_to_blockchain_db(server_db, tx_list)
+
+    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+
+    await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
+
+
+@pytest.mark.asyncio
+async def test_sparse_sync_2(request, event_loop):
+    '''
+    Blockchain databases of client and server match up to a point within the consensus match stage, but there are additional
+    blocks in the server's db after that time.
+    :param request:
+    :param event_loop:
+    :return:
+    '''
+
+    genesis_time = int(time.time()/1000)*1000-1000*900
+    equal_to_time = int(time.time()/1000)*1000-1000*890
+
+    server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
+    client_db = MemoryDB(kv_store = server_db.kv_store.copy())
+
+    add_random_transactions_to_db_for_time_window(server_db, equal_to_time, equal_to_time+1000*5)
+
+    tx_list = [[GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()/1000)*1000-1000*800],
+               [GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()/1000)*1000-1000*700],
+               [GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()/1000)*1000-1000*100],
+               [GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()/1000)*1000-1000*5],
+               [GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time()/1000)*1000-1000*1]]
+
+    add_transactions_to_blockchain_db(client_db, tx_list)
+
+    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+
+    await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
 
 #
 # Testing importing blocks
@@ -535,16 +729,16 @@ async def wait_for_both_nodes_to_be_synced(chain_head_db_1, chain_head_db_2):
     # A full header sync may involve several round trips, so we must be willing to wait a little
     # bit for them.
     HEADER_SYNC_TIMEOUT = 1000
-
     async def wait_loop():
         while chain_head_db_1.get_historical_root_hashes()[-1][1] != chain_head_db_2.get_historical_root_hashes()[-1][1]:
             #print("Waiting for db's to sync. Expected root hash = ", expected_head_hash, "actual root hash = ", chain_head_db.get_historical_root_hashes()[-1][1])
-
+            # print(chain_head_db_1.get_historical_root_hashes()[-5:])
+            # print(chain_head_db_2.get_historical_root_hashes()[-5:])
             # next_head_hashes_1 = chain_head_db_1.get_head_block_hashes_list()
             # next_head_hashes_2 = chain_head_db_2.get_head_block_hashes_list()
             # head_block_hashes_list_in_agreement = (next_head_hashes_1 == next_head_hashes_2)
             # print("waiting for db's to sync. Are head block hashes in agreement? {}".format(head_block_hashes_list_in_agreement))
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.2)
     await asyncio.wait_for(wait_loop(), HEADER_SYNC_TIMEOUT)
 
 

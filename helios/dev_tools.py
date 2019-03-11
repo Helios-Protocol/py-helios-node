@@ -222,7 +222,7 @@ def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list
     # sort by time
     tx_list.sort(key=lambda x: x[3])
 
-    genesis_chain_stake = 100
+    genesis_chain_stake = 100000000000000000
 
     earliest_timestamp = tx_list[0][3]
     required_total_supply = sum([x[2]+GAS_TX for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+genesis_chain_stake
@@ -449,3 +449,59 @@ def create_blockchain_database_for_exceeding_tpc_cap(base_db, tpc_cap_to_exceed=
 
     #print(tx_list)
     create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list, use_real_genesis)
+
+
+def create_random_blockchain_database_to_time(base_db, start_time, end_time, tx_per_1000_seconds=1, use_real_genesis = False):
+
+    from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE
+
+    genesis_block_timestamp = int(start_time/100)*100
+
+    private_keys = []
+    for i in range(len(random_private_keys)):
+        private_keys.append(keys.PrivateKey(random_private_keys[i]))
+
+    tx_list = []
+
+    start = genesis_block_timestamp+1000+MIN_TIME_BETWEEN_BLOCKS
+    end = int(end_time/1000)*1000+1000
+    for window_timestamp in range(start, end, 1000):
+        for j in range(tx_per_1000_seconds):
+            random.shuffle(private_keys)
+            sender = GENESIS_PRIVATE_KEY
+            receiver = private_keys[0]
+            amount = 1000
+            timestamp = window_timestamp+j*MIN_TIME_BETWEEN_BLOCKS
+
+            tx_list.append([sender,receiver,amount,timestamp])
+
+
+    #print(tx_list)
+    create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list, use_real_genesis)
+
+def add_random_transactions_to_db_for_time_window(base_db, start_time, end_time, tx_per_1000_seconds=1):
+
+    from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE
+
+    genesis_block_timestamp = int(start_time / 100) * 100
+
+    private_keys = []
+    for i in range(len(random_private_keys)):
+        private_keys.append(keys.PrivateKey(random_private_keys[i]))
+
+    tx_list = []
+
+    start = genesis_block_timestamp + 1000 + MIN_TIME_BETWEEN_BLOCKS
+    end = int(end_time / 1000) * 1000 + 1000
+    for window_timestamp in range(start, end, 1000):
+        for j in range(tx_per_1000_seconds):
+            random.shuffle(private_keys)
+            sender = GENESIS_PRIVATE_KEY
+            receiver = private_keys[0]
+            amount = 1000
+            timestamp = window_timestamp + j * MIN_TIME_BETWEEN_BLOCKS
+
+            tx_list.append([sender, receiver, amount, timestamp])
+
+    add_transactions_to_blockchain_db(base_db, tx_list)
+
