@@ -9,10 +9,7 @@ from helios.utils.log_messages import (
     create_missing_ipc_error_message,
 )
 
-from .hls_web3_module import Hls
-
 from cytoolz import merge
-
 
 DEFAULT_BANNER: str = (
     "Helios Console\n"
@@ -67,9 +64,10 @@ def console(ipc_path: Path,
         raise FileNotFoundError(create_missing_ipc_error_message(ipc_path))
 
     # wait to import web3, because it's somewhat large, and not usually used
-    import web3
+    from helios_web3 import HeliosWeb3 as Web3
+    from web3 import IPCProvider
     #w3 = web3.Web3(web3.IPCProvider(ipc_path))
-    w3 = web3.Web3(web3.IPCProvider(ipc_path), modules={'hls': Hls})
+    w3 = Web3(IPCProvider(ipc_path))
 
     namespace = merge({'w3': w3}, env)
 

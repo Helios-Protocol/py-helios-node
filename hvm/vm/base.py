@@ -415,7 +415,10 @@ class VM(BaseVM):
             # now check to see if the block is in the canonical chain, but didnt have the transaction in it
             try:
                 block_hash, index, is_receive = self.chaindb.get_transaction_index(receive_transaction.send_transaction_hash)
-                if block_hash != receive_transaction.sender_block_hash:
+                if block_hash == receive_transaction.sender_block_hash:
+                    raise ValidationError(
+                        'Receive transaction is invalid. We do have the send transaction and send block, but it has already been received.')
+                else:
                     raise ValidationError(
                         'Receive transaction is invalid. We have already imported this transaction, but it was from another block.')
             except TransactionNotFound:
@@ -423,7 +426,17 @@ class VM(BaseVM):
                     raise ValidationError(
                         'Receive transaction is invalid. We have the sender block, but it didn\'t contain the send transaction')
 
-            raise ReceivableTransactionNotFound()
+            if self.chaindb.exists(receive_transaction.send_transaction_hash):
+                self.logger.debug("The missing receivable transaction exists in the db but not canonical chain.")
+
+            if self.chaindb.is_in_canonical_chain(receive_transaction.sender_block_hash):
+                self.logger.debug("The sender block of the missing receivable transaction is in the canonical chain. This must means the tx is in there, but wasnt saved to canonical transactions...")
+
+            raise ReceivableTransactionNotFound("caller_chain_address = {}, send_transaction_hash = {}, sender_block_hash = {}".format(
+                encode_hex(caller_chain_address),
+                encode_hex(receive_transaction.send_transaction_hash),
+                encode_hex(receive_transaction.sender_block_hash),
+            ))
 
         else:
             #now lets get all of the relevant transactions in this chain

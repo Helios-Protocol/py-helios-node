@@ -699,7 +699,7 @@ class ChainDB(BaseChainDB):
     #
     # Block API
     #
-
+    @functools.lru_cache(maxsize=32)
     def get_number_of_send_tx_in_block(self, block_hash):
         '''
         returns the number of send tx in a block
@@ -747,6 +747,7 @@ class ChainDB(BaseChainDB):
             #add all receive transactions as children to the sender block
             self.add_block_receive_transactions_to_parent_child_lookup(header, block.receive_transaction_class)
 
+        self.add_block_rewards_to_parent_child_lookup(block.header, block.reward_bundle)
         #we also have to save this block as the child of the parent block in the same chain
         if block.header.parent_hash != GENESIS_PARENT_HASH:
             self.add_block_child(block.header.parent_hash, block.header.hash)
@@ -759,6 +760,8 @@ class ChainDB(BaseChainDB):
 
         #add all receive transactions as children to the sender block
         self.add_block_receive_transactions_to_parent_child_lookup(block.header, block.receive_transaction_class)
+
+        self.add_block_rewards_to_parent_child_lookup(block.header, block.reward_bundle)
 
         #we also have to save this block as the child of the parent block in the same chain
         if block.header.parent_hash != GENESIS_PARENT_HASH:
@@ -809,23 +812,19 @@ class ChainDB(BaseChainDB):
         lookup_key = SchemaV1.make_has_unprocessed_block_children_lookup_key(block_hash)
         self.db[lookup_key] = b'1'
 
-        #need to also save for all receive transaction parents
 
     def save_unprocessed_children_block_lookup_to_transaction_parents(self, block):
-
         for receive_transaction in block.receive_transactions:
             #or do we not even have the block
-            if self.is_block_unprocessed(receive_transaction.sender_block_hash) or not self.db.exists(receive_transaction.sender_block_hash):
+            if not self.is_in_canonical_chain(receive_transaction.sender_block_hash):
                 self.logger.debug("saving parent children unprocessed block lookup for block hash {}".format(encode_hex(receive_transaction.sender_block_hash)))
                 self.save_unprocessed_children_block_lookup(receive_transaction.sender_block_hash)
 
     def save_unprocessed_children_block_lookup_to_reward_proof_parents(self, block: 'BaseBlock') -> None:
-        if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
-            if block.reward_bundle.reward_type_2.amount != 0:
-                for node_staking_score in block.reward_bundle.reward_type_2.proof:
-                    if self.is_block_unprocessed(node_staking_score.head_hash_of_sender_chain) or not self.db.exists(node_staking_score.head_hash_of_sender_chain):
-                        self.logger.debug("saving parent children unprocessed block lookup for block hash {}".format(encode_hex(node_staking_score.head_hash_of_sender_chain)))
-                        self.save_unprocessed_children_block_lookup(node_staking_score.head_hash_of_sender_chain)
+        for node_staking_score in block.reward_bundle.reward_type_2.proof:
+            if not self.is_in_canonical_chain(node_staking_score.head_hash_of_sender_chain):
+                self.logger.debug("saving parent children unprocessed block lookup for reward proof parents block hash {}".format(encode_hex(node_staking_score.head_hash_of_sender_chain)))
+                self.save_unprocessed_children_block_lookup(node_staking_score.head_hash_of_sender_chain)
 
     def delete_unprocessed_children_block_lookup_to_transaction_parents_if_nessissary(self, block):
 
@@ -1012,13 +1011,12 @@ class ChainDB(BaseChainDB):
     def get_transaction_receipt(self, tx_hash: Hash32) -> Receipt:
         block_hash, index, is_receive = self.get_transaction_index(tx_hash)
         block_header = self.get_block_header_by_hash(block_hash)
-        receipts = self.get_receipts(block_header)
 
-        if not is_receive:
-            return receipts[index]
-        else:
+        if is_receive:
             num_send_transactions = self.get_number_of_send_tx_in_block(block_hash)
-            return receipts[index+num_send_transactions]
+            index += num_send_transactions
+
+        return self.get_receipt_by_idx(block_header, index)
 
     def get_cumulative_gas_used(self, tx_hash: Hash32) -> int:
         block_hash, index, is_receive = self.get_transaction_index(tx_hash)
@@ -1029,6 +1027,19 @@ class ChainDB(BaseChainDB):
             cumulative += receipts[i].gas_used
         return cumulative
 
+    def get_receipt_by_idx(self,
+                     header: BlockHeader,
+                     receipt_idx: int,
+                     receipt_class: Type[Receipt] = Receipt) -> Receipt:
+
+        receipt_db = HexaryTrie(db=self.db, root_hash=header.receipt_root)
+
+        receipt_key = rlp.encode(receipt_idx)
+        try:
+            receipt_data = receipt_db[receipt_key]
+            return rlp.decode(receipt_data, sedes=receipt_class)
+        except KeyError:
+            return None
 
     @to_tuple
     def get_receipts(self,
@@ -1198,6 +1209,7 @@ class ChainDB(BaseChainDB):
             else:
                 break
 
+    @functools.lru_cache(maxsize=32)
     def _get_block_transaction_count(self, transaction_root: Hash32):
         '''
         Returns iterable of the encoded transactions for the given block header
@@ -1287,6 +1299,12 @@ class ChainDB(BaseChainDB):
             self.add_block_child(
                        receive_transaction.sender_block_hash,
                        block_header.hash)
+
+    def add_block_rewards_to_parent_child_lookup(self, block_header, reward_bundle):
+        for node_staking_score in reward_bundle.reward_type_2.proof:
+            self.logger.debug("saving parent child lookup for reward bundle proof")
+            self.add_block_child(node_staking_score.head_hash_of_sender_chain, block_header.hash)
+
 
     def remove_block_receive_transactions_to_parent_child_lookup(self, block_header, transaction_class):
         block_receive_transactions = self.get_block_receive_transactions(block_header,

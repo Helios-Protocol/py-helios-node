@@ -404,8 +404,8 @@ class ConsensusDB():
         # need to make sure we have the up-to-date peer chain so that our stake calculation is correct.
         # RewardProofSenderBlockMissing
         if not self.chaindb.is_in_canonical_chain(node_staking_score.head_hash_of_sender_chain):
-            raise RewardProofSenderBlockMissing("Our chain for chain_address {} appears to be out of date".format(
-                encode_hex(node_staking_score.sender)))
+            raise RewardProofSenderBlockMissing("Our chain for chain_address {} appears to be out of date. We need the block with hash {}".format(
+                encode_hex(node_staking_score.sender), encode_hex(node_staking_score.head_hash_of_sender_chain)))
 
         # We need to validate that the previous reward block in proof equals the latest reward block
         if node_staking_score.since_block_number != since_block_number:

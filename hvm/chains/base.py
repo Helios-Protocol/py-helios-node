@@ -433,6 +433,8 @@ class Chain(BaseChain):
     VM classes, delegating operations to the appropriate VM depending on the
     current block number.
     """
+    raise_errors = False
+
     logger = logging.getLogger("hvm.chain.chain.Chain")
     header = None  # type: BlockHeader
     network_id = None  # type: int
@@ -1342,7 +1344,7 @@ class Chain(BaseChain):
                     #save as unprocessed
                     if not allow_unprocessed:
                         raise UnprocessedBlockNotAllowed()
-
+                    self.logger.debug("Saving block as unprocessed because parent on this chain is unprocessed")
                     return_block = self.save_block_as_unprocessed(block, self.wallet_address)
 
                 if journal_enabled:
@@ -1497,15 +1499,29 @@ class Chain(BaseChain):
                 return_block = imported_block
 
 
-            except (ReceivableTransactionNotFound, RewardProofSenderBlockMissing):
+            except ReceivableTransactionNotFound as e:
                 # print('AAAAAAAAAAAA')
                 # print(block.receive_transactions)
                 if not allow_unprocessed:
                     raise UnprocessedBlockNotAllowed()
+                self.logger.debug("Saving block as unprocessed because of ReceivableTransactionNotFound error: {}".format(e))
                 return_block = self.save_block_as_unprocessed(block, self.wallet_address)
+                if self.raise_errors:
+                    raise e
+
+
+            except RewardProofSenderBlockMissing as e:
+                # print('AAAAAAAAAAAA')
+                # print(block.receive_transactions)
+                if not allow_unprocessed:
+                    raise UnprocessedBlockNotAllowed()
+                self.logger.debug("Saving block as unprocessed because of RewardProofSenderBlockMissing error: {}".format(e))
+                return_block = self.save_block_as_unprocessed(block, self.wallet_address)
+
         else:
             if not allow_unprocessed:
                 raise UnprocessedBlockNotAllowed()
+            self.logger.debug("Saving block as unprocessed because parent on this chain is unprocessed")
             return_block = self.save_block_as_unprocessed(block, self.wallet_address)
 
 

@@ -58,16 +58,21 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
         rpc = RPCServer(chain, self.context.event_bus, chain_class)
         ipc_server = IPCServer(rpc, self.context.chain_config.jsonrpc_ipc_path)
 
+
+
+        loop = asyncio.get_event_loop()
+        asyncio.ensure_future(exit_with_service_and_endpoint(ipc_server, self.context.event_bus))
+        asyncio.ensure_future(ipc_server.run())
+
         if (not self.context.args.disable_rpc_websocket_proxy) and self.context.chain_config.is_main_instance:
             # start websocket proxy
             self.logger.info('RPC Websocket proxy started')
 
             proxy_url = "ws://0.0.0.0:" + str(self.context.chain_config.rpc_port)
-            rpc_websocket_proxy_service = rpc_websocket_server(proxy_url, rpc.execute)
-            rpc_websocket_proxy_service.run()
+            rpc_websocket_service = rpc_websocket_server(proxy_url, rpc.execute)
+            #rpc_websocket_service.run()
 
-        loop = asyncio.get_event_loop()
-        asyncio.ensure_future(exit_with_service_and_endpoint(ipc_server, self.context.event_bus))
-        asyncio.ensure_future(ipc_server.run())
+            asyncio.ensure_future(rpc_websocket_service.run())
+
         loop.run_forever()
         loop.close()

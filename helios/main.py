@@ -197,12 +197,13 @@ def main() -> None:
     log_levels['ssdp'] = logging.INFO
     log_levels['Service'] = logging.INFO
 
-    log_levels['hvm'] = logging.INFO  #sets all of hvm
+    log_levels['hvm'] = logging.DEBUG  #sets all of hvm
     log_levels['hvm.db.account.AccountDB'] = logging.DEBUG
+    log_levels['hvm.vm.base.VM.VM'] = logging.DEBUG
     log_levels['hvm.chain'] = logging.DEBUG
     #log_levels['hvm.chain.chain.Chain'] = logging.DEBUG
     log_levels['hvm.db.chain_head.ChainHeadDB'] = logging.DEBUG
-    log_levels['hvm.db.chain_db.ChainDB'] = logging.INFO
+    log_levels['hvm.db.chain_db.ChainDB'] = logging.DEBUG
     log_levels['hvm.db.consensus'] = logging.DEBUG
 
     #log_levels['hp2p'] = logging.INFO

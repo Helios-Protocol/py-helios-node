@@ -208,6 +208,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
     msg_queue_maxsize = 500
 
+    raise_errors = False
+
     _current_syncing_root_timestamp = None
     _current_syncing_root_hash = None
     importing_blocks_lock = asyncio.Lock()
@@ -434,6 +436,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                     self.logger.debug('ValueError error when importing chain. Error: {}'.format(e))
                 except Exception as e:
                     self.logger.error('tried to import a chain and got error {}'.format(e))
+                    if self.raise_errors:
+                        raise e
 
     #
     # Loops
@@ -728,7 +732,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         # chains that we are given with the expected fragments. If they don't match, go to the next peer. If no peers match, quit this
         # fast sync and allow the syncer to restart the whole fast sync process. This will resume where we left off.
 
-
+        #assert(self.chain_head_db.get_historical_root_hash(historical_root_hash_timestamp) == local_root_hash)
         while self.is_operational:
             self.chain_head_db.load_saved_root_hash()
             our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list(local_root_hash)
@@ -736,6 +740,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             self._fast_sync_required_chain_list_idx = 0
 
             our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
+
+            self.logger.debug("Our root hashes before fast sync at historical_root_hash_timestamp {} with local_root_hash = {}: = {}".format(
+                historical_root_hash_timestamp,encode_hex(local_root_hash),[encode_hex(x) for x in our_fragment_list]))
 
             try:
                 their_fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
@@ -821,14 +828,22 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
             fragment_length += 1
             if fragment_length >= 16:
+                final_root_hash = self.chain_head_db.get_saved_root_hash()
+                our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list(final_root_hash)
+                our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
                 self.logger.debug("Fast sync checked up to max fragment length and our db still incorrect.")
-                self.logger.debug('BBBBB')
-                self.logger.debug(our_fragment_list)
-                self.logger.debug(their_fragment_list)
+                self.logger.debug(encode_hex(final_root_hash))
+                self.logger.debug([encode_hex(x) for x in our_fragment_list])
+                self.logger.debug([encode_hex(x) for x in their_fragment_list])
 
                 break
 
+            # TODO: uncomment these lines after figuring out why children are not imported
+            # # Set this after each loop to avoid requesting the same chains over and over again
+            # final_root_hash = self.chain_head_db.get_saved_root_hash()
+            # await self.chain_head_db.coro_initialize_historical_root_hashes(final_root_hash, historical_root_hash_timestamp)
 
+        # Set this again at the end in case it succeeded.
         final_root_hash = self.chain_head_db.get_saved_root_hash()
         await self.chain_head_db.coro_initialize_historical_root_hashes(final_root_hash, historical_root_hash_timestamp)
 
@@ -864,7 +879,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 expected_chain_head_hash_fragments.append(expected_fragment_list[idx])
 
             #todo: find out what chains we need isnt correct.
-            self.logger.debug("fast sync worker sending request for chains start {} end {} with idxs {}. chains we need {}, expected_chain_head_hash_fragments {}".format(start, end, idx_list, chains_that_we_need, expected_chain_head_hash_fragments))
+            self.logger.debug("fast sync worker sending request for chains start {} end {} with idxs {}. chains we need {}, expected_chain_head_hash_fragments {}".format(
+                start, end, idx_list, chains_that_we_need, [encode_hex(x) for x in expected_chain_head_hash_fragments]))
             try:
                 chains, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_chains",
                                                                                                          request_function_parameters = {'timestamp': timestamp,

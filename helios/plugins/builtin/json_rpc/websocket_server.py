@@ -123,8 +123,9 @@ class Server:
             print("JSON-RPC Websocket Server: {}".format(
                  self.websocket_url), file=sys.stderr, flush=True)
 
-        asyncio.get_event_loop().run_until_complete(self.server)
-        asyncio.get_event_loop().run_forever()
+        return(self.server)
+        # asyncio.get_event_loop().run_until_complete(self.server)
+        # asyncio.get_event_loop().run_forever()
 
 
 
