@@ -1,6 +1,8 @@
 import bisect
 import time
+import os
 import random
+import linecache
 from itertools import groupby as itergroupby
 from cytoolz import groupby
 from hvm.utils.rlp import make_mutable
@@ -10,51 +12,53 @@ from hvm.rlp.consensus import StakeRewardBundle, StakeRewardType2
 from sortedcontainers import SortedDict
 import rlp_cython as rlp
 from eth_utils import to_hex
+from msgpack_rlp import packb, unpackb
 
-def underscore_to_camel_case(input_string:str) -> str:
-    if isinstance(input_string,str):
-        pieces = input_string.split('_')
-        camel_case_string = pieces[0]
-        for i in range(1,len(pieces)):
-            camel_case_string += pieces[i].capitalize()
-        return camel_case_string
-    else:
-        return ''
+import tracemalloc
 
-def all_rlp_fields_to_dict_camel_case(rlp_object):
-    #It is either rlp.Serializable or a list
-    if isinstance(rlp_object, rlp.Serializable):
-        dict_to_return = {}
-        # add all of the fields in camelcase
-        for i in range(len(rlp_object._meta.field_names)):
-            field_name = rlp_object._meta.field_names[i]
-            key = underscore_to_camel_case(field_name)
-            raw_val = getattr(rlp_object, field_name)
-            if isinstance(raw_val, rlp.Serializable) or isinstance(raw_val, list) or isinstance(raw_val, tuple):
-                val=all_rlp_fields_to_dict_camel_case(raw_val)
-            else:
-                val = to_hex(raw_val)
-
-            dict_to_return[key] = val
-        return dict_to_return
-    else:
-        list_to_return = []
-        for i in range(len(rlp_object)):
-            raw_val = rlp_object[i]
-            if isinstance(raw_val, rlp.Serializable) or isinstance(raw_val, list) or isinstance(raw_val, tuple):
-                val = all_rlp_fields_to_dict_camel_case(raw_val)
-            else:
-                val = to_hex(raw_val)
-            list_to_return.append(val)
-        return list_to_return
+tracemalloc.start()
 
 
+def get_top_memory_usage(snapshot, key_type='lineno', limit=3):
+    snapshot = snapshot.filter_traces((
+        tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
+        tracemalloc.Filter(False, "<unknown>"),
+    ))
+    top_stats = snapshot.statistics(key_type)
+
+    out = []
+    print("Top %s lines" % limit)
+    for index, stat in enumerate(top_stats[:limit], 1):
+        frame = stat.traceback[0]
+        # replace "/path/to/module/file.py" with "module/file.py"
+        filename = os.sep.join(frame.filename.split(os.sep)[-2:])
+        print("#%s: %s:%s: %.1f KiB"
+                   % (index, filename, frame.lineno, stat.size / 1024))
+        line = linecache.getline(frame.filename, frame.lineno).strip()
+        if line:
+            print('    %s' % line)
+
+    other = top_stats[limit:]
+    if other:
+        size = sum(stat.size for stat in other)
+        print("%s other: %.1f KiB" % (len(other), size / 1024))
+    total = sum(stat.size for stat in top_stats)
+    print("Total allocated size: %.1f KiB" % (total / 1024))
 
 
-test_reward_bundle = StakeRewardBundle()
+num = 0
+test = [1234]*10000
+while True:
+    print(num)
+    encoded = packb(test)
+    decoded = unpackb(encoded, sedes=[1], use_list = True)
+    if num % 50 == 0:
+        snapshot = tracemalloc.take_snapshot()
+        print(get_top_memory_usage(snapshot))
+    num += 1
 
-final_dict = all_rlp_fields_to_dict_camel_case(test_reward_bundle)
-print(final_dict)
+
+
 
 # test = []
 # for i in range(100000):

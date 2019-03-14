@@ -475,10 +475,10 @@ def test_send_transaction_then_receive():
     assert(block_2_imported.header.account_balance == receiver_chain.get_vm().state.account_db.get_balance(RECEIVER.public_key.to_canonical_address()))
 
     print("Checking that imported blocks are the same as blocks retreived from DB")
-    block_0_from_db = receiver_chain.chaindb.get_block_by_number(0, receiver_chain.get_vm().get_block_class())
-    block_1_from_db = receiver_chain.chaindb.get_block_by_number(1, receiver_chain.get_vm().get_block_class())
-    block_2_from_db = receiver_chain.chaindb.get_block_by_number(2, receiver_chain.get_vm().get_block_class())
-    sender_block_1_from_db = receiver_chain.chaindb.get_block_by_number(1, receiver_chain.get_vm().get_block_class(), SENDER.public_key.to_canonical_address())
+    block_0_from_db = receiver_chain.get_block_by_number(0)
+    block_1_from_db = receiver_chain.get_block_by_number(1)
+    block_2_from_db = receiver_chain.get_block_by_number(2)
+    sender_block_1_from_db = receiver_chain.get_block_by_number(1, chain_address = SENDER.public_key.to_canonical_address())
     
     assert(block_0_imported.header.account_hash == block_0_from_db.header.account_hash)
     
@@ -490,7 +490,7 @@ def test_send_transaction_then_receive():
     print("Passed test")
     
     print("printing entire receiver chain")
-    all_blocks = receiver_chain.chaindb.get_all_blocks_on_chain(receiver_chain.get_vm().get_block_class())
+    all_blocks = receiver_chain.get_all_blocks_on_chain()
     print(all_blocks)
     
     print("printing head hashes")
@@ -590,7 +590,7 @@ def test_import_chain():
         #print(chain_address)    
         wallet_addresses.append(chain_address)
         
-        chain_to_import = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(), chain_address)
+        chain_to_import = node_1.get_all_blocks_on_chain(chain_address)
         #print(chain_to_import)
 
 #        for block in chain_to_import:
@@ -666,7 +666,7 @@ def test_import_chain_overwrite_existing():
 
         wallet_addresses.append(chain_address)
         
-        chain_to_import = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(), chain_address)
+        chain_to_import = node_1.get_all_blocks_on_chain(chain_address)
 
         node_2 = MainnetChain(testdb2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
         #print("IMPORTING CHAIN number {}".format(i))
@@ -698,8 +698,8 @@ def test_import_chain_overwrite_existing():
         node_2_account_hash = node_2.get_vm().state.account_db.get_account_hash(wallet_address)
         assert(node_1_account_hash == node_2_account_hash)
         
-        node_1_chain = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm(refresh=False).get_block_class(), wallet_address)
-        node_2_chain = node_2.chaindb.get_all_blocks_on_chain(node_2.get_vm(refresh=False).get_block_class(), wallet_address)
+        node_1_chain = node_1.get_all_blocks_on_chain(wallet_address)
+        node_2_chain = node_2.get_all_blocks_on_chain(wallet_address)
         assert(node_1_chain == node_2_chain)
         
         for i in range(len(node_1_chain)):
@@ -766,12 +766,12 @@ def test_import_chain_overwrite_existing_one_at_a_time():
         wallet_addresses.append(chain_address)
 
     #import the first chain
-    chain_1 = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(), decode_hex('0xdb4ca426d53b59f60370274ffb19f2268dc33ddf'))
-    chain_2 = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(), decode_hex('0x885ab3a6cf9f3ccd71a834d5be2eabd08b089e00'))
-    chain_3 = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(), decode_hex('0xf76eac4faae31632570b886fb27cdf7c9da368ef'))
-    chain_4 = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(), decode_hex('0x094c08ca4a316c1ec9326ae29872340dcf0028ac'))
-    chain_5 = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(), decode_hex('0xfc89e5ba946cc4279edf2b090b5e9258c3a11fbb'))
-    chain_6 = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(), decode_hex('0x2bdc0707ccf84350c7a0befea81e5ba1c2a78b3e'))
+    chain_1 = node_1.get_all_blocks_on_chain(decode_hex('0xdb4ca426d53b59f60370274ffb19f2268dc33ddf'))
+    chain_2 = node_1.get_all_blocks_on_chain(decode_hex('0x885ab3a6cf9f3ccd71a834d5be2eabd08b089e00'))
+    chain_3 = node_1.get_all_blocks_on_chain(decode_hex('0xf76eac4faae31632570b886fb27cdf7c9da368ef'))
+    chain_4 = node_1.get_all_blocks_on_chain(decode_hex('0x094c08ca4a316c1ec9326ae29872340dcf0028ac'))
+    chain_5 = node_1.get_all_blocks_on_chain(decode_hex('0xfc89e5ba946cc4279edf2b090b5e9258c3a11fbb'))
+    chain_6 = node_1.get_all_blocks_on_chain(decode_hex('0x2bdc0707ccf84350c7a0befea81e5ba1c2a78b3e'))
     #print(chain_to_import)
     
 #    for block in chain_2:
@@ -841,8 +841,8 @@ def test_import_chain_overwrite_existing_one_at_a_time():
         node_2_account_hash = node_2.get_vm().state.account_db.get_account_hash(wallet_address)
         assert(node_1_account_hash == node_2_account_hash)
         
-        node_1_chain = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm(refresh=False).get_block_class(), wallet_address)
-        node_2_chain = node_2.chaindb.get_all_blocks_on_chain(node_2.get_vm(refresh=False).get_block_class(), wallet_address)
+        node_1_chain = node_1.get_all_blocks_on_chain(wallet_address)
+        node_2_chain = node_2.get_all_blocks_on_chain(wallet_address)
         assert(node_1_chain == node_2_chain)
         
         for i in range(len(node_1_chain)):
@@ -1047,10 +1047,10 @@ def test_import_chain_overwrite_other_unprocessed_block():
     sender_chain_2 = MainnetChain(testdb2, SENDER.public_key.to_canonical_address(), SENDER)
     sender_chain_3 = MainnetChain(testdb3, SENDER.public_key.to_canonical_address(), SENDER)
     
-    db_1_receiver_1_chain = sender_chain_1.chaindb.get_all_blocks_on_chain(sender_chain_1.get_vm().get_block_class(), RECEIVER.public_key.to_canonical_address())
-    db_1_receiver_2_chain = sender_chain_1.chaindb.get_all_blocks_on_chain(sender_chain_1.get_vm().get_block_class(), RECEIVER2.public_key.to_canonical_address())
+    db_1_receiver_1_chain = sender_chain_1.get_all_blocks_on_chain(RECEIVER.public_key.to_canonical_address())
+    db_1_receiver_2_chain = sender_chain_1.get_all_blocks_on_chain(RECEIVER2.public_key.to_canonical_address())
     
-    db_2_receiver_1_chain = sender_chain_2.chaindb.get_all_blocks_on_chain(sender_chain_2.get_vm().get_block_class(), RECEIVER.public_key.to_canonical_address())
+    db_2_receiver_1_chain = sender_chain_2.get_all_blocks_on_chain(RECEIVER.public_key.to_canonical_address())
     
     sender_chain_3.import_chain(block_list = db_1_receiver_1_chain)
     sender_chain_3.import_chain(block_list = db_1_receiver_2_chain)

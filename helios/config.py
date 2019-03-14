@@ -118,6 +118,10 @@ class ChainConfig:
         self.rpc_port = rpc_port
         self.use_discv5 = use_discv5
 
+        # TODO: disable this on release
+        self.report_memory_usage = False
+        self.memory_usage_report_interval = 10
+
         if self.network_startup_node:
             #network startup nodes must be bootnodes.
             self.node_type = 4

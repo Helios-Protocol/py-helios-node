@@ -73,9 +73,6 @@ class FakeAsyncChainDB(AsyncChainDB):
     coro_get_block_uncles = async_passthrough('get_block_uncles')
     coro_get_receipts = async_passthrough('get_receipts')
     coro_get_all_block_hashes_on_chain_by_head_block_hash = async_passthrough('get_all_block_hashes_on_chain_by_head_block_hash')
-    coro_get_all_blocks_on_chain_by_head_block_hash = async_passthrough('get_all_blocks_on_chain_by_head_block_hash')
-    coro_get_block_by_hash = async_passthrough('get_block_by_hash')
-    coro_get_blocks_on_chain = async_passthrough('get_blocks_on_chain')
     coro_load_historical_minimum_gas_price = async_passthrough('load_historical_minimum_gas_price')
     coro_get_canonical_head_hash = async_passthrough('get_canonical_head_hash')
     coro_get_latest_reward_block_number = async_passthrough('get_latest_reward_block_number')
@@ -83,7 +80,7 @@ class FakeAsyncChainDB(AsyncChainDB):
     coro_load_historical_network_tpc_capability = async_passthrough('load_historical_network_tpc_capability')
     coro_save_historical_minimum_gas_price = async_passthrough('save_historical_minimum_gas_price')
     coro_save_historical_network_tpc_capability = async_passthrough('save_historical_network_tpc_capability')
-    coro_get_blocks_on_chain_up_to_block_hash = async_passthrough('get_blocks_on_chain_up_to_block_hash')
+
 
 class FakeAsyncChainHeadDB(AsyncChainHeadDB):
     coro_get_dense_historical_root_hashes = async_passthrough('get_dense_historical_root_hashes')
@@ -108,9 +105,6 @@ async def coro_import_block(chain, block, perform_validation=True):
     return chain.import_block(block, perform_validation=perform_validation)
 
 
-
-
-
 class FakeAsyncMainnetChain(MainnetChain):
     chaindb_class = FakeAsyncChainDB
     coro_import_block = coro_import_block
@@ -118,8 +112,10 @@ class FakeAsyncMainnetChain(MainnetChain):
     coro_validate_receipt = async_passthrough('validate_receipt')
     coro_get_mature_stake = async_passthrough('get_mature_stake')
     coro_get_local_tpc_cap = async_passthrough('get_local_tpc_cap')
-
-
+    coro_get_blocks_on_chain_up_to_block_hash = async_passthrough('get_blocks_on_chain_up_to_block_hash')
+    coro_get_all_blocks_on_chain_by_head_block_hash = async_passthrough('get_all_blocks_on_chain_by_head_block_hash')
+    coro_get_block_by_hash = async_passthrough('get_block_by_hash')
+    coro_get_blocks_on_chain = async_passthrough('get_blocks_on_chain')
 
 class FakeMainnetFullNode():
     chain_class = FakeAsyncMainnetChain

@@ -96,9 +96,6 @@ class AsyncChainDB(ChainDB):
     async def coro_save_historical_network_tpc_capability(self, historical_tpc_capability: List[List[Union[Timestamp, int]]], de_sparse: bool = False) -> None:
         raise NotImplementedError()
 
-    async def coro_get_block_by_hash(self, block_hash: Hash32, block_class: Type[BaseBlock]) -> BaseBlock:
-        raise NotImplementedError()
-
     async def coro_get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:
         raise NotImplementedError()
 
@@ -106,12 +103,6 @@ class AsyncChainDB(ChainDB):
         raise NotImplementedError()
 
     async def coro_get_all_block_hashes_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[Hash32]:
-        raise NotImplementedError()
-
-    async def coro_get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32, block_class) -> List[BaseBlock]:
-        raise NotImplementedError()
-
-    async def coro_get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32, block_class) -> List[BaseBlock]:
         raise NotImplementedError()
 
 
@@ -131,8 +122,6 @@ class ChainDBProxy(BaseProxy):
     coro_get_block_uncles = async_method('get_block_uncles')
     coro_get_receipts = async_method('get_receipts')
     coro_get_chain_wallet_address_for_block_hash = async_method('get_chain_wallet_address_for_block_hash')
-    coro_get_all_blocks_on_chain = async_method('get_all_blocks_on_chain')
-    coro_get_block_by_number = async_method('get_block_by_number')
     coro_min_gas_system_initialization_required = async_method('min_gas_system_initialization_required')
     coro_load_historical_network_tpc_capability = async_method('load_historical_network_tpc_capability')
     coro_load_historical_minimum_gas_price = async_method('load_historical_minimum_gas_price')
@@ -142,13 +131,9 @@ class ChainDBProxy(BaseProxy):
     coro_get_required_block_min_gas_price = async_method('get_required_block_min_gas_price')
     coro_initialize_historical_minimum_gas_price_at_genesis = async_method(
         'initialize_historical_minimum_gas_price_at_genesis')
-    coro_get_blocks_on_chain = async_method('get_blocks_on_chain')
-    coro_get_block_by_hash = async_method('get_block_by_hash')
     coro_get_latest_reward_block_number = async_method('get_latest_reward_block_number')
     coro_get_all_block_hashes_on_chain = async_method('get_all_block_hashes_on_chain')
     coro_get_all_block_hashes_on_chain_by_head_block_hash = async_method('get_all_block_hashes_on_chain_by_head_block_hash')
-    coro_get_all_blocks_on_chain_by_head_block_hash = async_method('get_all_blocks_on_chain_by_head_block_hash')
-    coro_get_blocks_on_chain_up_to_block_hash = async_method('get_blocks_on_chain_up_to_block_hash')
 
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')
@@ -160,8 +145,6 @@ class ChainDBProxy(BaseProxy):
     persist_uncles = sync_method('persist_uncles')
     persist_trie_data_dict = sync_method('persist_trie_data_dict')
     get_chain_wallet_address_for_block_hash = sync_method('get_chain_wallet_address_for_block_hash')
-    get_block_by_number = sync_method('get_block_by_number')
-    get_all_blocks_on_chain = sync_method('get_all_blocks_on_chain')
     min_gas_system_initialization_required = sync_method('min_gas_system_initialization_required')
     load_historical_network_tpc_capability = sync_method('load_historical_network_tpc_capability')
     load_historical_minimum_gas_price = sync_method('load_historical_minimum_gas_price')
@@ -171,11 +154,7 @@ class ChainDBProxy(BaseProxy):
     get_required_block_min_gas_price = sync_method('get_required_block_min_gas_price')
     initialize_historical_minimum_gas_price_at_genesis = sync_method(
         'initialize_historical_minimum_gas_price_at_genesis')
-    get_blocks_on_chain = sync_method('get_blocks_on_chain')
     get_latest_reward_block_number = sync_method('get_latest_reward_block_number')
     get_canonical_block_header_by_number = sync_method('get_canonical_block_header_by_number')
 
     get_all_block_hashes_on_chain = sync_method('get_all_block_hashes_on_chain')
-
-
-    get_block_by_hash = sync_method('get_block_by_hash')

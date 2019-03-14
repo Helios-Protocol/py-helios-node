@@ -24,6 +24,13 @@ class ChainProxy(BaseProxy):
     coro_re_initialize_historical_minimum_gas_price_at_genesis = async_method('re_initialize_historical_minimum_gas_price_at_genesis')
     coro_import_current_queue_block_with_reward = async_method('import_current_queue_block_with_reward')
     coro_get_receipts = async_method('get_receipts')
+    coro_get_block_by_hash = async_method('get_block_by_hash')
+    coro_get_block_by_header = async_method('get_block_by_header')
+    coro_get_block_by_number = async_method('get_block_by_number')
+    coro_get_blocks_on_chain = async_method('get_blocks_on_chain')
+    coro_get_all_blocks_on_chain = async_method('get_all_blocks_on_chain')
+    coro_get_all_blocks_on_chain_by_head_block_hash = async_method('get_all_blocks_on_chain_by_head_block_hash')
+    coro_get_blocks_on_chain_up_to_block_hash = async_method('get_blocks_on_chain_up_to_block_hash')
 
 
     import_block = sync_method('import_block')

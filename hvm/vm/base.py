@@ -504,12 +504,13 @@ class VM(BaseVM):
             else:
                 return None, None, computation, processed_transaction
 
-    def _apply_reward_bundle(self, reward_bundle: StakeRewardBundle, block_timestamp: Timestamp, wallet_address: Address = None) -> None:
+    def _apply_reward_bundle(self, reward_bundle: StakeRewardBundle, block_timestamp: Timestamp, wallet_address: Address = None, validate = True) -> None:
 
         if wallet_address is None:
             wallet_address = self.wallet_address
 
-        self.consensus_db.validate_reward_bundle(reward_bundle, chain_address=wallet_address, block_timestamp = block_timestamp)
+        if validate:
+            self.consensus_db.validate_reward_bundle(reward_bundle, chain_address=wallet_address, block_timestamp = block_timestamp)
 
         self.state.apply_reward_bundle(reward_bundle, wallet_address)
 
@@ -642,10 +643,11 @@ class VM(BaseVM):
     # Mining
     #
 
-    def import_block(self, block: Union[BaseBlock, BaseQueueBlock], *args, **kwargs):
+    def import_block(self, block: Union[BaseBlock, BaseQueueBlock], validate = True, **kwargs):
         """
         Import the given block to the chain.
         """
+
         if isinstance(block, self.get_queue_block_class()):
             is_queue_block = True
             head_block = self.queue_block
@@ -691,9 +693,8 @@ class VM(BaseVM):
         last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, last_header, self.wallet_address)
 
         if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
-            self._apply_reward_bundle(block.reward_bundle, block_timestamp, self.wallet_address)
+            self._apply_reward_bundle(block.reward_bundle, block_timestamp, self.wallet_address, validate=validate)
 
-        #TODO: get new receive transactions from receive computations. They will include any refunds.
 
         #then combine
         receipts.extend(receive_receipts)
@@ -717,16 +718,15 @@ class VM(BaseVM):
             block.reward_bundle
         )
 
+
+
         
-        #TODO: find out if this packing is nessisary
-        packed_block = self.pack_block(block, *args, **kwargs)
-        
-        packed_block = self.save_account_hash(packed_block)
+        block = self.save_account_hash(block)
 
         account_balance = self.state.account_db.get_balance(self.wallet_address)
         self.logger.debug("setting account_balance of block to {}".format(account_balance))
-        packed_block = packed_block.copy(
-            header=packed_block.header.copy(
+        block = block.copy(
+            header=block.header.copy(
                 account_balance=account_balance,
             ),
         )
@@ -739,28 +739,33 @@ class VM(BaseVM):
             """
             #update timestamp now.
             self.logger.debug("setting timestamp of block to {}".format(int(time.time())))
-            packed_block = packed_block.copy(
-                header=packed_block.header.copy(
+            block = block.copy(
+                header=block.header.copy(
                     timestamp=block_timestamp,
                 ),
             )
+
+            # change any final header parameters before signing
+            block = self.pack_block(block, **kwargs)
+
+
             if self.private_key is None:
                 raise ValueError("Cannot sign block because no private key given")
             self.logger.debug("signing block")
-            packed_block = packed_block.as_complete_block(self.private_key, self.network_id)
+            block = block.as_complete_block(self.private_key, self.network_id)
             
 
         #save all send transactions in the state as receivable
         #we have to do this at the end here because the block hash is still changing when transactions are being processed.
-        self.save_recievable_transactions(packed_block.header.hash, send_computations, processed_receive_transactions)
+        self.save_recievable_transactions(block.header.hash, send_computations, processed_receive_transactions)
 
-
-        # Perform validation
-        self.validate_block(packed_block)
+        if validate:
+            # Perform validation
+            self.validate_block(block)
         
         #state is persisted from chain after ensuring block unchanged
-        
-        return packed_block
+
+        return block
 
 
     #this can be used for fast sync
@@ -913,7 +918,7 @@ class VM(BaseVM):
             ),
         )
         
-    def pack_block(self, block, *args, **kwargs):
+    def pack_block(self, block, **kwargs):
         """
         Pack block for mining.
 
@@ -940,6 +945,7 @@ class VM(BaseVM):
                     ", ".join(unknown_fields),
                 )
             )
+
 
         header = block.header.copy(**kwargs)
         packed_block = block.copy(header=header)

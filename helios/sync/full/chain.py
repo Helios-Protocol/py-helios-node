@@ -690,7 +690,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                     # At this stage of syncing, we should send them the blocks they don't have so they can add them too.
                                     for peer in sync_parameters.peers_to_sync_with:
                                         try:
-                                            block = await self.chaindb.coro_get_block_by_hash(block_hash, P2PBlock)
+                                            block = await self.chain.coro_get_block_by_hash(block_hash)
                                             peer.sub_proto.send_new_block(block)
                                         except Exception:
                                             pass
@@ -984,8 +984,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         chain_address = msg['chain_address']
 
-        # whole_chain = await self.chaindb.coro_get_all_blocks_on_chain(self.chain.get_vm().get_block_class(), chain_address)
-        chain_segment = await self.chaindb.coro_get_blocks_on_chain(P2PBlock, msg['block_number_start'],
+        # whole_chain = await self.chain.coro_get_all_blocks_on_chain(chain_address)
+        chain_segment = await self.chain.coro_get_blocks_on_chain(msg['block_number_start'],
                                                                     msg['block_number_end'], chain_address)
 
         peer.sub_proto.send_blocks(chain_segment)
@@ -1003,7 +1003,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         blocks_to_return = []
         for hash in hashes:
             try:
-                new_block = cast(P2PBlock, await self.chaindb.coro_get_block_by_hash(hash, P2PBlock))
+                new_block = cast(P2PBlock, await self.chain.coro_get_block_by_hash(hash))
                 blocks_to_return.append(new_block)
             except HeaderNotFound:
                 pass
@@ -1028,8 +1028,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         chains = []
         for head_hash in chain_head_hashes:
-            chain = await self.chaindb.coro_get_blocks_on_chain_up_to_block_hash(head_hash, P2PBlock)
-            # chain = await self.chaindb.coro_get_all_blocks_on_chain_by_head_block_hash(head_hash, P2PBlock)
+            chain = await self.chain.coro_get_blocks_on_chain_up_to_block_hash(head_hash)
+            # chain = await self.chain.coro_get_all_blocks_on_chain_by_head_block_hash(head_hash)
             chains.append(chain)
 
         self.logger.debug('sending {} chains'.format(len(chains)))
@@ -1053,13 +1053,6 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                force_replace_existing_blocks:bool = False,
                                allow_import_for_expired_timestamp: bool = False,
                                resolving_block_conflict: bool = False) -> Optional[bool]:
-        # TODO. Here we need to validate the block as much as we can. Try to do this in a way where we can run it in another process to speed it up.
-        # No point in doing anything if the block is invalid.
-        # or to speed up transaction throughput we could just rely on the import to validate.
-        # if we do that, we just cant re-broadcast the blocks until we have successfully imported. So if the block goes to unprocessed
-        # run the validator before sending out. lets make sure everything is validated in chain before saving as unprocessed.
-
-        #self.recently_imported_block_hashes[new_block.header.hash] = time.time()
 
         '''
         This returns true if the block is imported successfully, False otherwise
@@ -1124,9 +1117,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                     self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
 
                                     #lets also send this peer our conflict block to let it know that it exists.
-                                    conflict_block = self.chaindb.get_block_by_number(block_number = new_block.header.block_number,
-                                                                                      wallet_address = new_block.header.chain_address,
-                                                                                      block_class = chain.get_vm().get_block_class())
+                                    conflict_block = await self.chain.coro_get_block_by_number(block_number = new_block.header.block_number,
+                                                                                      chain_address = new_block.header.chain_address,
+                                                                                      )
                                     peer.sub_proto.send_new_block(cast(P2PBlock, conflict_block))
 
                             return False

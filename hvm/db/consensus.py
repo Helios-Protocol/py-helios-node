@@ -468,14 +468,14 @@ class ConsensusDB():
                                                               latest_reward_block_number = latest_reward_block_number)
 
             #These functions will check for minimum required stake, and minimum number of proofs.
-            reward_type_2_max_amount, _ = self.calculate_final_reward_type_2_amount(list(reward_bundle.reward_type_2.proof),
+            reward_type_2_max_amount, proof_list = self.calculate_final_reward_type_2_amount(list(reward_bundle.reward_type_2.proof),
                                                                                  block_timestamp + REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE)
-            reward_type_2_min_amount, proof_list = self.calculate_final_reward_type_2_amount(list(reward_bundle.reward_type_2.proof),
+            reward_type_2_min_amount, _ = self.calculate_final_reward_type_2_amount(list(reward_bundle.reward_type_2.proof),
                                                                                  block_timestamp - REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE)
 
             #make sure they aren't including more proof then nessisary
             if len(proof_list) != len(reward_bundle.reward_type_2.proof):
-                raise ValidationError("The reward type 2 contains to many entries for proof. Expected {}, but got {}".format(len(proof_list), len(reward_bundle.reward_type_2.proof)))
+                raise ValidationError("The reward type 2 contains to many entries for proof. Expected {}, but got {}.".format(len(proof_list), len(reward_bundle.reward_type_2.proof)))
 
 
             if reward_bundle.reward_type_2.amount > reward_type_2_max_amount or reward_bundle.reward_type_2.amount < reward_type_2_min_amount:

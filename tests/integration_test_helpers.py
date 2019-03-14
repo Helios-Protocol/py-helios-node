@@ -130,10 +130,8 @@ def ensure_blockchain_databases_identical(base_db_1, base_db_2):
         assert (node_1_account_hash == node_2_account_hash)
 
         # Compare all chains in database
-        node_1_chain = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(),
-                                                              wallet_address)
-        node_2_chain = node_2.chaindb.get_all_blocks_on_chain(node_2.get_vm().get_block_class(),
-                                                              wallet_address)
+        node_1_chain = node_1.get_all_blocks_on_chain(wallet_address)
+        node_2_chain = node_2.get_all_blocks_on_chain(wallet_address)
         assert (node_1_chain == node_2_chain)
 
         # Compare the blocks at a deeper level

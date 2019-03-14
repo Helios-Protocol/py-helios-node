@@ -19,6 +19,7 @@ from lahja import (
     Endpoint
 )
 
+from helios.utils.profiling import coro_periodically_report_memory_stats
 from hvm.chains import AsyncChain
 
 from eth_typing import BlockNumber
@@ -190,6 +191,10 @@ class BaseServer(BaseService):
             self.port,
             token=self.cancel_token,
         )
+        if self.chain_config.report_memory_usage:
+            memory_logger = logging.getLogger("helios.memoryLogger")
+            self.run_task(coro_periodically_report_memory_stats(self.cancel_token, self.chain_config.memory_usage_report_interval, memory_logger))
+
         self.run_daemon(self.peer_pool)
         self.run_daemon(self.discovery)
         self.run_daemon(self.consensus)
@@ -202,6 +207,8 @@ class BaseServer(BaseService):
             self.run_child_service(self.upnp_service)
         self.syncer = self._make_syncer()
         await self.syncer.run()
+
+
 
     async def _cleanup(self) -> None:
         self.logger.info("Closing server...")

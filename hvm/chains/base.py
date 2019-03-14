@@ -61,7 +61,7 @@ from hvm.constants import (
     MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY,
     MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH,
     MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE,
-)
+    MIN_TIME_BETWEEN_BLOCKS)
 
 from hvm.db.trie import make_trie_root_and_nodes
 
@@ -265,26 +265,50 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     #
     # Block API
     #
+    @abstractmethod
     def get_ancestors(self, limit: int, header: BlockHeader=None) -> Iterator[BaseBlock]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_block_by_header(self, block_header: BlockHeader) -> BaseBlock:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_block_by_number(self, block_number: BlockNumber, wallet_address: Address = None) -> BaseBlock:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_blocks_on_chain(self, start: int, end: int, wallet_address: Address = None) -> List[BaseBlock]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_all_blocks_on_chain(self, wallet_address: Address = None) -> List[BaseBlock]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
     def get_block(self) -> BaseBlock:
         raise NotImplementedError("Chain classes must implement this method")
 
-    def get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
-        raise NotImplementedError("Chain classes must implement this method")
 
-    def get_block_by_header(self, block_header: BlockHeader) -> BaseBlock:
-        raise NotImplementedError("Chain classes must implement this method")
+    # @abstractmethod
+    # def get_canonical_block_by_number(self, block_number: BlockNumber) -> BaseBlock:
+    #     raise NotImplementedError("Chain classes must implement this method")
 
-    @abstractmethod
-    def get_canonical_block_by_number(self, block_number: BlockNumber) -> BaseBlock:
-        raise NotImplementedError("Chain classes must implement this method")
-
-    @abstractmethod
-    def get_canonical_block_hash(self, block_number):
-        raise NotImplementedError("Chain classes must implement this method")
+    # @abstractmethod
+    # def get_canonical_block_hash(self, block_number):
+    #     raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
     def get_all_chronological_blocks_for_window(self, window_timestamp: Timestamp) -> List[BaseBlock]:
@@ -305,7 +329,6 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     @abstractmethod
     def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader, wallet_address: Address = None):
         raise NotImplementedError("Chain classes must implement this method")
-
 
 
     #
@@ -675,6 +698,8 @@ class Chain(BaseChain):
         init_header = self.create_header_from_parent(parent_header)
         return type(self)(self.chaindb.db, self.wallet_address, self.private_key, init_header)
 
+
+
     #
     # VM API
     #
@@ -720,14 +745,14 @@ class Chain(BaseChain):
         validate_word(block_hash, title="Block Hash")
         return self.chaindb.get_block_header_by_hash(block_hash)
 
-    def get_canonical_head(self, wallet_address = None):
+    def get_canonical_head(self, chain_address = None):
         """
         Returns the block header at the canonical chain head.
 
         Raises CanonicalHeadNotFound if there's no head defined for the canonical chain.
         """
-        if wallet_address is not None:
-            return self.chaindb.get_canonical_head(wallet_address)
+        if chain_address is not None:
+            return self.chaindb.get_canonical_head(chain_address)
         else:
             return self.chaindb.get_canonical_head()
 
@@ -748,7 +773,77 @@ class Chain(BaseChain):
             header = self.header
         lower_limit = max(header.block_number - limit, 0)
         for n in reversed(range(lower_limit, header.block_number)):
-            yield self.get_canonical_block_by_number(BlockNumber(n))
+            yield self.get_block_by_number(BlockNumber(n), header.chain_address)
+
+    def get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
+
+        block_header = self.get_block_header_by_hash(block_hash)
+
+        return self.get_block_by_header(block_header)
+
+    def get_block_by_header(self, block_header: BlockHeader) -> BaseBlock:
+        """
+        Returns the requested block as specified by the block header.
+        """
+        block_class = self.get_vm_class_for_block_timestamp(block_header.timestamp).get_block_class()
+
+        send_transactions = self.chaindb.get_block_transactions(block_header, block_class.transaction_class)
+
+        receive_transactions = self.chaindb.get_block_receive_transactions(block_header,block_class.receive_transaction_class)
+
+        reward_bundle = self.chaindb.get_reward_bundle(block_header.reward_hash, block_class.reward_bundle_class)
+
+        output_block = block_class(block_header, send_transactions, receive_transactions, reward_bundle)
+
+        return output_block
+
+    def get_block_by_number(self, block_number: BlockNumber, chain_address: Address = None) -> BaseBlock:
+        if chain_address is None:
+            chain_address = self.wallet_address
+
+        block_hash = self.chaindb.get_canonical_block_hash(block_number, chain_address)
+        return self.get_block_by_hash(block_hash)
+
+    def get_blocks_on_chain(self, start: int, end: int, chain_address: Address = None) -> List[BaseBlock]:
+        if chain_address is None:
+            chain_address = self.wallet_address
+
+        if end == 0:
+            canonical_head_header = self.get_canonical_head(chain_address=chain_address)
+            head_block_number = canonical_head_header.block_number
+            end = head_block_number + 1
+
+        blocks = []
+        for block_number in range(start, end):
+            try:
+                new_block = self.get_block_by_number(BlockNumber(block_number), chain_address)
+                blocks.append(new_block)
+            except HeaderNotFound:
+                break
+
+        return blocks
+
+    def get_all_blocks_on_chain(self, chain_address: Address = None) -> List[BaseBlock]:
+        if chain_address is None:
+            chain_address = self.wallet_address
+
+        canonical_head_header = self.get_canonical_head(chain_address=chain_address)
+        head_block_number = canonical_head_header.block_number
+
+        return self.get_blocks_on_chain(0, head_block_number + 1, chain_address=chain_address)
+
+    def get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
+        chain_head_header = self.get_block_header_by_hash(chain_head_hash)
+        chain_address = chain_head_header.chain_address
+        return self.get_all_blocks_on_chain(chain_address)
+
+    def get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
+        chain_head_header = self.get_block_header_by_hash(chain_head_hash)
+        to_block_number = chain_head_header.block_number
+        chain_address = chain_head_header.chain_address
+
+        return self.get_blocks_on_chain(0, to_block_number + 1, chain_address)
+
 
     def get_block(self) -> BaseBlock:
         """
@@ -762,39 +857,34 @@ class Chain(BaseChain):
         """
         return self.get_vm().queue_block
 
-    def get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
-        """
-        Returns the requested block as specified by block hash.
-        """
-        validate_word(block_hash, title="Block Hash")
-        block_header = self.get_block_header_by_hash(block_hash)
-        return self.get_block_by_header(block_header)
+    # def get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
+    #     """
+    #     Returns the requested block as specified by block hash.
+    #     """
+    #     validate_word(block_hash, title="Block Hash")
+    #     block_header = self.get_block_header_by_hash(block_hash)
+    #     return self.get_block_by_header(block_header)
 
-    def get_block_by_header(self, block_header):
-        """
-        Returns the requested block as specified by the block header.
-        """
-        vm = self.get_vm(block_header)
-        return vm.block
 
-    def get_canonical_block_by_number(self, block_number: BlockNumber) -> BaseBlock:
-        """
-        Returns the block with the given number in the canonical chain.
 
-        Raises BlockNotFound if there's no block with the given number in the
-        canonical chain.
-        """
-        validate_uint256(block_number, title="Block Number")
-        return self.get_block_by_hash(self.chaindb.get_canonical_block_hash(block_number))
-
-    def get_canonical_block_hash(self, block_number: BlockNumber) -> Hash32:
-        """
-        Returns the block hash with the given number in the canonical chain.
-
-        Raises BlockNotFound if there's no block with the given number in the
-        canonical chain.
-        """
-        return self.chaindb.get_canonical_block_hash(block_number)
+    # def get_canonical_block_by_number(self, block_number: BlockNumber) -> BaseBlock:
+    #     """
+    #     Returns the block with the given number in the canonical chain.
+    #
+    #     Raises BlockNotFound if there's no block with the given number in the
+    #     canonical chain.
+    #     """
+    #     validate_uint256(block_number, title="Block Number")
+    #     return self.get_block_by_hash(self.chaindb.get_canonical_block_hash(block_number))
+    #
+    # def get_canonical_block_hash(self, block_number: BlockNumber) -> Hash32:
+    #     """
+    #     Returns the block hash with the given number in the canonical chain.
+    #
+    #     Raises BlockNotFound if there's no block with the given number in the
+    #     canonical chain.
+    #     """
+    #     return self.chaindb.get_canonical_block_hash(block_number)
 
 
     #
@@ -999,13 +1089,12 @@ class Chain(BaseChain):
                 raise NotEnoughTimeBetweenBlocks("Not enough time has passed since the genesis block. Must wait at least {} seconds after genesis block. "
                                                  "This block timestamp is {}, genesis block timestamp is {}.".format(TIME_BETWEEN_HEAD_HASH_SAVE, block.header.timestamp, self.genesis_block_timestamp))
 
-            time_wait = self.get_vm().check_wait_before_new_block(block)
-            if time_wait > 0:
-                if isinstance(block, self.get_vm().get_queue_block_class()):
-                    self.logger.debug("not enough time between blocks. We require {0} seconds. Since it is a queueblock, we will wait for {1} seconds and then import.".format(constants.MIN_TIME_BETWEEN_BLOCKS, time_wait))
-                    time.sleep(time_wait)
-                else:
-                    raise NotEnoughTimeBetweenBlocks()
+            parent_header = self.chaindb.get_block_header_by_hash(block.header.parent_hash)
+            parent_block_timestamp = parent_header.timestamp
+            if (block.header.timestamp - parent_block_timestamp) < MIN_TIME_BETWEEN_BLOCKS:
+                raise NotEnoughTimeBetweenBlocks("Not enough time between blocks. We require {} seconds between blocks. The block timestamp is {}, and the previous block timestamp is {}".format(
+                    MIN_TIME_BETWEEN_BLOCKS, block.header.timestamp, parent_block_timestamp
+                ))
         return
 
     #
@@ -1130,7 +1219,7 @@ class Chain(BaseChain):
                             self.purge_unprocessed_block(child_block_hash)
 
         try:
-            block = self.chaindb.get_block_by_hash(block_hash, self.get_vm().get_block_class())
+            block = self.get_block_by_hash(block_hash)
             chain = encode_hex(block.header.chain_address)
             self.logger.debug("deleting unprocessed child block number {} on chain {}".format(block.number, chain))
             self.chaindb.remove_block_from_unprocessed(block)
@@ -1553,7 +1642,7 @@ class Chain(BaseChain):
                             child_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(child_block_hash)
                             #child_chain = Chain(self.base_db, child_wallet_address)
                             #get block
-                            child_block = self.chaindb.get_block_by_hash(child_block_hash, self.get_vm().get_block_class())
+                            child_block = self.get_block_by_hash(child_block_hash)
                             self._import_block(child_block, wallet_address = child_wallet_address, *args, **kwargs)
                         except Exception as e:
                             self.logger.error("Tried to import an unprocessed child block and got this error {}".format(e))
@@ -1623,7 +1712,7 @@ class Chain(BaseChain):
             list_of_blocks = []
             for chronological_block in chronological_blocks:
                 block_hash = chronological_block[1]
-                new_block = self.chaindb.get_block_by_hash(block_hash, self.get_vm().get_block_class())
+                new_block = self.get_block_by_hash(block_hash)
                 list_of_blocks.append(new_block)
 
             return list_of_blocks
@@ -2044,6 +2133,30 @@ class AsyncChain(Chain):
     async def coro_import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
         raise NotImplementedError()
 
+    async def coro_get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_get_block_by_header(self, block_header: BlockHeader) -> BaseBlock:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_get_block_by_number(self, block_number: BlockNumber, chain_address: Address = None) -> BaseBlock:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_get_blocks_on_chain(self, start: int, end: int, chain_address: Address = None) -> List[BaseBlock]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_get_all_blocks_on_chain(self, chain_address: Address = None) -> List[BaseBlock]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    #
+    # Async chain functions for calling chain directly
+    #
     async def coro_import_chain(self, *args, **kwargs):
         loop = asyncio.get_event_loop()
 
@@ -2076,4 +2189,6 @@ class AsyncChain(Chain):
             None,
             partial(self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash, *args, **kwargs)
         )
+
+
 

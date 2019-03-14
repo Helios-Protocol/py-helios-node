@@ -19,5 +19,11 @@ class AsyncChainMixin:
     coro_get_local_tpc_cap = async_method('get_local_tpc_cap')
     coro_re_initialize_historical_minimum_gas_price_at_genesis = async_method(
         're_initialize_historical_minimum_gas_price_at_genesis')
+    coro_get_block_by_number = async_method('get_block_by_number')
+    coro_get_blocks_on_chain = async_method('get_blocks_on_chain')
+    coro_get_all_blocks_on_chain = async_method('get_all_blocks_on_chain')
+    coro_get_all_blocks_on_chain_by_head_block_hash = async_method('get_all_blocks_on_chain_by_head_block_hash')
+    coro_get_blocks_on_chain_up_to_block_hash = async_method('get_blocks_on_chain_up_to_block_hash')
+
 
 

@@ -88,6 +88,7 @@ class HeliosTestnetBlock(BaseBlock):
     #
     @classmethod
     def get_transaction_class(cls):
+        # TODO:Remove
         return cls.transaction_class
     
     #
@@ -95,6 +96,7 @@ class HeliosTestnetBlock(BaseBlock):
     #
     @classmethod
     def get_receive_transaction_class(cls):
+        #TODO:Remove
         return cls.receive_transaction_class
 
     #
@@ -102,6 +104,7 @@ class HeliosTestnetBlock(BaseBlock):
     #
     @classmethod
     def get_reward_bundle_class(cls):
+        # TODO:Remove
         return cls.reward_bundle_class
 
 
@@ -119,13 +122,16 @@ class HeliosTestnetBlock(BaseBlock):
         """
         Returns the block denoted by the given block header.
         """
-        transactions = chaindb.get_block_transactions(header, cls.get_transaction_class())
-        receive_transactions = chaindb.get_block_receive_transactions(header, cls.get_receive_transaction_class())
+        #TODO:Remove. It is dirty to have to pass the chaindb into here.
+        transactions = chaindb.get_block_transactions(header, cls.transaction_class)
+        receive_transactions = chaindb.get_block_receive_transactions(header, cls.receive_transaction_class)
+        reward_bundle = chaindb.get_reward_bundle(header.reward_hash, cls.reward_bundle_class)
 
         return cls(
             header=header,
             transactions=transactions,
-            receive_transactions=receive_transactions
+            receive_transactions=receive_transactions,
+            reward_bundle = reward_bundle
         )
 
     #

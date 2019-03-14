@@ -802,6 +802,7 @@ class ChainHeadDB():
         :param after_timestamp:
         :return:
         '''
+
         last_finished_window = int(time.time() / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
         current_window = last_finished_window + TIME_BETWEEN_HEAD_HASH_SAVE
 

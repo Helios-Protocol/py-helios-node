@@ -203,6 +203,7 @@ logging_parser.add_argument(
 logging_parser.add_argument(
     '--file-log-level',
     dest="file_log_level",
+    type=int,
     help=(
         "Configure the logging level for file-based logging."
     ),
@@ -321,6 +322,16 @@ chain_parser.add_argument(
         "generate a random blockchain database"
     ),
 )
+
+chain_parser.add_argument(
+    '--start_memory_profile',
+    action='store_true',
+    dest='start_memory_profile',
+    help=(
+        "Start memory profiler at beginning of program"
+    ),
+)
+
 
 
 chain_parser.add_argument(

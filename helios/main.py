@@ -11,6 +11,7 @@ from typing import (
     Type,
 )
 
+from cancel_token import CancelToken
 from lahja import (
     EventBus,
     Endpoint,
@@ -79,7 +80,7 @@ from helios.utils.mp import (
 )
 from helios.utils.profiling import (
     setup_cprofiler,
-)
+    sync_periodically_report_memory_stats)
 from helios.utils.shutdown import (
     exit_signal_with_service,
 )
@@ -87,7 +88,7 @@ from helios.utils.version import (
     construct_helios_client_identifier,
     is_prerelease,
 )
-
+from hvm.tools.logging import TRACE_LEVEL_NUM
 from helios.rpc.http_server import Proxy as http_rpc_proxy
 
 
@@ -117,6 +118,7 @@ HELIOS_AMBIGIOUS_FILESYSTEM_INFO = (
 
 
 def main() -> None:
+
     event_bus = EventBus(ctx)
     main_endpoint = event_bus.create_endpoint(MAIN_EVENTBUS_ENDPOINT)
     main_endpoint.connect()
@@ -130,9 +132,12 @@ def main() -> None:
     #
     # Dev testing stuff
     #
+    if args.start_memory_profile:
+        os.environ["PYTHONTRACEMALLOC"] = '1'
     if args.rand_db:
         os.environ["GENERATE_RANDOM_DATABASE"] = 'true'
     if args.instance is not None:
+
         from helios.utils.xdg import get_xdg_helios_root
         args.port = args.port + args.instance * 2
 
@@ -191,54 +196,72 @@ def main() -> None:
 
 
     log_levels = {}
-    log_levels['default'] = logging.INFO
+    if args.log_levels and args.log_levels.get(None) == TRACE_LEVEL_NUM:
+        print("SETTING TRACE LOG LEVELS")
+        log_levels['default'] = TRACE_LEVEL_NUM
+        log_levels['hvm'] = TRACE_LEVEL_NUM
+        log_levels['hp2p'] = TRACE_LEVEL_NUM
+        log_levels['helios'] = TRACE_LEVEL_NUM
 
-    log_levels['urllib3'] = logging.INFO
-    log_levels['ssdp'] = logging.INFO
-    log_levels['Service'] = logging.INFO
+        log_levels['urllib3'] = TRACE_LEVEL_NUM
+        log_levels['ssdp'] = TRACE_LEVEL_NUM
+        log_levels['Service'] = TRACE_LEVEL_NUM
 
-    log_levels['hvm'] = logging.DEBUG  #sets all of hvm
-    log_levels['hvm.db.account.AccountDB'] = logging.DEBUG
-    log_levels['hvm.vm.base.VM.VM'] = logging.DEBUG
-    log_levels['hvm.chain'] = logging.DEBUG
-    #log_levels['hvm.chain.chain.Chain'] = logging.DEBUG
-    log_levels['hvm.db.chain_head.ChainHeadDB'] = logging.DEBUG
-    log_levels['hvm.db.chain_db.ChainDB'] = logging.DEBUG
-    log_levels['hvm.db.consensus'] = logging.DEBUG
+        log_levels['Action'] = TRACE_LEVEL_NUM
+        log_levels['Device'] = TRACE_LEVEL_NUM
+        log_levels['helios.extensibility'] = TRACE_LEVEL_NUM
 
-    #log_levels['hp2p'] = logging.INFO
+    else:
+        log_levels['default'] = logging.INFO
 
+        log_levels['urllib3'] = logging.INFO
+        log_levels['ssdp'] = logging.INFO
+        log_levels['Service'] = logging.INFO
 
-    log_levels['hp2p.peer'] = logging.DEBUG
-    log_levels['hp2p.peer.PeerPool'] = logging.DEBUG
-    log_levels['hp2p.consensus.Consensus'] = logging.DEBUG
-    log_levels['hp2p.SmartContractChainManager'] = logging.DEBUG
-    log_levels['hp2p.kademlia.KademliaProtocol'] = logging.DEBUG
-    log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.INFO
-    log_levels['hp2p.discovery.DiscoveryService'] = logging.INFO
-    log_levels['hp2p.nat.UPnPService'] = logging.CRITICAL
-    log_levels['connectionpool'] = logging.CRITICAL
-    log_levels['hp2p.protocol'] = logging.DEBUG
-    log_levels['hp2p.protocol.Protocol'] = logging.DEBUG
+        log_levels['hvm'] = logging.DEBUG  #sets all of hvm
+        log_levels['hvm.db.account.AccountDB'] = logging.DEBUG
+        log_levels['hvm.vm.base.VM.VM'] = logging.DEBUG
+        log_levels['hvm.chain'] = logging.DEBUG
+        #log_levels['hvm.chain.chain.Chain'] = logging.DEBUG
+        log_levels['hvm.db.chain_head.ChainHeadDB'] = logging.DEBUG
+        log_levels['hvm.db.chain_db.ChainDB'] = logging.DEBUG
+        log_levels['hvm.db.consensus'] = logging.DEBUG
+        log_levels['hvm.memoryLogger'] = logging.DEBUG
 
-
-    #log_levels['helios'] = logging.INFO
-    log_levels['helios.rpc.ipc'] = logging.INFO
-    log_levels['helios.Node'] = logging.INFO
-    log_levels['helios.sync'] = logging.DEBUG
-    log_levels['helios.protocol'] = logging.INFO
-    log_levels['helios.protocol.common'] = logging.DEBUG
-    log_levels['helios.protocol.hls.peer.HLSPeer'] = 5
-
-    log_levels['hp2p.hls'] = logging.INFO
-    log_levels['helios.server.FullServer'] = logging.DEBUG
-
-    log_levels['Action'] = logging.INFO
-    log_levels['Device'] = logging.INFO
-    log_levels['helios.extensibility'] = logging.INFO
+        #log_levels['hp2p'] = logging.INFO
 
 
-    setup_log_levels(log_levels = log_levels)
+        log_levels['hp2p.peer'] = logging.DEBUG
+        log_levels['hp2p.peer.PeerPool'] = logging.DEBUG
+        log_levels['hp2p.consensus.Consensus'] = logging.DEBUG
+        log_levels['hp2p.SmartContractChainManager'] = logging.DEBUG
+        log_levels['hp2p.kademlia.KademliaProtocol'] = logging.DEBUG
+        log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.INFO
+        log_levels['hp2p.discovery.DiscoveryService'] = logging.INFO
+        log_levels['hp2p.nat.UPnPService'] = logging.CRITICAL
+        log_levels['connectionpool'] = logging.CRITICAL
+        log_levels['hp2p.protocol'] = logging.DEBUG
+        log_levels['hp2p.protocol.Protocol'] = logging.DEBUG
+
+
+        #log_levels['helios'] = logging.INFO
+        log_levels['helios.rpc.ipc'] = logging.INFO
+        log_levels['helios.Node'] = logging.INFO
+        log_levels['helios.sync'] = logging.DEBUG
+        log_levels['helios.protocol'] = logging.INFO
+        log_levels['helios.protocol.common'] = logging.DEBUG
+        log_levels['helios.protocol.hls.peer.HLSPeer'] = 5
+        log_levels['helios.memoryLogger'] = logging.DEBUG
+
+        log_levels['hp2p.hls'] = logging.INFO
+        log_levels['helios.server.FullServer'] = logging.DEBUG
+
+        log_levels['Action'] = logging.INFO
+        log_levels['Device'] = logging.INFO
+        log_levels['helios.extensibility'] = logging.INFO
+
+
+        setup_log_levels(log_levels = log_levels)
 
 
 
@@ -426,6 +449,16 @@ def kill_helios_gracefully(logger: logging.Logger,
 @with_queued_logging
 def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> None:
     with chain_config.process_id_file('database'):
+
+        if chain_config.report_memory_usage:
+            from threading import Thread
+            memory_logger = logging.getLogger('hvm.memoryLogger')
+            memory_logger.debug("KKKKKKKKKKKKK")
+
+            t = Thread(target=sync_periodically_report_memory_stats, args=(chain_config.memory_usage_report_interval, memory_logger))
+            t.start()
+
+
         base_db = db_class(db_path=chain_config.database_dir)
 
         # TODO:remove
@@ -438,12 +471,14 @@ def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> N
             server.stop_event.set()
 
         signal.signal(signal.SIGINT, _sigint_handler)
-
         try:
             server.serve_forever()
         except SystemExit:
             server.stop_event.set()
             raise
+
+
+
 
 
 @setup_cprofiler('launch_node')

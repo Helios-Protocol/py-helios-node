@@ -16,6 +16,8 @@ from hvm.chains.mainnet import (
 from hvm.db.backends.memory import MemoryDB
 from hvm.db.journal import JournalDB
 from hvm.db.chain import ChainDB
+from hvm.rlp.blocks import BaseQueueBlock
+from hvm.rlp.consensus import NodeStakingScore
 from hvm.rlp.transactions import BaseTransaction
 
 from eth_utils import (
@@ -39,7 +41,9 @@ from hvm.db.hash_trie import HashTrie
 
 from hvm.db.chain_head import ChainHeadDB
 
-from hvm.constants import random_private_keys, GAS_TX
+from hvm.constants import random_private_keys, GAS_TX, MIN_TIME_BETWEEN_BLOCKS, MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS, \
+    TIME_BETWEEN_HEAD_HASH_SAVE
+from hvm.vm.forks.helios_testnet import HeliosTestnetQueueBlock
 
 logger = logging.getLogger("dev_tools_testing")
 
@@ -89,19 +93,133 @@ def create_new_genesis_params_and_state(private_key, total_supply = 100000000 * 
     return header_params, new_genesis_state
 
 
+def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_iterations = 5):
+    # initialize db
+    if base_db == None:
+        base_db = MemoryDB()
 
-def create_dev_test_random_blockchain_database(base_db):
-   
+    create_dev_test_random_blockchain_database(base_db, timestamp = 'genesis')
+
+    node_1 = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+
+    chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
+
+    last_block_timestamp = 0
+    for head_hash in chain_head_hashes:
+        header = node_1.chaindb.get_block_header_by_hash(head_hash)
+        if header.timestamp > last_block_timestamp:
+            last_block_timestamp = header.timestamp
+
+    private_keys_dict = {}
+    for random_private_key in random_private_keys:
+        priv_key = keys.PrivateKey(random_private_key)
+        private_keys_dict[priv_key.public_key.to_address()] = priv_key
+
+    private_keys_dict[GENESIS_PRIVATE_KEY.public_key.to_address()] = GENESIS_PRIVATE_KEY
+
+    for i in range(num_iterations):
+        random_int = random.randint(0,len(private_keys_dict)-1)
+        if i == 0:
+            privkey = GENESIS_PRIVATE_KEY
+            receiver_privkey = private_keys_dict[list(private_keys_dict.keys())[random_int]]
+        else:
+            privkey = receiver_privkey
+            receiver_privkey = private_keys_dict[list(private_keys_dict.keys())[random_int]]
+
+        tx_timestamp = last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS
+        tx_list = [[privkey, receiver_privkey, 10000000*10**18-i*100000*10**18-random.randint(0,1000), tx_timestamp]]
+
+
+        add_transactions_to_blockchain_db(base_db, tx_list)
+
+        node_1 = MainnetChain(base_db, privkey.public_key.to_canonical_address(), privkey)
+
+        chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
+
+        reward_block_time = tx_timestamp + MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS+MIN_TIME_BETWEEN_BLOCKS
+
+        node_staking_scores = []
+        for head_hash in chain_head_hashes:
+            address = node_1.chaindb.get_chain_wallet_address_for_block_hash(head_hash)
+            if not (address == privkey.public_key.to_canonical_address()):
+                after_block_number = node_1.chaindb.get_latest_reward_block_number(privkey.public_key.to_canonical_address())
+
+                node_staking_score = NodeStakingScore(privkey.public_key.to_canonical_address(),
+                                                      1,
+                                                      after_block_number,
+                                                      reward_block_time,
+                                                      head_hash,
+                                                      v=0,
+                                                      r=0,
+                                                      s=0)
+
+                signed_node_staking_score = node_staking_score.get_signed(private_keys_dict[encode_hex(address)], node_1.network_id)
+
+                node_staking_scores.append(signed_node_staking_score)
+
+
+        reward_bundle = node_1.consensus_db.create_reward_bundle_for_block(privkey.public_key.to_canonical_address(),
+                                                               node_staking_scores,
+                                                               reward_block_time)
+
+        if reward_bundle.reward_type_1.amount == 0 and reward_bundle.reward_type_2.amount == 0:
+            print('FUCK')
+
+
+        valid_block = create_valid_block_at_timestamp(base_db, privkey, reward_bundle = reward_bundle, timestamp = reward_block_time)
+
+        assert(valid_block.header.timestamp == reward_block_time)
+        node_1.import_block(valid_block)
+        last_block_timestamp = reward_block_time
+
+
+    return base_db
+
+
+def create_valid_block_at_timestamp(base_db, private_key, transactions = None, receive_transactions = None, reward_bundle = None, timestamp = None):
+    '''
+    Tries to create a valid block based in the invalid block. The transactions and reward bundle must already be valid
+    :param base_db:
+    :param private_key:
+    :param invalid_block:
+    :return:
+    '''
+    if timestamp == None:
+        timestamp = int(time.time())
+
+    chain = MainnetChain(JournalDB(base_db), private_key.public_key.to_canonical_address(), private_key)
+
+    queue_block = chain.get_queue_block()
+    queue_block = queue_block.copy(transactions=transactions,
+                                   receive_transactions=receive_transactions,
+                                   reward_bundle=reward_bundle)
+
+
+    valid_block = chain.get_vm().import_block(queue_block, timestamp = timestamp, validate = False)
+
+
+    return valid_block
+
+
+def create_dev_test_random_blockchain_database(base_db = None, num_iterations = None, timestamp = None):
     logger.debug("generating test blockchain db")
-        
+    if base_db == None:
+        base_db = MemoryDB()
+
+    if num_iterations == None:
+        num_iterations = 5
+
     #initialize db
     sender_chain = import_genesis_block(base_db)
-    
-    sender_chain.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=5)
-    
-    order_of_chains = []
-    #now lets add 100 send receive block combinations
-    for i in range (5):
+    # sender_chain.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=5)\
+
+    if timestamp == None:
+        timestamp = int(time.time()) - num_iterations*MIN_TIME_BETWEEN_BLOCKS
+    elif timestamp == "genesis":
+        timestamp = MAINNET_GENESIS_PARAMS['timestamp'] + TIME_BETWEEN_HEAD_HASH_SAVE
+
+    tx_list = []
+    for i in range (num_iterations):
         random.shuffle(random_private_keys)
         if i == 0:
             privkey = GENESIS_PRIVATE_KEY
@@ -109,58 +227,14 @@ def create_dev_test_random_blockchain_database(base_db):
         else:
             privkey = receiver_privkey
             receiver_privkey = keys.PrivateKey(random_private_keys[0])
-        
-        sender_chain = MainnetChain(base_db, privkey.public_key.to_canonical_address(), privkey)
-        
-        #add 3 send transactions to each block
-        for j in range(2):
-            sender_chain.create_and_sign_transaction_for_queue_block(
-                    gas_price=0x01,
-                    gas=0x0c3500,
-                    to=receiver_privkey.public_key.to_canonical_address(),
-                    value=10000000*10**18-i*100000*10**18-random.randint(0,1000),
-                    data=b"",
-                    v=0,
-                    r=0,
-                    s=0
-                    )
-        
-        imported_block = sender_chain.import_current_queue_block()
-#        print("imported_block_hash = {}".format(encode_hex(imported_block.hash)))
-#        receivable_tx = sender_chain.get_vm().state.account_db.get_receivable_transactions(receiver_privkey.public_key.to_canonical_address())
-#        print('receivable_tx from account = {}'.format([encode_hex(x.sender_block_hash) for x in receivable_tx]))
-#        exit()
 
-        if privkey == GENESIS_PRIVATE_KEY:
-            current_genesis_chain_head_number = sender_chain.chaindb.get_canonical_head(privkey.public_key.to_canonical_address()).block_number
-            print('genesis head block number', current_genesis_chain_head_number)
+        tx_timestamp = timestamp+i*MIN_TIME_BETWEEN_BLOCKS
+        tx_list.append([privkey, receiver_privkey, 10000000 * 10 ** 18 - i * 100000 * 10 ** 18 - random.randint(0, 1000), tx_timestamp])
 
-        order_of_chains.append(encode_hex(privkey.public_key.to_canonical_address()))
-        
-        #logger.debug("Receiving ")
-        
-        #then receive the transactions
-        receiver_chain = MainnetChain(base_db, receiver_privkey.public_key.to_canonical_address(), receiver_privkey)
-        receiver_chain.populate_queue_block_with_receive_tx()
-        imported_block = receiver_chain.import_current_queue_block()
-        
-        imported_block_from_db = receiver_chain.chaindb.get_block_by_number(imported_block.header.block_number, receiver_chain.get_vm().get_block_class(),receiver_privkey.public_key.to_canonical_address())
 
-        #logger.debug("finished creating block group {}".format(i))
+    add_transactions_to_blockchain_db(base_db, tx_list)
 
-    # sender_chain = MainnetChain(base_db, privkey.public_key.to_canonical_address(), privkey)
-    # test1 = sender_chain.chain_head_db.get_historical_root_hashes()[-1][1]
-    # test2 = sender_chain.chain_head_db.root_hash
-    #
-    # print('AAAAAAAAAAA')
-    # print(test1)
-    # print(test2)
-    # exit()
-    order_of_chains.append(encode_hex(receiver_privkey.public_key.to_canonical_address()))
-    
-    #print("order_of_chains")
-    #print(order_of_chains)
-    #print(sender_chain.chain_head_db.get_historical_root_hashes())
+    return base_db
 
 
 def add_transactions_to_blockchain_db(base_db, tx_list: List):

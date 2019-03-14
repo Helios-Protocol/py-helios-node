@@ -188,9 +188,7 @@ class BaseChainDB(metaclass=ABCMeta):
     def persist_block(self, block: 'BaseBlock') -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
-    @abstractmethod
-    def get_block_by_hash(self, block_hash: Hash32, block_class: Type['BaseBlock']) -> 'BaseBlock':
-        raise NotImplementedError("ChainDB classes must implement this method")
+
     #
     # Transaction API
     #
@@ -399,72 +397,6 @@ class ChainDB(BaseChainDB):
         chain_address = chain_head_header.chain_address
         chain_block_hashes = self.get_all_block_hashes_on_chain(chain_address)
         return chain_block_hashes
-
-
-    def get_block_by_hash(self, block_hash: Hash32, block_class: Type['BaseBlock']) -> 'BaseBlock':
-
-        block_header = self.get_block_header_by_hash(block_hash)
-
-        send_transactions = self.get_block_transactions(block_header, block_class.transaction_class)
-
-        receive_transactions = self.get_block_receive_transactions(block_header, block_class.receive_transaction_class)
-
-        reward_bundle = self.get_reward_bundle(block_header.reward_hash)
-
-        output_block = block_class(block_header, send_transactions, receive_transactions, reward_bundle)
-
-        return output_block
-
-    def get_block_by_number(self, block_number: BlockNumber, block_class, wallet_address = None) -> 'BaseBlock':
-        if wallet_address is None:
-            wallet_address = self.wallet_address
-
-        block_hash = self.get_canonical_block_hash(block_number, wallet_address)
-        return self.get_block_by_hash(block_hash, block_class)
-
-
-
-    def get_blocks_on_chain(self, block_class,  start, end, wallet_address = None):
-        if wallet_address is None:
-            wallet_address = self.wallet_address
-
-        if end == 0:
-            canonical_head_header = self.get_canonical_head(wallet_address=wallet_address)
-            head_block_number = canonical_head_header.block_number
-            end = head_block_number+1
-
-        blocks = []
-        for block_number in range(start, end):
-            try:
-                new_block = self.get_block_by_number(block_number, block_class, wallet_address)
-                blocks.append(new_block)
-            except HeaderNotFound:
-                break
-
-        return blocks
-
-
-    def get_all_blocks_on_chain(self, block_class, wallet_address = None):
-        if wallet_address is None:
-            wallet_address = self.wallet_address
-
-        canonical_head_header = self.get_canonical_head(wallet_address = wallet_address)
-        head_block_number = canonical_head_header.block_number
-
-
-        return self.get_blocks_on_chain(block_class,  0, head_block_number+1, wallet_address = wallet_address)
-
-    def get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32, block_class) -> List['BaseBlock']:
-        chain_head_header = self.get_block_header_by_hash(chain_head_hash)
-        chain_address = chain_head_header.chain_address
-        return self.get_all_blocks_on_chain(block_class, chain_address)
-
-    def get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32, block_class) -> List['BaseBlock']:
-        chain_head_header = self.get_block_header_by_hash(chain_head_hash)
-        to_block_number = chain_head_header.block_number
-        chain_address = chain_head_header.chain_address
-
-        return self.get_blocks_on_chain(block_class,  0, to_block_number+1, chain_address)
 
 
     #
@@ -1828,14 +1760,14 @@ class ChainDB(BaseChainDB):
         lookup_key = SchemaV1.make_reward_bundle_hash_lookup_key(reward_bundle.hash)
         self.db[lookup_key] = rlp.encode(reward_bundle, sedes=StakeRewardBundle)
 
-    def get_reward_bundle(self, reward_bundle_hash: Hash32) -> StakeRewardBundle:
+    def get_reward_bundle(self, reward_bundle_hash: Hash32, reward_bundle_class: Type[StakeRewardBundle]) -> StakeRewardBundle:
         validate_is_bytes(reward_bundle_hash, 'reward_bundle_hash')
         lookup_key = SchemaV1.make_reward_bundle_hash_lookup_key(reward_bundle_hash)
         try:
             encoded = self.db[lookup_key]
-            return rlp.decode(encoded, sedes=StakeRewardBundle)
+            return rlp.decode(encoded, sedes=reward_bundle_class)
         except KeyError:
-            return StakeRewardBundle()
+            return reward_bundle_class()
 
     def get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:
         validate_canonical_address(wallet_address, title="wallet_address")

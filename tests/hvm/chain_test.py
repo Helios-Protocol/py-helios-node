@@ -27,7 +27,7 @@ from hvm.constants import (
     TIME_BETWEEN_HEAD_HASH_SAVE,
     COIN_MATURE_TIME_FOR_STAKING,
 
-    COLLATION_SIZE)
+    COLLATION_SIZE, MIN_TIME_BETWEEN_BLOCKS)
 
 
 from hvm.db.backends.level import LevelDB
@@ -49,7 +49,8 @@ from eth_utils import (
     decode_hex,
     keccak
 )
-from helios.dev_tools import create_dev_test_random_blockchain_database
+from helios.dev_tools import create_dev_test_random_blockchain_database, add_transactions_to_blockchain_db, \
+    create_dev_test_random_blockchain_db_with_reward_blocks
 from eth_keys import keys
 from sys import exit
 
@@ -71,6 +72,8 @@ from eth_keys.datatypes import(
         PublicKey,
         PrivateKey
 )
+
+from helios.rpc.format import block_to_dict
 
 from hvm.exceptions import ValidationError
 
@@ -240,6 +243,10 @@ def test_block_children_stake_calculation():
 
 # test_block_children_stake_calculation()
 # sys.exit()
+
+
+
+
 
 def test_send_transaction_then_receive():
     # testdb = LevelDB('/home/tommy/.local/share/helios/chain/full27')
@@ -422,11 +429,10 @@ def test_send_transaction_then_receive():
         RECEIVER.public_key.to_canonical_address()))
 
     print("Checking that imported blocks are the same as blocks retreived from DB")
-    block_0_from_db = receiver_chain.chaindb.get_block_by_number(0, receiver_chain.get_vm().get_block_class())
-    block_1_from_db = receiver_chain.chaindb.get_block_by_number(1, receiver_chain.get_vm().get_block_class())
-    block_2_from_db = receiver_chain.chaindb.get_block_by_number(2, receiver_chain.get_vm().get_block_class())
-    sender_block_1_from_db = receiver_chain.chaindb.get_block_by_number(1, receiver_chain.get_vm().get_block_class(),
-                                                                        SENDER.public_key.to_canonical_address())
+    block_0_from_db = receiver_chain.get_block_by_number(0)
+    block_1_from_db = receiver_chain.get_block_by_number(1)
+    block_2_from_db = receiver_chain.get_block_by_number(2)
+    sender_block_1_from_db = receiver_chain.get_block_by_number(1, chain_address = SENDER.public_key.to_canonical_address())
 
     assert (block_0_imported.header.account_hash == block_0_from_db.header.account_hash)
 
@@ -438,7 +444,7 @@ def test_send_transaction_then_receive():
     print("Passed test")
 
     print("printing entire receiver chain")
-    all_blocks = receiver_chain.chaindb.get_all_blocks_on_chain(receiver_chain.get_vm().get_block_class())
+    all_blocks = receiver_chain.get_all_blocks_on_chain()
     print(all_blocks)
 
     print("printing head hashes")
@@ -526,7 +532,7 @@ def import_chain(testdb1, testdb2):
     for next_head_hash in next_head_hashes:
         chain_address = node_1.chaindb.get_chain_wallet_address_for_block_hash(next_head_hash)
 
-        chain_to_import = node_1.chaindb.get_all_blocks_on_chain(node_1.get_vm().get_block_class(), chain_address)
+        chain_to_import = node_1.get_all_blocks_on_chain(chain_address)
 
         node_2 = MainnetChain(testdb2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
         node_2.import_chain(block_list=chain_to_import)
@@ -535,6 +541,46 @@ def import_chain(testdb1, testdb2):
     ensure_blockchain_databases_identical(testdb1, testdb2)
     ensure_chronological_block_hashes_are_identical(testdb1, testdb2)
 
+def _test_import_unprocessed_blocks():
+    testdb1 = create_dev_test_random_blockchain_db_with_reward_blocks(num_iterations=25)
+    testdb2 = MemoryDB()
+
+    node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    node_2 = MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                       MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+
+    chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
+
+    chains = []
+    for head_hash in chain_head_hashes:
+        chain = node_1.get_all_blocks_on_chain_by_head_block_hash(head_hash)
+        chains.append(chain)
+
+    random.shuffle(chains)
+
+    for chain in chains:
+        node_2.import_chain(chain)
+
+    ensure_blockchain_databases_identical(testdb1, testdb2)
+    ensure_chronological_block_hashes_are_identical(testdb1, testdb2)
+
+def test_import_unprocessed_blocks():
+    '''
+    We generate random blockchain databases that include transactions, send transactions, reward blocks.
+    Then we import the chains in random order. Do this enough times and we will have seen all possible cases.
+    :return:
+    '''
+
+    # 1) Create random blockchain db with rewards.
+    # 2) Import blocks randomly.
+    # 3) Do this many times to ensure we import in all possible orders to test all scenarios
+    for i in range(10):
+        _test_import_unprocessed_blocks()
+
+
+
+test_import_unprocessed_blocks()
+exit()
 
 
 def test_import_chain():
