@@ -14,6 +14,7 @@ from hvm.chains.mainnet import (
 )
 
 from hvm.db.backends.memory import MemoryDB
+from hvm.db.backends.level import LevelDB
 from hvm.db.journal import JournalDB
 from hvm.db.chain import ChainDB
 from hvm.rlp.blocks import BaseQueueBlock
@@ -37,6 +38,7 @@ from trie import (
     HexaryTrie,
 )
 
+from helios.rpc.format import block_to_dict
 from hvm.db.hash_trie import HashTrie
 
 from hvm.db.chain_head import ChainHeadDB
@@ -93,10 +95,30 @@ def create_new_genesis_params_and_state(private_key, total_supply = 100000000 * 
     return header_params, new_genesis_state
 
 
+def print_blockchain_database(base_db):
+    node_1 = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+
+    chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
+
+    i = 0
+    for head_hash in chain_head_hashes:
+        print("Chain number {}".format(i))
+        chain = node_1.get_all_blocks_on_chain_by_head_block_hash(head_hash)
+
+        j = 0
+        for block in chain:
+            print("Block number {}".format(i))
+            print(block_to_dict(block, True, node_1))
+            j += 1
+        i += 1
+
+
+
 def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_iterations = 5):
     # initialize db
     if base_db == None:
         base_db = MemoryDB()
+
 
     create_dev_test_random_blockchain_database(base_db, timestamp = 'genesis')
 
@@ -126,7 +148,7 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
             privkey = receiver_privkey
             receiver_privkey = private_keys_dict[list(private_keys_dict.keys())[random_int]]
 
-        tx_timestamp = last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS
+        tx_timestamp = last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS+2
         tx_list = [[privkey, receiver_privkey, 10000000*10**18-i*100000*10**18-random.randint(0,1000), tx_timestamp]]
 
 
@@ -136,7 +158,7 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
 
         chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
 
-        reward_block_time = tx_timestamp + MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS+MIN_TIME_BETWEEN_BLOCKS
+        reward_block_time = tx_timestamp + MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS+MIN_TIME_BETWEEN_BLOCKS+2
 
         node_staking_scores = []
         for head_hash in chain_head_hashes:
@@ -161,9 +183,6 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
         reward_bundle = node_1.consensus_db.create_reward_bundle_for_block(privkey.public_key.to_canonical_address(),
                                                                node_staking_scores,
                                                                reward_block_time)
-
-        if reward_bundle.reward_type_1.amount == 0 and reward_bundle.reward_type_2.amount == 0:
-            print('FUCK')
 
 
         valid_block = create_valid_block_at_timestamp(base_db, privkey, reward_bundle = reward_bundle, timestamp = reward_block_time)

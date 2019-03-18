@@ -541,8 +541,9 @@ def import_chain(testdb1, testdb2):
     ensure_blockchain_databases_identical(testdb1, testdb2)
     ensure_chronological_block_hashes_are_identical(testdb1, testdb2)
 
-def _test_import_unprocessed_blocks():
-    testdb1 = create_dev_test_random_blockchain_db_with_reward_blocks(num_iterations=25)
+def _test_import_unprocessed_blocks(base_db = None):
+
+    testdb1 = create_dev_test_random_blockchain_db_with_reward_blocks(base_db = base_db, num_iterations=30)
     testdb2 = MemoryDB()
 
     node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
@@ -574,13 +575,14 @@ def test_import_unprocessed_blocks():
     # 1) Create random blockchain db with rewards.
     # 2) Import blocks randomly.
     # 3) Do this many times to ensure we import in all possible orders to test all scenarios
-    for i in range(10):
+
+    for i in range(15):
         _test_import_unprocessed_blocks()
 
 
 
-test_import_unprocessed_blocks()
-exit()
+# test_import_unprocessed_blocks()
+# exit()
 
 
 def test_import_chain():
