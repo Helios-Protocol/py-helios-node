@@ -88,16 +88,12 @@ class ConsensusDB():
 
     logger = logging.getLogger('hvm.db.consensus.ConsensusDB')
 
-    def __init__(self, db:BaseDB, chain: 'BaseChain', chaindb:'BaseChainDB' = None):
+    def __init__(self, chaindb:'BaseChainDB'):
         """
         Binary trie database for storing the hash of the head block of each wallet address.
         """
-        self.db = db
-        self.chain = chain
-        if chaindb is None:
-            self.chaindb = chain.chaindb
-        else:
-            self.chaindb = chaindb
+        self.db = chaindb.db
+        self.chaindb = chaindb
 
         self.logger.debug("starting consensus db")
 
@@ -146,10 +142,12 @@ class ConsensusDB():
         except KeyError:
             return 0
 
-    def get_signed_peer_score_string_private_key(self, private_key_string: bytes,
-                              peer_wallet_address: Address,
-                              after_block_number: BlockNumber = None,
-                              ) -> NodeStakingScore:
+    def get_signed_peer_score_string_private_key(self,
+                                                 private_key_string: bytes,
+                                                 network_id: int,
+                                                  peer_wallet_address: Address,
+                                                  after_block_number: BlockNumber = None,
+                                                  ) -> NodeStakingScore:
         '''
         This is to allow other processes to use this function when being unable to pickle a PrivateKey
         :param private_key:
@@ -160,11 +158,13 @@ class ConsensusDB():
 
         private_key = keys.PrivateKey(private_key_string)
         return self.get_signed_peer_score(private_key,
-                              peer_wallet_address,
-                              after_block_number,
-                              )
+                                          network_id,
+                                          peer_wallet_address,
+                                          after_block_number,
+                                          )
 
     def get_signed_peer_score(self, private_key: PrivateKey,
+                              network_id:int,
                               peer_wallet_address: Address,
                               after_block_number: BlockNumber = None,
                               ) -> NodeStakingScore:
@@ -213,7 +213,7 @@ class ConsensusDB():
 
 
 
-        signed_node_staking_score = node_staking_score.get_signed(private_key, self.chain.network_id)
+        signed_node_staking_score = node_staking_score.get_signed(private_key, network_id)
 
         return signed_node_staking_score
 
@@ -327,7 +327,7 @@ class ConsensusDB():
         final_list = []
         item_stake_list = []
         for node_staking_score in node_staking_score_list:
-            stake = self.chain.get_mature_stake(node_staking_score.sender, timestamp = node_staking_score.timestamp)
+            stake = self.chaindb.get_mature_stake(node_staking_score.sender, timestamp = node_staking_score.timestamp)
             final_list.append(node_staking_score)
             item_stake_list.append((node_staking_score.score, stake))
 

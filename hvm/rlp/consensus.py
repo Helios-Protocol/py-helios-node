@@ -240,8 +240,7 @@ class StakeRewardType2(rlp.Serializable, metaclass=ABCMeta):
         root_hash, kv_nodes = make_trie_root_and_nodes(self.proof)
         return root_hash
 
-
-class StakeRewardBundle(rlp.Serializable, metaclass=ABCMeta):
+class BaseRewardBundle(rlp.Serializable, metaclass=ABCMeta):
     reward_type_1_class = StakeRewardType1
     reward_type_2_class = StakeRewardType2
 
@@ -251,7 +250,7 @@ class StakeRewardBundle(rlp.Serializable, metaclass=ABCMeta):
     ]
 
     def __init__(self,
-                 reward_type_1: StakeRewardType1=None,
+                 reward_type_1: StakeRewardType1 = None,
                  reward_type_2: StakeRewardType2 = None,
                  **kwargs: Any) -> None:
 
@@ -261,14 +260,18 @@ class StakeRewardBundle(rlp.Serializable, metaclass=ABCMeta):
         if reward_type_2 is None:
             reward_type_2 = StakeRewardType2()
 
-        super(StakeRewardBundle, self).__init__(reward_type_1, reward_type_2, **kwargs)
+        super(BaseRewardBundle, self).__init__(reward_type_1, reward_type_2, **kwargs)
 
     @property
-    def hash(self) -> bytes:
+    def hash(self) -> Hash32:
         return keccak(self.get_message_for_hash())
 
     def get_message_for_hash(self):
         return rlp.encode([self.reward_type_1, self.reward_type_2.amount, self.reward_type_2.proof_root_hash])
+
+
+class StakeRewardBundle(BaseRewardBundle):
+    pass
 
 
 #

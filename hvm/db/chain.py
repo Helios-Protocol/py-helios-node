@@ -13,6 +13,7 @@ from typing import (
     Dict,
     Iterable,
     List,
+    Set,
     Tuple,
     Type,
     TYPE_CHECKING,
@@ -82,7 +83,7 @@ from hvm.validation import (
     validate_is_bytes,
 )
 
-from hvm.rlp.consensus import StakeRewardBundle
+from hvm.rlp.consensus import StakeRewardBundle, BaseRewardBundle
 from hvm.rlp import sedes as evm_rlp_sedes
 from hvm.rlp.sedes import(
     trie_root,
@@ -140,23 +141,35 @@ class BaseChainDB(metaclass=ABCMeta):
     # Canonical Chain API
     #
     @abstractmethod
-    def get_canonical_block_header_by_number(self, block_number: BlockNumber, wallet_address: Address = None) -> BlockHeader:
+    def remove_block_from_canonical_block_hash_lookup(self, block_number: BlockNumber, chain_address: Address) -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_canonical_block_hash(self, block_number: BlockNumber) -> Hash32:
+    def get_canonical_block_header_by_number(self, block_number: BlockNumber, wallet_address: Address) -> BlockHeader:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_canonical_head(self, wallet_address: Optional[Address]) -> BlockHeader:
+    def get_canonical_block_hash(self, block_number: BlockNumber, chain_address: Address) -> Hash32:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_canonical_head_hash(self, wallet_address: Address = None) -> Hash32:
+    def get_canonical_head(self, wallet_address: Address) -> BlockHeader:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_canonical_head_hash(self, wallet_address: Address) -> Hash32:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
     def get_all_block_hashes_on_chain(self, chain_address: Address) -> List[Hash32]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_all_block_hashes_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[Hash32]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def delete_canonical_chain(self, chain_address: Address) -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -181,6 +194,7 @@ class BaseChainDB(metaclass=ABCMeta):
     def persist_header(self, header: BlockHeader) -> Tuple[BlockHeader, ...]:
         raise NotImplementedError("ChainDB classes must implement this method")
 
+
     #
     # Block API
     #
@@ -188,20 +202,68 @@ class BaseChainDB(metaclass=ABCMeta):
     def persist_block(self, block: 'BaseBlock') -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
+    @abstractmethod
+    def persist_non_canonical_block(self, block: 'BaseBlock'):
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def save_block_as_unprocessed(self, block: 'BaseBlock') -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def remove_block_from_unprocessed(self, block: 'BaseBlock') -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def save_unprocessed_block_lookup(self, block_hash: Hash32, block_number: BlockNumber, chain_address: Address) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def save_unprocessed_children_block_lookup(self, block_hash: Hash32) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def save_unprocessed_children_block_lookup_to_transaction_parents(self, block: 'BaseBlock') -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def save_unprocessed_children_block_lookup_to_reward_proof_parents(self, block: 'BaseBlock') -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def delete_unprocessed_children_block_lookup_to_transaction_parents_if_nessissary(self, block: 'BaseBlock') -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def has_unprocessed_children(self, block_hash: Hash32) -> bool:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_chain_wallet_address_for_block_hash(self, block_hash: Hash32) -> Address:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_number_of_send_tx_in_block(self, block_hash):
+        raise NotImplementedError("ChainDB classes must implement this method")
 
     #
     # Transaction API
     #
     @abstractmethod
-    def add_receipt(self,
-                    block_header: BlockHeader,
-                    index_key: int, receipt: Receipt) -> Hash32:
+    def add_receipt(self, block_header: BlockHeader, index_key: int, receipt: Receipt, send_or_receive) -> Hash32:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
     def add_transaction(self,
                         block_header: BlockHeader,
                         index_key: int, transaction: 'BaseTransaction') -> Hash32:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def add_receive_transaction(self,
+                                block_header: BlockHeader,
+                                index_key: int,
+                                transaction: 'BaseReceiveTransaction') -> Hash32:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -212,7 +274,18 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
+    def get_block_receive_transactions(
+            self,
+            header: BlockHeader,
+            transaction_class: Type['BaseReceiveTransaction']) -> Iterable['BaseReceiveTransaction']:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
     def get_block_transaction_hashes(self, block_header: BlockHeader) -> Iterable[Hash32]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_block_receive_transaction_hashes(self, block_header: BlockHeader) -> Iterable[Hash32]:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -230,12 +303,19 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_transaction_by_index(
-            self,
-            block_number: BlockNumber,
-            transaction_index: int,
-            transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
+    def get_receipt_by_idx(self,
+                           header: BlockHeader,
+                           receipt_idx: int,
+                           receipt_class: Type[Receipt] = Receipt) -> Optional[Receipt]:
         raise NotImplementedError("ChainDB classes must implement this method")
+
+    # @abstractmethod
+    # def get_transaction_by_index(
+    #         self,
+    #         block_number: BlockNumber,
+    #         transaction_index: int,
+    #         transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
+    #     raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
     def get_transaction_by_index_and_block_hash(
@@ -272,13 +352,132 @@ class BaseChainDB(metaclass=ABCMeta):
     def is_block_unprocessed(self, block_hash: Hash32) -> bool:
         raise NotImplementedError("ChainDB classes must implement this method")
 
-    #
-    # Staking and staking system related functions
-    #
     @abstractmethod
-    def get_block_number_of_latest_reward_block(self, wallet_address: Address = None) -> BlockNumber:
+    def get_unprocessed_block_hash_by_block_number(self, chain_address: Address, block_number: BlockNumber) -> Optional[Hash32]:
         raise NotImplementedError("ChainDB classes must implement this method")
 
+    @abstractmethod
+    def delete_unprocessed_block_lookup(self, block_hash: Hash32, block_number: BlockNumber) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def delete_unprocessed_children_blocks_lookup(self, block_hash: Hash32) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def check_all_children_blocks_to_see_if_any_unprocessed(self, block_hash: Hash32) -> bool:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    #
+    # Block children and Stake API
+    #
+    @abstractmethod
+    def add_block_receive_transactions_to_parent_child_lookup(self, block_header: 'BlockHeader',
+                                                              transaction_class: Type[
+                                                                  'BaseReceiveTransaction']) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def add_block_rewards_to_parent_child_lookup(self, block_header: 'BlockHeader',
+                                                 reward_bundle: BaseRewardBundle) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def remove_block_receive_transactions_to_parent_child_lookup(self, block_header: 'BlockHeader',
+                                                                 transaction_class: Type['BaseReceiveTransaction']) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def remove_block_child(self,
+                           parent_block_hash: Hash32,
+                           child_block_hash: Hash32) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def remove_block_from_all_parent_child_lookups(self, block_header: 'BlockHeader',
+                                                   receive_transaction_class: Type['BaseReceiveTransaction']) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def add_block_child(self,
+                        parent_block_hash: Hash32,
+                        child_block_hash: Hash32) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_block_children(self, parent_block_hash: Hash32) -> List[Hash32]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_all_descendant_block_hashes(self, block_hash: Hash32) -> List[Hash32]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def save_block_children(self, parent_block_hash: Hash32,
+                            block_children: List[Hash32]) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def delete_all_block_children(self, parent_block_hash: Hash32) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_block_children_chains(self, block_hash: Hash32, exclude_chains: List = None) -> List[Address]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_mature_stake(self, wallet_address: Address, timestamp: Timestamp = None,
+                         raise_canonical_head_not_found_error: bool = False) -> int:
+         raise NotImplementedError("ChainDB classes must implement this method")
+    #
+    # Historical minimum allowed gas price API for throttling the network
+    #
+    @abstractmethod
+    def save_historical_minimum_gas_price(self,
+                                          historical_minimum_gas_price: List[List[Union[Timestamp, int]]]) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def load_historical_minimum_gas_price(self, sort: bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def save_historical_tx_per_centisecond(self, historical_tx_per_centisecond: List[List[int]], de_sparse=True) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def load_historical_tx_per_centisecond(self, sort=False) -> Optional[List[List[int]]]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def save_historical_network_tpc_capability(self, historical_tpc_capability: List[List[Union[Timestamp, int]]],
+                                               de_sparse: bool = False) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def save_current_historical_network_tpc_capability(self, current_tpc_capability: int) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def load_historical_network_tpc_capability(self, sort: bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def initialize_historical_minimum_gas_price_at_genesis(self, min_gas_price: int, net_tpc_cap: int,
+                                                           tpc: int = None) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_required_block_min_gas_price(self, block_timestamp: Timestamp = None) -> int:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def min_gas_system_initialization_required(self) -> bool:
+        raise NotImplementedError("ChainDB classes must implement this method")
     #
     # Raw Database API
     #
@@ -297,29 +496,42 @@ class BaseChainDB(metaclass=ABCMeta):
     def get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:
         raise NotImplementedError("ChainDB classes must implement this method")
 
+    @abstractmethod
+    def set_latest_reward_block_number(self, wallet_address: Address, block_number: BlockNumber) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_block_number_of_latest_reward_block(self, wallet_address: Address) -> BlockNumber:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def persist_reward_bundle(self, reward_bundle: BaseRewardBundle) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_reward_bundle(self, reward_bundle_hash: Hash32,
+                          reward_bundle_class: Type[BaseRewardBundle]) -> BaseRewardBundle:
+        raise NotImplementedError("ChainDB classes must implement this method")
 
 class ChainDB(BaseChainDB):
     logger = logging.getLogger('hvm.db.chain_db.ChainDB')
     _journaldb = None
 
-    def __init__(self, db: BaseDB, wallet_address:Address) -> None:
+    def __init__(self, db: BaseDB) -> None:
         self.db = db
-        validate_canonical_address(wallet_address, "Wallet Address")
-        self.wallet_address = wallet_address
 
 
 
     #
     # Canonical Chain API
     #
-    def get_canonical_block_hash(self, block_number: BlockNumber, wallet_address = None) -> Hash32:
+    def get_canonical_block_hash(self, block_number: BlockNumber, chain_address: Address) -> Hash32:
         """
         Return the block hash for the given block number.
         """
-        if wallet_address is None:
-            wallet_address = self.wallet_address
+
         validate_uint256(block_number, title="Block Number")
-        number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(wallet_address, block_number)
+        number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(chain_address, block_number)
         try:
             return rlp.decode(
                 self.db[number_to_hash_key],
@@ -328,57 +540,52 @@ class ChainDB(BaseChainDB):
         except KeyError:
             self.logger.debug
             raise HeaderNotFound(
-                "No header found on the canonical chain {} with number {}".format(wallet_address, block_number)
+                "No header found on the canonical chain {} with number {}".format(chain_address, block_number)
             )
 
-    def remove_block_from_canonical_block_hash_lookup(self, block_number: BlockNumber, wallet_address = None) -> Hash32:
+    def remove_block_from_canonical_block_hash_lookup(self, block_number: BlockNumber, chain_address: Address) -> None:
         '''
         Deletes the block number from the get_canonical_block_hash lookup
         :param block_number:
-        :param wallet_address:
+        :param chain_address:
         :return:
         '''
-        if wallet_address is None:
-            wallet_address = self.wallet_address
+
         validate_uint256(block_number, title="Block Number")
-        number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(wallet_address, block_number)
+        number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(chain_address, block_number)
         try:
             del(self.db[number_to_hash_key])
         except KeyError:
             pass
 
 
-    def get_canonical_block_header_by_number(self, block_number: BlockNumber, wallet_address: Address = None) -> BlockHeader:
+    def get_canonical_block_header_by_number(self, block_number: BlockNumber, chain_address: Address) -> BlockHeader:
         """
         Returns the block header with the given number in the canonical chain.
 
         Raises HeaderNotFound if there's no block header with the given number in the
         canonical chain.
         """
-        if wallet_address is None:
-            wallet_address = self.wallet_address
 
         validate_uint256(block_number, title="Block Number")
-        return self.get_block_header_by_hash(self.get_canonical_block_hash(block_number, wallet_address))
+        return self.get_block_header_by_hash(self.get_canonical_block_hash(block_number, chain_address))
 
-    def get_canonical_head(self, wallet_address = None) -> BlockHeader:
+    def get_canonical_head(self, chain_address: Address) -> BlockHeader:
         """
         Returns the current block header at the head of the chain.
 
         Raises CanonicalHeadNotFound if no canonical head has been set.
         """
-        if wallet_address is None:
-            wallet_address = self.wallet_address
-        canonical_head_hash = self.get_canonical_head_hash(wallet_address)
+
+        canonical_head_hash = self.get_canonical_head_hash(chain_address)
         return self.get_block_header_by_hash(
             cast(Hash32, canonical_head_hash),
         )
 
-    def get_canonical_head_hash(self, wallet_address: Address = None) -> Hash32:
-        if wallet_address is None:
-            wallet_address = self.wallet_address
+    def get_canonical_head_hash(self, chain_address: Address) -> Hash32:
+
         try:
-            return self.db[SchemaV1.make_canonical_head_hash_lookup_key(wallet_address)]
+            return self.db[SchemaV1.make_canonical_head_hash_lookup_key(chain_address)]
         except KeyError:
             raise CanonicalHeadNotFound("No canonical head set for this chain")
 
@@ -398,6 +605,22 @@ class ChainDB(BaseChainDB):
         chain_block_hashes = self.get_all_block_hashes_on_chain(chain_address)
         return chain_block_hashes
 
+    def delete_canonical_chain(self, chain_address: Address) -> None:
+
+        try:
+            canonical_header = self.get_canonical_head(chain_address= chain_address)
+        except CanonicalHeadNotFound:
+            canonical_header = None
+
+        if canonical_header is not None:
+            for i in range(0, canonical_header.block_number+1):
+                header_to_remove = self.get_canonical_block_header_by_number(i, chain_address= chain_address)
+                for transaction_hash in self.get_block_transaction_hashes(header_to_remove):
+                    self._remove_transaction_from_canonical_chain(transaction_hash)
+                for transaction_hash in self.get_block_receive_transaction_hashes(header_to_remove):
+                    self._remove_transaction_from_canonical_chain(transaction_hash)
+                self.remove_block_from_canonical_block_hash_lookup(BlockNumber(i), chain_address=chain_address)
+            del(self.db[SchemaV1.make_canonical_head_hash_lookup_key(chain_address)])
 
     #
     # Header API
@@ -430,26 +653,22 @@ class ChainDB(BaseChainDB):
         """
         Returns iterable of headers newly on the canonical chain
         """
+
         is_genesis = header.parent_hash == GENESIS_PARENT_HASH
         if not is_genesis and not self.header_exists(header.parent_hash):
             raise ParentNotFound(
                 "Cannot persist block header ({}) with unknown parent ({})".format(
                     encode_hex(header.hash), encode_hex(header.parent_hash)))
 
-        self.save_header_to_db(header)
+        self._save_header_to_db(header)
 
-        try:
-            head_block_number = self.get_canonical_head().block_number
-        except CanonicalHeadNotFound:
-            new_headers = self._set_as_canonical_chain_head(header)
-        else:
-            new_headers = self._set_as_canonical_chain_head(header)
+        new_headers = self._set_as_canonical_chain_head(header)
 
         return new_headers
 
 
 
-    def save_header_to_db(self, header: BlockHeader):
+    def _save_header_to_db(self, header: BlockHeader) -> None:
         self.db.set(
             header.hash,
             rlp.encode(header),
@@ -473,7 +692,7 @@ class ChainDB(BaseChainDB):
                 for transaction_hash in self.get_block_receive_transaction_hashes(header_to_remove):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
 
-                self.remove_block_from_canonical_block_hash_lookup(header_to_remove.block_number, wallet_address= header_to_remove.chain_address)
+                self.remove_block_from_canonical_block_hash_lookup(header_to_remove.block_number, chain_address= header_to_remove.chain_address)
 
         except HeaderNotFound:
             pass
@@ -481,24 +700,7 @@ class ChainDB(BaseChainDB):
         #todo: check if you can look up block by number once canonical chain is deleted below
 
 
-    def delete_canonical_chain(self, wallet_address = None):
-        if wallet_address is None:
-            wallet_address = self.wallet_address
 
-        try:
-            canonical_header = self.get_canonical_head(wallet_address = wallet_address)
-        except CanonicalHeadNotFound:
-            canonical_header = None
-
-        if canonical_header is not None:
-            for i in range(0, canonical_header.block_number+1):
-                header_to_remove = self.get_canonical_block_header_by_number(i, wallet_address = wallet_address)
-                for transaction_hash in self.get_block_transaction_hashes(header_to_remove):
-                    self._remove_transaction_from_canonical_chain(transaction_hash)
-                for transaction_hash in self.get_block_receive_transaction_hashes(header_to_remove):
-                    self._remove_transaction_from_canonical_chain(transaction_hash)
-                self.remove_block_from_canonical_block_hash_lookup(BlockNumber(i), wallet_address=wallet_address)
-            del(self.db[SchemaV1.make_canonical_head_hash_lookup_key(wallet_address)])
 
     def is_in_canonical_chain(self, block_hash: Hash32) -> bool:
         try:
@@ -521,11 +723,9 @@ class ChainDB(BaseChainDB):
 
 
 
-
-    # TODO: update this to take a `hash` rather than a full header object.
     #this also accepts a header that has a smaller block number than the current header
     #in which case it will trunkate the chain.
-    def _set_as_canonical_chain_head(self, header: BlockHeader, wallet_address = None) -> Tuple[BlockHeader, ...]:
+    def _set_as_canonical_chain_head(self, header: BlockHeader) -> Tuple[BlockHeader, ...]:
         """
         Returns iterable of headers newly on the canonical head
         """
@@ -535,22 +735,19 @@ class ChainDB(BaseChainDB):
             raise ValueError("Cannot use unknown block hash as canonical head: {}".format(
                 header.hash))
 
-        if wallet_address is None:
-            wallet_address = self.wallet_address
-
         try:
-            canonical_header = self.get_canonical_head(wallet_address = wallet_address)
+            canonical_header = self.get_canonical_head(chain_address= header.chain_address)
         except CanonicalHeadNotFound:
             canonical_header = None
 
         if canonical_header is not None and header.block_number <= canonical_header.block_number:
             for i in range(header.block_number +1, canonical_header.block_number+1):
-                header_to_remove = self.get_canonical_block_header_by_number(i, wallet_address = wallet_address)
+                header_to_remove = self.get_canonical_block_header_by_number(i, chain_address= header.chain_address)
                 for transaction_hash in self.get_block_transaction_hashes(header_to_remove):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
                 for transaction_hash in self.get_block_receive_transaction_hashes(header_to_remove):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
-                self.remove_block_from_canonical_block_hash_lookup(BlockNumber(i), wallet_address = wallet_address)
+                self.remove_block_from_canonical_block_hash_lookup(BlockNumber(i), chain_address= header.chain_address)
 
             new_canonical_headers = tuple()
 
@@ -560,7 +757,7 @@ class ChainDB(BaseChainDB):
             # remove transaction lookups for blocks that are no longer canonical
             for h in new_canonical_headers:
                 try:
-                    old_hash = self.get_canonical_block_hash(h.block_number)
+                    old_hash = self.get_canonical_block_hash(h.block_number, header.chain_address)
                 except HeaderNotFound:
                     # no old block, and no more possible
                     break
@@ -568,7 +765,6 @@ class ChainDB(BaseChainDB):
                     old_header = self.get_block_header_by_hash(old_hash)
                     for transaction_hash in self.get_block_transaction_hashes(old_header):
                         self._remove_transaction_from_canonical_chain(transaction_hash)
-                        # TODO re-add txn to internal pending pool (only if local sender)
                         pass
                     for transaction_hash in self.get_block_receive_transaction_hashes(old_header):
                         self._remove_transaction_from_canonical_chain(transaction_hash)
@@ -576,7 +772,7 @@ class ChainDB(BaseChainDB):
             for h in new_canonical_headers:
                 self._add_block_number_to_hash_lookup(h)
 
-        self.db.set(SchemaV1.make_canonical_head_hash_lookup_key(self.wallet_address), header.hash)
+        self.db.set(SchemaV1.make_canonical_head_hash_lookup_key(header.chain_address), header.hash)
 
         return new_canonical_headers
 
@@ -596,7 +792,7 @@ class ChainDB(BaseChainDB):
         h = header
         while True:
             try:
-                orig = self.get_canonical_block_header_by_number(h.block_number)
+                orig = self.get_canonical_block_header_by_number(h.block_number, h.chain_address)
             except HeaderNotFound:
                 # This just means the block is not on the canonical chain.
                 pass
@@ -619,7 +815,7 @@ class ChainDB(BaseChainDB):
         block number.
         """
         block_number_to_hash_key = SchemaV1.make_block_number_to_hash_lookup_key(
-            self.wallet_address,
+            header.chain_address,
             header.block_number
         )
         self.db.set(
@@ -641,22 +837,11 @@ class ChainDB(BaseChainDB):
 
         return self._get_block_transaction_count(header.transaction_root)
 
-    def get_chain_wallet_address_for_block_hash(self, block_hash):
+    def get_chain_wallet_address_for_block_hash(self, block_hash: Hash32) -> Address:
         block_header = self.get_block_header_by_hash(block_hash)
         return block_header.chain_address
 
-    # def get_chain_wallet_address_for_block(self, block):
-        # if block.header.block_number == 0:
-        #     return block.header.sender
-        # else:
-        #     return self.get_chain_wallet_address_for_block_hash(self.db, block.header.parent_hash)
 
-
-    # def save_block_hash_to_chain_wallet_address(self, block_hash, wallet_address = None):
-    #     if wallet_address is None:
-    #         wallet_address = self.wallet_address
-    #     block_hash_save_key = SchemaV1.make_block_hash_to_chain_wallet_address_lookup_key(block_hash)
-    #     self.db[block_hash_save_key] = wallet_address
 
     def persist_block(self, block: 'BaseBlock') -> None:
         '''
@@ -684,8 +869,8 @@ class ChainDB(BaseChainDB):
         if block.header.parent_hash != GENESIS_PARENT_HASH:
             self.add_block_child(block.header.parent_hash, block.header.hash)
 
-    def persist_non_canonical_block(self, block, wallet_address):
-        self.save_header_to_db(block.header)
+    def persist_non_canonical_block(self, block: 'BaseBlock') -> None:
+        self._save_header_to_db(block.header)
 
         if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
             self.persist_reward_bundle(block.reward_bundle)
@@ -702,19 +887,19 @@ class ChainDB(BaseChainDB):
     #
     # Unprocessed Block API
     #
-    def save_block_as_unprocessed(self, block, wallet_address):
+    def save_block_as_unprocessed(self, block: 'BaseBlock') -> None:
         '''
         This saves the block as unprocessed, and saves to any unprocessed parents, including the one on this own chain and from receive transactions
         '''
-        self.logger.debug("saving block number {} as unprocessed on chain {}. the block hash is {}".format(block.number, encode_hex(wallet_address), encode_hex(block.hash)))
-        self.save_unprocessed_block_lookup(block.hash, block.number, wallet_address)
+        self.logger.debug("saving block number {} as unprocessed on chain {}. the block hash is {}".format(block.number, encode_hex(block.header.chain_address), encode_hex(block.hash)))
+        self.save_unprocessed_block_lookup(block.hash, block.number, block.header.chain_address)
         if self.is_block_unprocessed(block.header.parent_hash):
             self.save_unprocessed_children_block_lookup(block.header.parent_hash)
 
         self.save_unprocessed_children_block_lookup_to_transaction_parents(block)
         self.save_unprocessed_children_block_lookup_to_reward_proof_parents(block)
 
-    def remove_block_from_unprocessed(self, block):
+    def remove_block_from_unprocessed(self, block: 'BaseBlock') -> None:
         '''
         This removes any unprocessed lookups for this block.
         '''
@@ -731,21 +916,20 @@ class ChainDB(BaseChainDB):
 
 
 
-    def save_unprocessed_block_lookup(self, block_hash, block_number, wallet_address):
+    def save_unprocessed_block_lookup(self, block_hash: Hash32, block_number: BlockNumber, chain_address: Address) -> None:
         lookup_key = SchemaV1.make_unprocessed_block_lookup_key(block_hash)
         self.db[lookup_key] = b'1'
 
-
-        lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(wallet_address, block_number)
+        lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(chain_address, block_number)
         self.db[lookup_key] = rlp.encode(block_hash, sedes=rlp.sedes.binary)
 
 
-    def save_unprocessed_children_block_lookup(self, block_hash):
+    def save_unprocessed_children_block_lookup(self, block_hash: Hash32) -> None:
         lookup_key = SchemaV1.make_has_unprocessed_block_children_lookup_key(block_hash)
         self.db[lookup_key] = b'1'
 
 
-    def save_unprocessed_children_block_lookup_to_transaction_parents(self, block):
+    def save_unprocessed_children_block_lookup_to_transaction_parents(self, block: 'BaseBlock') -> None:
         for receive_transaction in block.receive_transactions:
             #or do we not even have the block
             if not self.is_in_canonical_chain(receive_transaction.sender_block_hash):
@@ -758,7 +942,7 @@ class ChainDB(BaseChainDB):
                 self.logger.debug("saving parent children unprocessed block lookup for reward proof parents block hash {}".format(encode_hex(node_staking_score.head_hash_of_sender_chain)))
                 self.save_unprocessed_children_block_lookup(node_staking_score.head_hash_of_sender_chain)
 
-    def delete_unprocessed_children_block_lookup_to_transaction_parents_if_nessissary(self, block):
+    def delete_unprocessed_children_block_lookup_to_transaction_parents_if_nessissary(self, block: 'BaseBlock') -> None:
 
         for receive_transaction in block.receive_transactions:
             #or do we not even have the block
@@ -767,7 +951,7 @@ class ChainDB(BaseChainDB):
 
 
 
-    def has_unprocessed_children(self, block_hash):
+    def has_unprocessed_children(self, block_hash: Hash32) -> bool:
         '''
         Returns True if the block has unprocessed children
         '''
@@ -791,12 +975,12 @@ class ChainDB(BaseChainDB):
         except KeyError:
             return False
 
-    def get_unprocessed_block_hash_by_block_number(self, wallet_address, block_number):
+    def get_unprocessed_block_hash_by_block_number(self, chain_address: Address, block_number: BlockNumber) -> Optional[Hash32]:
         '''
         Returns block hash if the block is unprocessed, false if it doesnt exist for this block number
         '''
 
-        lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(wallet_address, block_number)
+        lookup_key = SchemaV1.make_unprocessed_block_lookup_by_number_key(chain_address, block_number)
         try:
             return rlp.decode(self.db[lookup_key], sedes = rlp.sedes.binary)
         except KeyError:
@@ -804,7 +988,7 @@ class ChainDB(BaseChainDB):
 
 
 
-    def delete_unprocessed_block_lookup(self, block_hash, block_number):
+    def delete_unprocessed_block_lookup(self, block_hash: Hash32, block_number: BlockNumber) -> None:
         lookup_key = SchemaV1.make_unprocessed_block_lookup_key(block_hash)
         try:
             del(self.db[lookup_key])
@@ -821,7 +1005,7 @@ class ChainDB(BaseChainDB):
             pass
 
 
-    def delete_unprocessed_children_blocks_lookup(self, block_hash):
+    def delete_unprocessed_children_blocks_lookup(self, block_hash: Hash32) -> None:
         '''
         removes the lookup that says if this block has unprocessed children
         '''
@@ -832,7 +1016,7 @@ class ChainDB(BaseChainDB):
             pass
 
 
-    def check_all_children_blocks_to_see_if_any_unprocessed(self, block_hash):
+    def check_all_children_blocks_to_see_if_any_unprocessed(self, block_hash: Hash32) -> bool:
         '''
         manually goes through all children blocks instead of using lookup table. 
         if any children are unprocessed, it returns true, false otherwise.
@@ -962,7 +1146,7 @@ class ChainDB(BaseChainDB):
     def get_receipt_by_idx(self,
                      header: BlockHeader,
                      receipt_idx: int,
-                     receipt_class: Type[Receipt] = Receipt) -> Receipt:
+                     receipt_class: Type[Receipt] = Receipt) -> Optional[Receipt]:
 
         receipt_db = HexaryTrie(db=self.db, root_hash=header.receipt_root)
 
@@ -990,29 +1174,29 @@ class ChainDB(BaseChainDB):
             else:
                 break
 
-    def get_transaction_by_index(
-            self,
-            block_number: BlockNumber,
-            transaction_index: int,
-            transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
-        """
-        Returns the transaction at the specified `transaction_index` from the
-        block specified by `block_number` from the canonical chain.
-
-        Raises TransactionNotFound if no block
-        """
-        try:
-            block_header = self.get_canonical_block_header_by_number(block_number)
-        except HeaderNotFound:
-            raise TransactionNotFound("Block {} is not in the canonical chain".format(block_number))
-        transaction_db = HexaryTrie(self.db, root_hash=block_header.transaction_root)
-        encoded_index = rlp.encode(transaction_index)
-        if encoded_index in transaction_db:
-            encoded_transaction = transaction_db[encoded_index]
-            return rlp.decode(encoded_transaction, sedes=transaction_class)
-        else:
-            raise TransactionNotFound(
-                "No transaction is at index {} of block {}".format(transaction_index, block_number))
+    # def get_transaction_by_index(
+    #         self,
+    #         block_number: BlockNumber,
+    #         transaction_index: int,
+    #         transaction_class: Type['BaseTransaction']) -> 'BaseTransaction':
+    #     """
+    #     Returns the transaction at the specified `transaction_index` from the
+    #     block specified by `block_number` from the canonical chain.
+    #
+    #     Raises TransactionNotFound if no block
+    #     """
+    #     try:
+    #         block_header = self.get_canonical_block_header_by_number(block_number)
+    #     except HeaderNotFound:
+    #         raise TransactionNotFound("Block {} is not in the canonical chain".format(block_number))
+    #     transaction_db = HexaryTrie(self.db, root_hash=block_header.transaction_root)
+    #     encoded_index = rlp.encode(transaction_index)
+    #     if encoded_index in transaction_db:
+    #         encoded_transaction = transaction_db[encoded_index]
+    #         return rlp.decode(encoded_transaction, sedes=transaction_class)
+    #     else:
+    #         raise TransactionNotFound(
+    #             "No transaction is at index {} of block {}".format(transaction_index, block_number))
 
     def get_transaction_by_index_and_block_hash(
             self,
@@ -1028,7 +1212,6 @@ class ChainDB(BaseChainDB):
         try:
             block_header = self.get_block_header_by_hash(block_hash)
         except HeaderNotFound:
-            print("XXXXXXXXXXXX", block_hash)
             raise TransactionNotFound("Block {} is not in the canonical chain".format(block_hash))
         transaction_db = HexaryTrie(self.db, root_hash=block_header.transaction_root)
         encoded_index = rlp.encode(transaction_index)
@@ -1037,7 +1220,7 @@ class ChainDB(BaseChainDB):
             return rlp.decode(encoded_transaction, sedes=transaction_class)
         else:
             raise TransactionNotFound(
-                "No transaction is at index {} of block {}".format(transaction_index, block_number))
+                "No transaction is at index {} of block {}".format(transaction_index, block_header))
 
     def get_receive_transaction_by_index_and_block_hash(
             self,
@@ -1061,7 +1244,7 @@ class ChainDB(BaseChainDB):
             return rlp.decode(encoded_transaction, sedes=transaction_class)
         else:
             raise TransactionNotFound(
-                "No transaction is at index {} of block {}".format(transaction_index, block_number))
+                "No transaction is at index {} of block {}".format(transaction_index, block_header))
 
     def get_transaction_by_hash(self,
                                 tx_hash: Hash32,
@@ -1069,7 +1252,6 @@ class ChainDB(BaseChainDB):
                                 receive_tx_class: Type['BaseReceiveTransaction']) -> Union['BaseTransaction', 'BaseReceiveTransaction']:
 
         block_hash, index, is_receive = self.get_transaction_index(tx_hash)
-
         if is_receive:
             transaction = self.get_receive_transaction_by_index_and_block_hash(
                 block_hash,
@@ -1086,29 +1268,29 @@ class ChainDB(BaseChainDB):
         return transaction
 
 
-    def get_receive_transaction_by_index(
-            self,
-            block_number: BlockNumber,
-            transaction_index: int,
-            transaction_class: 'BaseReceiveTransaction') -> 'BaseReceiveTransaction':
-        """
-        Returns the transaction at the specified `transaction_index` from the
-        block specified by `block_number` from the canonical chain.
-
-        Raises TransactionNotFound if no block
-        """
-        try:
-            block_header = self.get_canonical_block_header_by_number(block_number)
-        except HeaderNotFound:
-            raise TransactionNotFound("Block {} is not in the canonical chain".format(block_number))
-        transaction_db = HexaryTrie(self.db, root_hash=block_header.receive_transaction_root)
-        encoded_index = rlp.encode(transaction_index)
-        if encoded_index in transaction_db:
-            encoded_transaction = transaction_db[encoded_index]
-            return rlp.decode(encoded_transaction, sedes=transaction_class)
-        else:
-            raise TransactionNotFound(
-                "No transaction is at index {} of block {}".format(transaction_index, block_number))
+    # def get_receive_transaction_by_index(
+    #         self,
+    #         block_number: BlockNumber,
+    #         transaction_index: int,
+    #         transaction_class: 'BaseReceiveTransaction') -> 'BaseReceiveTransaction':
+    #     """
+    #     Returns the transaction at the specified `transaction_index` from the
+    #     block specified by `block_number` from the canonical chain.
+    #
+    #     Raises TransactionNotFound if no block
+    #     """
+    #     try:
+    #         block_header = self.get_canonical_block_header_by_number(block_number, chain_address)
+    #     except HeaderNotFound:
+    #         raise TransactionNotFound("Block {} is not in the canonical chain".format(block_number))
+    #     transaction_db = HexaryTrie(self.db, root_hash=block_header.receive_transaction_root)
+    #     encoded_index = rlp.encode(transaction_index)
+    #     if encoded_index in transaction_db:
+    #         encoded_transaction = transaction_db[encoded_index]
+    #         return rlp.decode(encoded_transaction, sedes=transaction_class)
+    #     else:
+    #         raise TransactionNotFound(
+    #             "No transaction is at index {} of block {}".format(transaction_index, block_number))
 
     def get_transaction_index(self, transaction_hash: Hash32) -> Tuple[Hash32, int, bool]:
         """
@@ -1160,7 +1342,7 @@ class ChainDB(BaseChainDB):
     def _get_block_transactions(
             self,
             transaction_root: Hash32,
-            transaction_class: Union['BaseTransaction', 'BaseReceiveTransaction']) -> Iterable[Union['BaseTransaction', 'BaseReceiveTransaction']]:
+            transaction_class: Union[Type['BaseTransaction'], Type['BaseReceiveTransaction']]) -> Iterable[Union['BaseTransaction', 'BaseReceiveTransaction']]:
         """
         Memoizable version of `get_block_transactions`
         """
@@ -1187,10 +1369,7 @@ class ChainDB(BaseChainDB):
         - add lookup from transaction hash to the block number and index that the body is stored at
         - remove transaction hash to body lookup in the pending pool
         """
-        #TODO: allow this for contract addresses
-        if block_header.chain_address != self.wallet_address:
-            raise ValueError("Cannot add transaction to canonical chain because it is from a block on a different chain. Block chain address = {}"
-                             ", this chain address = {}, block sender = {}".format(encode_hex(block_header.chain_address), encode_hex(self.wallet_address), encode_hex(block_header.sender)))
+
         transaction_key = TransactionKey(block_header.hash, index, False)
         self.db.set(
             SchemaV1.make_transaction_hash_to_block_lookup_key(transaction_hash),
@@ -1209,10 +1388,7 @@ class ChainDB(BaseChainDB):
         - add lookup from transaction hash to the block number and index that the body is stored at
         - remove transaction hash to body lookup in the pending pool
         """
-        #TODO: allow this for contract addresses
-        if block_header.chain_address != self.wallet_address:
-            raise ValueError("Cannot add receive transaction to canonical chain because it is from a block on a different chain. Block chain address = {}"
-                             ", this chain address = {}".format(encode_hex(block_header.chain_address), encode_hex(self.wallet_address)))
+
         transaction_key = TransactionKey(block_header.hash, index, True)
         self.db.set(
             SchemaV1.make_transaction_hash_to_block_lookup_key(transaction_hash),
@@ -1223,7 +1399,7 @@ class ChainDB(BaseChainDB):
     #
     # Block children and Stake API
     #
-    def add_block_receive_transactions_to_parent_child_lookup(self, block_header, transaction_class):
+    def add_block_receive_transactions_to_parent_child_lookup(self, block_header: 'BlockHeader', transaction_class: Type['BaseReceiveTransaction']) -> None:
         block_receive_transactions = self.get_block_receive_transactions(block_header,
                                                                         transaction_class)
 
@@ -1232,13 +1408,13 @@ class ChainDB(BaseChainDB):
                        receive_transaction.sender_block_hash,
                        block_header.hash)
 
-    def add_block_rewards_to_parent_child_lookup(self, block_header, reward_bundle):
+    def add_block_rewards_to_parent_child_lookup(self, block_header: 'BlockHeader', reward_bundle: BaseRewardBundle) -> None:
         for node_staking_score in reward_bundle.reward_type_2.proof:
             self.logger.debug("saving parent child lookup for reward bundle proof")
             self.add_block_child(node_staking_score.head_hash_of_sender_chain, block_header.hash)
 
 
-    def remove_block_receive_transactions_to_parent_child_lookup(self, block_header, transaction_class):
+    def remove_block_receive_transactions_to_parent_child_lookup(self, block_header: 'BlockHeader', transaction_class: Type['BaseReceiveTransaction']) -> None:
         block_receive_transactions = self.get_block_receive_transactions(block_header,
                                                                         transaction_class)
 
@@ -1250,7 +1426,7 @@ class ChainDB(BaseChainDB):
 
     def remove_block_child(self,
                        parent_block_hash: Hash32,
-                       child_block_hash: Hash32):
+                       child_block_hash: Hash32) -> None:
 
         validate_word(parent_block_hash, title="Block_hash")
         validate_word(child_block_hash, title="Block_hash")
@@ -1263,18 +1439,18 @@ class ChainDB(BaseChainDB):
             block_children.remove(child_block_hash)
             self.save_block_children(parent_block_hash, block_children)
 
-    def remove_block_from_all_parent_child_lookups(self, block_header, transaction_class):
+    def remove_block_from_all_parent_child_lookups(self, block_header: 'BlockHeader', receive_transaction_class: Type['BaseReceiveTransaction']) -> None:
         '''
         Removes block from parent child lookups coming from transactions, and from within the chain.
         '''
-        self.remove_block_receive_transactions_to_parent_child_lookup(block_header, transaction_class)
+        self.remove_block_receive_transactions_to_parent_child_lookup(block_header, receive_transaction_class)
         self.remove_block_child(block_header.parent_hash, block_header.hash)
 
 
 
     def add_block_child(self,
                        parent_block_hash: Hash32,
-                       child_block_hash: Hash32):
+                       child_block_hash: Hash32) -> None:
         validate_word(parent_block_hash, title="Block_hash")
         validate_word(child_block_hash, title="Block_hash")
 
@@ -1289,7 +1465,7 @@ class ChainDB(BaseChainDB):
             block_children.append(child_block_hash)
             self.save_block_children(parent_block_hash, block_children)
 
-    def get_block_children(self, parent_block_hash: Hash32):
+    def get_block_children(self, parent_block_hash: Hash32) -> List[Hash32]:
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         try:
@@ -1301,12 +1477,12 @@ class ChainDB(BaseChainDB):
             return None
 
 
-    def get_all_descendant_block_hashes(self, block_hash: Hash32):
+    def get_all_descendant_block_hashes(self, block_hash: Hash32) -> List[Hash32]:
         validate_word(block_hash, title="Block_hash")
         descentant_blocks = self._get_all_descendant_block_hashes(block_hash)
         return descentant_blocks
 
-    def _get_all_descendant_block_hashes(self, block_hash: Hash32):
+    def _get_all_descendant_block_hashes(self, block_hash: Hash32) -> List[Hash32]:
 
         #lookup children
         children = self.get_block_children(block_hash)
@@ -1326,13 +1502,13 @@ class ChainDB(BaseChainDB):
             return child_blocks
 
     def save_block_children(self, parent_block_hash: Hash32,
-                            block_children):
+                            block_children: List[Hash32]) -> None:
 
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         self.db[block_children_lookup_key] = rlp.encode(block_children, sedes=rlp.sedes.FCountableList(hash32))
 
-    def delete_all_block_children(self, parent_block_hash: Hash32):
+    def delete_all_block_children(self, parent_block_hash: Hash32) -> None:
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         try:
@@ -1341,7 +1517,7 @@ class ChainDB(BaseChainDB):
             pass
 
     #we don't want to count the stake from the origin wallet address. This could allow 51% attacks.The origin chain shouldn't count becuase it is the chain with the conflict.
-    def get_block_children_chains(self, block_hash, exclude_chains:List = None) -> List[Address]:
+    def get_block_children_chains(self, block_hash: Hash32, exclude_chains:List = None) -> List[Address]:
         validate_word(block_hash, title="Block_hash")
         origin_wallet_address = self.get_chain_wallet_address_for_block_hash(block_hash)
         child_chains = self._get_block_children_chains(block_hash)
@@ -1363,7 +1539,7 @@ class ChainDB(BaseChainDB):
                     pass
         return list(child_chains)
 
-    def _get_block_children_chains(self, block_hash):
+    def _get_block_children_chains(self, block_hash: Hash32) -> Set[Address]:
         #lookup children
         children = self.get_block_children(block_hash)
 
@@ -1381,24 +1557,60 @@ class ChainDB(BaseChainDB):
                     child_chains.update(sub_children_chain_wallet_addresses)
             return child_chains
 
-    def get_block_number_of_latest_reward_block(self, wallet_address: Address = None) -> BlockNumber:
-        if wallet_address is None:
-            wallet_address = self.wallet_address
+
+    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
+        validate_word(block_hash, title="Block Hash")
+
+        children_chain_wallet_addresses = self.get_block_children_chains(block_hash, exclude_chains)
+        self.logger.debug(
+            "get_block_stake_from_children. children wallet addresses: {}".format(children_chain_wallet_addresses))
+
+        if children_chain_wallet_addresses is None:
+            return 0
+        else:
+            total_stake = 0
+            for wallet_address in children_chain_wallet_addresses:
+                total_stake += self.get_mature_stake(wallet_address)
+            return total_stake
+
+    def get_mature_stake(self, wallet_address: Address, timestamp: Timestamp = None,
+                         raise_canonical_head_not_found_error: bool = False) -> int:
+
+        if timestamp is None:
+            timestamp = int(time.time())
+
+        validate_uint256(timestamp, 'timestamp')
         validate_canonical_address(wallet_address, title="Wallet Address")
 
-        canonical_head = self.get_canonical_head(wallet_address)
-        canonical_block_number = canonical_head.block_number
+        # get account balance
+        return self._get_balance_at_time(wallet_address,
+                                         timestamp - COIN_MATURE_TIME_FOR_STAKING,
+                                         raise_canonical_head_not_found_error=raise_canonical_head_not_found_error)
 
-        if canonical_head.reward_hash != BLANK_REWARD_HASH:
-            return canonical_block_number
+    def _get_balance_at_time(self, wallet_address: Address, timestamp: Timestamp = None,
+                             raise_canonical_head_not_found_error: bool = False) -> int:
 
-        if canonical_block_number == 0:
-            return BlockNumber(0)
+        if timestamp is None:
+            timestamp = int(time.time())
 
-        for i in range(canonical_block_number, -1, -1):
-            header = self.get_canonical_block_header_by_number(BlockNumber(i), wallet_address)
-            if header.reward_hash != BLANK_REWARD_HASH:
-                return BlockNumber(i)
+        try:
+            canonical_head = self.get_canonical_head(chain_address=wallet_address)
+        except CanonicalHeadNotFound as e:
+            if raise_canonical_head_not_found_error:
+                raise e
+            else:
+                return 0
+
+        if canonical_head.timestamp <= timestamp:
+            return canonical_head.account_balance
+        else:
+            if canonical_head.block_number > 0:
+                for i in range(canonical_head.block_number - 1, -1, -1):
+                    header = self.get_canonical_block_header_by_number(i, wallet_address)
+                    if header.timestamp <= timestamp:
+                        return header.account_balance
+
+        return 0
 
 
     #
@@ -1432,7 +1644,7 @@ class ChainDB(BaseChainDB):
             return None
 
 
-    def save_historical_tx_per_centisecond(self, historical_tx_per_centisecond, de_sparse = True):
+    def save_historical_tx_per_centisecond(self, historical_tx_per_centisecond: List[List[int]], de_sparse = True) -> None:
         '''
         This takes list of timestamp, tx_per_centisecond. The timestamps are every minute, tx_per_minute must be an intiger
         this one is naturally a sparse list because some 100 second intervals might have no tx. So we can de_sparse it.
@@ -1446,7 +1658,7 @@ class ChainDB(BaseChainDB):
             encoded_data,
         )
 
-    def load_historical_tx_per_centisecond(self, sort = False):
+    def load_historical_tx_per_centisecond(self, sort = False) -> Optional[List[List[int]]]:
         '''
         returns a list of [timestamp, tx/centisecond]
         '''
@@ -1475,7 +1687,7 @@ class ChainDB(BaseChainDB):
             encoded_data,
         )
 
-    def save_current_historical_network_tpc_capability(self, current_tpc_capability):
+    def save_current_historical_network_tpc_capability(self, current_tpc_capability: int) -> None:
         validate_uint256(current_tpc_capability, title="current_tpc_capability")
         existing = self.load_historical_network_tpc_capability()
         current_centisecond = int(time.time()/100) * 100
@@ -1506,7 +1718,7 @@ class ChainDB(BaseChainDB):
             return None
 
 
-    def calculate_next_centisecond_minimum_gas_price(self, historical_minimum_allowed_gas, historical_tx_per_centisecond, goal_tx_per_centisecond):
+    def _calculate_next_centisecond_minimum_gas_price(self, historical_minimum_allowed_gas: List[List[int]], historical_tx_per_centisecond: List[List[int]], goal_tx_per_centisecond: int) -> int:
         average_centisecond_delay = MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY
         average_centisecond_window_length = MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH
         min_centisecond_time_between_change_in_minimum_gas = MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE
@@ -1539,7 +1751,7 @@ class ChainDB(BaseChainDB):
 
             return new_minimum_allowed_gas
 
-    def initialize_historical_minimum_gas_price_at_genesis(self, min_gas_price, net_tpc_cap, tpc = None):
+    def initialize_historical_minimum_gas_price_at_genesis(self, min_gas_price: int, net_tpc_cap: int, tpc: int = None) -> None:
         # we need to initialize the entire additive and fast sync region in time because that is where we check
         # that blocks have enough gas
         current_centisecond = int(time.time()/100) * 100
@@ -1568,14 +1780,14 @@ class ChainDB(BaseChainDB):
 
 
 
-    def recalculate_historical_mimimum_gas_price(self, start_timestamp, end_timestamp = None):
+    def _recalculate_historical_mimimum_gas_price(self, start_timestamp: Timestamp, end_timestamp: Timestamp = None) -> None:
         #we just have to delete the ones in front of this time and update
-        self.delete_newer_historical_mimimum_gas_price(start_timestamp)
+        self._delete_newer_historical_mimimum_gas_price(start_timestamp)
 
         #then update the missing items:
-        self.update_historical_mimimum_gas_price(end_timestamp=end_timestamp)
+        self._update_historical_mimimum_gas_price(end_timestamp=end_timestamp)
 
-    def delete_newer_historical_mimimum_gas_price(self, start_timestamp):
+    def _delete_newer_historical_mimimum_gas_price(self, start_timestamp: Timestamp) -> None:
         self.logger.debug("deleting historical min gas price newer than {}".format(start_timestamp))
         hist_min_gas_price = self.load_historical_minimum_gas_price()
 
@@ -1614,7 +1826,7 @@ class ChainDB(BaseChainDB):
             self.save_historical_minimum_gas_price(hist_min_gas_price)
 
 
-    def update_historical_mimimum_gas_price(self,end_timestamp=None):
+    def _update_historical_mimimum_gas_price(self, end_timestamp: Timestamp=None) -> None:
         '''
         needs to be called any time the chains are modified, and any time we lookup required gas price
         it saves the historical block price up to MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY minutes ago using all information in our database
@@ -1681,9 +1893,9 @@ class ChainDB(BaseChainDB):
                         goal_tx_per_centisecond = hist_network_tpc_cap[end_timestamp-200]
                     else:
                         raise HistoricalNetworkTPCMissing
-                next_centisecond_min_gas_price = self.calculate_next_centisecond_minimum_gas_price(historical_minimum_allowed_gas,
-                                                                                                   historical_tx_per_centisecond,
-                                                                                                   goal_tx_per_centisecond)
+                next_centisecond_min_gas_price = self._calculate_next_centisecond_minimum_gas_price(historical_minimum_allowed_gas,
+                                                                                                    historical_tx_per_centisecond,
+                                                                                                    goal_tx_per_centisecond)
 
                 #first make sure we append it to historical_minimum_allowed_gas
                 historical_minimum_allowed_gas.append(next_centisecond_min_gas_price)
@@ -1703,7 +1915,7 @@ class ChainDB(BaseChainDB):
 
 
 
-    def get_required_block_min_gas_price(self, block_timestamp = None):
+    def get_required_block_min_gas_price(self, block_timestamp: Timestamp = None) -> int:
         '''
         it is important that this doesn't run until our blockchain is up to date. If it is run before that,
         it will give the wrong number.
@@ -1735,7 +1947,7 @@ class ChainDB(BaseChainDB):
         return sorted_list[-1][1]
 
 
-    def min_gas_system_initialization_required(self):
+    def min_gas_system_initialization_required(self) -> bool:
         test_1 = self.load_historical_minimum_gas_price()
         test_3 = self.load_historical_network_tpc_capability()
 
@@ -1756,11 +1968,11 @@ class ChainDB(BaseChainDB):
     # Reward bundle persisting
     #
 
-    def persist_reward_bundle(self, reward_bundle: StakeRewardBundle) -> None:
+    def persist_reward_bundle(self, reward_bundle: BaseRewardBundle) -> None:
         lookup_key = SchemaV1.make_reward_bundle_hash_lookup_key(reward_bundle.hash)
-        self.db[lookup_key] = rlp.encode(reward_bundle, sedes=StakeRewardBundle)
+        self.db[lookup_key] = rlp.encode(reward_bundle, sedes=BaseRewardBundle)
 
-    def get_reward_bundle(self, reward_bundle_hash: Hash32, reward_bundle_class: Type[StakeRewardBundle]) -> StakeRewardBundle:
+    def get_reward_bundle(self, reward_bundle_hash: Hash32, reward_bundle_class: Type[BaseRewardBundle]) -> BaseRewardBundle:
         validate_is_bytes(reward_bundle_hash, 'reward_bundle_hash')
         lookup_key = SchemaV1.make_reward_bundle_hash_lookup_key(reward_bundle_hash)
         try:
@@ -1769,10 +1981,29 @@ class ChainDB(BaseChainDB):
         except KeyError:
             return reward_bundle_class()
 
+    def get_block_number_of_latest_reward_block(self, chain_address: Address) -> BlockNumber:
+
+        validate_canonical_address(chain_address, title="Wallet Address")
+
+        canonical_head = self.get_canonical_head(chain_address)
+        canonical_block_number = canonical_head.block_number
+
+        if canonical_head.reward_hash != BLANK_REWARD_HASH:
+            return canonical_block_number
+
+        if canonical_block_number == 0:
+            return BlockNumber(0)
+
+        for i in range(canonical_block_number, -1, -1):
+            header = self.get_canonical_block_header_by_number(BlockNumber(i), chain_address)
+            if header.reward_hash != BLANK_REWARD_HASH:
+                return BlockNumber(i)
+
     def get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:
         validate_canonical_address(wallet_address, title="wallet_address")
 
         key = SchemaV1.make_latest_reward_block_number_lookup(wallet_address)
+
         try:
             rlp_latest_block_number = self.db.get(key)
         except KeyError:
@@ -1783,7 +2014,7 @@ class ChainDB(BaseChainDB):
             # so lets also check to make sure the block with this number has a reward
             block_number = rlp.decode(rlp_latest_block_number, sedes=rlp.sedes.f_big_endian_int)
             try:
-                block_header = self.get_canonical_block_header_by_number(block_number)
+                block_header = self.get_canonical_block_header_by_number(block_number, wallet_address)
             except HeaderNotFound:
                 # need to find previous reward block and save new one
                 latest_reward_block_number = self.get_block_number_of_latest_reward_block(wallet_address)

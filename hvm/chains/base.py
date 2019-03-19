@@ -400,7 +400,6 @@ class BaseChain(Configurable, metaclass=ABCMeta):
 
 
 
-
     #
     # Validation API
     #
@@ -416,18 +415,6 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     # Stake API
     #
     # this doesnt count the stake of the origin chain
-    @abstractmethod
-    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
-        raise NotImplementedError("Chain classes must implement this method")
-
-    @abstractmethod
-    def get_mature_stake(self, wallet_address: Address = None, timestamp: Timestamp = None, raise_canonical_head_not_found_error: bool = False):
-        raise NotImplementedError("Chain classes must implement this method")
-
-    @abstractmethod
-    def get_balance_at_time(self, wallet_address: Address = None, timestamp: Timestamp = None) -> int:
-        raise NotImplementedError("Chain classes must implement this method")
-
     @abstractmethod
     def get_new_block_hash_to_test_peer_node_health(self) -> Hash32:
         raise NotImplementedError("Chain classes must implement this method")
@@ -468,6 +455,7 @@ class Chain(BaseChain):
     chaindb_class = ChainDB  # type: Type[BaseChainDB]
     chain_head_db_class = ChainHeadDB
     consensus_db_class = ConsensusDB
+
     chain_head_db: ChainHeadDB = None
     consensus_db: ConsensusDB = None
     chaindb: ChainDB = None
@@ -488,16 +476,20 @@ class Chain(BaseChain):
         self.db = base_db
         self.private_key = private_key
         self.wallet_address = wallet_address
-        self.chaindb = self.get_chaindb_class()(self.db, self.wallet_address)
+        self.chaindb = self.get_chaindb_class()(self.db)
         self.chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(self.db)
-        self.consensus_db = self.get_consensus_db_class()(self.db, self, self.chaindb)
+        self.consensus_db = self.get_consensus_db_class()(self.chaindb)
 
         try:
             self.header = self.create_header_from_parent(self.get_canonical_head())
+            self.logger.debug('test')
+            self.logger.debug(encode_hex(wallet_address))
+            self.logger.debug(encode_hex(self.get_canonical_head().chain_address))
         except CanonicalHeadNotFound:
             #this is a new block, lets make a genesis block
             self.logger.debug("Creating new genesis block on chain {}".format(self.wallet_address))
             self.header = self.get_vm_class_for_block_timestamp().create_genesis_block(self.wallet_address).header
+
 
 
         if self.gas_estimator is None:
@@ -581,13 +573,13 @@ class Chain(BaseChain):
     @classmethod
     def get_chain_head_db_class(cls) -> Type[ChainHeadDB]:
         if cls.chain_head_db_class is None:
-            raise AttributeError("`chaindb_class` not set")
+            raise AttributeError("`chain_head_db class` not set")
         return cls.chain_head_db_class
 
     @classmethod
     def get_consensus_db_class(cls) -> Type[ConsensusDB]:
         if cls.consensus_db_class is None:
-            raise AttributeError("`chaindb_class` not set")
+            raise AttributeError("`consensus_db` not set")
         return cls.consensus_db_class
 
     @classmethod
@@ -625,7 +617,7 @@ class Chain(BaseChain):
         genesis_header = BlockHeader(**genesis_params)
 
         signed_genesis_header = genesis_header.get_signed(private_key, cls.network_id)
-        chaindb = cls.get_chaindb_class()(base_db, wallet_address = wallet_address)
+        chaindb = cls.get_chaindb_class()(base_db)
         chaindb.persist_header(signed_genesis_header)
         return signed_genesis_header
 
@@ -669,7 +661,7 @@ class Chain(BaseChain):
         Initializes the chain from the genesis header.
         """
 
-        chaindb = cls.get_chaindb_class()(base_db, wallet_address = cls.genesis_wallet_address)
+        chaindb = cls.get_chaindb_class()(base_db)
         chaindb.persist_header(genesis_header)
 
         chain_head_db = cls.get_chain_head_db_class()(base_db)
@@ -754,7 +746,7 @@ class Chain(BaseChain):
         if chain_address is not None:
             return self.chaindb.get_canonical_head(chain_address)
         else:
-            return self.chaindb.get_canonical_head()
+            return self.chaindb.get_canonical_head(self.wallet_address)
 
 
     #
@@ -762,7 +754,7 @@ class Chain(BaseChain):
     #
     def get_genesis_block_hash(self) -> Hash32:
         return self.chaindb.get_canonical_block_hash(block_number = BlockNumber(0),
-                                                     wallet_address = self.genesis_wallet_address)
+                                                     chain_address= self.genesis_wallet_address)
 
     @to_tuple
     def get_ancestors(self, limit: int, header: BlockHeader=None) -> Iterator[BaseBlock]:
@@ -1111,7 +1103,7 @@ class Chain(BaseChain):
         block_parent_header = self.chaindb.get_block_header_by_hash(existing_block_header.parent_hash)
         self.save_chain_head_hash_to_trie_for_time_period(block_parent_header)
         self.chain_head_db.set_chain_head_hash(wallet_address, block_parent_header.hash)
-        self.chaindb._set_as_canonical_chain_head(block_parent_header, wallet_address = wallet_address)
+        self.chaindb._set_as_canonical_chain_head(block_parent_header)
         vm.state.revert_account_to_hash_keep_receivable_transactions_and_persist(block_parent_header.account_hash, wallet_address)
 
     def revert_block(self, descendant_block_hash, vm):
@@ -1434,7 +1426,7 @@ class Chain(BaseChain):
                     if not allow_unprocessed:
                         raise UnprocessedBlockNotAllowed()
                     self.logger.debug("Saving block as unprocessed because parent on this chain is unprocessed")
-                    return_block = self.save_block_as_unprocessed(block, self.wallet_address)
+                    return_block = self.save_block_as_unprocessed(block)
 
                 if journal_enabled:
                     self.logger.debug('commiting journal')
@@ -1450,7 +1442,7 @@ class Chain(BaseChain):
 
         #now, if it is the head of the chain, lets make sure the parent hash is correct.
         if block.number == self.header.block_number and block.number != 0:
-            if block.header.parent_hash != self.chaindb.get_canonical_head_hash(wallet_address = self.wallet_address):
+            if block.header.parent_hash != self.chaindb.get_canonical_head_hash(chain_address= self.wallet_address):
                 raise ParentNotFound("Block is at the head of the chain")
 
 
@@ -1594,7 +1586,7 @@ class Chain(BaseChain):
                 if not allow_unprocessed:
                     raise UnprocessedBlockNotAllowed()
                 self.logger.debug("Saving block as unprocessed because of ReceivableTransactionNotFound error: {}".format(e))
-                return_block = self.save_block_as_unprocessed(block, self.wallet_address)
+                return_block = self.save_block_as_unprocessed(block)
                 if self.raise_errors:
                     raise e
 
@@ -1605,13 +1597,13 @@ class Chain(BaseChain):
                 if not allow_unprocessed:
                     raise UnprocessedBlockNotAllowed()
                 self.logger.debug("Saving block as unprocessed because of RewardProofSenderBlockMissing error: {}".format(e))
-                return_block = self.save_block_as_unprocessed(block, self.wallet_address)
+                return_block = self.save_block_as_unprocessed(block)
 
         else:
             if not allow_unprocessed:
                 raise UnprocessedBlockNotAllowed()
             self.logger.debug("Saving block as unprocessed because parent on this chain is unprocessed")
-            return_block = self.save_block_as_unprocessed(block, self.wallet_address)
+            return_block = self.save_block_as_unprocessed(block)
 
 
         return return_block
@@ -1651,7 +1643,7 @@ class Chain(BaseChain):
                             #pass
 
 
-    def save_block_as_unprocessed(self, block, wallet_address):
+    def save_block_as_unprocessed(self, block):
         #if it is already saved as unprocesessed, do nothing
         if self.chaindb.is_block_unprocessed(block.hash):
             return block
@@ -1662,7 +1654,7 @@ class Chain(BaseChain):
         #     receive_transaction.validate()
 
         #now we add it to unprocessed blocks
-        self.chaindb.save_block_as_unprocessed(block, wallet_address)
+        self.chaindb.save_block_as_unprocessed(block)
 
 
         #save the transactions to db
@@ -1672,7 +1664,7 @@ class Chain(BaseChain):
 
         #we don't want to persist because that will add it to the canonical chain.
         #We just want to save it to the database so we can process it later if needbe.
-        self.chaindb.persist_non_canonical_block(block, wallet_address)
+        self.chaindb.persist_non_canonical_block(block)
         #self.chaindb.persist_block(block)
 
         try:
@@ -1787,125 +1779,46 @@ class Chain(BaseChain):
     #
     # Stake API
     #
-    #this doesnt count the stake of the origin chain
-    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
-        validate_word(block_hash, title="Block Hash")
 
-        children_chain_wallet_addresses = self.chaindb.get_block_children_chains(block_hash, exclude_chains)
-        self.logger.debug("get_block_stake_from_children. children wallet addresses: {}".format(children_chain_wallet_addresses))
-
-        if children_chain_wallet_addresses is None:
-            return 0
-        else:
-            total_stake = 0
-            for wallet_address in children_chain_wallet_addresses:
-               total_stake += self.get_mature_stake(wallet_address)
-            return total_stake
+    def get_mature_stake(self) -> int:
+        return self.chaindb.get_mature_stake(self.wallet_address)
 
 
-
-    # def get_mature_stake(self, wallet_address: Address = None) -> int:
+    # def get_immature_receive_balance(self, wallet_address: Union[bytes, type(None)] = None):
     #     if wallet_address is None:
     #         wallet_address = self.wallet_address
     #
     #     validate_canonical_address(wallet_address, title="Wallet Address")
-    #     #get account balance
-    #     account_balance = self.get_balance_at_time(wallet_address)
-    #     #subtract immature coins (look at receive only)
     #
-    #     try:
-    #         immature_coins = self.get_immature_receive_balance(wallet_address)
-    #     except CanonicalHeadNotFound:
-    #         return 0
+    #     canonical_head = self.chaindb.get_canonical_head(chain_address= wallet_address)
     #
-    #     mature_stake = account_balance-immature_coins
-    #     #this can be negative if they spent their received coins. Lets bottom it out at 0
-    #     if mature_stake < 0:
-    #         mature_stake = 0
+    #     total = 0
+    #     transaction_class =  self.get_block().receive_transaction_class
+    #     if canonical_head.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:
+    #         return total
+    #     else:
+    #         block_receive_transactions = self.chaindb.get_block_receive_transactions(canonical_head,transaction_class)
+    #         for receive_transaction in block_receive_transactions:
+    #             send_transaction = self.get_canonical_transaction(receive_transaction.send_transaction_hash)
+    #             total += send_transaction.value
     #
-    #     return mature_stake
-
-    def get_mature_stake(self, wallet_address: Address = None, timestamp: Timestamp = None, raise_canonical_head_not_found_error: bool = False) -> int:
-        if wallet_address is None:
-            wallet_address = self.wallet_address
-
-        if timestamp is None:
-            timestamp = int(time.time())
-        validate_uint256(timestamp, 'timestamp')
-        validate_canonical_address(wallet_address, title="Wallet Address")
-
-
-        #get account balance
-        return self.get_balance_at_time(wallet_address,
-                                        timestamp - COIN_MATURE_TIME_FOR_STAKING,
-                                        raise_canonical_head_not_found_error = raise_canonical_head_not_found_error)
-
-
-    def get_balance_at_time(self, wallet_address: Address = None, timestamp: Timestamp = None, raise_canonical_head_not_found_error: bool = False) -> int:
-        if wallet_address is None:
-            wallet_address = self.wallet_address
-
-        validate_canonical_address(wallet_address, 'wallet_address')
-        validate_uint256(timestamp, 'timestamp')
-
-        if timestamp is None:
-            return self.get_vm().state.account_db.get_balance(wallet_address)
-        else:
-            try:
-                canonical_head = self.chaindb.get_canonical_head(wallet_address=wallet_address)
-            except CanonicalHeadNotFound as e:
-                if raise_canonical_head_not_found_error:
-                    raise e
-                else:
-                    return 0
-
-            if canonical_head.timestamp <= timestamp:
-                return canonical_head.account_balance
-            else:
-                if canonical_head.block_number > 0:
-                    for i in range(canonical_head.block_number-1, -1, -1):
-                        header = self.chaindb.get_canonical_block_header_by_number(i, wallet_address)
-                        if header.timestamp <= timestamp:
-                            return header.account_balance
-
-        return 0
-
-
-    def get_immature_receive_balance(self, wallet_address: Union[bytes, type(None)] = None):
-        if wallet_address is None:
-            wallet_address = self.wallet_address
-
-        validate_canonical_address(wallet_address, title="Wallet Address")
-
-        canonical_head = self.chaindb.get_canonical_head(wallet_address = wallet_address)
-
-        total = 0
-        transaction_class =  self.get_block().receive_transaction_class
-        if canonical_head.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:
-            return total
-        else:
-            block_receive_transactions = self.chaindb.get_block_receive_transactions(canonical_head,transaction_class)
-            for receive_transaction in block_receive_transactions:
-                send_transaction = self.get_canonical_transaction(receive_transaction.send_transaction_hash)
-                total += send_transaction.value
-
-        previous_header = canonical_head
-        while True:
-            if previous_header.parent_hash == constants.GENESIS_PARENT_HASH:
-                break
-
-            parent_header = self.chaindb.get_block_header_by_hash(previous_header.parent_hash)
-
-            if parent_header.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:
-                break
-            block_receive_transactions = self.chaindb.get_block_receive_transactions(parent_header,transaction_class)
-            for receive_transaction in block_receive_transactions:
-                send_transaction = self.get_canonical_transaction(receive_transaction.send_transaction_hash)
-                total += send_transaction.value
-
-            previous_header = parent_header
-
-        return total
+    #     previous_header = canonical_head
+    #     while True:
+    #         if previous_header.parent_hash == constants.GENESIS_PARENT_HASH:
+    #             break
+    #
+    #         parent_header = self.chaindb.get_block_header_by_hash(previous_header.parent_hash)
+    #
+    #         if parent_header.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:
+    #             break
+    #         block_receive_transactions = self.chaindb.get_block_receive_transactions(parent_header,transaction_class)
+    #         for receive_transaction in block_receive_transactions:
+    #             send_transaction = self.get_canonical_transaction(receive_transaction.send_transaction_hash)
+    #             total += send_transaction.value
+    #
+    #         previous_header = parent_header
+    #
+    #     return total
 
     def get_new_block_hash_to_test_peer_node_health(self) -> Hash32:
         '''
@@ -1969,7 +1882,7 @@ class Chain(BaseChain):
             timestamp_min_gas_price_updated = self.update_tpc_from_chronological(update_min_gas_price = True)
 
             if timestamp_min_gas_price_updated > current_centisecond:
-                self.chaindb.recalculate_historical_mimimum_gas_price(current_centisecond)
+                self.chaindb._recalculate_historical_mimimum_gas_price(current_centisecond)
 
 
 
@@ -2020,7 +1933,7 @@ class Chain(BaseChain):
                 break
 
         if update_min_gas_price:
-            self.chaindb.recalculate_historical_mimimum_gas_price(historical_window_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE)
+            self.chaindb._recalculate_historical_mimimum_gas_price(historical_window_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE)
 
         return historical_window_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE
 
@@ -2106,11 +2019,6 @@ class AsyncChain(Chain):
     async def coro_import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
         raise NotImplementedError()
 
-    async def coro_get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
-        raise NotImplementedError()
-
-    async def coro_get_mature_stake(self, wallet_address: Address = None, timestamp: Timestamp = None, raise_canonical_head_not_found_error: bool = False):
-        raise NotImplementedError()
 
     async def coro_get_all_chronological_blocks_for_window(self, window_timestamp: Timestamp) -> List[BaseBlock]:
         raise NotImplementedError()

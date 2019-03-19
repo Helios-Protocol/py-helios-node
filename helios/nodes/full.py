@@ -27,7 +27,11 @@ class FullNode(Node):
         self._node_port = chain_config.port
         self._rpc_port = chain_config.rpc_port
         self._max_peers = chain_config.max_peers
+
+
         self.notify_resource_available()
+
+
 
     def get_chain(self) -> AsyncChain:
         if self._chain is None:

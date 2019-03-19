@@ -235,8 +235,8 @@ def test_block_children_stake_calculation():
         assert(receiver4_chain.get_mature_stake() == 0), "{}".format(receiver4_chain.get_mature_stake())
 
         #lets get the children stake of the genesis block
-        genesis_block_hash = sender_chain.chaindb.get_canonical_block_hash(0)
-        assert(receiver4_chain.get_block_stake_from_children(genesis_block_hash) == 9999958001), "{}".format(receiver_chain.get_block_stake_from_children(genesis_block_hash))
+        genesis_block_hash = sender_chain.chaindb.get_canonical_block_hash(0, SENDER.public_key.to_canonical_address())
+        assert(receiver4_chain.chaindb.get_block_stake_from_children(genesis_block_hash) == 9999958001), "{}".format(receiver_chain.chaindb.get_block_stake_from_children(genesis_block_hash))
 
         print("All stake maturity tests passed")
         print("All block children stake test passed")
@@ -257,7 +257,7 @@ def test_send_transaction_then_receive():
     Send 2 blocks
     """
 
-    genesis_block_header = sender_chain.chaindb.get_canonical_block_header_by_number(0)
+    genesis_block_header = sender_chain.chaindb.get_canonical_block_header_by_number(0, SENDER.public_key.to_canonical_address())
     print('checking signature validity')
     print(genesis_block_header.is_signature_valid)
 
@@ -499,10 +499,10 @@ def test_send_transaction_then_receive():
     print(current_stake)
 
     # lets get the children stake of the genesis block
-    genesis_block_hash = sender_chain.chaindb.get_canonical_block_hash(0)
+    genesis_block_hash = sender_chain.chaindb.get_canonical_block_hash(0, SENDER.public_key.to_canonical_address())
     print("genesis block hash", genesis_block_hash)
-    stake_from_children = receiver_chain.get_block_stake_from_children(genesis_block_hash)
-    sender_chain.get_block_stake_from_children(genesis_block_hash)
+    stake_from_children = receiver_chain.chaindb.get_block_stake_from_children(genesis_block_hash)
+    sender_chain.chaindb.get_block_stake_from_children(genesis_block_hash)
     print("printing genesis block children stake")
     print(stake_from_children)
 

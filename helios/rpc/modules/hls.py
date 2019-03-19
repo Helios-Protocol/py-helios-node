@@ -55,35 +55,35 @@ from hvm.rlp.consensus import StakeRewardBundle
 from hvm.vm.forks.helios_testnet.blocks import MicroBlock
 
 
-def get_header(chain, at_block):
-    if at_block == 'pending':
-        at_header = chain.header
-    elif at_block == 'latest':
-        at_header = chain.get_canonical_head()
-    elif at_block == 'earliest':
-        # TODO find if genesis block can be non-zero. Why does 'earliest' option even exist?
-        at_header = chain.get_canonical_block_by_number(0).header
-    elif is_integer(at_block) and at_block >= 0:
-        at_header = chain.get_canonical_block_by_number(at_block).header
-    else:
-        raise TypeError("Unrecognized block reference: %r" % at_block)
-
-    return at_header
-
-
-def account_db_at_block(chain, at_block, read_only=True):
-    at_header = get_header(chain, at_block)
-    vm = chain.get_vm(at_header)
-    return vm.state.account_db
+# def get_header(chain, at_block):
+#     if at_block == 'pending':
+#         at_header = chain.header
+#     elif at_block == 'latest':
+#         at_header = chain.get_canonical_head()
+#     elif at_block == 'earliest':
+#         # TODO find if genesis block can be non-zero. Why does 'earliest' option even exist?
+#         at_header = chain.get_canonical_block_by_number(0).header
+#     elif is_integer(at_block) and at_block >= 0:
+#         at_header = chain.get_canonical_block_by_number(at_block).header
+#     else:
+#         raise TypeError("Unrecognized block reference: %r" % at_block)
+#
+#     return at_header
 
 
-def get_block_at_number(chain, at_block):
-    if is_integer(at_block) and at_block >= 0:
-        # optimization to avoid requesting block, then header, then block again
-        return chain.get_canonical_block_by_number(at_block)
-    else:
-        at_header = get_header(chain, at_block)
-        return chain.get_block_by_header(at_header)
+# def account_db_at_block(chain, at_block, read_only=True):
+#     at_header = get_header(chain, at_block)
+#     vm = chain.get_vm(at_header)
+#     return vm.state.account_db
+
+
+# def get_block_at_number(chain, at_block):
+#     if is_integer(at_block) and at_block >= 0:
+#         # optimization to avoid requesting block, then header, then block again
+#         return chain.get_canonical_block_by_number(at_block)
+#     else:
+#         at_header = get_header(chain, at_block)
+#         return chain.get_block_by_header(at_header)
 
 #TODO: if sync stage is less than 3, don't accept new blocks.
 class Hls(RPCModule):
@@ -127,7 +127,7 @@ class Hls(RPCModule):
             except CanonicalHeadNotFound:
                 balance = 0
         else:
-            header = chain.chaindb.get_canonical_block_header_by_number(at_block)
+            header = chain.chaindb.get_canonical_block_header_by_number(at_block, address)
             balance = header.account_balance
 
         return hex(balance)
@@ -568,3 +568,20 @@ class Hls(RPCModule):
             out[encode_hex(wallet_address)] = chain.get_vm().state.account_db.get_balance(wallet_address)
 
         return out
+
+    async def getBlockchainDatabase(self):
+        chain_object = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+
+        chain_head_hashes = chain_object.chain_head_db.get_head_block_hashes_list()
+
+        chains_dict = []
+        for head_hash in chain_head_hashes:
+            chain = chain_object.get_all_blocks_on_chain_by_head_block_hash(head_hash)
+
+            blocks_dict = []
+            for block in chain:
+                blocks_dict.append(block_to_dict(block, True, chain_object))
+
+            chains_dict.append(blocks_dict)
+
+        return chains_dict

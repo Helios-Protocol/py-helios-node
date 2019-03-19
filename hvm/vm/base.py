@@ -310,7 +310,7 @@ class VM(BaseVM):
         self.header = header
 
         if self.header.chain_address != self.wallet_address:
-            raise BlockOnWrongChain("Header chain address doesnt match chain wallet address")
+            raise BlockOnWrongChain("Header chain address doesnt match chain wallet address. wallet_address = {}, chain_address in block header= {}".format(encode_hex(self.wallet_address), encode_hex(self.header.chain_address)))
 
 
     #

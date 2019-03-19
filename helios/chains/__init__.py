@@ -98,7 +98,7 @@ def is_data_dir_initialized(chain_config: ChainConfig) -> bool:
 
 def is_database_initialized(chaindb: AsyncChainDB) -> bool:
     try:
-        chaindb.get_canonical_head(wallet_address = GENESIS_WALLET_ADDRESS)
+        chaindb.get_canonical_head(chain_address= GENESIS_WALLET_ADDRESS)
     except CanonicalHeadNotFound:
         # empty chain database
         return False
@@ -151,7 +151,7 @@ def initialize_data_dir(chain_config: ChainConfig) -> None:
 
 def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> None:
     try:
-        chaindb.get_canonical_head(wallet_address = GENESIS_WALLET_ADDRESS)
+        chaindb.get_canonical_head(chain_address= GENESIS_WALLET_ADDRESS)
     except CanonicalHeadNotFound:
         if chain_config.network_id == MAINNET_NETWORK_ID:
             MainnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
@@ -222,7 +222,7 @@ def rebuild_exc(exc, tb):  # type: ignore
 
 
 def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> BaseManager:
-    chaindb = AsyncChainDB(base_db, chain_config.node_wallet_address)
+    chaindb = AsyncChainDB(base_db)
     chain_head_db = AsyncChainHeadDB.load_from_saved_root_hash(base_db)
 
     chain_class: Type[BaseChain]
@@ -244,11 +244,11 @@ def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> Bas
             "Only the mainnet and ropsten chains are currently supported"
         )
 
+
     chain = chain_class(base_db, chain_config.node_wallet_address, chain_config.node_private_helios_key)  # type: ignore
 
-    consensus_db = AsyncConsensusDB(base_db, chain, chaindb)
-    # headerdb = AsyncHeaderDB(base_db)
-    # header_chain = AsyncHeaderChain(base_db)
+    consensus_db = AsyncConsensusDB(chaindb)
+
 
     class DBManager(BaseManager):
         pass

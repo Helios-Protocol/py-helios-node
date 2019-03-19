@@ -16,7 +16,6 @@ from hvm.chains.mainnet import (
 from hvm.db.backends.memory import MemoryDB
 from hvm.db.backends.level import LevelDB
 from hvm.db.journal import JournalDB
-from hvm.db.chain import ChainDB
 from hvm.rlp.blocks import BaseQueueBlock
 from hvm.rlp.consensus import NodeStakingScore
 from hvm.rlp.transactions import BaseTransaction
@@ -457,8 +456,6 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
         genesis_block_timestamp = MAINNET_GENESIS_PARAMS['timestamp']
 
     from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE
-    def get_primary_node_private_helios_key(instance_number=0):
-        return keys.PrivateKey(random_private_keys[instance_number])
 
     private_keys = []
     for i in range(11):

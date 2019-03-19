@@ -49,9 +49,9 @@ def generate_random_private_key():
 
 def get_chain_context(base_db, privkey):
     chain = FakeAsyncMainnetChain(base_db, privkey.public_key.to_canonical_address(), privkey)
-    chaindb = FakeAsyncChainDB(base_db, privkey.public_key.to_canonical_address())
+    chaindb = FakeAsyncChainDB(base_db)
     chain_head_db = FakeAsyncChainHeadDB.load_from_saved_root_hash(base_db)
-    consensus_db = FakeAsyncConsensusDB(base_db, chain)
+    consensus_db = FakeAsyncConsensusDB(chaindb)
 
     chain_config = ChainConfig(network_id=MAINNET_NETWORK_ID)
     chain_config._node_private_helios_key = privkey

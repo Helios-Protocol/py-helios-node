@@ -24,9 +24,10 @@ class AsyncConsensusDB(ConsensusDB):
         raise NotImplementedError()
 
     async def coro_get_signed_peer_score_string_private_key(self, private_key_string: bytes,
-                            peer_wallet_address: Address,
-                            after_block_number: BlockNumber = None,
-                            ) -> NodeStakingScore:
+                                                            network_id: int,
+                                                            peer_wallet_address: Address,
+                                                            after_block_number: BlockNumber = None,
+                                                            ) -> NodeStakingScore:
         raise NotImplementedError()
 
 class ConsensusDBProxy(BaseProxy):

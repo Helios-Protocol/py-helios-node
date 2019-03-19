@@ -742,17 +742,6 @@ async def wait_for_both_nodes_to_be_synced(chain_head_db_1, chain_head_db_2):
     await asyncio.wait_for(wait_loop(), HEADER_SYNC_TIMEOUT)
 
 
-async def wait_for_head(headerdb, header):
-    # A full header sync may involve several round trips, so we must be willing to wait a little
-    # bit for them.
-    HEADER_SYNC_TIMEOUT = 3
-
-    async def wait_loop():
-        while headerdb.get_canonical_head() != header:
-            await asyncio.sleep(0.1)
-    await asyncio.wait_for(wait_loop(), HEADER_SYNC_TIMEOUT)
-
-
 class fake_request_object():
     def addfinalizer(dummy):
         pass

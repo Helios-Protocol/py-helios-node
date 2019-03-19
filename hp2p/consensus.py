@@ -396,7 +396,7 @@ class Consensus(BaseService, PeerSubscriber):
             except KeyError:
                 raise UnknownPeerStake()
         else:
-            return await self.chain.coro_get_mature_stake(wallet_address=self.chain_config.node_wallet_address)
+            return await self.chaindb.coro_get_mature_stake(wallet_address=self.chain_config.node_wallet_address)
 
     async def get_accurate_stake(self, peer: HLSPeer):
         if self.chain_config.network_startup_node:
@@ -742,7 +742,7 @@ class Consensus(BaseService, PeerSubscriber):
                 # make sure we have enough stake
                 total_stake = 0
                 for node_staking_score in peer_node_staking_scores:
-                    total_stake += await self.chain.coro_get_mature_stake(node_staking_score.sender)
+                    total_stake += await self.chaindb.coro_get_mature_stake(node_staking_score.sender)
 
                 self.logger.debug("total stake = {}, required stake = {}".format(total_stake, REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF))
                 if total_stake > REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF:
@@ -1057,7 +1057,7 @@ class Consensus(BaseService, PeerSubscriber):
             #add in our local tpc and stake
             local_tpc_cap = await self.local_tpc_cap
 
-            local_stake = await self.chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
+            local_stake = await self.chaindb.coro_get_mature_stake(self.chain_config.node_wallet_address)
 
 
             
@@ -1311,7 +1311,7 @@ class Consensus(BaseService, PeerSubscriber):
                         
                     else:
                         if local_block_hash != peer_consensus_hash:
-                            stake_from_block_children = await self.chain.coro_get_block_stake_from_children(local_block_hash)
+                            stake_from_block_children = await self.chaindb.coro_get_block_stake_from_children(local_block_hash)
                             total_stake_from_local_node_and_chain = local_node_stake + stake_from_block_children
                             if total_stake_from_local_node_and_chain != 0:
                                 try:
@@ -1709,7 +1709,7 @@ class Consensus(BaseService, PeerSubscriber):
                 #At this point we calculate the stake of all children blocks that come after it
                 #However, we don't want to count any nodes that have voted here incase their vote changed
                 exclude_chains = list(self.peer_block_choices.keys())
-                children_stake_for_local_block = await self.chain.coro_get_block_stake_from_children(local_block_hash, exclude_chains = exclude_chains)
+                children_stake_for_local_block = await self.chaindb.coro_get_block_stake_from_children(local_block_hash, exclude_chains = exclude_chains)
 
                 try:
                     our_stake_for_local_block = await self.get_accurate_stake_for_this_node()
@@ -1838,7 +1838,7 @@ class Consensus(BaseService, PeerSubscriber):
         self.logger.debug("Received request for stake for some addresses")
         address_stakes = []
         for address in msg['addresses']:
-            stake = await self.chain.coro_get_mature_stake(address)
+            stake = await self.chaindb.coro_get_mature_stake(address)
             address_stakes.append([address,stake])
         peer.sub_proto.send_stake_for_addresses(address_stakes)
         
@@ -1886,7 +1886,7 @@ class Consensus(BaseService, PeerSubscriber):
         self.logger.debug("Received request to send node staking score.")
         if peer.wallet_address != self.chain_config.node_wallet_address:
             try:
-                node_staking_score = await self.consensus_db.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), peer.wallet_address)
+                node_staking_score = await self.consensus_db.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), self.chain.network_id, peer.wallet_address)
             except (ValueError, CanonicalHeadNotFound) as e:
                 self.logger.warning("Failed to create node staking score for peer {}. Error: {}".format(encode_hex(peer.wallet_address), e))
             else:
