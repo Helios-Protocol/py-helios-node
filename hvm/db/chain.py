@@ -418,7 +418,7 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def delete_all_block_children(self, parent_block_hash: Hash32) -> None:
+    def delete_all_block_children_lookups(self, parent_block_hash: Hash32) -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -1508,7 +1508,7 @@ class ChainDB(BaseChainDB):
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         self.db[block_children_lookup_key] = rlp.encode(block_children, sedes=rlp.sedes.FCountableList(hash32))
 
-    def delete_all_block_children(self, parent_block_hash: Hash32) -> None:
+    def delete_all_block_children_lookups(self, parent_block_hash: Hash32) -> None:
         validate_word(parent_block_hash, title="Block_hash")
         block_children_lookup_key = SchemaV1.make_block_children_lookup_key(parent_block_hash)
         try:

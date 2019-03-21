@@ -49,6 +49,9 @@ from hvm.vm.forks.helios_testnet import HeliosTestnetQueueBlock
 logger = logging.getLogger("dev_tools_testing")
 
 
+
+
+
 def create_new_genesis_params_and_state(private_key, total_supply = 100000000 * 10 ** 18, timestamp = int(time.time())):
     print("CREATING GENESIS BLOCK WITH TOTAL SUPPLY = ", total_supply)
     new_genesis_private_key = private_key
@@ -110,6 +113,8 @@ def print_blockchain_database(base_db):
             print(block_to_dict(block, True, node_1))
             j += 1
         i += 1
+
+
 
 
 
@@ -463,7 +468,7 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
 
     if instance == 0:
         key_balance_dict = {
-            private_keys[0]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+            private_keys[0]: (10000000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
             private_keys[1]: (2000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*2),
             private_keys[2]: (3400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*3),
             private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),
@@ -477,7 +482,7 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
         }
     elif instance == 1:
         key_balance_dict = {
-            private_keys[0]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+            private_keys[0]: (10000000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
             private_keys[1]: (2000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*2),
             private_keys[2]: (3400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*3),
             private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),
@@ -493,7 +498,7 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
 
     elif instance == 2:
         key_balance_dict = {
-            private_keys[0]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+            private_keys[0]: (10000000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
             private_keys[1]: (2000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*2),
             private_keys[2]: (3400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*3),
             private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),

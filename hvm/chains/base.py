@@ -327,7 +327,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
-    def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader, wallet_address: Address = None):
+    def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader):
         raise NotImplementedError("Chain classes must implement this method")
 
 
@@ -1105,7 +1105,7 @@ class Chain(BaseChain):
         descendant_block_header = self.chaindb.get_block_header_by_hash(descendant_block_hash)
         self.chain_head_db.delete_block_hash_from_chronological_window(descendant_block_hash, descendant_block_header.timestamp)
         self.chaindb.remove_block_from_all_parent_child_lookups(descendant_block_header, vm.get_block_class().receive_transaction_class)
-        self.chaindb.delete_all_block_children(descendant_block_hash)
+        self.chaindb.delete_all_block_children_lookups(descendant_block_hash)
 
         #for every one, re-add pending receive transaction for all receive transactions only if sending block still exists
         #make all blocks unprocessed so that receivable transactions are not saved that came from one of the non-canonical blocks.
@@ -1123,17 +1123,15 @@ class Chain(BaseChain):
             raise TriedDeletingGenesisBlock("Attempted to delete genesis block. This is not allowed.")
 
         block_header_to_delete = self.chaindb.get_block_header_by_hash(block_hash_to_delete)
-        block_wallet_address = block_header_to_delete.chain_address
-        self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header_to_delete, wallet_address=block_wallet_address)
+        self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header_to_delete)
 
 
-    def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader, wallet_address: Address = None):
+    def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader):
         # First make sure it is actually in the canonical chain. If not, then we don't have anything to do.
         if self.chaindb.is_in_canonical_chain(existing_block_header.hash):
-            if wallet_address is not None:
-                #we need to re-initialize the chain for the new wallet address.
-                if wallet_address != self.wallet_address:
-                    self.set_new_wallet_address(wallet_address = wallet_address)
+            #we need to re-initialize the chain for the new wallet address.
+            if existing_block_header.chain_address != self.wallet_address:
+                self.set_new_wallet_address(wallet_address = existing_block_header.chain_address)
 
             vm = self.get_vm()
             if existing_block_header.block_number == 0:

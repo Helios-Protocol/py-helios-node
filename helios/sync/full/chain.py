@@ -416,7 +416,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             except TriedDeletingGenesisBlock as e:
                 raise e
             except Exception as e:
-                raise e
+                self.logger.error("Error occured while trying to delete a block by hash. Error: {}".format(e))
 
     async def handle_priority_import_chains(self, chains: List[List[P2PBlock]],
                                             save_block_head_hash_timestamp: bool = False,
@@ -787,6 +787,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                 await self.remove_block_by_hash(chain_block_hashes[1])
                             except IndexError:
                                 pass
+                        except KeyError:
+                            self.logger.error("One of our chains has a head block that doesn't match the chain_head_db")
 
             fast_sync_parameters = FastSyncParameters(their_fragment_list, list(hash_positions_of_theirs_that_we_need))
 
