@@ -1460,7 +1460,6 @@ class Chain(BaseChain):
             return_block = self._import_block(block = block,
                                               perform_validation = perform_validation,
                                               save_block_head_hash_timestamp = save_block_head_hash_timestamp,
-                                              wallet_address = wallet_address,
                                               allow_unprocessed = allow_unprocessed,
                                               ensure_block_unchanged= ensure_block_unchanged)
 
