@@ -8,9 +8,11 @@ from helios.utils.mp import (
     async_method,
     sync_method,
 )
-
-from hvm.chains.base import Chain
-
+# from hvm.chains.base import BaseChain
+# from helios.chains.coro import AsyncChainMixin
+#
+# class BaseAsyncChain(BaseChain, AsyncChainMixin):
+#     pass
 
 class ChainProxy(BaseProxy):
     coro_import_block = async_method('import_block')

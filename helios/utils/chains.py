@@ -107,6 +107,22 @@ def get_database_socket_path(data_dir: Path) -> Path:
     ))
 
 
+
+
+def get_chain_socket_path(data_dir: Path, instance = 0) -> Path:
+    """
+    Returns the path to the private key used for devp2p connections.
+
+    We're still returning 'str' here on ipc-related path because an issue with
+    multi-processing not being able to interpret 'Path' objects correctly.
+    """
+    filename = "chain_instance_{}.ipc".format(instance)
+    return Path(os.environ.get(
+        'HELIOS_CHAIN_INSTANCE_{}_IPC'.format(instance),
+        data_dir / filename,
+    ))
+
+
 JSONRPC_SOCKET_FILENAME = 'jsonrpc.ipc'
 
 

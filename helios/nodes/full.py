@@ -1,5 +1,5 @@
 import json
-from hvm.chains.base import (
+from helios.chains.coro import (
     AsyncChain
 )
 
@@ -62,9 +62,12 @@ class FullNode(Node):
     def get_p2p_server(self) -> FullServer:
         if self._p2p_server is None:
             manager = self.db_manager
+            chain_managers = self.chain_managers
+            chains = [manager.get_chain() for manager in chain_managers]
+            #TODO: send entire list of chain managers for mutliprocessing
             self._p2p_server = FullServer(
                 self,
-                manager.get_chain(),  # type: ignore
+                chains,  # type: ignore
                 manager.get_chaindb(),  # type: ignore
                 manager.get_chain_head_db(),
                 manager.get_consensus_db(),

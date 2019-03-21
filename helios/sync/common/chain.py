@@ -13,7 +13,7 @@ from typing import (
 from cancel_token import CancelToken, OperationCancelled
 
 from hvm.constants import GENESIS_BLOCK_NUMBER
-from hvm.chains import AsyncChain
+from helios.chains.coro import AsyncChain
 from hvm.exceptions import (
     HeaderNotFound,
 )

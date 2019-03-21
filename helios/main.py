@@ -9,6 +9,7 @@ from typing import (
     Any,
     Dict,
     Type,
+    List,
 )
 
 from cancel_token import CancelToken
@@ -37,7 +38,7 @@ from helios.chains import (
     initialize_data_dir,
     is_data_dir_initialized,
     get_chaindb_manager,
-)
+    get_chain_manager)
 from helios.cli_parser import (
     parser,
     subparser,
@@ -89,8 +90,7 @@ from helios.utils.version import (
     is_prerelease,
 )
 from hvm.tools.logging import TRACE_LEVEL_NUM
-from helios.rpc.http_server import Proxy as http_rpc_proxy
-
+from helios.utils.db_proxy import create_db_manager
 
 PRECONFIGURED_NETWORKS = {MAINNET_NETWORK_ID}
 
@@ -357,6 +357,19 @@ def helios_boot(args: Namespace,
         kwargs=extra_kwargs,
     )
 
+    chain_processes = []
+    for i in range(chain_config.num_chain_processes):
+        chain_process = ctx.Process(
+            target=run_chain_process,
+            args=(
+                chain_config,
+                i
+            ),
+            kwargs=extra_kwargs,
+        )
+        chain_processes.append(chain_process)
+
+
     networking_process = ctx.Process(
         target=launch_node,
         args=(args, chain_config, networking_endpoint,),
@@ -374,6 +387,21 @@ def helios_boot(args: Namespace,
         logger.error("Timeout waiting for database to start.  Exiting...")
         kill_process_gracefully(database_server_process, logger)
         ArgumentParser().error(message="Timed out waiting for database start")
+
+
+    for i in range(chain_config.num_chain_processes):
+        chain_process = chain_processes[i]
+        chain_process.start()
+        logger.info("Started chain instance {} process (pid={})".format(i,database_server_process.pid))
+        try:
+            wait_for_ipc(chain_config.get_chain_ipc_path(i))
+        except TimeoutError as e:
+            logger.error("Timeout waiting for chain instance {} to start.  Exiting...".format(i))
+            kill_process_gracefully(database_server_process, logger)
+            for j in range(i+1):
+                kill_process_gracefully(chain_processes[j], logger)
+            ArgumentParser().error(message="Timed out waiting for chain instance {} start".format(i))
+
 
     networking_process.start()
     logger.info("Started networking process (pid=%d)", networking_process.pid)
@@ -412,6 +440,7 @@ def helios_boot(args: Namespace,
 
 def kill_helios_gracefully(logger: logging.Logger,
                            database_server_process: Any,
+                           chain_processes: List[Any],
                            networking_process: Any,
                            plugin_manager: PluginManager,
                            main_endpoint: Endpoint,
@@ -431,7 +460,7 @@ def kill_helios_gracefully(logger: logging.Logger,
     plugin_manager.shutdown_blocking()
     main_endpoint.stop()
     event_bus.stop()
-    for name, process in [("DB", database_server_process), ("Networking", networking_process)]:
+    for name, process in [("DB", database_server_process), ("Networking", networking_process), *[("Chain", chain_process) for chain_process in chain_processes]]:
         # Our sub-processes will have received a SIGINT already (see comment above), so here we
         # wait 2s for them to finish cleanly, and if they fail we kill them for real.
         if process is not None:
@@ -439,6 +468,7 @@ def kill_helios_gracefully(logger: logging.Logger,
             if process.is_alive():
                 kill_process_gracefully(process, logger)
             logger.info('%s process (pid=%d) terminated', name, process.pid)
+
 
     # This is required to be within the `kill_helios_gracefully` so that
     # plugins can trigger a shutdown of the helios process.
@@ -453,7 +483,6 @@ def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> N
         if chain_config.report_memory_usage:
             from threading import Thread
             memory_logger = logging.getLogger('hvm.memoryLogger')
-            memory_logger.debug("KKKKKKKKKKKKK")
 
             t = Thread(target=sync_periodically_report_memory_stats, args=(chain_config.memory_usage_report_interval, memory_logger))
             t.start()
@@ -478,6 +507,29 @@ def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> N
             raise
 
 
+@setup_cprofiler('run_chain_process')
+@with_queued_logging
+def run_chain_process(chain_config: ChainConfig, instance = 0) -> None:
+    with chain_config.process_id_file('database_{}'.format(instance)):
+        # connect with database process
+        db_manager = create_db_manager(chain_config.database_ipc_path)
+        db_manager.connect()
+
+        base_db = db_manager.get_db()
+
+        # start chain process
+        manager = get_chain_manager(chain_config, base_db, instance)
+        server = manager.get_server()  # type: ignore
+
+        def _sigint_handler(*args: Any) -> None:
+            server.stop_event.set()
+
+        signal.signal(signal.SIGINT, _sigint_handler)
+        try:
+            server.serve_forever()
+        except SystemExit:
+            server.stop_event.set()
+            raise
 
 
 

@@ -23,7 +23,7 @@ from eth_utils import (
 
 import rlp_cython as rlp
 
-from hvm.chains.base import (
+from helios.chains.coro import (
     AsyncChain
 )
 from hvm.constants import (

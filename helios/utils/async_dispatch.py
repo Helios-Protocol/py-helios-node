@@ -16,3 +16,4 @@ def async_method(method_name: str) -> Callable[..., Any]:
 
         return await loop.run_in_executor(None, pfunc)
     return method
+

@@ -482,9 +482,6 @@ class Chain(BaseChain):
 
         try:
             self.header = self.create_header_from_parent(self.get_canonical_head())
-            self.logger.debug('test')
-            self.logger.debug(encode_hex(wallet_address))
-            self.logger.debug(encode_hex(self.get_canonical_head().chain_address))
         except CanonicalHeadNotFound:
             #this is a new block, lets make a genesis block
             self.logger.debug("Creating new genesis block on chain {}".format(self.wallet_address))
@@ -902,11 +899,8 @@ class Chain(BaseChain):
     # Queueblock API
     #
     def add_transaction_to_queue_block(self, transaction) -> None:
-        if self.queue_block is None:
-            self.queue_block = self.get_block()
 
         validate_is_queue_block(self.queue_block, title='self.queue_block')
-
 
         if isinstance(transaction, BaseTransaction):
             if not self.queue_block.contains_transaction(transaction):
@@ -1313,14 +1307,6 @@ class Chain(BaseChain):
             pass
 
 
-    # async def coro_import_block(self, *args, **kwargs):
-    #     loop = asyncio.get_event_loop()
-    #
-    #     return await loop.run_in_executor(
-    #         None,
-    #         partial(self.import_block, *args, **kwargs)
-    #     )
-
     from hvm.utils.profile import profile
     @profile(sortby='cumulative')
     def import_block_with_profiler(self, *args, **kwargs):
@@ -1340,11 +1326,11 @@ class Chain(BaseChain):
         #then we start the journal db
         #then within _import_block, it can commit the journal
         #but we wont persist until it gets out here again.
-        if wallet_address is not None:
-            #we need to re-initialize the chain for the new wallet address.
-            if wallet_address != self.wallet_address:
-                self.set_new_wallet_address(wallet_address = wallet_address)
-
+        wallet_address = block.header.chain_address
+        # we need to re-initialize the chain for the new wallet address.
+        if wallet_address != self.wallet_address:
+            self.logger.debug("Changing to chain with wallet address {}".format(encode_hex(wallet_address)))
+            self.set_new_wallet_address(wallet_address=wallet_address)
 
         journal_enabled = False
 
@@ -1499,18 +1485,11 @@ class Chain(BaseChain):
     def _import_block(self, block: BaseBlock,
                       perform_validation: bool=True,
                       save_block_head_hash_timestamp = True,
-                      wallet_address = None,
                       allow_unprocessed = True,
                       ensure_block_unchanged: bool = True) -> BaseBlock:
         """
         Imports a complete block.
         """
-
-        if wallet_address is not None:
-            #we need to re-initialize the chain for the new wallet address.
-            if wallet_address != self.wallet_address:
-                self.logger.debug("setting new wallet address for chain")
-                self.set_new_wallet_address(wallet_address = wallet_address)
 
         self.logger.debug("importing block number {}".format(block.number))
 
@@ -1568,6 +1547,11 @@ class Chain(BaseChain):
                     imported_block.number,
                     encode_hex(imported_block.hash),
                 )
+
+                # Make sure our wallet address hasn't magically changed
+                if self.wallet_address != imported_block.header.chain_address:
+                    raise ValidationError("Attempted to import a block onto the wrong chain.")
+
                 self.import_unprocessed_children(imported_block,
                                                  perform_validation= True,
                                                save_block_head_hash_timestamp = save_block_head_hash_timestamp,
@@ -2006,97 +1990,132 @@ class Chain(BaseChain):
 
 
 
-
+# This was moved to helios
 # This class is a work in progress; its main purpose is to define the API of an asyncio-compatible
 # Chain implementation.
-class AsyncChain(Chain):
-
-    async def coro_import_block(self,
-                                block: BlockHeader,
-                                perform_validation: bool=True) -> BaseBlock:
-        raise NotImplementedError()
-
-    async def coro_import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
-        raise NotImplementedError()
-
-
-    async def coro_get_all_chronological_blocks_for_window(self, window_timestamp: Timestamp) -> List[BaseBlock]:
-        raise NotImplementedError()
-
-    async def coro_import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp,
-                                          save_block_head_hash_timestamp: bool = True,
-                                          allow_unprocessed: bool = False) -> None:
-        raise NotImplementedError()
-
-    async def coro_update_current_network_tpc_capability(self, current_network_tpc_cap: int,
-                                              update_min_gas_price: bool = True) -> None:
-        raise NotImplementedError()
-
-    async def coro_get_local_tpc_cap(self) -> int:
-        raise NotImplementedError()
-
-    async def coro_re_initialize_historical_minimum_gas_price_at_genesis(self) -> None:
-        raise NotImplementedError()
-
-    async def coro_import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
-        raise NotImplementedError()
-
-    async def coro_get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
-        raise NotImplementedError("Chain classes must implement this method")
-
-    async def coro_get_block_by_header(self, block_header: BlockHeader) -> BaseBlock:
-        raise NotImplementedError("Chain classes must implement this method")
-
-    async def coro_get_block_by_number(self, block_number: BlockNumber, chain_address: Address = None) -> BaseBlock:
-        raise NotImplementedError("Chain classes must implement this method")
-
-    async def coro_get_blocks_on_chain(self, start: int, end: int, chain_address: Address = None) -> List[BaseBlock]:
-        raise NotImplementedError("Chain classes must implement this method")
-
-    async def coro_get_all_blocks_on_chain(self, chain_address: Address = None) -> List[BaseBlock]:
-        raise NotImplementedError("Chain classes must implement this method")
-
-    async def coro_get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
-        raise NotImplementedError("Chain classes must implement this method")
-
-    async def coro_get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
-        raise NotImplementedError("Chain classes must implement this method")
+# class AsyncChain(Chain):
+#
+#     async def coro_import_block(self,
+#                                 block: BlockHeader,
+#                                 perform_validation: bool=True) -> BaseBlock:
+#         raise NotImplementedError()
+#
+#     async def coro_import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
+#         raise NotImplementedError()
+#
+#
+#     async def coro_get_all_chronological_blocks_for_window(self, window_timestamp: Timestamp) -> List[BaseBlock]:
+#         raise NotImplementedError()
+#
+#     async def coro_import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp,
+#                                           save_block_head_hash_timestamp: bool = True,
+#                                           allow_unprocessed: bool = False) -> None:
+#         raise NotImplementedError()
+#
+#     async def coro_update_current_network_tpc_capability(self, current_network_tpc_cap: int,
+#                                               update_min_gas_price: bool = True) -> None:
+#         raise NotImplementedError()
+#
+#     async def coro_get_local_tpc_cap(self) -> int:
+#         raise NotImplementedError()
+#
+#     async def coro_re_initialize_historical_minimum_gas_price_at_genesis(self) -> None:
+#         raise NotImplementedError()
+#
+#     async def coro_import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
+#         raise NotImplementedError()
+#
+#     async def coro_get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
+#         raise NotImplementedError("Chain classes must implement this method")
+#
+#     async def coro_get_block_by_header(self, block_header: BlockHeader) -> BaseBlock:
+#         raise NotImplementedError("Chain classes must implement this method")
+#
+#     async def coro_get_block_by_number(self, block_number: BlockNumber, chain_address: Address = None) -> BaseBlock:
+#         raise NotImplementedError("Chain classes must implement this method")
+#
+#     async def coro_get_blocks_on_chain(self, start: int, end: int, chain_address: Address = None) -> List[BaseBlock]:
+#         raise NotImplementedError("Chain classes must implement this method")
+#
+#     async def coro_get_all_blocks_on_chain(self, chain_address: Address = None) -> List[BaseBlock]:
+#         raise NotImplementedError("Chain classes must implement this method")
+#
+#     async def coro_get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
+#         raise NotImplementedError("Chain classes must implement this method")
+#
+#     async def coro_get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
+#         raise NotImplementedError("Chain classes must implement this method")
 
     #
     # Async chain functions for calling chain directly
     #
-    async def coro_import_chain(self, *args, **kwargs):
-        loop = asyncio.get_event_loop()
-
-        return await loop.run_in_executor(
-            None,
-            partial(self.import_chain, *args, **kwargs)
-        )
 
 
-    async def coro_import_current_queue_block_with_reward(self, *args, **kwargs):
-        loop = asyncio.get_event_loop()
+    # async def coro_import_chain(self, *args, **kwargs):
+    #     loop = asyncio.get_event_loop()
+    #
+    #     return await loop.run_in_executor(
+    #         None,
+    #         partial(self.import_chain, *args, **kwargs)
+    #     )
 
-        return await loop.run_in_executor(
-            None,
-            partial(self.import_current_queue_block_with_reward, *args, **kwargs)
-        )
 
-    async def coro_import_current_queue_block(self, *args, **kwargs):
-        loop = asyncio.get_event_loop()
+    # async def coro_import_current_queue_block_with_reward(self, *args, **kwargs):
+    #     loop = asyncio.get_event_loop()
+    #
+    #     return await loop.run_in_executor(
+    #         None,
+    #         partial(self.import_current_queue_block_with_reward, *args, **kwargs)
+    #     )
 
-        return await loop.run_in_executor(
-            None,
-            partial(self.import_current_queue_block, *args, **kwargs)
-        )
+    # async def coro_get_block_by_hash(self, *args, **kwargs):
+    #     loop = asyncio.get_event_loop()
+    #
+    #     return await loop.run_in_executor(
+    #         None,
+    #         partial(self.get_block_by_hash, *args, **kwargs)
+    #     )
 
-    async def coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, *args, **kwargs):
-        loop = asyncio.get_event_loop()
+    # async def coro_get_blocks_on_chain(self, *args, **kwargs):
+    #     loop = asyncio.get_event_loop()
+    #
+    #     return await loop.run_in_executor(
+    #         None,
+    #         partial(self.get_blocks_on_chain, *args, **kwargs)
+    #     )
 
-        return await loop.run_in_executor(
-            None,
-            partial(self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash, *args, **kwargs)
-        )
+    # async def coro_get_blocks_on_chain_up_to_block_hash(self, *args, **kwargs):
+    #     loop = asyncio.get_event_loop()
+    #
+    #     return await loop.run_in_executor(
+    #         None,
+    #         partial(self.get_blocks_on_chain_up_to_block_hash, *args, **kwargs)
+    #     )
+
+
+    # async def coro_get_block_by_number(self, *args, **kwargs):
+    #     loop = asyncio.get_event_loop()
+    #
+    #     return await loop.run_in_executor(
+    #         None,
+    #         partial(self.get_block_by_number, *args, **kwargs)
+    #     )
+
+    # async def coro_import_current_queue_block(self, *args, **kwargs):
+    #     loop = asyncio.get_event_loop()
+    #
+    #     return await loop.run_in_executor(
+    #         None,
+    #         partial(self.import_current_queue_block, *args, **kwargs)
+    #     )
+
+    # async def coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, *args, **kwargs):
+    #     loop = asyncio.get_event_loop()
+    #
+    #     return await loop.run_in_executor(
+    #         None,
+    #         partial(self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash, *args, **kwargs)
+    #     )
 
 
 

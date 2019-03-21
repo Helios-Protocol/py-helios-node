@@ -36,7 +36,7 @@ from helios.utils.chains import (
     get_nodekey_path,
     load_nodekey,
     get_local_peer_pool_path,
-)
+    get_chain_socket_path)
 from helios.utils.filesystem import (
     PidFile,
 )
@@ -147,6 +147,17 @@ class ChainConfig:
 
         if logfile_path is not None:
             self.logfile_path = logfile_path
+
+        self._num_chain_processes = 2
+
+    @property
+    def num_chain_processes(self):
+        #TODO: determine by number of threads
+        return self._num_chain_processes
+
+    @num_chain_processes.setter
+    def num_chain_processes(self, val):
+        self._num_chain_processes = val
 
     @property
     def is_dev_test_node(self):
@@ -341,6 +352,15 @@ class ChainConfig:
         Path for the database IPC socket connection.
         """
         return get_database_socket_path(self.data_dir)
+
+
+    def get_chain_ipc_path(self, instance = 0) -> Path:
+        """
+        Path for the database IPC socket connection.
+        """
+        return get_chain_socket_path(self.data_dir, instance)
+
+
 
     @property
     def jsonrpc_ipc_path(self) -> Path:

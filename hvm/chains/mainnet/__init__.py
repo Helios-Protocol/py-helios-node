@@ -6,7 +6,7 @@ from .constants import (
 )
 from hvm import constants
 
-from hvm.chains.base import Chain, AsyncChain
+from hvm.chains import Chain
 from hvm.rlp.headers import BlockHeader
 from hvm.vm.base import BaseVM  # noqa: F401
 from hvm.vm.forks import (
@@ -106,7 +106,7 @@ class BaseMainnetChain:
     genesis_wallet_address = GENESIS_WALLET_ADDRESS
     genesis_block_timestamp = MAINNET_GENESIS_PARAMS['timestamp']
 
-class MainnetChain(BaseMainnetChain, AsyncChain):
+class MainnetChain(BaseMainnetChain, Chain):
     pass
 
 

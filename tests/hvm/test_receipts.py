@@ -56,10 +56,7 @@ def test_get_receipts():
     receiver_chain.populate_queue_block_with_receive_tx()
     imported_block_1 = receiver_chain.import_current_queue_block()
 
-    print('KKKKKKKKKKKK')
-    print(RECEIVER.public_key.to_address())
-    print(sender_chain.get_vm().state.account_db.get_balance(SENDER.public_key.to_canonical_address()))
-    print(sender_chain.get_vm().state.account_db.get_balance(RECEIVER.public_key.to_canonical_address()))
+
     """
     Create some send transactions for RECEIVER
     """

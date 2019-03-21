@@ -58,6 +58,7 @@ from helios.utils.mp import (
     sync_method,
 )
 
+from helios.db.base import AsyncBaseDB
 
 from helios.dev_tools import (
     create_dev_test_random_blockchain_database,
@@ -245,7 +246,7 @@ def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> Bas
         )
 
 
-    chain = chain_class(base_db, chain_config.node_wallet_address, chain_config.node_private_helios_key)  # type: ignore
+    #chain = chain_class(base_db, chain_config.node_wallet_address, chain_config.node_private_helios_key)  # type: ignore
 
     consensus_db = AsyncConsensusDB(chaindb)
 
@@ -263,8 +264,8 @@ def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> Bas
         callable=lambda: TracebackRecorder(chaindb),
         proxytype=ChainDBProxy,
     )
-    DBManager.register(  # type: ignore
-        'get_chain', callable=lambda: TracebackRecorder(chain), proxytype=ChainProxy)
+    # DBManager.register(  # type: ignore
+    #     'get_chain', callable=lambda: TracebackRecorder(chain), proxytype=ChainProxy)
 
     DBManager.register(  # type: ignore
         'get_chain_head_db',
@@ -283,10 +284,28 @@ def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> Bas
     return manager
 
 
-# class ChainProxy(BaseProxy):
-#     coro_import_block = async_method('import_block')
-#     coro_validate_chain = async_method('validate_chain')
-#     coro_validate_receipt = async_method('validate_receipt')
-#     get_vm_configuration = sync_method('get_vm_configuration')
-#     get_vm_class = sync_method('get_vm_class')
-#     get_vm_class_for_block_number = sync_method('get_vm_class_for_block_number')
+def get_chain_manager(chain_config: ChainConfig, base_db: AsyncBaseDB, instance = 0) -> BaseManager:
+    # TODO: think about using async chian here. Depends which process we would like the threaded work to happen in.
+    # There might be a performance savings by doing the threaded work in this process to avoid one process hop.
+    if chain_config.network_id == MAINNET_NETWORK_ID:
+        chain_class = MainnetChain
+    else:
+        raise NotImplementedError(
+            "Only the mainnet chain is currently supported"
+        )
+
+    chain = chain_class(base_db, chain_config.node_wallet_address, chain_config.node_private_helios_key)  # type: ignore
+
+    class ChainManager(BaseManager):
+        pass
+
+
+    ChainManager.register(  # type: ignore
+        'get_chain', callable=lambda: TracebackRecorder(chain), proxytype=ChainProxy)
+
+
+
+    manager = ChainManager(address=str(chain_config.get_chain_ipc_path(instance)))  # type: ignore
+    return manager
+
+

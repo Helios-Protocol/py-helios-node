@@ -7,6 +7,7 @@ from typing import (
     Sequence,
     Tuple,
     Union,
+    List,
 )
 
 from eth_keys import datatypes
@@ -20,7 +21,7 @@ from lahja import (
 )
 
 from helios.utils.profiling import coro_periodically_report_memory_stats
-from hvm.chains import AsyncChain
+from helios.chains.coro import AsyncChain
 
 from eth_typing import BlockNumber
 
@@ -83,7 +84,7 @@ class BaseServer(BaseService):
 
     def __init__(self,
                  node,
-                 chain: AsyncChain,
+                 chains: List[AsyncChain],
                  chaindb: AsyncChainDB,
                  chain_head_db: AsyncChainHeadDB,
                  consensus_db: AsyncConsensusDB,
@@ -105,7 +106,7 @@ class BaseServer(BaseService):
         self.event_bus = event_bus
         self.chain_config = chain_config
         self.chaindb = chaindb
-        self.chain = chain
+        self.chains = chains
         self.chain_head_db = chain_head_db
         self.consensus_db = consensus_db
         self.base_db = base_db
@@ -335,13 +336,13 @@ class FullServer(BaseServer):
     def chain_context(self):
         return ChainContext(
             base_db=self.base_db,
-            chain=self.chain,
+            chains=self.chains,
             chaindb=self.chaindb,
             chain_head_db=self.chain_head_db,
             consensus_db=self.consensus_db,
             chain_config=self.chain_config,
             network_id=self.network_id,
-            vm_configuration=self.chain.get_vm_configuration(),
+            vm_configuration=self.chains[0].get_vm_configuration(),
         )
 
     def _make_peer_pool(self) -> HLSPeerPool:

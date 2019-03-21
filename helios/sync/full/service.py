@@ -5,7 +5,7 @@ from cancel_token import CancelToken
 
 from lahja import Endpoint
 
-from hvm.chains import AsyncChain
+from helios.chains.coro import AsyncChain
 from hvm.constants import BLANK_ROOT_HASH
 
 from hp2p.service import BaseService
@@ -18,7 +18,10 @@ from helios.protocol.common.context import ChainContext
 
 from .chain import RegularChainSyncer
 
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    List,
+)
 
 if TYPE_CHECKING:
     from hp2p.consensus import Consensus
@@ -26,7 +29,7 @@ if TYPE_CHECKING:
 
 
 class FullNodeSyncer(BaseService):
-    chain: AsyncChain = None
+    chains: List[AsyncChain] = []
     chaindb: AsyncChainDB = None
     chain_head_db: AsyncChainHeadDB = None
     base_db: AsyncBaseDB = None
@@ -44,7 +47,7 @@ class FullNodeSyncer(BaseService):
         self.context = context
         self.node = node
         self.consensus = consensus
-        self.chain = context.chain
+        self.chains = context.chains
         self.chaindb = context.chaindb
         self.chain_head_db = context.chain_head_db
         self.base_db = context.base_db

@@ -35,6 +35,7 @@ from typing import (
     Set,
     Type,
     Optional,
+    TYPE_CHECKING
 )
 from itertools import repeat
 from hp2p.protocol import Command
@@ -69,7 +70,7 @@ from hvm.constants import (
     REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF, REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF,
     COIN_MATURE_TIME_FOR_STAKING)
 
-from hvm.chains import AsyncChain
+from helios.chains.coro import AsyncChain
 from helios.db.chain import AsyncChainDB
 from helios.db.consensus import AsyncConsensusDB
 from hvm.db.trie import make_trie_root_and_nodes
@@ -137,18 +138,8 @@ from sortedcontainers import SortedDict
 from sortedcontainers import SortedList
 
 from helios.protocol.common.datastructures import SyncParameters
-#this class can just loop through this each n seconds:
-    
-    #request new chain head hashes
-    #go through each self.conflict_blocks, and ask all connected peers which conflict block they have
-    #calculate consensus
-    
-    #needs to be able to receive consensus related messages from other nodes during this loop
-    #for example: MOVE THIS EXAMPLE TO SYNCER a node can ask us which block we have at number 5 on wallet A. Just look this up directly from db.
-    
-#if syncer finds a conflicting block, it can append it to conflict_blocks
-#make sure this has transactions in it. they are an important part of slashing
-
+if TYPE_CHECKING:
+    from helios.nodes.base import Node
 
 class BlockConflictInfo():
     chain_address:Address = None
@@ -232,9 +223,9 @@ class Consensus(BaseService, PeerSubscriber):
                  event_bus: Endpoint = None,
                  token: CancelToken = None) -> None:
         super().__init__(token)
-        self.node = node
+        self.node: 'Node' = node
         self.event_bus = event_bus
-        self.chain: AsyncChain = context.chain
+        self.chains: List[AsyncChain] = context.chains
         self.chaindb = context.chaindb
         self.base_db = context.base_db
         self.consensus_db: AsyncConsensusDB = context.consensus_db
@@ -372,8 +363,9 @@ class Consensus(BaseService, PeerSubscriber):
         the maximum number of blocks that can be imported with a single transaction in 1 centisecond.
         not exactly the tpc, but something consistent to base throttling off of.
         '''
+        chain = self.node.get_chain()
         if self._local_tpc_cap == 0 or self._last_check_local_tpc_cap_time < (int(time.time()) - CONSENSUS_CHECK_LOCAL_TPC_CAP_PERIOD):
-            self._local_tpc_cap = await self.chain.coro_get_local_tpc_cap()
+            self._local_tpc_cap = await chain.coro_get_local_tpc_cap()
             self._last_check_local_tpc_cap_time = int(time.time())
         
         return self._local_tpc_cap
@@ -590,7 +582,7 @@ class Consensus(BaseService, PeerSubscriber):
         self.logger.info("Starting consensus service")
         if self.is_network_startup_node:
             self.logger.debug('re-initializing min gas system')
-            self.chain.re_initialize_historical_minimum_gas_price_at_genesis()
+            self.node.get_chain().re_initialize_historical_minimum_gas_price_at_genesis()
 
         self.run_daemon_task(self._handle_msg_loop())
 
@@ -802,8 +794,8 @@ class Consensus(BaseService, PeerSubscriber):
         :return:
         '''
         await self.coro_is_ready.wait()
-
         await asyncio.sleep(5)
+        chain = self.node.get_chain()
         self.logger.debug("Running peer node health syncer")
         while self.is_operational:
             #make sure we havent don't a request within the past TIME_BETWEEN_PEER_NODE_HEALTH_CHECK
@@ -815,7 +807,7 @@ class Consensus(BaseService, PeerSubscriber):
             if timestamp_rounded >= time_of_last_request + TIME_BETWEEN_PEER_NODE_HEALTH_CHECK:
                 # choose random new block to ask all peers for
                 try:
-                    newish_block_hash = self.chain.get_new_block_hash_to_test_peer_node_health()
+                    newish_block_hash = await chain.coro_get_new_block_hash_to_test_peer_node_health()
                 except NoChronologicalBlocks:
                     self.logger.debug("Skipping this round of peer node health checks because we have no blocks to ask for")
                     await asyncio.sleep(10)
@@ -1089,13 +1081,13 @@ class Consensus(BaseService, PeerSubscriber):
         else:
             self.coro_min_gas_system_ready.set()
 
-
+        chain = self.node.get_chain()
         if self.coro_min_gas_system_ready.is_set():
             self.logger.debug("sync_min_gas_price_system, min_gas_system_ready = True")
             average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
             if average_network_tpc_cap is not None:
                 try:
-                    self.chain.update_current_network_tpc_capability(average_network_tpc_cap, update_min_gas_price = True)
+                    chain.update_current_network_tpc_capability(average_network_tpc_cap, update_min_gas_price = True)
                 except NotEnoughDataForHistoricalMinGasPriceCalculation:
                     self.logger.debug("We do not have enough data to calculate min allowed gas. This will occur if our database is not synced yet.")
                     #test_1 = self.chaindb.load_historical_network_tpc_capability()
@@ -1886,7 +1878,7 @@ class Consensus(BaseService, PeerSubscriber):
         self.logger.debug("Received request to send node staking score.")
         if peer.wallet_address != self.chain_config.node_wallet_address:
             try:
-                node_staking_score = await self.consensus_db.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), self.chain.network_id, peer.wallet_address)
+                node_staking_score = await self.consensus_db.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), self.node.get_chain().network_id, peer.wallet_address)
             except (ValueError, CanonicalHeadNotFound) as e:
                 self.logger.warning("Failed to create node staking score for peer {}. Error: {}".format(encode_hex(peer.wallet_address), e))
             else:

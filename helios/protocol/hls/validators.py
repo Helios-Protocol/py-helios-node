@@ -155,14 +155,19 @@ class GetChainsValidator(BaseValidator[Tuple[Tuple[P2PBlock], ...]]):
             return
 
         for chain in response:
-            chain_head = chain[-1]
-            if chain_head.header.hash[:self.fragment_length] not in self.expected_chain_head_hash_fragments:
-                all_block_fragments = []
-                for block in chain:
-                    all_block_fragments.append(block.header.hash[:self.fragment_length])
-                raise ValidationError(
-                    "Response contains the incorrect chain head blocks. All expected head hashes {}, entire received chain {}".format(self.expected_chain_head_hash_fragments, all_block_fragments)
-                )
+            if len(chain) > 0:
+                chain_head = chain[-1]
+                if chain_head.header.hash[:self.fragment_length] not in self.expected_chain_head_hash_fragments:
+                    # Sort the chain and check again just in case they came in the wrong order
+                    chain = sorted(chain, key=lambda block: block.header.block_number)
+                    chain_head = chain[-1]
+                    if chain_head.header.hash[:self.fragment_length] not in self.expected_chain_head_hash_fragments:
+                        all_block_fragments = []
+                        for block in chain:
+                            all_block_fragments.append(block.header.hash[:self.fragment_length])
+                        raise ValidationError(
+                            "Response contains the incorrect chain head blocks. All expected head hashes {}, entire received chain {}".format(self.expected_chain_head_hash_fragments, all_block_fragments)
+                        )
 
 
 class GetNodeStakingScoreValidator(BaseValidator[NodeStakingScore]):

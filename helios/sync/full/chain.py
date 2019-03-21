@@ -107,7 +107,7 @@ from sortedcontainers import (
 from helios.db.base import AsyncBaseDB
 from helios.db.chain import AsyncChainDB
 from helios.db.chain_head import AsyncChainHeadDB
-from hvm.chains import AsyncChain
+from helios.chains.coro import AsyncChain
 
 from helios.utils.sync import (
     prepare_hash_fragments,
@@ -237,7 +237,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         self.consensus = consensus
         self.context = context
         self.event_bus = event_bus
-        self.chain: AsyncChain = context.chain
+        self.chains: List[AsyncChain] = context.chains
         self.chaindb: AsyncChainDB = context.chaindb
         self.chain_head_db: AsyncChainHeadDB = context.chain_head_db
         self.base_db = context.base_db
@@ -292,11 +292,13 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         :param additional_candidate_peers:
         :return:
         '''
+
         num_retries = 0
         while True:
             try:
-                self.logger.debug("starting handle_getting_request_from_peers")
+                self.logger.debug("starting handle_getting_request_from_peers with request function {}".format(request_function_name))
                 result = await getattr(peer.requests, request_function_name)(**request_function_parameters)
+                self.logger.debug("finishing handle_getting_request_from_peers with request function {}".format(request_function_name))
             except AttributeError as e:
                 self.logger.error("handle_getting_request_from_peers AttributeError {}".format(e))
             except AlreadyWaiting:
@@ -308,7 +310,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                     self.logger.debug("We only have 1 candidate peer for the {} request and we are already waiting. Will wait and re-request soon.".format(request_function_name))
                     await asyncio.sleep(ROUND_TRIP_TIMEOUT/2)
             except Exception as e:
-                self.logger.debug("Exception {} occured when running handle_getting_request_from_peers".format(e))
+                self.logger.debug("Exception {} occured when running handle_getting_request_from_peers with request function {}".format(e,request_function_name))
                 try:
                     peer = additional_candidate_peers.pop()
                 except IndexError:
@@ -673,7 +675,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                                allow_import_for_expired_timestamp=True,
                                                                                                force_replace_existing_blocks=force_replace_existing_blocks)
 
-
+                        chain = self.node.get_chain()
                         if len(hash_positions_of_ours_that_they_need) > 0:
                             for idx in hash_positions_of_ours_that_they_need:
                                 #send these to all peers
@@ -688,9 +690,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                         return
                                 else:
                                     # At this stage of syncing, we should send them the blocks they don't have so they can add them too.
+                                    block = await chain.coro_get_block_by_hash(block_hash)
                                     for peer in sync_parameters.peers_to_sync_with:
                                         try:
-                                            block = await self.chain.coro_get_block_by_hash(block_hash)
                                             peer.sub_proto.send_new_block(block)
                                         except Exception:
                                             pass
@@ -984,8 +986,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         chain_address = msg['chain_address']
 
-        # whole_chain = await self.chain.coro_get_all_blocks_on_chain(chain_address)
-        chain_segment = await self.chain.coro_get_blocks_on_chain(msg['block_number_start'],
+        chain = self.node.get_new_chain()
+        # whole_chain = await chain.coro_get_all_blocks_on_chain(chain_address)
+        chain_segment = await chain.coro_get_blocks_on_chain(msg['block_number_start'],
                                                                     msg['block_number_end'], chain_address)
 
         peer.sub_proto.send_blocks(chain_segment)
@@ -998,12 +1001,12 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
 
         self.logger.debug("Peer %s made get_blocks request", encode_hex(peer.wallet_address))
-
+        chain = self.node.get_chain()
         hashes = msg
         blocks_to_return = []
         for hash in hashes:
             try:
-                new_block = cast(P2PBlock, await self.chain.coro_get_block_by_hash(hash))
+                new_block = cast(P2PBlock, await chain.coro_get_block_by_hash(hash))
                 blocks_to_return.append(new_block)
             except HeaderNotFound:
                 pass
@@ -1026,13 +1029,14 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         chain_head_hashes = await self.chain_head_db.coro_get_head_block_hashes_by_idx_list(idx_list, root_hash)
 
+        chain_object = self.node.get_new_chain()
         chains = []
         for head_hash in chain_head_hashes:
-            chain = await self.chain.coro_get_blocks_on_chain_up_to_block_hash(head_hash)
-            # chain = await self.chain.coro_get_all_blocks_on_chain_by_head_block_hash(head_hash)
+            chain = await chain_object.coro_get_blocks_on_chain_up_to_block_hash(head_hash)
+            # chain = await chain_object.coro_get_all_blocks_on_chain_by_head_block_hash(head_hash)
             chains.append(chain)
 
-        self.logger.debug('sending {} chains'.format(len(chains)))
+        self.logger.debug('sending {} chains of length {}'.format(len(chains), [len(chain) for chain in chains]))
         peer.sub_proto.send_chains(chains)
 
 
@@ -1117,7 +1121,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                     self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
 
                                     #lets also send this peer our conflict block to let it know that it exists.
-                                    conflict_block = await self.chain.coro_get_block_by_number(block_number = new_block.header.block_number,
+                                    conflict_block = await chain.coro_get_block_by_number(block_number = new_block.header.block_number,
                                                                                       chain_address = new_block.header.chain_address,
                                                                                       )
                                     peer.sub_proto.send_new_block(cast(P2PBlock, conflict_block))

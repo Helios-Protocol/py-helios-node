@@ -12,7 +12,7 @@ from eth_utils import (
     ValidationError,
 )
 
-from hvm.chains.base import (
+from helios.chains.coro import (
     AsyncChain,
 )
 

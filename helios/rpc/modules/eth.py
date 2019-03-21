@@ -22,7 +22,7 @@ from eth_utils import (
 from hvm.constants import (
     ZERO_ADDRESS,
 )
-from hvm.chains.base import (
+from helios.chains.coro import (
     AsyncChain,
 )
 from hvm.rlp.blocks import (

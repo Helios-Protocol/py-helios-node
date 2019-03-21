@@ -5,12 +5,14 @@ from multiprocessing.managers import (
 )
 from typing import (
     Type,
+    List,
 )
 
+from helios.utils.chain_proxy import create_chain_manager
 from hvm.chains.base import (
     BaseChain,
-    AsyncChain
 )
+from helios.chains.coro import AsyncChain
 
 from hp2p.peer import BasePeerPool
 from hp2p.service import (
@@ -40,6 +42,7 @@ class Node(BaseService):
     unset attributes.
     """
     chain_class: Type[BaseChain] = None
+    _chain_managers: List[BaseManager] = []
 
     def __init__(self, plugin_manager: PluginManager, chain_config: ChainConfig) -> None:
         super().__init__()
@@ -49,6 +52,11 @@ class Node(BaseService):
         self._plugin_manager = plugin_manager
         self._db_manager = create_db_manager(chain_config.database_ipc_path)
         self._db_manager.connect()  # type: ignore
+
+        for i in range(chain_config.num_chain_processes):
+            chain_manager = create_chain_manager(chain_config.get_chain_ipc_path(i))
+            chain_manager.connect()
+            self._chain_managers.append(chain_manager)
 
         self._chain_head_db = self._db_manager.get_chain_head_db()  # type: ignore
         self._jsonrpc_ipc_path: Path = chain_config.jsonrpc_ipc_path
@@ -83,6 +91,10 @@ class Node(BaseService):
     @property
     def db_manager(self) -> BaseManager:
         return self._db_manager
+
+    @property
+    def chain_managers(self) -> List[BaseManager]:
+        return self._chain_managers
 
     @property
     def chain_head_db(self):

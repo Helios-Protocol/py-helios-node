@@ -120,7 +120,8 @@ class HLSPeer(BaseChainPeer):
                 "{} network ({}) does not match ours ({}), disconnecting".format(
                     self, msg['network_id'], self.network_id))
 
-        genesis_block_hash = self.chain.get_genesis_block_hash()
+        chain_info = await self._local_chain_info
+        genesis_block_hash = chain_info.genesis_block_hash
         if msg['genesis_block_hash'] != genesis_block_hash:
             await self.disconnect(DisconnectReason.useless_peer)
             raise HandshakeFailure(

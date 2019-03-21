@@ -30,7 +30,7 @@ from hp2p.peer import (
 
 from helios.db.chain_head import AsyncChainHeadDB
 from helios.db.chain import AsyncChainDB
-from hvm.chains.base import AsyncChain
+from helios.chains.coro import AsyncChain
 
 from .context import ChainContext
 
@@ -60,8 +60,8 @@ class BaseChainPeer(BasePeer):
         return self.context.chaindb
 
     @property
-    def chain(self) -> AsyncChain:
-        return self.context.chain
+    def chains(self) -> List[AsyncChain]:
+        return self.context.chains
 
     @property
     def chain_head_db(self) -> AsyncChainHeadDB:
@@ -88,7 +88,7 @@ class BaseChainPeer(BasePeer):
     @property
     async def _local_chain_info(self) -> 'ChainInfo':
         node_type = self.chain_config.node_type
-        genesis_block_hash = self.chain.get_genesis_block_hash()
+        genesis_block_hash = self.chains[0].get_genesis_block_hash()
 
         return ChainInfo(
             node_type=node_type,

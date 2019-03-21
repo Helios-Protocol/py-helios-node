@@ -68,7 +68,7 @@ async def _test_sync_with_fixed_sync_parameters(request,
 
     client_node = FakeMainnetFullNode(
         base_db = client_peer.context.base_db,
-        priv_key = client_peer.context.chain.private_key,
+        priv_key = client_peer.context.chains[0].private_key,
     )
 
     client_peer_pool = MockPeerPoolWithConnectedPeers([client_peer])
@@ -95,7 +95,7 @@ async def _test_sync_with_fixed_sync_parameters(request,
 
     server_node = FakeMainnetFullNode(
         base_db=server_peer.context.base_db,
-        priv_key=server_peer.context.chain.private_key,
+        priv_key=server_peer.context.chains[0].private_key,
     )
 
     server_peer_pool = MockPeerPoolWithConnectedPeers([server_peer])
@@ -159,7 +159,7 @@ async def _test_sync_with_variable_sync_parameters(request,
 
     client_node = FakeMainnetFullNode(
         base_db = client_peer.context.base_db,
-        priv_key = client_peer.context.chain.private_key,
+        priv_key = client_peer.context.chains[0].private_key,
     )
 
     client_peer_pool = MockPeerPoolWithConnectedPeers([client_peer])
@@ -168,7 +168,7 @@ async def _test_sync_with_variable_sync_parameters(request,
 
     client_consensus = MockConsensusService(client_peer.chain_head_db,
                                             client_peer_pool,
-                                            chain_to_sync_to=server_peer.context.chain,
+                                            chain_to_sync_to=server_peer.context.chains[0],
                                             sync_stage_override = sync_stage_id_override)
 
 
@@ -181,7 +181,7 @@ async def _test_sync_with_variable_sync_parameters(request,
 
     server_node = FakeMainnetFullNode(
         base_db=server_peer.context.base_db,
-        priv_key=server_peer.context.chain.private_key,
+        priv_key=server_peer.context.chains[0].private_key,
     )
 
     server_peer_pool = MockPeerPoolWithConnectedPeers([server_peer])

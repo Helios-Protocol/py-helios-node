@@ -21,7 +21,7 @@ from helios.rlp_templates.hls import (
     BlockHashKey,
     P2PBlock)
 
-from hvm.chains import AsyncChain
+from helios.chains.coro import AsyncChain
 from helios.db.consensus import AsyncConsensusDB
 
 from hp2p import protocol
@@ -77,7 +77,6 @@ class SmartContractChainManager(BaseService, PeerSubscriber):
         self.node: Node = node
         self.consensus = consensus
         self.event_bus = event_bus
-        self.proxy_chain: AsyncChain = context.chain
         self.chaindb = context.chaindb
         self.base_db = context.base_db
         self.consensus_db: AsyncConsensusDB = context.consensus_db

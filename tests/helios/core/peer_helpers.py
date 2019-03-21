@@ -55,13 +55,14 @@ def get_chain_context(base_db, privkey):
 
     chain_config = ChainConfig(network_id=MAINNET_NETWORK_ID)
     chain_config._node_private_helios_key = privkey
+    chain_config.num_chain_processes = 1
 
     network_id = MAINNET_NETWORK_ID
     vm_configuration = tuple()
 
     chain_context = ChainContext(
         base_db=base_db,
-        chain = chain,
+        chains = [chain],
         chaindb = chaindb,
         chain_head_db = chain_head_db,
         consensus_db = consensus_db,
