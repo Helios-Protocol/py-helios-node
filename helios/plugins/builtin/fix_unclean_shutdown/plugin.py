@@ -67,6 +67,18 @@ class FixUncleanShutdownPlugin(BaseMainProcessPlugin):
                 'The IPC socket file for database connections at %s was already gone', db_ipc
             )
 
+        for i in range(chain_config.num_chain_processes):
+            chain_ipc = chain_config.get_chain_ipc_path(i)
+            try:
+                chain_ipc.unlink()
+                self.logger.info(
+                    'Removed a dangling IPC socket file for chain instance {} process at {}'.format(i, chain_ipc)
+                )
+            except FileNotFoundError:
+                self.logger.debug(
+                    'The IPC socket file for chain instance {} process at {} was already gone'.format(i, chain_ipc)
+                )
+
         jsonrpc_ipc = chain_config.jsonrpc_ipc_path
         try:
             jsonrpc_ipc.unlink()
