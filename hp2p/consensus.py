@@ -1700,7 +1700,7 @@ class Consensus(BaseService, PeerSubscriber):
                 #the peers have chosen something different than what we have here
                 #At this point we calculate the stake of all children blocks that come after it
                 #However, we don't want to count any nodes that have voted here incase their vote changed
-                exclude_chains = list(self.peer_block_choices.keys())
+                exclude_chains = set(self.peer_block_choices.keys())
                 children_stake_for_local_block = await self.chaindb.coro_get_block_stake_from_children(local_block_hash, exclude_chains = exclude_chains)
 
                 try:

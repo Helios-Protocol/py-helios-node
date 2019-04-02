@@ -414,7 +414,14 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     #
     # Stake API
     #
-    # this doesnt count the stake of the origin chain
+    @abstractmethod
+    def get_mature_stake(self) -> int:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_mature_stake_for_chronological_block_window(self, chronological_block_window_timestamp, timestamp_for_stake):
+        raise NotImplementedError("Chain classes must implement this method")
+
     @abstractmethod
     def get_new_block_hash_to_test_peer_node_health(self) -> Hash32:
         raise NotImplementedError("Chain classes must implement this method")
@@ -1612,11 +1619,13 @@ class Chain(BaseChain):
                         try:
                             #attempt to import.
                             #get chain for wallet address
-                            child_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(child_block_hash)
                             #child_chain = Chain(self.base_db, child_wallet_address)
                             #get block
                             child_block = self.get_block_by_hash(child_block_hash)
-                            self._import_block(child_block, wallet_address = child_wallet_address, *args, **kwargs)
+                            if child_block.header.chain_address != self.wallet_address:
+                                self.logger.debug("Changing to chain with wallet address {}".format(encode_hex(child_block.header.chain_address)))
+                                self.set_new_wallet_address(wallet_address=child_block.header.chain_address)
+                            self._import_block(child_block, *args, **kwargs)
                         except Exception as e:
                             self.logger.error("Tried to import an unprocessed child block and got this error {}".format(e))
                             #todo need to delete child block and all of its children
@@ -1764,42 +1773,16 @@ class Chain(BaseChain):
     def get_mature_stake(self) -> int:
         return self.chaindb.get_mature_stake(self.wallet_address)
 
+    # gets the stake for the timestamp corresponding to teh chronological block window, so it is all blocks for the next 1000 seconds.
+    def get_mature_stake_for_chronological_block_window(self, chronological_block_window_timestamp, timestamp_for_stake = None):
+        if timestamp_for_stake < chronological_block_window_timestamp:
+            raise ValidationError("Cannot get chronological block window stake for a timestamp before the window")
 
-    # def get_immature_receive_balance(self, wallet_address: Union[bytes, type(None)] = None):
-    #     if wallet_address is None:
-    #         wallet_address = self.wallet_address
-    #
-    #     validate_canonical_address(wallet_address, title="Wallet Address")
-    #
-    #     canonical_head = self.chaindb.get_canonical_head(chain_address= wallet_address)
-    #
-    #     total = 0
-    #     transaction_class =  self.get_block().receive_transaction_class
-    #     if canonical_head.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:
-    #         return total
-    #     else:
-    #         block_receive_transactions = self.chaindb.get_block_receive_transactions(canonical_head,transaction_class)
-    #         for receive_transaction in block_receive_transactions:
-    #             send_transaction = self.get_canonical_transaction(receive_transaction.send_transaction_hash)
-    #             total += send_transaction.value
-    #
-    #     previous_header = canonical_head
-    #     while True:
-    #         if previous_header.parent_hash == constants.GENESIS_PARENT_HASH:
-    #             break
-    #
-    #         parent_header = self.chaindb.get_block_header_by_hash(previous_header.parent_hash)
-    #
-    #         if parent_header.timestamp < int(time.time()) - COIN_MATURE_TIME_FOR_STAKING:
-    #             break
-    #         block_receive_transactions = self.chaindb.get_block_receive_transactions(parent_header,transaction_class)
-    #         for receive_transaction in block_receive_transactions:
-    #             send_transaction = self.get_canonical_transaction(receive_transaction.send_transaction_hash)
-    #             total += send_transaction.value
-    #
-    #         previous_header = parent_header
-    #
-    #     return total
+        chronological_block_hash_timestamps = self.chain_head_db.load_chronological_block_window(chronological_block_window_timestamp)
+        chronological_block_hashes = [x[1] for x in chronological_block_hash_timestamps]
+        return self.chaindb.get_total_block_stake_of_block_hashes(chronological_block_hashes, timestamp_for_stake)
+
+
 
     def get_new_block_hash_to_test_peer_node_health(self) -> Hash32:
         '''

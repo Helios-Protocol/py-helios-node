@@ -50,7 +50,8 @@ from eth_utils import (
     keccak
 )
 from helios.dev_tools import create_dev_test_random_blockchain_database, add_transactions_to_blockchain_db, \
-    create_dev_test_random_blockchain_db_with_reward_blocks
+    create_dev_test_random_blockchain_db_with_reward_blocks, \
+    create_dev_test_blockchain_database_with_given_transactions, create_new_genesis_params_and_state
 from eth_keys import keys
 from sys import exit
 
@@ -89,6 +90,8 @@ from tests.integration_test_helpers import (
     ensure_blockchain_databases_identical,
     ensure_chronological_block_hashes_are_identical
 )
+
+from hvm.exceptions import ParentNotFound
 
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
@@ -245,7 +248,71 @@ def test_block_children_stake_calculation():
 # sys.exit()
 
 
+def test_chronological_block_window_stake():
 
+    chronological_block_window_start = int((time.time()-COIN_MATURE_TIME_FOR_STAKING*2)/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE-TIME_BETWEEN_HEAD_HASH_SAVE*4
+    genesis_block_time = chronological_block_window_start-TIME_BETWEEN_HEAD_HASH_SAVE/2
+    transactions_start_time = chronological_block_window_start+TIME_BETWEEN_HEAD_HASH_SAVE/2
+
+    chronological_block_window_two_start = chronological_block_window_start+TIME_BETWEEN_HEAD_HASH_SAVE
+    transactions_start_time_two = transactions_start_time + TIME_BETWEEN_HEAD_HASH_SAVE
+
+    testdb = MemoryDB()
+
+
+    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, 100000000, genesis_block_time)
+
+    # import genesis block
+    MainnetChain.from_genesis(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
+
+    tx_list = [[GENESIS_PRIVATE_KEY, RECEIVER, 10000000, transactions_start_time],
+               [GENESIS_PRIVATE_KEY, RECEIVER2, 10000000, transactions_start_time+MIN_TIME_BETWEEN_BLOCKS],
+               [GENESIS_PRIVATE_KEY, RECEIVER3, 10000000, transactions_start_time+MIN_TIME_BETWEEN_BLOCKS*2],
+               [RECEIVER, RECEIVER4, 1000000, transactions_start_time+MIN_TIME_BETWEEN_BLOCKS*3],
+               [RECEIVER, RECEIVER3, 1000000, transactions_start_time+MIN_TIME_BETWEEN_BLOCKS*4],
+
+               [RECEIVER, RECEIVER3, 100000, transactions_start_time_two+MIN_TIME_BETWEEN_BLOCKS*1],
+               [RECEIVER3, RECEIVER4, 500000, transactions_start_time_two+MIN_TIME_BETWEEN_BLOCKS*2]]
+
+
+
+    add_transactions_to_blockchain_db(testdb, tx_list)
+
+    sender_chain = MainnetChain(testdb, SENDER.public_key.to_canonical_address(), SENDER)
+
+    expected_mature_stake_1 = (sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())+
+                               sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address())+
+                               sender_chain.chaindb.get_mature_stake(RECEIVER2.public_key.to_canonical_address()) +
+                               sender_chain.chaindb.get_mature_stake(RECEIVER3.public_key.to_canonical_address()) +
+                               sender_chain.chaindb.get_mature_stake(RECEIVER4.public_key.to_canonical_address())
+                               )
+
+    expected_mature_stake_2_time = transactions_start_time+MIN_TIME_BETWEEN_BLOCKS*2+COIN_MATURE_TIME_FOR_STAKING
+    expected_mature_stake_2 = (
+                sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address()) +
+                sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address()) +
+                sender_chain.chaindb.get_mature_stake(RECEIVER2.public_key.to_canonical_address())
+                )
+
+    expected_mature_stake_3 = (
+            sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address()) +
+            sender_chain.chaindb.get_mature_stake(RECEIVER3.public_key.to_canonical_address()) +
+            sender_chain.chaindb.get_mature_stake(RECEIVER4.public_key.to_canonical_address())
+    )
+
+    expected_mature_stake_4_time = transactions_start_time_two+MIN_TIME_BETWEEN_BLOCKS*1 + COIN_MATURE_TIME_FOR_STAKING
+    expected_mature_stake_4 = (
+            sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address()) +
+            sender_chain.chaindb.get_mature_stake(RECEIVER3.public_key.to_canonical_address())
+    )
+
+    assert(sender_chain.get_mature_stake_for_chronological_block_window(chronological_block_window_start)==expected_mature_stake_1)
+
+    assert (sender_chain.get_mature_stake_for_chronological_block_window(chronological_block_window_start, expected_mature_stake_2_time) == expected_mature_stake_2)
+
+    assert (sender_chain.get_mature_stake_for_chronological_block_window(chronological_block_window_two_start) == expected_mature_stake_3)
+
+    assert (sender_chain.get_mature_stake_for_chronological_block_window(chronological_block_window_two_start, expected_mature_stake_4_time) == expected_mature_stake_4)
 
 
 def test_send_transaction_then_receive():
@@ -1235,7 +1302,7 @@ def test_import_invalid_block_incorrect_chain_address():
 
     chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ParentNotFound):
         chain.import_block(invalid_block)
 
 def test_import_invalid_block_incorrect_signature():
@@ -1290,6 +1357,8 @@ def test_import_invalid_block_not_enough_gas():
         r=0,
         s=0
     )
+
+
 
 # Try importing a block with the same receive transaction twice.
 # Try importing block with invalid parent hash

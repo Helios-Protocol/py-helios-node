@@ -422,11 +422,15 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_block_children_chains(self, block_hash: Hash32, exclude_chains: List = None) -> List[Address]:
+    def get_block_children_chains(self, block_hash: Hash32, exclude_chains:Set = None) -> Set[Address]:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
+    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: Set = None) -> int:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_total_block_stake_of_block_hashes(self, block_hashes: List[Hash32]) -> int:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -1516,35 +1520,24 @@ class ChainDB(BaseChainDB):
         except KeyError:
             pass
 
-    #we don't want to count the stake from the origin wallet address. This could allow 51% attacks.The origin chain shouldn't count becuase it is the chain with the conflict.
-    def get_block_children_chains(self, block_hash: Hash32, exclude_chains:List = None) -> List[Address]:
+
+    def get_block_children_chains(self, block_hash: Hash32, exclude_chains:Set = None) -> Set[Address]:
         validate_word(block_hash, title="Block_hash")
-        origin_wallet_address = self.get_chain_wallet_address_for_block_hash(block_hash)
         child_chains = self._get_block_children_chains(block_hash)
         if child_chains is None:
-            return None
-        try:
-            child_chains.remove(origin_wallet_address)
-        except KeyError:
-            pass
-        except AttributeError:
-            pass
+            return set()
+
         if exclude_chains is not None:
-            for wallet_address in exclude_chains:
-                try:
-                    child_chains.remove(wallet_address)
-                except KeyError:
-                    pass
-                except AttributeError:
-                    pass
-        return list(child_chains)
+            child_chains = child_chains - exclude_chains
+        return child_chains
+
 
     def _get_block_children_chains(self, block_hash: Hash32) -> Set[Address]:
         #lookup children
         children = self.get_block_children(block_hash)
 
         if children == None:
-            return None
+            return set()
         else:
             child_chains = set()
             for child_block_hash in children:
@@ -1553,25 +1546,55 @@ class ChainDB(BaseChainDB):
 
                 sub_children_chain_wallet_addresses = self._get_block_children_chains(child_block_hash)
 
-                if sub_children_chain_wallet_addresses is not None:
-                    child_chains.update(sub_children_chain_wallet_addresses)
+                child_chains.update(sub_children_chain_wallet_addresses)
             return child_chains
 
-
-    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: List = None) -> int:
+    #This doesnt include stake from this block
+    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: Set = None) -> int:
         validate_word(block_hash, title="Block Hash")
 
         children_chain_wallet_addresses = self.get_block_children_chains(block_hash, exclude_chains)
+        origin_wallet_address = self.get_chain_wallet_address_for_block_hash(block_hash)
+        try:
+            children_chain_wallet_addresses.remove(origin_wallet_address)
+        except KeyError:
+            pass
+        except AttributeError:
+            pass
+
         self.logger.debug(
             "get_block_stake_from_children. children wallet addresses: {}".format(children_chain_wallet_addresses))
 
-        if children_chain_wallet_addresses is None:
-            return 0
-        else:
-            total_stake = 0
-            for wallet_address in children_chain_wallet_addresses:
-                total_stake += self.get_mature_stake(wallet_address)
-            return total_stake
+        total_stake = 0
+        for wallet_address in children_chain_wallet_addresses:
+            total_stake += self.get_mature_stake(wallet_address)
+        return total_stake
+
+    #this includes children and blocks corresponding to these hashes
+    def get_total_block_stake_of_block_hashes(self, block_hashes: List[Hash32], timestamp_for_stake = None) -> int:
+        '''
+        This will not double count any addresses that the blocks might have in common.
+        timestamp_for_stake is the time where stake is calculated. So balances must be COIN_MATURE_TIME_FOR_STAKING time older than timestamp_for_stake
+        :param block_hashes:
+        :return:
+        '''
+
+        children_chain_wallet_addresses = set()
+        for block_hash in block_hashes:
+            children_chain_wallet_addresses.update(self.get_block_children_chains(block_hash))
+            origin_wallet_address = self.get_chain_wallet_address_for_block_hash(block_hash)
+            try:
+                children_chain_wallet_addresses.add(origin_wallet_address)
+            except KeyError:
+                pass
+            except AttributeError:
+                pass
+
+        total_stake = 0
+        for wallet_address in children_chain_wallet_addresses:
+            total_stake += self.get_mature_stake(wallet_address, timestamp_for_stake)
+        return total_stake
+
 
     def get_mature_stake(self, wallet_address: Address, timestamp: Timestamp = None,
                          raise_canonical_head_not_found_error: bool = False) -> int:
