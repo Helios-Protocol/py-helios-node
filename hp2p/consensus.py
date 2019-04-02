@@ -40,7 +40,7 @@ from typing import (
 from itertools import repeat
 from hp2p.protocol import Command
 from helios.protocol.common.constants import ROUND_TRIP_TIMEOUT
-from helios.exceptions import AlreadyWaiting
+from helios.exceptions import AlreadyWaiting, NoCandidatePeers
 from cytoolz import (
     partition_all,
     unique,
@@ -1348,29 +1348,29 @@ class Consensus(BaseService, PeerSubscriber):
         else:
             return peers_with_block
         
-            
-    async def get_closest_root_hash_consensus(self, timestamp):
-        '''
-        Returns the closest timestamp that we have a saved root hash for
-        '''
-        sorted_root_hash_timestamps = reversed(SortedDict(self.root_hash_timestamps_statistics))
-        #goes from greatest to smallest
-        for available_timestamp in sorted_root_hash_timestamps.keys():
-            if available_timestamp <= timestamp:
-                to_return =  available_timestamp, await self.coro_get_root_hash_consensus(available_timestamp)
-                return to_return
-        
-        if self.is_network_startup_node:
-            self.logger.debug("using local root hash timestamps for get_closest_root_hash_consensus because am bootnode")
-            local_root_hash_timestamps = self.local_root_hash_timestamps
-            sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x)*-1, local_root_hash_timestamps)
-            for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
-                if available_timestamp <= timestamp:
-                    to_return =  available_timestamp, root_hash
-                    return to_return
-            
-            
-        return None, None
+    #
+    # async def get_closest_root_hash_consensus(self, timestamp):
+    #     '''
+    #     Returns the closest timestamp that we have a saved root hash for
+    #     '''
+    #     sorted_root_hash_timestamps = reversed(SortedDict(self.root_hash_timestamps_statistics))
+    #     #goes from greatest to smallest
+    #     for available_timestamp in sorted_root_hash_timestamps.keys():
+    #         if available_timestamp <= timestamp:
+    #             to_return =  available_timestamp, await self.coro_get_root_hash_consensus(available_timestamp)
+    #             return to_return
+    #
+    #     if self.is_network_startup_node:
+    #         self.logger.debug("using local root hash timestamps for get_closest_root_hash_consensus because am bootnode")
+    #         local_root_hash_timestamps = self.local_root_hash_timestamps
+    #         sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x)*-1, local_root_hash_timestamps)
+    #         for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
+    #             if available_timestamp <= timestamp:
+    #                 to_return =  available_timestamp, root_hash
+    #                 return to_return
+    #
+    #
+    #     return None, None
     
     
     # def get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(self, timestamp):
@@ -1471,7 +1471,7 @@ class Consensus(BaseService, PeerSubscriber):
             root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
             peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
         except KeyError:
-            return local_root_hash
+            return None
 
         if peer_root_hash == local_root_hash or local_root_hash is None:
             return peer_root_hash
@@ -1561,10 +1561,8 @@ class Consensus(BaseService, PeerSubscriber):
 
             # it now goes from newest to oldest
             for timestamp, local_root_hash in sorted_local_root_hash_timestamps.items():
-                consensus_root_hash = await self.coro_get_root_hash_consensus(timestamp, local_root_hash_timestamps=local_root_hash_timestamps)
 
-                # if debug:
-                #     self.logger.debug("Checking timestamp {}".format(timestamp))
+                consensus_root_hash = await self.coro_get_root_hash_consensus(timestamp, local_root_hash_timestamps=local_root_hash_timestamps)
 
                 if local_root_hash == consensus_root_hash:
                     if debug:
@@ -1630,8 +1628,9 @@ class Consensus(BaseService, PeerSubscriber):
                 except KeyError:
                     local_root_hash = BLANK_ROOT_HASH
 
-            consensus_root_hash = await self.coro_get_root_hash_consensus(fast_sync_chronological_block_hash_timestamp,
-                                                                          local_root_hash_timestamps=local_root_hash_timestamps)
+
+            consensus_root_hash = await self.coro_get_root_hash_consensus(fast_sync_chronological_block_hash_timestamp, local_root_hash_timestamps=local_root_hash_timestamps)
+
 
             if consensus_root_hash is None:
                 raise NoEligiblePeers("There are no peers that have the root hash we need for fast sync.")
