@@ -1,3 +1,4 @@
+import bisect
 import functools
 import itertools
 import logging
@@ -1911,9 +1912,11 @@ class ChainDB(BaseChainDB):
                 try:
                     goal_tx_per_centisecond = hist_network_tpc_cap[timestamp]
                 except KeyError:
-                    #lets allow it if it is just the very last one because it may be slightly delaid in updating
-                    if timestamp == end_timestamp-100:
-                        goal_tx_per_centisecond = hist_network_tpc_cap[end_timestamp-200]
+                    if len(hist_network_tpc_cap) > 0:
+                        timestamps = list(hist_network_tpc_cap.keys())
+                        index = bisect.bisect_right(timestamps, timestamp)
+                        goal_tx_per_centisecond = hist_network_tpc_cap[timestamps[index-1]]
+
                     else:
                         raise HistoricalNetworkTPCMissing
                 next_centisecond_min_gas_price = self._calculate_next_centisecond_minimum_gas_price(historical_minimum_allowed_gas,
