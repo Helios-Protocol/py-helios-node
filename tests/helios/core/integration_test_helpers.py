@@ -119,7 +119,7 @@ class FakeAsyncMainnetChain(MainnetChain):
     coro_get_block_by_number = async_passthrough('get_block_by_number')
     coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash = async_passthrough('purge_block_and_all_children_and_set_parent_as_chain_head_by_hash')
     coro_import_chain = async_passthrough('import_chain')
-
+    coro_get_new_block_hash_to_test_peer_node_health = async_passthrough('get_new_block_hash_to_test_peer_node_health')
 
 class FakeMainnetFullNode():
     chain_class = FakeAsyncMainnetChain

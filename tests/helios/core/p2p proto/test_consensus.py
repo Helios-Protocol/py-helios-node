@@ -400,33 +400,33 @@ def db_random_long_time(length_in_centiseconds = 25):
     return get_random_long_time_blockchain_db(length_in_centiseconds)
 
 
-SENDER = keys.PrivateKey(
-    decode_hex("49a7b37aa6f6645917e7b807e9d1c00d4fa71f18343b0d4122a4d2df64dd6fee"))
-RECEIVER = keys.PrivateKey(
-    decode_hex("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291"))
-GENESIS_PARAMS = {
-    'parent_hash': constants.GENESIS_PARENT_HASH,
-    'uncles_hash': constants.EMPTY_UNCLE_HASH,
-    'coinbase': constants.ZERO_ADDRESS,
-    'transaction_root': constants.BLANK_ROOT_HASH,
-    'receipt_root': constants.BLANK_ROOT_HASH,
-    'bloom': 0,
-    'difficulty': 5,
-    'block_number': constants.GENESIS_BLOCK_NUMBER,
-    'gas_limit': constants.GENESIS_GAS_LIMIT,
-    'gas_used': 0,
-    'timestamp': 1514764800,
-    'extra_data': constants.GENESIS_EXTRA_DATA,
-    'nonce': constants.GENESIS_NONCE
-}
-GENESIS_STATE = {
-    SENDER.public_key.to_canonical_address(): {
-        "balance": 100000000000000000,
-        "code": b"",
-        "nonce": 0,
-        "storage": {}
-    }
-}
+# SENDER = keys.PrivateKey(
+#     decode_hex("49a7b37aa6f6645917e7b807e9d1c00d4fa71f18343b0d4122a4d2df64dd6fee"))
+# RECEIVER = keys.PrivateKey(
+#     decode_hex("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291"))
+# GENESIS_PARAMS = {
+#     'parent_hash': constants.GENESIS_PARENT_HASH,
+#     'uncles_hash': constants.EMPTY_UNCLE_HASH,
+#     'coinbase': constants.ZERO_ADDRESS,
+#     'transaction_root': constants.BLANK_ROOT_HASH,
+#     'receipt_root': constants.BLANK_ROOT_HASH,
+#     'bloom': 0,
+#     'difficulty': 5,
+#     'block_number': constants.GENESIS_BLOCK_NUMBER,
+#     'gas_limit': constants.GENESIS_GAS_LIMIT,
+#     'gas_used': 0,
+#     'timestamp': 1514764800,
+#     'extra_data': constants.GENESIS_EXTRA_DATA,
+#     'nonce': constants.GENESIS_NONCE
+# }
+# GENESIS_STATE = {
+#     SENDER.public_key.to_canonical_address(): {
+#         "balance": 100000000000000000,
+#         "code": b"",
+#         "nonce": 0,
+#         "storage": {}
+#     }
+# }
 
 
 class HeliosTestnetVMChain(FakeAsyncMainnetChain):
@@ -454,11 +454,11 @@ async def wait_for_consensus_all(consensus_services):
     SYNC_TIMEOUT = 100
 
     async def wait_loop():
-        while not all([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time())) for rest in consensus_services]):
+        while not all([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time())) and await rest.coro_get_root_hash_consensus(int(time.time())) != None for rest in consensus_services]):
             # server_root_hash = await server_consensus.coro_get_root_hash_consensus(int(time.time()))
             # client_root_hash = await client_consensus.coro_get_root_hash_consensus(int(time.time()))
             #print('AAAAAAAAAAAAAA')
-            print([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time()), debug=True) for rest in consensus_services])
+            #print([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time()), debug=True) for rest in consensus_services])
             await asyncio.sleep(1)
 
     await asyncio.wait_for(wait_loop(), SYNC_TIMEOUT)

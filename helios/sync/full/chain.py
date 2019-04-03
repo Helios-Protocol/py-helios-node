@@ -588,7 +588,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             # The blocks we are downloading are in consensus. So for any conflict blocks, we are at fault.
             force_replace_existing_blocks = True
         else:
-            force_replace_existing_blocks = False
+            force_replace_existing_blocks = True
 
 
         timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(chronological_window_timestamp)
