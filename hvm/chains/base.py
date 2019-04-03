@@ -1774,8 +1774,8 @@ class Chain(BaseChain):
         return self.chaindb.get_mature_stake(self.wallet_address)
 
     # gets the stake for the timestamp corresponding to teh chronological block window, so it is all blocks for the next 1000 seconds.
-    def get_mature_stake_for_chronological_block_window(self, chronological_block_window_timestamp, timestamp_for_stake = None):
-        if timestamp_for_stake < chronological_block_window_timestamp:
+    def get_mature_stake_for_chronological_block_window(self, chronological_block_window_timestamp: Timestamp, timestamp_for_stake: Timestamp = None):
+        if timestamp_for_stake is not None and timestamp_for_stake < chronological_block_window_timestamp:
             raise ValidationError("Cannot get chronological block window stake for a timestamp before the window")
 
         chronological_block_hash_timestamps = self.chain_head_db.load_chronological_block_window(chronological_block_window_timestamp)

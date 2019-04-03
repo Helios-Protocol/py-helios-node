@@ -26,7 +26,7 @@ from hvm.constants import (
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
     COIN_MATURE_TIME_FOR_STAKING,
-
+    GAS_TX,
     COLLATION_SIZE, MIN_TIME_BETWEEN_BLOCKS)
 
 
@@ -251,35 +251,45 @@ def test_block_children_stake_calculation():
 def test_chronological_block_window_stake():
 
     chronological_block_window_start = int((time.time()-COIN_MATURE_TIME_FOR_STAKING*2)/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE-TIME_BETWEEN_HEAD_HASH_SAVE*4
-    genesis_block_time = chronological_block_window_start-TIME_BETWEEN_HEAD_HASH_SAVE/2
+    genesis_block_time = int(chronological_block_window_start-TIME_BETWEEN_HEAD_HASH_SAVE/2)
     transactions_start_time = chronological_block_window_start+TIME_BETWEEN_HEAD_HASH_SAVE/2
 
     chronological_block_window_two_start = chronological_block_window_start+TIME_BETWEEN_HEAD_HASH_SAVE
-    transactions_start_time_two = transactions_start_time + TIME_BETWEEN_HEAD_HASH_SAVE
+    transactions_start_time_two = chronological_block_window_two_start+TIME_BETWEEN_HEAD_HASH_SAVE/2
 
     testdb = MemoryDB()
 
-
     genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, 100000000, genesis_block_time)
 
+    time_between_blocks = max(MIN_TIME_BETWEEN_BLOCKS,1)
     # import genesis block
     MainnetChain.from_genesis(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
 
     tx_list = [[GENESIS_PRIVATE_KEY, RECEIVER, 10000000, transactions_start_time],
-               [GENESIS_PRIVATE_KEY, RECEIVER2, 10000000, transactions_start_time+MIN_TIME_BETWEEN_BLOCKS],
-               [GENESIS_PRIVATE_KEY, RECEIVER3, 10000000, transactions_start_time+MIN_TIME_BETWEEN_BLOCKS*2],
-               [RECEIVER, RECEIVER4, 1000000, transactions_start_time+MIN_TIME_BETWEEN_BLOCKS*3],
-               [RECEIVER, RECEIVER3, 1000000, transactions_start_time+MIN_TIME_BETWEEN_BLOCKS*4],
+               [GENESIS_PRIVATE_KEY, RECEIVER2, 10000000, transactions_start_time+time_between_blocks],
+               [GENESIS_PRIVATE_KEY, RECEIVER3, 10000000, transactions_start_time+time_between_blocks*2],
+               [RECEIVER, RECEIVER4, 1000000, transactions_start_time+time_between_blocks*3],
+               [RECEIVER, RECEIVER3, 1000000, transactions_start_time+time_between_blocks*4],
 
-               [RECEIVER, RECEIVER3, 100000, transactions_start_time_two+MIN_TIME_BETWEEN_BLOCKS*1],
-               [RECEIVER3, RECEIVER4, 500000, transactions_start_time_two+MIN_TIME_BETWEEN_BLOCKS*2]]
-
-
+               [RECEIVER, RECEIVER3, 100000, transactions_start_time_two+time_between_blocks*1],
+               [RECEIVER3, RECEIVER4, 500000, transactions_start_time_two+time_between_blocks*2]]
 
     add_transactions_to_blockchain_db(testdb, tx_list)
 
     sender_chain = MainnetChain(testdb, SENDER.public_key.to_canonical_address(), SENDER)
 
+
+    # check the normal get_mature_stake function is working
+    expected_genesis_stake_1_time = int(genesis_block_time + COIN_MATURE_TIME_FOR_STAKING)
+    expected_genesis_stake_1 = 100000000
+    expected_genesis_stake_2_time = int(transactions_start_time+time_between_blocks+COIN_MATURE_TIME_FOR_STAKING)
+    expected_genesis_stake_2 = 100000000-10000000-10000000-GAS_TX-GAS_TX
+    expected_genesis_stake_3 = 100000000 - 10000000 - 10000000 - 10000000 - GAS_TX - GAS_TX -GAS_TX
+    
+    assert(sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), expected_genesis_stake_1_time) == expected_genesis_stake_1)
+    assert(sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), expected_genesis_stake_2_time) == expected_genesis_stake_2)
+    assert(sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address()) == expected_genesis_stake_3)
+    
     expected_mature_stake_1 = (sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())+
                                sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address())+
                                sender_chain.chaindb.get_mature_stake(RECEIVER2.public_key.to_canonical_address()) +
@@ -287,11 +297,13 @@ def test_chronological_block_window_stake():
                                sender_chain.chaindb.get_mature_stake(RECEIVER4.public_key.to_canonical_address())
                                )
 
-    expected_mature_stake_2_time = transactions_start_time+MIN_TIME_BETWEEN_BLOCKS*2+COIN_MATURE_TIME_FOR_STAKING
+
+    expected_mature_stake_2_time = int(transactions_start_time+time_between_blocks*2+COIN_MATURE_TIME_FOR_STAKING)
     expected_mature_stake_2 = (
-                sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address()) +
-                sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address()) +
-                sender_chain.chaindb.get_mature_stake(RECEIVER2.public_key.to_canonical_address())
+                sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),expected_mature_stake_2_time) +
+                sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address(),expected_mature_stake_2_time) +
+                sender_chain.chaindb.get_mature_stake(RECEIVER2.public_key.to_canonical_address(),expected_mature_stake_2_time) +
+                sender_chain.chaindb.get_mature_stake(RECEIVER3.public_key.to_canonical_address(),expected_mature_stake_2_time)
                 )
 
     expected_mature_stake_3 = (
@@ -300,18 +312,17 @@ def test_chronological_block_window_stake():
             sender_chain.chaindb.get_mature_stake(RECEIVER4.public_key.to_canonical_address())
     )
 
-    expected_mature_stake_4_time = transactions_start_time_two+MIN_TIME_BETWEEN_BLOCKS*1 + COIN_MATURE_TIME_FOR_STAKING
+    expected_mature_stake_4_time = int(transactions_start_time_two+time_between_blocks*1 + COIN_MATURE_TIME_FOR_STAKING)
     expected_mature_stake_4 = (
-            sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address()) +
-            sender_chain.chaindb.get_mature_stake(RECEIVER3.public_key.to_canonical_address())
+            sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address(), expected_mature_stake_4_time) +
+            sender_chain.chaindb.get_mature_stake(RECEIVER3.public_key.to_canonical_address(), expected_mature_stake_4_time) +
+            sender_chain.chaindb.get_mature_stake(RECEIVER4.public_key.to_canonical_address(), expected_mature_stake_4_time)
     )
 
+    # now we test that it is correctly calculating it for the window
     assert(sender_chain.get_mature_stake_for_chronological_block_window(chronological_block_window_start)==expected_mature_stake_1)
-
     assert (sender_chain.get_mature_stake_for_chronological_block_window(chronological_block_window_start, expected_mature_stake_2_time) == expected_mature_stake_2)
-
     assert (sender_chain.get_mature_stake_for_chronological_block_window(chronological_block_window_two_start) == expected_mature_stake_3)
-
     assert (sender_chain.get_mature_stake_for_chronological_block_window(chronological_block_window_two_start, expected_mature_stake_4_time) == expected_mature_stake_4)
 
 
@@ -1368,7 +1379,7 @@ def test_import_invalid_block_not_enough_gas():
 # try sending a transaction to self.
 # try spending a receive transaction in same block.
 # try importing a transaction with negative gas price or 0 gas price.
-
+# try importing a block with a receive transaction, but have the timestamp of that block earlier than the send block
 
 
 

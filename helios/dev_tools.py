@@ -268,7 +268,7 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
         sender_priv_key = tx_key[0]
         receive_priv_key = tx_key[1]
         amount = tx_key[2]
-        tx_timestamp = tx_key[3]
+        tx_timestamp = int(tx_key[3])
 
         if len(tx_key) > 4:
             gas_price = tx_key[4]
@@ -312,6 +312,7 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
             header=imported_block.header.copy(timestamp=tx_timestamp).get_signed(receive_priv_key,
                                                                                  dummy_receiver_chain.network_id))
         receiver_chain.import_block(timestamp_modified_imported_block, allow_unprocessed=False)
+
 
 #tx_list = [from priv_key, to priv_key, amount, timestamp]
 def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list: List, use_real_genesis = False):
