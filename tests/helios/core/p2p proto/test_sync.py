@@ -311,23 +311,23 @@ async def test_fast_sync_5(request, event_loop):
     :param event_loop:
     :return:
     '''
+    for i in range(5):
+        genesis_time = int(time.time()/1000)*1000-1000*1100
+        equal_to_time = int(time.time()/1000)*1000-1000*1095
+        new_blocks_start_time = int(time.time()/1000)*1000-1000*25
+        new_blocks_end_time = int(time.time() / 1000) * 1000 - 1000*3
 
-    genesis_time = int(time.time()/1000)*1000-1000*1100
-    equal_to_time = int(time.time()/1000)*1000-1000*1095
-    new_blocks_start_time = int(time.time()/1000)*1000-1000*25
-    new_blocks_end_time = int(time.time() / 1000) * 1000 - 1000*3
+        server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
+        client_db = MemoryDB(kv_store = server_db.kv_store.copy())
 
-    server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
-    client_db = MemoryDB(kv_store = server_db.kv_store.copy())
+        add_random_transactions_to_db_for_time_window(client_db, equal_to_time, equal_to_time+1000*5)
 
-    add_random_transactions_to_db_for_time_window(client_db, equal_to_time, equal_to_time+1000*5)
+        add_random_transactions_to_db_for_time_window(client_db, new_blocks_start_time, new_blocks_end_time)
 
-    add_random_transactions_to_db_for_time_window(client_db, new_blocks_start_time, new_blocks_end_time)
+        client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+        client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
 
-    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
-
-    await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
+        await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
 
 
 

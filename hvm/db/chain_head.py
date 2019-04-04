@@ -146,10 +146,12 @@ class ChainHeadDB():
 
     @property
     def root_hash(self):
+        #self.logger.debug("reading root hash {}".format(encode_hex(self._trie.root_hash)))
         return self._trie.root_hash
 
     @root_hash.setter
     def root_hash(self, value):
+        #self.logger.debug("setting root hash {}".format(encode_hex(value)))
         self._trie_cache.reset_cache()
         self._trie.root_hash = value
     
@@ -365,10 +367,11 @@ class ChainHeadDB():
         head_hash = new_chain_head_db._trie_cache.get(address)
         return head_hash
     
-    def delete_chain(self, address):
+    def delete_chain(self, address, delete_from_historical_root_hashes:bool = True):
         validate_canonical_address(address, title="Wallet Address")
         self.delete_chain_head_hash(address)
-        self.add_block_hash_to_timestamp(address, BLANK_HASH, 0)
+        if delete_from_historical_root_hashes:
+            self.add_block_hash_to_timestamp(address, BLANK_HASH, 0)
    
     #it is assumed that this is the head for a particular chain. because blocks can only be imported from the top.
     #this is going to be quite slow for older timestamps.
@@ -426,7 +429,7 @@ class ChainHeadDB():
     #@profile(sortby='cumulative')
     def add_block_hash_to_timestamp(self, address, head_hash, timestamp):
 
-
+        self.logger.debug("add_block_hash_to_timestamp")
 
         validate_canonical_address(address, title="Wallet Address")
         validate_is_bytes(head_hash, title='Head Hash')
@@ -526,16 +529,16 @@ class ChainHeadDB():
         self._batchtrie.commit(apply_deletes=False)
         
         if save_current_root_hash:
-            self.save_current_root_hash(append_current_root_hash_to_historical)
+            self.save_current_root_hash()
            
     #
     # Saving to database API
     #
-    def save_current_root_hash(self, append_current_root_hash_to_historical = True) -> None:
+    def save_current_root_hash(self) -> None:
         """
         Saves the current root_hash to the database to be loaded later
         """
-        self.logger.debug("Saving current chain head root hash {}".format(self.root_hash))
+        self.logger.debug("Saving current chain head root hash {}".format(encode_hex(self.root_hash)))
         current_head_root_lookup_key = SchemaV1.make_current_head_root_lookup_key()
         
         self.db.set(
@@ -543,10 +546,6 @@ class ChainHeadDB():
             self.root_hash,
         )
 
-        # #TODO. remove this. it is probably unnessisary now. since we handle it elsewhere
-        # if append_current_root_hash_to_historical:
-        #     self.logger.debug("appending to historical {}".format(self.root_hash))
-        #     self.append_current_root_hash_to_historical()
         
     def get_saved_root_hash(self):
         current_head_root_lookup_key = SchemaV1.make_current_head_root_lookup_key()
@@ -568,7 +567,7 @@ class ChainHeadDB():
             pass
             
     @classmethod    
-    def load_from_saved_root_hash(cls, db) -> Hash32:
+    def load_from_saved_root_hash(cls, db) -> 'ChainHeadDB':
         """
         Loads this class from the last saved root hash
         """

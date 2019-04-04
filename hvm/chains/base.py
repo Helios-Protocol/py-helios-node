@@ -347,10 +347,6 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def populate_queue_block_with_receive_tx(self) -> List[BaseReceiveTransaction]:
         raise NotImplementedError("Chain classes must implement this method")
 
-    @abstractmethod
-    def get_receive_transactions(self, wallet_address: Address):
-        raise NotImplementedError("Chain classes must implement this method")
-
 
     @abstractmethod
     def create_receivable_transactions(self) -> List[BaseReceiveTransaction]:
@@ -674,7 +670,7 @@ class Chain(BaseChain):
         window_for_this_block = int(genesis_header.timestamp / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE + TIME_BETWEEN_HEAD_HASH_SAVE
         chain_head_db.set_chain_head_hash(cls.genesis_wallet_address, genesis_header.hash)
         chain_head_db.initialize_historical_root_hashes(chain_head_db.root_hash, window_for_this_block)
-        chain_head_db.persist(save_current_root_hash = True, append_current_root_hash_to_historical = False)
+        chain_head_db.persist(save_current_root_hash = True)
         #chain_head_db.add_block_hash_to_chronological_window(genesis_header.hash, genesis_header.timestamp)
 
         return cls(base_db, wallet_address = wallet_address, private_key=private_key)
@@ -895,7 +891,7 @@ class Chain(BaseChain):
             window_for_this_block = int(timestamp / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE + TIME_BETWEEN_HEAD_HASH_SAVE
             #window_for_this_block = math.ceil((timestamp + 1)/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
 #            if propogate_to_present:
-            self.chain_head_db.add_block_hash_to_timestamp(self.wallet_address, block_header.hash, window_for_this_block)
+            self.chain_head_db.add_block_hash_to_timestamp(block_header.chain_address, block_header.hash, window_for_this_block)
 #            else:
 #                self.chain_head_db.add_block_hash_to_timestamp_without_propogating_to_present(self.wallet_address, block_header.hash, window_for_this_block)
 
@@ -1048,13 +1044,13 @@ class Chain(BaseChain):
         self.add_transactions_to_queue_block(receive_tx)
         return receive_tx
 
-    def get_receive_transactions(self, wallet_address: Address):
-        validate_canonical_address(wallet_address, title="wallet_address")
-        vm = self.get_vm()
-        account_db = vm.state.account_db
-        receivable_tx_keys = account_db.get_receivable_transactions(wallet_address)
-        #todo: finish this function
-        #print(receivable_tx_hashes)
+    # def get_receive_transactions(self, wallet_address: Address):
+    #     validate_canonical_address(wallet_address, title="wallet_address")
+    #     vm = self.get_vm()
+    #     account_db = vm.state.account_db
+    #     receivable_tx_keys = account_db.get_receivable_transactions(wallet_address)
+    #     #todo: finish this function
+    #     #print(receivable_tx_hashes)
 
 
     #
@@ -1094,20 +1090,24 @@ class Chain(BaseChain):
     # Reverting block functions
     #
 
-    def delete_canonical_chain(self, wallet_address, vm):
-        self.chain_head_db.delete_chain(wallet_address)
+    def delete_canonical_chain(self, wallet_address: Address, vm: 'BaseVM', save_block_head_hash_timestamp:bool = True) -> None:
+        self.logger.debug("delete_canonical_chain. Chain address {}".format(encode_hex(wallet_address)))
+        self.chain_head_db.delete_chain(wallet_address, save_block_head_hash_timestamp)
         self.chaindb.delete_canonical_chain(wallet_address)
         vm.state.clear_account_keep_receivable_transactions_and_persist(wallet_address)
 
-    def set_parent_as_canonical_head(self, existing_block_header, wallet_address, vm):
-        self.logger.debug("Setting new parent as canonical head after reverting blocks. Chain address {}".format(encode_hex(wallet_address)))
+    def set_parent_as_canonical_head(self, existing_block_header: BlockHeader, vm: 'BaseVM', save_block_head_hash_timestamp:bool = True) -> None:
         block_parent_header = self.chaindb.get_block_header_by_hash(existing_block_header.parent_hash)
-        self.save_chain_head_hash_to_trie_for_time_period(block_parent_header)
-        self.chain_head_db.set_chain_head_hash(wallet_address, block_parent_header.hash)
-        self.chaindb._set_as_canonical_chain_head(block_parent_header)
-        vm.state.revert_account_to_hash_keep_receivable_transactions_and_persist(block_parent_header.account_hash, wallet_address)
+        self.logger.debug("Setting new block as canonical head after reverting blocks. Chain address {}, header hash {}".format(encode_hex(existing_block_header.chain_address), encode_hex(block_parent_header.hash)))
 
-    def revert_block(self, descendant_block_hash, vm):
+        if save_block_head_hash_timestamp:
+            self.save_chain_head_hash_to_trie_for_time_period(block_parent_header)
+
+        self.chain_head_db.set_chain_head_hash(block_parent_header.chain_address, block_parent_header.hash)
+        self.chaindb._set_as_canonical_chain_head(block_parent_header)
+        vm.state.revert_account_to_hash_keep_receivable_transactions_and_persist(block_parent_header.account_hash, block_parent_header.chain_address)
+
+    def revert_block(self, descendant_block_hash: Hash32, vm: 'BaseVM') -> None:
         self.logger.debug('Reverting block with hash {}'.format(encode_hex(descendant_block_hash)))
         descendant_block_header = self.chaindb.get_block_header_by_hash(descendant_block_hash)
         self.chain_head_db.delete_block_hash_from_chronological_window(descendant_block_hash, descendant_block_header.timestamp)
@@ -1123,29 +1123,26 @@ class Chain(BaseChain):
         self.chaindb.delete_block_from_canonical_chain(descendant_block_hash)
         #self.chaindb.save_unprocessed_block_lookup(descendant_block_hash)
 
-    def purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32) -> None:
+    def purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32, save_block_head_hash_timestamp: bool = True) -> None:
 
         genesis_block_hash = self.chaindb.get_canonical_block_hash(BlockNumber(0), self.genesis_wallet_address)
         if block_hash_to_delete == genesis_block_hash:
             raise TriedDeletingGenesisBlock("Attempted to delete genesis block. This is not allowed.")
 
         block_header_to_delete = self.chaindb.get_block_header_by_hash(block_hash_to_delete)
-        self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header_to_delete)
+        self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header_to_delete, save_block_head_hash_timestamp)
 
 
-    def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader):
+    def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader, save_block_head_hash_timestamp: bool = True) -> None:
         # First make sure it is actually in the canonical chain. If not, then we don't have anything to do.
         if self.chaindb.is_in_canonical_chain(existing_block_header.hash):
-            #we need to re-initialize the chain for the new wallet address.
-            if existing_block_header.chain_address != self.wallet_address:
-                self.set_new_wallet_address(wallet_address = existing_block_header.chain_address)
 
             vm = self.get_vm()
             if existing_block_header.block_number == 0:
-                self.delete_canonical_chain(self.wallet_address, vm)
+                self.delete_canonical_chain(existing_block_header.chain_address, vm, save_block_head_hash_timestamp)
             else:
                 #set the parent block as the new canonical head, and handle all the data for that
-                self.set_parent_as_canonical_head(existing_block_header, self.wallet_address, vm)
+                self.set_parent_as_canonical_head(existing_block_header, vm, save_block_head_hash_timestamp)
 
             #1) delete chronological transactions, delete everything from chronological root hashes, delete children lookups
             all_descendant_block_hashes = self.chaindb.get_all_descendant_block_hashes(existing_block_header.hash)
@@ -1155,19 +1152,16 @@ class Chain(BaseChain):
                 for descendant_block_hash in all_descendant_block_hashes:
                     if not self.chaindb.is_block_unprocessed(descendant_block_hash):
                         descendant_block_header = self.chaindb.get_block_header_by_hash(descendant_block_hash)
-                        descendant_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(descendant_block_hash)
 
                         if descendant_block_header.parent_hash not in all_descendant_block_hashes:
                             #this is the new head of a chain. set it as the new head for chronological root hashes
                             #except for children in this chain, because it will be off by 1 block. we already set this earlier
 
-                            descendant_wallet_address = self.chaindb.get_chain_wallet_address_for_block_hash(descendant_block_hash)
-
-                            if descendant_wallet_address != self.wallet_address:
+                            if descendant_block_header.chain_address != existing_block_header.chain_address:
                                 if descendant_block_header.block_number == 0:
-                                    self.delete_canonical_chain(descendant_wallet_address, vm)
+                                    self.delete_canonical_chain(descendant_block_header.chain_address, vm, save_block_head_hash_timestamp)
                                 else:
-                                    self.set_parent_as_canonical_head(descendant_block_header, self.wallet_address, vm)
+                                    self.set_parent_as_canonical_head(descendant_block_header, vm, save_block_head_hash_timestamp)
 
                 #now we know what the new heads are, so we can deal with the rest of the descendants
                 for descendant_block_hash in all_descendant_block_hashes:
@@ -1178,8 +1172,6 @@ class Chain(BaseChain):
                         self.revert_block(descendant_block_hash, vm)
 
             self.revert_block(existing_block_header.hash, vm)
-
-            #TODO: delete block and transactions. This is to avoid duplicate transactions overwriting references from other transaction.
 
             #persist changes
             vm.state.account_db.persist()
@@ -1297,9 +1289,9 @@ class Chain(BaseChain):
         try:
             local_canonical_head = self.chaindb.get_canonical_head(wallet_address)
             imported_canonical_head = block_list[-1].header
+            #self.logger.debug("imported chain head hash {}. actual chain head hash {}".format(encode_hex(imported_canonical_head.hash), encode_hex(local_canonical_head.hash)))
             if imported_canonical_head.block_number < local_canonical_head.block_number:
-                local_block_header_at_location_of_imported_canonical_head = self.chaindb.get_canonical_block_header_by_number(BlockNumber(imported_canonical_head.block_number), wallet_address)
-                if imported_canonical_head.hash == local_block_header_at_location_of_imported_canonical_head.hash:
+                if self.chaindb.is_in_canonical_chain(imported_canonical_head.hash):
                     # Our chain is the same as the imported one, but we have some extra blocks on top. In this case, we would like to prune our chain
                     # to match the imported one.
                     # We only need to purge the next block after the imported chain. The vm will automatically purge all children
@@ -1307,7 +1299,7 @@ class Chain(BaseChain):
                                       " our chain in line with the imported one.")
                     block_number_to_purge = imported_canonical_head.block_number + 1
                     hash_to_purge = self.chaindb.get_canonical_block_hash(BlockNumber(block_number_to_purge), wallet_address)
-                    self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(hash_to_purge)
+                    self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(hash_to_purge, save_block_head_hash_timestamp)
         except CanonicalHeadNotFound:
             pass
 
@@ -1444,7 +1436,7 @@ class Chain(BaseChain):
 
             self.logger.debug("went into block replacing mode")
             self.logger.debug("block.number = {}, self.header.block_number = {}".format(block.number,self.header.block_number))
-            self.logger.debug("this chains wallet address = {}, this block's sender = {}".format(encode_hex(self.wallet_address), block.sender))
+            self.logger.debug("this chains wallet address = {}, this block's sender = {}".format(encode_hex(self.wallet_address), encode_hex(block.sender)))
 
 
             #check to see if we can load the existing canonical block
@@ -1530,7 +1522,7 @@ class Chain(BaseChain):
                     self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
 
                 self.chain_head_db.set_chain_head_hash(imported_block.header.chain_address, imported_block.header.hash)
-                self.chain_head_db.persist(True, False)
+                self.chain_head_db.persist(True)
                 self.chaindb.persist_block(imported_block)
                 vm.state.account_db.persist(save_account_hash = True, wallet_address = self.wallet_address)
 
@@ -1569,8 +1561,6 @@ class Chain(BaseChain):
 
 
             except ReceivableTransactionNotFound as e:
-                # print('AAAAAAAAAAAA')
-                # print(block.receive_transactions)
                 if not allow_unprocessed:
                     raise UnprocessedBlockNotAllowed()
                 self.logger.debug("Saving block as unprocessed because of ReceivableTransactionNotFound error: {}".format(e))
@@ -1580,8 +1570,6 @@ class Chain(BaseChain):
 
 
             except RewardProofSenderBlockMissing as e:
-                # print('AAAAAAAAAAAA')
-                # print(block.receive_transactions)
                 if not allow_unprocessed:
                     raise UnprocessedBlockNotAllowed()
                 self.logger.debug("Saving block as unprocessed because of RewardProofSenderBlockMissing error: {}".format(e))
@@ -1796,8 +1784,6 @@ class Chain(BaseChain):
                                current_historical_window-NUMBER_OF_HEAD_HASH_TO_SAVE*TIME_BETWEEN_HEAD_HASH_SAVE,
                                -1* TIME_BETWEEN_HEAD_HASH_SAVE):
             chronological_window = self.chain_head_db.load_chronological_block_window(timestamp)
-            # self.logger.debug('AAAAAAAAAAAAAAA')
-            # self.logger.debug(chronological_window)
             if chronological_window is not None:
                 chronological_window.sort(key=lambda x: -1*x[0])
                 for timestamp_hash in chronological_window:

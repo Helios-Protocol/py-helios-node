@@ -1,4 +1,5 @@
 import asyncio
+import math
 from asyncio import (
     PriorityQueue,
 )
@@ -590,6 +591,10 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         else:
             force_replace_existing_blocks = True
 
+        self.logger.debug("Syncing to chronological window timestamp {}".format(chronological_window_timestamp))
+        test_hist_root_hashes = self.chain_head_db.get_historical_root_hashes()[0:10]
+        self.logger.debug([(x[0], encode_hex(x[1])) for x in test_hist_root_hashes])
+        self.logger.debug([encode_hex(x) for x in self.chain_head_db.get_head_block_hashes_list(test_hist_root_hashes[0][1])])
 
         timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(chronological_window_timestamp)
         if timestamp_block_hashes is None:
@@ -683,7 +688,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                 if sync_stage <= CONSENSUS_MATCH_SYNC_STAGE_ID:
                                     # We need to delete any blocks that they do not have, this will bring us in line with consensus.
                                     try:
-                                        self.logger.debug("Deleting chronological block that is not in consensus.")
+                                        self.logger.debug("Deleting chronological blocks that are not in consensus.")
                                         await self.remove_block_by_hash(block_hash)
                                     except TriedDeletingGenesisBlock:
                                         self.logger.debug("The consensus blockchain database has a different genesis block. This should never happen.")
@@ -737,6 +742,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         #assert(self.chain_head_db.get_historical_root_hash(historical_root_hash_timestamp) == local_root_hash)
         while self.is_operational:
             self.chain_head_db.load_saved_root_hash()
+            local_root_hash = self.chain_head_db.get_saved_root_hash()
             our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list(local_root_hash)
 
             self._fast_sync_required_chain_list_idx = 0
@@ -745,7 +751,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
             self.logger.debug("Our root hashes before fast sync at historical_root_hash_timestamp {} with local_root_hash = {}: = {}".format(
                 historical_root_hash_timestamp,encode_hex(local_root_hash),[encode_hex(x) for x in our_fragment_list]))
-
+            self.logger.debug("Syncing to root hash {}".format(encode_hex(consensus_root_hash)))
             try:
                 their_fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
                                                                                                          request_function_parameters = {'timestamp': historical_root_hash_timestamp,
@@ -768,10 +774,11 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                             our_hash_fragments=our_fragment_list,
                                                                                             their_hash_fragments=their_fragment_list,
                                                                                             )
-
-            # we will delete the chains we have that they dont here first instead of doing it after one sync because that could be
-            # very time consuming.
-            if len(hash_positions_of_ours_that_they_need) > 0:
+            # The only time where we would want to delete some of our chains is when we have additional chains that are not
+            # in consensus and will not be overwritten by syncing. If we don't delete them, syncing will never finish.
+            # This will only happen if we have chains that they need,
+            # but they have no chains that we need.
+            if len(hash_positions_of_ours_that_they_need) > 0 and hash_positions_of_theirs_that_we_need == 0:
                 self.logger.debug("Fast sync: deleting chains we have that are not in consensus.")
                 for idx in hash_positions_of_ours_that_they_need:
                     chain_head_hash = our_block_hashes[idx]
@@ -793,42 +800,19 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             fast_sync_parameters = FastSyncParameters(their_fragment_list, list(hash_positions_of_theirs_that_we_need))
 
             worker_tasks = []
-            num_workers = min(self._max_fast_sync_workers, len(sync_parameters.peers_to_sync_with))
+            num_workers = min(self._max_fast_sync_workers, len(sync_parameters.peers_to_sync_with), math.ceil((len(hash_positions_of_theirs_that_we_need)/self._fast_sync_num_chains_to_request)))
             self.logger.debug("Creating {} workers. max_fast_sync_workers = {}, number of peers available for syncing = {}".format(num_workers, self._max_fast_sync_workers, len(sync_parameters.peers_to_sync_with)))
             for i in range(num_workers):
                 worker_tasks.append(self.run_task(self.fast_sync_worker(sync_parameters, fast_sync_parameters)))
 
-            await self.wait_all(worker_tasks)
+            if len(worker_tasks) == 0:
+                self.logger.error("Fast sync cannot create any workers. This could be caused by there being no peers, or no chains to request.")
+            else:
+                await self.wait_all(worker_tasks)
 
             resulting_chain_head_root_hash = self.chain_head_db.get_saved_root_hash()
             if resulting_chain_head_root_hash == consensus_root_hash:
                 break
-
-
-            # # Now that we have given the system a chance to update chain differences, we may be left with additional
-            # # chains that we have that they don't have. Lets delete them.
-            # # TODO: before deleting blocks, get all children chains and add them to the chains we need to request.
-            # # Actually we don't really need to do this. It will just request those on the next loop...
-            # # This is because when blocks are deleted,
-            # # Also, only delete if we have more chains then them. This will work if when importing a chain, we delete any
-            # # additional blocks we have that arent on the imported chain. If our chain is 1,2,3,4,5, and we import
-            # # 1,2,3, but they are the same as ours, delete 4,5
-            # if len(our_fragment_list) >= len(their_fragment_list) and len(their_fragment_list) > 0:
-            #
-            #     self.chain_head_db.load_saved_root_hash()
-            #     our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list()
-            #
-            #     self._fast_sync_required_chain_list_idx = 0
-            #
-            #     our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
-            #
-            #     hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
-            #                                                                                         our_hash_fragments=our_fragment_list,
-            #                                                                                         their_hash_fragments=their_fragment_list,
-            #                                                                                     )
-
-
-
 
             fragment_length += 1
             if fragment_length >= 16:
@@ -842,10 +826,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
                 break
 
-            # TODO: uncomment these lines after figuring out why children are not imported
-            # # Set this after each loop to avoid requesting the same chains over and over again
-            # final_root_hash = self.chain_head_db.get_saved_root_hash()
-            # await self.chain_head_db.coro_initialize_historical_root_hashes(final_root_hash, historical_root_hash_timestamp)
+            # Set this after each loop to avoid requesting the same chains over and over again
+            final_root_hash = self.chain_head_db.get_saved_root_hash()
+            await self.chain_head_db.coro_initialize_historical_root_hashes(final_root_hash, historical_root_hash_timestamp)
 
         # Set this again at the end in case it succeeded.
         final_root_hash = self.chain_head_db.get_saved_root_hash()
@@ -871,11 +854,12 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 start = self._fast_sync_required_chain_list_idx
                 end = start + self._fast_sync_num_chains_to_request
                 self._fast_sync_required_chain_list_idx = end
-            self.logger.debug("Requesting chains from {} to {}".format(start, end))
 
             if start >= num_chains_to_request:
                 #we have requested all of the chains already
                 break
+
+            self.logger.debug("Requesting chains from {} to {}".format(start, end))
 
             idx_list = chains_that_we_need[start:end]
             expected_chain_head_hash_fragments = []
@@ -895,7 +879,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             except NoCandidatePeers:
                 self.logger.debug("Stopping fast sync worker because there are no candidate peers.")
                 break
-            await self.handle_priority_import_chains(chains)
+            await self.handle_priority_import_chains(chains, save_block_head_hash_timestamp=False)
 
 
         self.logger.debug("Worker finished getting all required chains for fast sync.")
@@ -1119,9 +1103,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                             # this is a conflict block. Send it to consensus and let the syncer do its thing.
                             if not from_rpc:
                                 if not self.consensus.has_block_conflict(chain_address, new_block.header.block_number):
-                                    self.logger.debug("Received a conflicting block. sending to consensus as block conflict. Also sending our conflict block back to the peer.")
+                                    self.logger.debug("Received a new conflicting block. sending to consensus as block conflict. Also sending our conflict block back to the peer.")
                                     self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
-
+                                    await self.consensus.add_peer_block_conflict_choice(peer, new_block.header.block_number, new_block.header.hash)
                                     #lets also send this peer our conflict block to let it know that it exists.
                                     conflict_block = await chain.coro_get_block_by_number(block_number = new_block.header.block_number,
                                                                                       chain_address = new_block.header.chain_address,
@@ -1297,10 +1281,6 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
             chain_head_root_hash = await self.chain_head_db.coro_get_historical_root_hash(timestamp)
 
-            # all_root_hashes = await self.chain_head_db.coro_get_historical_root_hashes()
-            # self.logger.debug("AAAAAAAAAAAAA")
-            # self.logger.debug(all_root_hashes[-3:])
-            # self.logger.debug(timestamp)
 
             if msg['entire_window']:
 

@@ -908,7 +908,22 @@ class Consensus(BaseService, PeerSubscriber):
             self.logger.debug("Asking peer {} for block conflict choices".format(peer))
             if len(block_number_keys) > 0:
                 peer.sub_proto.send_get_unordered_block_header_hash(block_number_keys)
-        
+
+
+    async def add_peer_block_conflict_choice(self, peer: HLSPeer, block_number: BlockNumber, block_hash: Hash32) -> None:
+        peer_wallet_address = peer.wallet_address
+        block_hash_key = BlockHashKey(wallet_address = peer_wallet_address,
+                                      block_number = block_number,
+                                      block_hash = block_hash)
+        try:
+            stake = await self.get_accurate_stake(peer)
+
+            new_peer_block_choice = PeerBlockChoice(peer_wallet_address, stake, block_hash_key)
+            self._new_peer_block_choices.put_nowait(new_peer_block_choice)
+        except UnknownPeerStake:
+            #If we don't know their stake yet. Don't add it to the statistics.
+            pass
+
     async def receive_peer_block_choices_loop(self):
         self.logger.debug("Starting receive_peer_block_choices_loop")
         while self.is_operational:
@@ -1255,6 +1270,8 @@ class Consensus(BaseService, PeerSubscriber):
         
         #lets also immediately ask peers what they have
         asyncio.ensure_future(self.send_block_conflict_messages([new_block_conflict]))
+
+
 
     def remove_block_conflict(self, chain_wallet_address: Address, block_number: BlockNumber) -> None:
         new_block_conflict = BlockConflictInfo(chain_wallet_address, block_number)
