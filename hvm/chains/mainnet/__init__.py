@@ -1,6 +1,7 @@
 from typing import Tuple, Type  # noqa: F401
 from eth_utils import decode_hex
 
+from hvm.constants import TESTNET_FAUCET_PRIVATE_KEY
 from .constants import (
     HELIOS_TESTNET_TIMESTAMP,
 )
@@ -101,6 +102,7 @@ MAINNET_GENESIS_PARAMS = {'chain_address': b"\xdbL\xa4&\xd5;Y\xf6\x03p'O\xfb\x19
 
 
 class BaseMainnetChain:
+    faucet_private_key = keys.PrivateKey(TESTNET_FAUCET_PRIVATE_KEY)
     vm_configuration = MAINNET_VM_CONFIGURATION  # type: Tuple[Tuple[int, Type[BaseVM]], ...]  # noqa: E501
     network_id = MAINNET_NETWORK_ID  # type: int
     genesis_wallet_address = GENESIS_WALLET_ADDRESS

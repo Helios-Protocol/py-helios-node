@@ -918,7 +918,7 @@ class Consensus(BaseService, PeerSubscriber):
         try:
             stake = await self.get_accurate_stake(peer)
 
-            new_peer_block_choice = PeerBlockChoice(peer_wallet_address, stake, block_hash_key)
+            new_peer_block_choice = PeerBlockChoice(peer_wallet_address, stake, [block_hash_key])
             self._new_peer_block_choices.put_nowait(new_peer_block_choice)
         except UnknownPeerStake:
             #If we don't know their stake yet. Don't add it to the statistics.

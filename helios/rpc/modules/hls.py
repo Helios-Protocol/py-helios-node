@@ -585,3 +585,27 @@ class Hls(RPCModule):
             chains_dict.append(blocks_dict)
 
         return chains_dict
+
+    @format_params(decode_hex)
+    async def getFaucet(self, chain_address):
+        current_sync_stage_response = await self._event_bus.request(
+            CurrentSyncStageRequest()
+        )
+        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
+            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
+
+
+        chain_object = self._chain_class(self._chain.db, wallet_address=self._chain_class.faucet_private_key.public_key.to_canonical_address(), private_key= self._chain_class.faucet_private_key)
+        if chain_object.get_vm().state.account_db.get_balance(chain_address) < 5:
+            chain_object.create_and_sign_transaction_for_queue_block(
+                gas_price=0x01,
+                gas=0x0c3500,
+                to=chain_address,
+                value=int(1*10**18),
+                data=b"",
+                v=0,
+                r=0,
+                s=0
+            )
+
+            chain_object.import_current_queue_block()

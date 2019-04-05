@@ -355,10 +355,15 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
             current_request_hashes = block_hash_list[i: i + self.num_blocks_to_request_at_once]
 
-            received_blocks, peer = await self.handle_getting_request_from_peers(request_function_name="get_blocks",
-                                                                         request_function_parameters={'block_hashes': tuple(current_request_hashes)},
-                                                                         peer=peer,
-                                                                         additional_candidate_peers=additional_candidate_peers)
+            try:
+                received_blocks, peer = await self.handle_getting_request_from_peers(request_function_name="get_blocks",
+                                                                             request_function_parameters={'block_hashes': tuple(current_request_hashes)},
+                                                                             peer=peer,
+                                                                             additional_candidate_peers=additional_candidate_peers)
+            except NoCandidatePeers:
+                self.logger.error("request_chain_segment_then_priority_import NoCandidatePeers")
+                continue
+
             received_blocks = cast(List[P2PBlock], received_blocks)
 
             async with self.importing_blocks_lock:
@@ -388,13 +393,17 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         '''
         self.logger.debug("request_chain_segment_then_priority_import")
 
+        try:
+            received_blocks, peer = await self.handle_getting_request_from_peers(request_function_name="get_chain_segment",
+                                                                         request_function_parameters={'chain_address': chain_address,
+                                                                                                      'block_number_start': block_number_start,
+                                                                                                      'block_number_end': block_number_end},
+                                                                         peer=peer,
+                                                                         additional_candidate_peers=additional_candidate_peers)
+        except NoCandidatePeers:
+            self.logger.error("request_chain_segment_then_priority_import NoCandidatePeers")
+            return peer
 
-        received_blocks, peer = await self.handle_getting_request_from_peers(request_function_name="get_chain_segment",
-                                                                     request_function_parameters={'chain_address': chain_address,
-                                                                                                  'block_number_start': block_number_start,
-                                                                                                  'block_number_end': block_number_end},
-                                                                     peer=peer,
-                                                                     additional_candidate_peers=additional_candidate_peers)
         received_blocks = cast(List[P2PBlock], received_blocks)
 
         async with self.importing_blocks_lock:
