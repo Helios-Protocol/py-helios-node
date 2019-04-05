@@ -184,7 +184,7 @@ class BackendError(Exception):
 
 from web3.providers.ipc import PersistantSocket, has_valid_json_rpc_ending
 import pathlib
-from web3.utils.threads import Timeout
+from web3._utils.threads import Timeout
 
 class Proxy:
 
