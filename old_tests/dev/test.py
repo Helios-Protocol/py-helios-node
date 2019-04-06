@@ -19,3 +19,6 @@ block_hash_key = BlockHashKey(wallet_address = keys.PrivateKey(TESTNET_FAUCET_PR
 # print(Account.decrypt(Account.encrypt(TESTNET_FAUCET_PRIVATE_KEY, 'test'), 'test'))
 print(keys.PrivateKey(random_private_keys[0]).public_key.to_address())
 print(1*10**18)
+
+import codecs
+print(codecs.decode('9c8b20e830c0db83862892fc141808ea6a51fea2', "hex"))

@@ -8,6 +8,7 @@ from eth_utils import (
     encode_hex,
     int_to_big_endian,
     is_integer,
+    big_endian_to_int
 )
 import time
 
@@ -23,7 +24,10 @@ from helios.rpc.format import (
 import rlp_cython as rlp
 from helios.sync.common.constants import FULLY_SYNCED_STAGE_ID
 
-from hvm.exceptions import CanonicalHeadNotFound
+from hvm.exceptions import (
+    CanonicalHeadNotFound,
+    HeaderNotFound,
+)
 from hvm.utils.blocks import get_block_average_transaction_gas_price
 
 from hvm.types import Timestamp
@@ -127,8 +131,15 @@ class Hls(RPCModule):
             except CanonicalHeadNotFound:
                 balance = 0
         else:
-            header = chain.chaindb.get_canonical_block_header_by_number(at_block, address)
-            balance = header.account_balance
+            try:
+                header = chain.chaindb.get_canonical_block_header_by_number(at_block, address)
+                balance = header.account_balance
+            except CanonicalHeadNotFound:
+                try:
+                    header = chain.chaindb.get_canonical_head(address)
+                    balance = header.account_balance
+                except CanonicalHeadNotFound:
+                    balance = 0
 
         return hex(balance)
 
@@ -421,11 +432,17 @@ class Hls(RPCModule):
         return encoded
 
 
-    @format_params(decode_hex)
-    async def getBlockNumber(self, chain_address):
+    @format_params(decode_hex, decode_hex)
+    async def getBlockNumber(self, chain_address, before_timestamp = None):
         chain = self._chain_class(self._chain.db, wallet_address=chain_address)
-        canonical_header = chain.chaindb.get_canonical_head(chain_address)
-        return hex(canonical_header.block_number)
+        if before_timestamp is not None:
+            before_timestamp = big_endian_to_int(before_timestamp)
+            #it will raise HeaderNotFound error if there isnt one before the timestamp. This is on purpose.
+            block_number = chain.chaindb.get_canonical_block_number_before_timestamp(before_timestamp, chain_address)
+        else:
+            canonical_header = chain.chaindb.get_canonical_head(chain_address)
+            block_number = canonical_header.block_number
+        return hex(block_number)
 
 
     @format_params(decode_hex)
@@ -596,7 +613,13 @@ class Hls(RPCModule):
 
 
         chain_object = self._chain_class(self._chain.db, wallet_address=self._chain_class.faucet_private_key.public_key.to_canonical_address(), private_key= self._chain_class.faucet_private_key)
-        if chain_object.get_vm().state.account_db.get_balance(chain_address) < 5:
+        receivable_transactions = chain_object.get_receivable_transactions(chain_address)
+        total_receivable = 0
+        for tx in receivable_transactions:
+            total_receivable += tx.value;
+
+        if (chain_object.get_vm().state.account_db.get_balance(chain_address) + total_receivable) < 5*10**18:
+
             chain_object.create_and_sign_transaction_for_queue_block(
                 gas_price=0x01,
                 gas=0x0c3500,

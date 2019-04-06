@@ -154,6 +154,10 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
+    def get_canonical_block_number_before_timestamp(self, before_timestamp: Timestamp, chain_address: Address) -> BlockNumber:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
     def get_canonical_head(self, wallet_address: Address) -> BlockHeader:
         raise NotImplementedError("ChainDB classes must implement this method")
 
@@ -574,6 +578,25 @@ class ChainDB(BaseChainDB):
 
         validate_uint256(block_number, title="Block Number")
         return self.get_block_header_by_hash(self.get_canonical_block_hash(block_number, chain_address))
+
+    def get_canonical_block_number_before_timestamp(self, before_timestamp: Timestamp, chain_address: Address) -> BlockNumber:
+        """
+        Returns the block header with the given number in the canonical chain.
+
+        Raises HeaderNotFound if there's no block header with the given number in the
+        canonical chain.
+        """
+
+        head = self.get_canonical_head(chain_address)
+        if head.timestamp <= before_timestamp:
+            return head.block_number
+        else:
+            for i in range(head.block_number-1, -1, -1):
+                header = self.get_canonical_block_header_by_number(i, chain_address)
+                if header.timestamp <= before_timestamp:
+                    return header.block_number
+
+        raise HeaderNotFound("No blocks before the timestamp {} were found.".format(before_timestamp))
 
     def get_canonical_head(self, chain_address: Address) -> BlockHeader:
         """
