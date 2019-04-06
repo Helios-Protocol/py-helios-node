@@ -1013,7 +1013,7 @@ class Chain(BaseChain):
         #from hvm.rlp_templates.accounts import TransactionKey
         tx_keys = self.get_vm().state.account_db.get_receivable_transactions(address)
         if len(tx_keys) == 0:
-            return False, False
+            return [], []
         transactions = []
         for tx_key in tx_keys:
             tx = self.get_canonical_transaction(tx_key.transaction_hash)
