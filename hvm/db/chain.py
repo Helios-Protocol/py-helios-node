@@ -362,6 +362,10 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
+    def get_unprocessed_block_header_by_block_number(self, chain_address: Address, block_number: BlockNumber) -> BlockHeader:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
     def delete_unprocessed_block_lookup(self, block_hash: Hash32, block_number: BlockNumber) -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
@@ -1013,8 +1017,14 @@ class ChainDB(BaseChainDB):
             return rlp.decode(self.db[lookup_key], sedes = rlp.sedes.binary)
         except KeyError:
             return None
-
-
+        
+        
+    def get_unprocessed_block_header_by_block_number(self, chain_address: Address, block_number: BlockNumber) -> BlockHeader:
+        hash = self.get_unprocessed_block_hash_by_block_number(chain_address, block_number)
+        if hash is None:
+            raise HeaderNotFound("No unprocessed block exists on chain {} with block number {}".format(encode_hex(chain_address), block_number))
+        else:
+            return self.get_block_header_by_hash(hash)
 
     def delete_unprocessed_block_lookup(self, block_hash: Hash32, block_number: BlockNumber) -> None:
         lookup_key = SchemaV1.make_unprocessed_block_lookup_key(block_hash)

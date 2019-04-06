@@ -1364,7 +1364,7 @@ class Chain(BaseChain):
 
             if (existing_unprocessed_block_hash != block.hash) and (existing_unprocessed_block_hash is not None):
                 if not allow_replacement:
-                    raise ReplacingBlocksNotAllowed()
+                    raise ReplacingBlocksNotAllowed("Attempted to replace an unprocessed block.")
 
                 #check to make sure the parent matches the one we have
                 if block.number != 0:
@@ -1431,7 +1431,7 @@ class Chain(BaseChain):
 
         if block.number < self.header.block_number:
             if not allow_replacement:
-                raise ReplacingBlocksNotAllowed()
+                raise ReplacingBlocksNotAllowed("Attempted to replace a canonical block")
 
 
             self.logger.debug("went into block replacing mode")

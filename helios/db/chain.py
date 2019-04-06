@@ -105,7 +105,11 @@ class AsyncChainDB(ChainDB):
     async def coro_get_all_block_hashes_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[Hash32]:
         raise NotImplementedError()
 
+    async def coro_get_unprocessed_block_hash_by_block_number(self, chain_address: Address, block_number: BlockNumber) -> Optional[Hash32]:
+        raise NotImplementedError()
 
+    async def coro_get_unprocessed_block_header_by_block_number(self, chain_address: Address, block_number: BlockNumber) -> BlockHeader:
+        raise NotImplementedError()
 
 class ChainDBProxy(BaseProxy):
     coro_get_block_header_by_hash = async_method('get_block_header_by_hash')
@@ -136,6 +140,11 @@ class ChainDBProxy(BaseProxy):
     coro_get_all_block_hashes_on_chain_by_head_block_hash = async_method('get_all_block_hashes_on_chain_by_head_block_hash')
     coro_get_block_stake_from_children = async_method('get_block_stake_from_children')
     coro_get_mature_stake = async_method('get_mature_stake')
+    coro_get_unprocessed_block_hash_by_block_number = async_method('get_unprocessed_block_hash_by_block_number')
+    coro_get_unprocessed_block_header_by_block_number = async_method('get_unprocessed_block_header_by_block_number')
+
+
+
 
     get_block_header_by_hash = sync_method('get_block_header_by_hash')
     get_canonical_head = sync_method('get_canonical_head')
@@ -162,3 +171,5 @@ class ChainDBProxy(BaseProxy):
 
     get_block_stake_from_children = sync_method('get_block_stake_from_children')
     get_mature_stake = sync_method('get_mature_stake')
+    get_unprocessed_block_hash_by_block_number = sync_method('get_unprocessed_block_hash_by_block_number')
+    get_unprocessed_block_header_by_block_number = sync_method('get_unprocessed_block_header_by_block_number')

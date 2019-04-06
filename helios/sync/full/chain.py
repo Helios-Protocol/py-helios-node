@@ -131,6 +131,8 @@ from helios.protocol.common.datastructures import (
     FastSyncParameters,
 )
 
+from helios.protocol.hls.sync import get_sync_stage_for_historical_root_hash_timestamp
+
 HeaderRequestingPeer = Union[LESPeer, HLSPeer]
 # (ReceiptBundle, (Receipt, (root_hash, receipt_trie_data))
 ReceiptBundle = Tuple[Tuple[Receipt, ...], Tuple[Hash32, Dict[Hash32, bytes]]]
@@ -1093,13 +1095,28 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         # Get the head of the chain that we have in the database
         # need this to see if we are replacing a block
         replacing_block_permitted = force_replace_existing_blocks or resolving_block_conflict
+
+        if not replacing_block_permitted:
+            try:
+                unprocessed_conflict_header = await self.chaindb.coro_get_unprocessed_block_header_by_block_number(chain_address, new_block.header.block_number)
+                # This is a conflict block. But if we are in sync stage 4, and replacing an old unprocessed block, then allow it.
+                # This protects us from having old stale unprocessed blocks that cannot be replaced
+                if (unprocessed_conflict_header is not None
+                        and await self.consensus.current_sync_stage == FULLY_SYNCED_STAGE_ID
+                        and get_sync_stage_for_block_timestamp(
+                            unprocessed_conflict_header.timestamp) < FULLY_SYNCED_STAGE_ID):
+                    replacing_block_permitted = True
+                    self.logger.debug("Replacing stale unprocessed block with new block")
+
+            except HeaderNotFound:
+                pass
+
         try:
             canonical_head = self.chaindb.get_canonical_head(chain_address)
             if not replacing_block_permitted:
                 # check to see if we are replacing a block
                 if new_block.header.block_number <= canonical_head.block_number:
                     # it is trying to replace a block that we already have.
-
                     # is it the same as the one we already have?
                     local_block_hash = self.chaindb.get_canonical_block_hash(new_block.header.block_number, chain_address)
                     if new_block.header.hash == local_block_hash:
@@ -1107,7 +1124,6 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                         self.logger.debug("We already have this block, doing nothing")
                         return True
                     else:
-
                         if not replacing_block_permitted:
                             # this is a conflict block. Send it to consensus and let the syncer do its thing.
                             if not from_rpc:
@@ -1181,16 +1197,16 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             #                                         wallet_address = chain_address,
             #                                         allow_replacement = replacing_block_permitted)
 
-        except ReplacingBlocksNotAllowed:
-            self.logger.debug('ReplacingBlocksNotAllowed error. adding to block conflicts')
+        except ReplacingBlocksNotAllowed as e:
+            self.logger.debug('ReplacingBlocksNotAllowed error. adding to block conflicts: {}'.format(e))
             if not from_rpc:
                 # it has not been validated yet.
                 chain.validate_block_specification(new_block)
                 self.consensus.add_block_conflict(chain_address, new_block.header.block_number)
             return False
-        except ParentNotFound:
-            self.logger.debug('ParentNotFound error. adding to block conflicts. Block number {} on chain {} with parent hash {}'.format(
-                                new_block.header.block_number, encode_hex(new_block.header.chain_address), encode_hex(new_block.header.parent_hash)))
+        except ParentNotFound as e:
+            self.logger.debug('ParentNotFound error. adding to block conflicts. Block number {} on chain {} with parent hash {}: {}'.format(
+                                new_block.header.block_number, encode_hex(new_block.header.chain_address), encode_hex(new_block.header.parent_hash), e))
             if not from_rpc:
                 # it has not been validated yet
 
