@@ -613,10 +613,10 @@ class Hls(RPCModule):
 
 
         chain_object = self._chain_class(self._chain.db, wallet_address=self._chain_class.faucet_private_key.public_key.to_canonical_address(), private_key= self._chain_class.faucet_private_key)
-        receivable_transactions = chain_object.get_receivable_transactions(chain_address)
+        receivable_transactions, _ = chain_object.get_receivable_transactions(chain_address)
         total_receivable = 0
         for tx in receivable_transactions:
-            total_receivable += tx.value;
+            total_receivable += tx.value
 
         if (chain_object.get_vm().state.account_db.get_balance(chain_address) + total_receivable) < 5*10**18:
 
