@@ -73,6 +73,13 @@ class AsyncChain(BaseChain):
     async def coro_get_new_block_hash_to_test_peer_node_health(self) -> Hash32:
         raise NotImplementedError("Chain classes must implement this method")
 
+    async def coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_try_to_rebuild_chronological_chain_from_historical_root_hashes(self, historical_root_hash_timestamp: Timestamp) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+
 class AsyncChainMixin(AsyncChain):
 
     coro_get_canonical_block_by_number = async_method('get_canonical_block_by_number')
@@ -86,7 +93,7 @@ class AsyncChainMixin(AsyncChain):
         're_initialize_historical_minimum_gas_price_at_genesis')
     coro_get_all_blocks_on_chain = async_method('get_all_blocks_on_chain')
     coro_get_all_blocks_on_chain_by_head_block_hash = async_method('get_all_blocks_on_chain_by_head_block_hash')
-
+    coro_try_to_rebuild_chronological_chain_from_historical_root_hashes = async_method('try_to_rebuild_chronological_chain_from_historical_root_hashes')
 
     coro_import_chain = async_method('import_chain')
     coro_import_current_queue_block_with_reward = async_method('import_current_queue_block_with_reward')

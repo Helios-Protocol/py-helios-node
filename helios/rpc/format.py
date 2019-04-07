@@ -240,8 +240,7 @@ def block_to_dict(block: BaseBlock,
     else:
         block_dict['transactions'] = [encode_hex(tx.hash) for tx in block.transactions]
         block_dict['receiveTransactions'] = [encode_hex(tx.hash) for tx in block.receive_transactions]
-        block_dict['rewardBundle'] = []
-
+        block_dict['rewardBundle'] = reward_bundle_to_dict(block.reward_bundle)
     return block_dict
 
 
@@ -264,11 +263,18 @@ def to_int_if_hex(value: Any) -> Any:
         return value
 
 
+
 def empty_to_0x(val: str) -> str:
     if val:
         return val
     else:
         return '0x'
+
+def decode_hex_if_str(value: Any) -> Any:
+    if isinstance(value, str) and value.startswith('0x'):
+        return decode_hex(value)
+    else:
+        return value
 
 
 remove_leading_zeros = compose(hex, functools.partial(int, base=16))

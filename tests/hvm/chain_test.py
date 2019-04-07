@@ -49,9 +49,14 @@ from eth_utils import (
     decode_hex,
     keccak
 )
-from helios.dev_tools import create_dev_test_random_blockchain_database, add_transactions_to_blockchain_db, \
-    create_dev_test_random_blockchain_db_with_reward_blocks, \
-    create_dev_test_blockchain_database_with_given_transactions, create_new_genesis_params_and_state
+from helios.dev_tools import (
+    create_dev_test_random_blockchain_database,
+    add_transactions_to_blockchain_db,
+    create_dev_test_random_blockchain_db_with_reward_blocks,
+    create_dev_test_blockchain_database_with_given_transactions,
+    create_new_genesis_params_and_state,
+    create_blockchain_database_for_exceeding_tpc_cap
+)
 from eth_keys import keys
 from sys import exit
 
@@ -1368,6 +1373,79 @@ def test_import_invalid_block_not_enough_gas():
         r=0,
         s=0
     )
+
+
+def test_get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp():
+    testdb = MemoryDB()
+
+    create_blockchain_database_for_exceeding_tpc_cap(testdb, 5, 30)
+
+    sender_chain = MainnetChain(testdb, SENDER.public_key.to_canonical_address(), SENDER)
+    # start_time = time.time()
+    chronological_block_hash_timestamps_old_way = sender_chain.chain_head_db.load_chronological_block_window(int(int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE-TIME_BETWEEN_HEAD_HASH_SAVE*2))
+    # print('old way took {}'.format(time.time() - start_time))
+
+    # start_time = time.time()
+    chronological_block_hash_timestamps_new_way = sender_chain.get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp(int(int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE-TIME_BETWEEN_HEAD_HASH_SAVE))
+    # print('new way took {}'.format(time.time() - start_time))
+
+    # print(chronological_block_hash_timestamps_new_way)
+    # print(chronological_block_hash_timestamps_old_way)
+
+    assert chronological_block_hash_timestamps_old_way == chronological_block_hash_timestamps_new_way
+
+
+# test_get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp()
+# sys.exit()
+
+
+def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp():
+
+    testdb = LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full')
+    testdb = JournalDB(testdb)
+
+
+    sender_chain = MainnetChain(testdb, SENDER.public_key.to_canonical_address(), SENDER)
+    start_time = time.time()
+    chronological_block_hash_timestamps_old_way = sender_chain.chain_head_db.load_chronological_block_window(1554611000)
+    print('old way took {}'.format(time.time() - start_time))
+
+    start_time = time.time()
+    chronological_block_hash_timestamps_new_way = sender_chain.get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp(1554611000+TIME_BETWEEN_HEAD_HASH_SAVE)
+    print('new way took {}'.format(time.time() - start_time))
+
+
+    print(chronological_block_hash_timestamps_old_way)
+    print(chronological_block_hash_timestamps_new_way)
+
+    sender_chain.try_to_rebuild_chronological_chain_from_historical_root_hashes(1554611000+TIME_BETWEEN_HEAD_HASH_SAVE)
+
+    chronological_block_hash_timestamps_old_way = sender_chain.chain_head_db.load_chronological_block_window(1554611000)
+    print(chronological_block_hash_timestamps_old_way)
+
+    #
+    # for timestamp_hash in chronological_block_hash_timestamps_old_way:
+    #     print(sender_chain.chaindb.exists(timestamp_hash[1]))
+    #
+    # print()
+    #
+    # for timestamp_hash in chronological_block_hash_timestamps_old_way:
+    #     if not sender_chain.chaindb.is_in_canonical_chain(timestamp_hash[1]):
+    #         header = sender_chain.chaindb.get_block_header_by_hash(timestamp_hash[1])
+    #         print(encode_hex(header.chain_address))
+    #         print(header.block_number)
+    #
+    # print()
+    #
+    # for timestamp_hash in chronological_block_hash_timestamps_old_way:
+    #     print(sender_chain.chaindb.is_block_unprocessed(timestamp_hash[1]))
+
+
+    assert chronological_block_hash_timestamps_old_way == chronological_block_hash_timestamps_new_way
+
+
+get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp()
+sys.exit()
 
 
 

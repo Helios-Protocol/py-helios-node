@@ -33,7 +33,7 @@ class ChainProxy(BaseProxy):
     coro_get_all_blocks_on_chain = async_method('get_all_blocks_on_chain')
     coro_get_all_blocks_on_chain_by_head_block_hash = async_method('get_all_blocks_on_chain_by_head_block_hash')
     coro_get_blocks_on_chain_up_to_block_hash = async_method('get_blocks_on_chain_up_to_block_hash')
-
+    coro_try_to_rebuild_chronological_chain_from_historical_root_hashes = async_method('try_to_rebuild_chronological_chain_from_historical_root_hashes')
 
     import_block = sync_method('import_block')
     import_chain = sync_method('import_chain')

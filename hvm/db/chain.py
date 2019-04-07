@@ -174,7 +174,7 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def delete_canonical_chain(self, chain_address: Address) -> None:
+    def delete_canonical_chain(self, chain_address: Address) -> List[Hash32]:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -637,23 +637,29 @@ class ChainDB(BaseChainDB):
         chain_block_hashes = self.get_all_block_hashes_on_chain(chain_address)
         return chain_block_hashes
 
-    def delete_canonical_chain(self, chain_address: Address) -> None:
-
+    def delete_canonical_chain(self, chain_address: Address) -> List[Hash32]:
+        '''
+        returns a list of deleted block hashes
+        :param chain_address:
+        :return:
+        '''
         try:
             canonical_header = self.get_canonical_head(chain_address= chain_address)
         except CanonicalHeadNotFound:
             canonical_header = None
 
+        deleted_hashes = []
         if canonical_header is not None:
             for i in range(0, canonical_header.block_number+1):
                 header_to_remove = self.get_canonical_block_header_by_number(i, chain_address= chain_address)
+                deleted_hashes.append(header_to_remove.hash)
                 for transaction_hash in self.get_block_transaction_hashes(header_to_remove):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
                 for transaction_hash in self.get_block_receive_transaction_hashes(header_to_remove):
                     self._remove_transaction_from_canonical_chain(transaction_hash)
                 self.remove_block_from_canonical_block_hash_lookup(BlockNumber(i), chain_address=chain_address)
             del(self.db[SchemaV1.make_canonical_head_hash_lookup_key(chain_address)])
-
+        return deleted_hashes
     #
     # Header API
     #

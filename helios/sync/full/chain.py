@@ -119,7 +119,7 @@ from helios.nodes.base import Node
 
 from hvm.types import Timestamp
 
-from hvm.db.trie import _make_trie_root_and_nodes
+from hvm.db.trie import _make_trie_root_and_nodes_isometric_on_order
 
 from helios.utils.sync import get_missing_hash_locations_bytes
 
@@ -608,6 +608,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         self.logger.debug([encode_hex(x) for x in self.chain_head_db.get_head_block_hashes_list(test_hist_root_hashes[0][1])])
 
         timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(chronological_window_timestamp)
+        self.logger.debug("Our chronological block window has {} blocks".format(len(timestamp_block_hashes)))
         if timestamp_block_hashes is None:
             # we have no blocks for this window. So just request all of them automatically.
             # This is the same for all versions of syncing
@@ -637,10 +638,38 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         else:
             our_block_hashes = [x[1] for x in timestamp_block_hashes]
-            our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
-
+            first_try = True
             try:
                 while True:
+                    if first_try:
+                        first_try = False
+                    else:
+                        if fragment_length > 16:
+                            chain = self.node.get_chain()
+                            self.logger.warning("Diff verification failed even with max fragment length. This is very unlikely to occur and something has probably gone wrong.")
+                            self.logger.warning("Rebuilding our chronological block window from database.")
+                            chronological_window_before=chain.chain_head_db.load_chronological_block_window(chronological_window_timestamp)
+                            self.logger.warning(chronological_window_before)
+                            await chain.coro_try_to_rebuild_chronological_chain_from_historical_root_hashes(sync_parameters.timestamp_for_root_hash)
+                            chronological_window_after=chain.chain_head_db.load_chronological_block_window(chronological_window_timestamp)
+                            self.logger.warning(chronological_window_after)
+
+                            self.logger.debug("PRINTING diff_verification_block_hashes")
+                            self.logger.debug([encode_hex(x) for x in diff_verification_block_hashes])
+                            self.logger.debug("PRINTING their_fragment_list")
+                            self.logger.debug([encode_hex(x) for x in their_fragment_list])
+
+                            local_root_hash_from_sync_params = sync_parameters.local_root_hash
+                            local_root_hash_from_chain_head_db = self.chain_head_db.get_historical_root_hash(sync_parameters.timestamp_for_root_hash)
+                            consensus_root_hash_from_sync_params = sync_parameters.consensus_root_hash
+                            self.logger.debug("local_root_hash_from_sync_params {}".format(encode_hex(local_root_hash_from_sync_params)))
+                            self.logger.debug("local_root_hash_from_chain_head_db {}".format(encode_hex(local_root_hash_from_chain_head_db)))
+                            self.logger.debug("consensus_root_hash_from_sync_params {}".format(encode_hex(consensus_root_hash_from_sync_params)))
+                            
+                            break
+                        self.logger.debug("Diff was incorrect, increasing fragment length and trying again. Fragment length {}".format(fragment_length))
+                        fragment_length += 1
+
                     their_fragment_bundle, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_hash_fragments",
                                                                                                      request_function_parameters = {'timestamp': chronological_window_timestamp,
                                                                                                                                     'fragment_length':fragment_length},
@@ -648,6 +677,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                                      additional_candidate_peers = additional_candidate_peers)
                     their_fragment_bundle = cast(HashFragmentBundle, their_fragment_bundle)
                     their_fragment_list = their_fragment_bundle.fragments
+                    our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
 
                     hash_positions_of_theirs_that_we_need, hash_positions_of_ours_that_they_need = get_missing_hash_locations_list(
                                                                                                     our_hash_fragments=our_fragment_list,
@@ -658,6 +688,11 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                     if len(hash_positions_of_ours_that_they_need) > 0:
                         for idx in sorted(hash_positions_of_ours_that_they_need, key= lambda x: -x):
                             del(diff_verification_block_hashes[idx])
+
+                    if len(hash_positions_of_ours_that_they_need) == 0 and len(hash_positions_of_theirs_that_we_need) == 0:
+                        # This must mean that we need to increase the length of the hash fragments. If we have different chain head root hashes then we must have some difference here.
+                        self.logger.debug("We found no differences in our chronological block windows. Continuing to increase fragment length")
+                        continue
 
                     # now lets request the missing hashes from them, then verify that adding them to our hashes results in the correct root hash
                     # We must get these hashes from the same peer. If they don't respond here then we need to start over again.
@@ -673,11 +708,14 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                         their_fragment_list_we_need_to_add = their_fragment_bundle_we_need_to_add.fragments
                         diff_verification_block_hashes.extend(their_fragment_list_we_need_to_add)
 
-                    diff_verification_root_hash, _ = _make_trie_root_and_nodes(tuple(diff_verification_block_hashes))
+                    diff_verification_root_hash, _ = _make_trie_root_and_nodes_isometric_on_order(tuple(diff_verification_block_hashes))
 
                     if diff_verification_root_hash == their_fragment_bundle.root_hash_of_the_full_hashes:
                         self.logger.debug("Diff was correct. We need to request {} blocks and send {} blocks.".format(
                             len(hash_positions_of_theirs_that_we_need), len(hash_positions_of_ours_that_they_need)))
+
+                        if len(hash_positions_of_ours_that_they_need) == 0 and len(hash_positions_of_theirs_that_we_need) == 0:
+                            raise SyncingError("Need to sync up to a chronological window timestamp, but there are no blocks to request. This is an empty window that cant possibly bring us to sync.")
 
                         if len(hash_positions_of_theirs_that_we_need) > 0:
                             required_block_hashes = cast(List[Hash32], their_fragment_list_we_need_to_add)
@@ -716,12 +754,6 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                         self.logger.debug("Successfully synced")
                         break
 
-
-                    if fragment_length > 16:
-                        self.logger.warning("Diff verification failed even with max fragment length. This is very unlikely to occur and something has probably gone wrong.")
-                        break
-                    self.logger.debug("Diff was incorrect, increasing fragment length and trying again.")
-                    fragment_length += 1
             except NoCandidatePeers:
                 return
 
@@ -1267,7 +1299,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 else:
                     block_hashes = [x[1] for x in timestamp_block_hashes]
                     fragment_list = prepare_hash_fragments(block_hashes, fragment_length)
-                    trie_root, _ = _make_trie_root_and_nodes(tuple(block_hashes))
+                    trie_root, _ = _make_trie_root_and_nodes_isometric_on_order(tuple(block_hashes))
                     peer.sub_proto.send_hash_fragments(fragments=fragment_list,
                                                        timestamp=timestamp,
                                                        fragment_length=fragment_length,
@@ -1320,7 +1352,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                        hash_type_id=hash_type_id)
                 else:
                     fragment_list = prepare_hash_fragments(block_hashes, fragment_length)
-                    trie_root, _ = _make_trie_root_and_nodes(tuple(block_hashes))
+                    trie_root, _ = _make_trie_root_and_nodes_isometric_on_order(tuple(block_hashes))
                     peer.sub_proto.send_hash_fragments(fragments=fragment_list,
                                                        timestamp=timestamp,
                                                        fragment_length=fragment_length,

@@ -46,6 +46,16 @@ def _make_trie_root_and_nodes(items: Tuple[bytes, ...]) -> Tuple[bytes, Dict[byt
     return trie.root_hash, kv_store
 
 
+@functools.lru_cache(128)
+def _make_trie_root_and_nodes_isometric_on_order(items: Tuple[bytes, ...]) -> Tuple[bytes, Dict[bytes, bytes]]:
+    kv_store = {}  # type: Dict[bytes, bytes]
+    trie = HexaryTrie(kv_store, BLANK_ROOT_HASH)
+    with trie.squash_changes() as memory_trie:
+        for item in items:
+            memory_trie[item] = item
+    return trie.root_hash, kv_store
+
+
 
 class BinaryTrie(ParentBinaryTrie):
     def get_leaf_nodes(self, node, reverse = False):

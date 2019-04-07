@@ -296,7 +296,7 @@ class ChainHeadDB():
 
         # if this function returns less than window_length, then it is the end.
         
-    
+
     #
     # Block hash API
     #
@@ -670,9 +670,7 @@ class ChainHeadDB():
                 
         validate_historical_timestamp(timestamp, title="timestamp")
         starting_timestamp, starting_root_hash = self.get_historical_root_hash(timestamp, return_timestamp = True)
-        
-        
-                
+
         if starting_timestamp == None:
             raise AppendHistoricalRootHashTooOld("tried to propogate previous historical root hash, but there was no previous historical root hash")
         else:
@@ -694,31 +692,22 @@ class ChainHeadDB():
             self.save_historical_root_hashes(list(historical))
             
             
-            
-        
+
     def get_last_complete_historical_root_hash(self):
         last_finished_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
-        historical = self.get_historical_root_hashes()
+        historical = self.get_historical_root_hash(last_finished_window, True)
         if historical is None:
             return (None, None)
         
-        historical_sorted = SortedDict(lambda x: int(x)*-1, historical)
-            
-        #this will iterate from largest time to smallest time
-        for timestamp, root_hash in historical_sorted.items():
-            if timestamp <= last_finished_window:
-                return (timestamp, root_hash)
+        return historical
             
     def get_latest_historical_root_hash(self):
         historical = self.get_historical_root_hashes()
         if historical is None:
             return (None, None)
-        historical_sorted = SortedDict(historical)
-        return (historical_sorted.keys()[-1], historical_sorted.values()[-1])
-            
-#        for i in range(len(historical)-1, -1, -1):
-#            if historical[i][0] <= last_finished_window:
-#                return historical[i]
+
+        return (historical[-1])
+
             
     #saved as [[timestamp, hash],[timestamp, hash]...]      
     def save_historical_root_hashes(self, root_hashes):
@@ -748,8 +737,6 @@ class ChainHeadDB():
 
         root_hash_to_return = None
         timestamp_to_return = None
-
-        #historical.sort()
 
         timestamps = [x[0] for x in historical]
         right_index = bisect.bisect_right(timestamps, timestamp)
@@ -836,60 +823,124 @@ class ChainHeadDB():
     #
     # Chronological chain
     #
-    
+
+    #blocks with timestamp the same as a window will be included that window. eg: block timestamp is 5000, it will be included in the window at 50000
+    # def add_block_hash_to_chronological_window(self, head_hash, timestamp):
+    #     validate_is_bytes(head_hash, title='Head Hash')
+    #     validate_uint256(timestamp, title='timestamp')
+    #
+    #     #only add blocks for the proper time period
+    #     if timestamp > int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
+    #         #unlike the root hashes, this window is for the blocks added after the time
+    #         window_for_this_block = int(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+    #
+    #         data = self.load_chronological_block_window(window_for_this_block)
+    #         #self.logger.debug("Saving chronological block window with old data {}".format(data))
+    #         #now we simply add it.
+    #         if data is None:
+    #             new_data = [[timestamp, head_hash]]
+    #
+    #         else:
+    #             #most of the time we will be adding the timestamp near the end. so lets iterate backwards
+    #             new_data = list(data)
+    #             inserted = False
+    #             for i in range(len(data)-1,-1,-1):
+    #                 #self.logger.debug("debug {0}, {1}".format(big_endian_to_int(data[i][0]), timestamp))
+    #                 if data[i][0] <= timestamp:
+    #                     new_data.insert(i+1, [timestamp,head_hash])
+    #                     inserted = True
+    #                     break
+    #             if not inserted:
+    #                 new_data.insert(0, [timestamp,head_hash])
+    #
+    #         #self.logger.debug("Saving chronological block window with new data {}".format(new_data))
+    #         self.save_chronological_block_window(new_data, window_for_this_block)
+
     def add_block_hash_to_chronological_window(self, head_hash, timestamp):
         validate_is_bytes(head_hash, title='Head Hash')
         validate_uint256(timestamp, title='timestamp')
-        
-        #only add blocks for the proper time period        
-        if timestamp > int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
-            #unlike the root hashes, this window is for the blocks added after the time
-            window_for_this_block = int(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
-            
+
+        # only add blocks for the proper time period
+        if timestamp >= int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
+            # unlike the root hashes, this window is for the blocks added after the time
+            window_for_this_block = int(timestamp / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+
             data = self.load_chronological_block_window(window_for_this_block)
-            #self.logger.debug("Saving chronological block window with old data {}".format(data)) 
-            #now we simply add it.
+
             if data is None:
-                new_data = [[timestamp, head_hash]]
-                
+                data = [[timestamp, head_hash]]
+
             else:
-                #most of the time we will be adding the timestamp near the end. so lets iterate backwards
-                new_data = list(data)
-                inserted = False
-                for i in range(len(data)-1,-1,-1):
-                    #self.logger.debug("debug {0}, {1}".format(big_endian_to_int(data[i][0]), timestamp))
-                    if data[i][0] <= timestamp:
-                        new_data.insert(i+1, [timestamp,head_hash])
-                        inserted = True
-                        break
-                if not inserted:
-                    new_data.insert(0, [timestamp,head_hash])
-                    
-            #self.logger.debug("Saving chronological block window with new data {}".format(new_data))    
-            self.save_chronological_block_window(new_data, window_for_this_block)
-    
-    def delete_block_hash_from_chronological_window(self, head_hash, timestamp):
+                data.append([timestamp, head_hash])
+
+            self.save_chronological_block_window(data, window_for_this_block)
+
+    def delete_block_hashes_from_chronological_window(self, block_hash_list: List[Hash32], window_timestamp: Timestamp) -> None:
+        if window_timestamp > int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
+            # onlike the root hashes, this window is for the blocks added after the time
+            window_timestamp = int(window_timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+
+            data = self.load_chronological_block_window(window_timestamp)
+            hashes = [x[1] for x in data]
+            for block_hash in block_hash_list:
+                try:
+                    idx = hashes.index(block_hash)
+                    del (data[idx])
+                except ValueError:
+                    continue
+
+            if data is not None:
+                # self.logger.debug("Saving chronological block window with new data {}".format(new_data))
+                self.save_chronological_block_window(data, window_timestamp)
+
+
+    def delete_block_hash_from_chronological_window(self, head_hash: Hash32, timestamp: Timestamp = None, window_timestamp:Timestamp = None) -> None:
+        '''
+        If timestamp is given, then deleted [timestamp, head_hash] from the list. This is fastest.
+        But if head_hash and window_timestamp is given, without a timestamp, then we search the list for the given hash and delete it. This is slower
+        :param head_hash:
+        :param timestamp:
+        :param window_timestamp:
+        :return:
+        '''
         validate_is_bytes(head_hash, title='Head Hash')
         validate_uint256(timestamp, title='timestamp')
         
-        #only add blocks for the proper time period        
-        if timestamp > int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
-            #onlike the root hashes, this window is for the blocks added after the time
-            window_for_this_block = int(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
-            
-            data = self.load_chronological_block_window(window_for_this_block)
-            #self.logger.debug("Saving chronological block window with old data {}".format(data)) 
-            #now we simply add it.
-            if data is not None:
-                #most of the time we will be adding the timestamp near the end. so lets iterate backwards
-                try:
-                    data.remove([timestamp,head_hash])
-                except ValueError:
-                    pass
+        if timestamp is None and window_timestamp is not None:
+            # we search now for just the hash
+            if window_timestamp > int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
+                # onlike the root hashes, this window is for the blocks added after the time
+                window_timestamp = int(window_timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
 
-            if data is not None:
-                #self.logger.debug("Saving chronological block window with new data {}".format(new_data))    
-                self.save_chronological_block_window(data, window_for_this_block)
+                data = self.load_chronological_block_window(window_timestamp)
+                hashes = [x[1] for x in data]
+                try:
+                    idx = hashes.index(head_hash)
+                    del(data[idx])
+                except ValueError:
+                    return
+
+                if data is not None:
+                    # self.logger.debug("Saving chronological block window with new data {}".format(new_data))    
+                    self.save_chronological_block_window(data, window_timestamp)
+                    
+        else:
+            #only add blocks for the proper time period        
+            if timestamp > int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
+                #onlike the root hashes, this window is for the blocks added after the time
+                window_for_this_block = int(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+                
+                data = self.load_chronological_block_window(window_for_this_block)
+                if data is not None:
+                    #most of the time we will be adding the timestamp near the end. so lets iterate backwards
+                    try:
+                        data.remove([timestamp,head_hash])
+                    except ValueError:
+                        pass
+    
+                if data is not None:
+                    #self.logger.debug("Saving chronological block window with new data {}".format(new_data))    
+                    self.save_chronological_block_window(data, window_for_this_block)
 
             
             
@@ -899,7 +950,7 @@ class ChainHeadDB():
             raise InvalidHeadRootTimestamp("Can only save or load chronological block for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
         
         chronological_window_lookup_key = SchemaV1.make_chronological_window_lookup_key(timestamp)
-        encoded_data = rlp.encode(data,sedes=rlp.sedes.CountableList(rlp.sedes.List([f_big_endian_int, hash32])))
+        encoded_data = rlp.encode(data,sedes=rlp.sedes.FCountableList(rlp.sedes.FList([f_big_endian_int, hash32])))
         self.db.set(
             chronological_window_lookup_key,
             encoded_data,
@@ -912,7 +963,8 @@ class ChainHeadDB():
         
         chronological_window_lookup_key = SchemaV1.make_chronological_window_lookup_key(timestamp)
         try:
-            data = rlp.decode(self.db[chronological_window_lookup_key], sedes=rlp.sedes.CountableList(rlp.sedes.List([f_big_endian_int, hash32])), use_list = True)
+            data = rlp.decode(self.db[chronological_window_lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([f_big_endian_int, hash32])), use_list = True)
+            data.sort()
             return data
         except KeyError:
             return None

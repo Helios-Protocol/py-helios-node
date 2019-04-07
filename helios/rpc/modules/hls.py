@@ -20,7 +20,7 @@ from helios.rpc.format import (
     format_params,
     to_int_if_hex,
     transaction_to_dict,
-    receipt_to_dict, receive_transactions_to_dict)
+    receipt_to_dict, receive_transactions_to_dict, decode_hex_if_str)
 import rlp_cython as rlp
 from helios.sync.common.constants import FULLY_SYNCED_STAGE_ID
 
@@ -39,6 +39,11 @@ from eth_utils import is_hex_address, to_checksum_address
 # Tell mypy to ignore this import as a workaround for https://github.com/python/mypy/issues/4049
 from helios.rpc.modules import (  # type: ignore
     RPCModule,
+)
+
+from hvm.constants import (
+    TIME_BETWEEN_HEAD_HASH_SAVE,
+    NUMBER_OF_HEAD_HASH_TO_SAVE
 )
 
 from hvm.utils.headers import (
@@ -89,7 +94,6 @@ from hvm.vm.forks.helios_testnet.blocks import MicroBlock
 #         at_header = get_header(chain, at_block)
 #         return chain.get_block_by_header(at_header)
 
-#TODO: if sync stage is less than 3, don't accept new blocks.
 class Hls(RPCModule):
     '''
     All the methods defined by JSON-RPC API, starting with "hls_"...
@@ -122,7 +126,7 @@ class Hls(RPCModule):
 
     @format_params(decode_hex, to_int_if_hex)
     async def getBalance(self, address, at_block):
-        chain = self._chain_class(self._chain.db, wallet_address=address)
+        chain = self.get_new_chain(address)
 
         if at_block == 'latest':
             try:
@@ -401,7 +405,7 @@ class Hls(RPCModule):
     @format_params(decode_hex)
     async def getReceivableTransactions(self, chain_address):
         # create new chain for all requests
-        chain = self._chain_class(self._chain.db, wallet_address=chain_address)
+        chain = self.get_new_chain(chain_address)
 
         receivable_transactions = chain.create_receivable_transactions()
         receivable_transactions_dict = receive_transactions_to_dict(receivable_transactions, chain)
@@ -410,7 +414,7 @@ class Hls(RPCModule):
 
     @format_params(decode_hex)
     async def getTransactionReceipt(self, tx_hash):
-        chain = self._chain_class(self._chain.db, wallet_address = self._chain.wallet_address)
+        chain = self.get_new_chain()
         receipt = chain.chaindb.get_transaction_receipt(tx_hash)
 
         receipt_dict = receipt_to_dict(receipt, tx_hash, chain)
@@ -432,11 +436,10 @@ class Hls(RPCModule):
         return encoded
 
 
-    @format_params(decode_hex, decode_hex)
+    @format_params(decode_hex, to_int_if_hex)
     async def getBlockNumber(self, chain_address, before_timestamp = None):
-        chain = self._chain_class(self._chain.db, wallet_address=chain_address)
+        chain = self.get_new_chain(chain_address)
         if before_timestamp is not None:
-            before_timestamp = big_endian_to_int(before_timestamp)
             #it will raise HeaderNotFound error if there isnt one before the timestamp. This is on purpose.
             block_number = chain.chaindb.get_canonical_block_number_before_timestamp(before_timestamp, chain_address)
         else:
@@ -449,7 +452,7 @@ class Hls(RPCModule):
     async def getBlockCreationParams(self, chain_address):
 
         #create new chain for all requests
-        chain = self._chain_class(self._chain.db, wallet_address = chain_address)
+        chain = self.get_new_chain(chain_address)
 
         to_return = {}
 
@@ -478,19 +481,19 @@ class Hls(RPCModule):
 
     @format_params(decode_hex, identity)
     async def getBlockByHash(self, block_hash: Hash32, include_transactions: bool = False):
-        chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+        chain = self.get_new_chain()
         block = chain.get_block_by_hash(block_hash)
         return block_to_dict(block, include_transactions, chain)
 
 
     @format_params(to_int_if_hex, decode_hex, identity)
     async def getBlockByNumber(self, at_block, chain_address, include_transactions: bool = False):
-        chain = self._chain_class(self._chain.db, wallet_address=chain_address)
+        chain = self.get_new_chain(chain_address)
         block = chain.get_block_by_number(at_block, chain_address=chain_address)
         return block_to_dict(block, include_transactions, chain)
 
     async def sendRawBlock(self, encoded_micro_block):
-        chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+        chain = self.get_new_chain()
 
         encoded_micro_block = decode_hex(encoded_micro_block)
 
@@ -534,12 +537,77 @@ class Hls(RPCModule):
 
         return True
 
+    #
+    # Block explorer
+    #
+    @format_params(to_int_if_hex, to_int_if_hex, decode_hex_if_str, decode_hex_if_str, identity)
+    async def getNewestBlocks(self, num_to_return = 10, start_idx = 0, after_hash = b'', chain_address = b'', include_transactions: bool = False):
+        '''
+        Returns list of block dicts
+        :param start_idx:
+        :param end_idx:
+        :param chain_address:
+        :return:
+        '''
+        # block = chain.get_block_by_hash(block_hash)
+        # return block_to_dict(block, include_transactions, chain)
+        if num_to_return is None:
+            num_to_return = 10
+        if start_idx is None:
+            start_idx = 0
+
+        num_to_return = min([10, num_to_return])
+        block_dicts_to_return = []
+
+        if chain_address != b'' and chain_address is not None:
+            chain = self.get_new_chain(chain_address)
+            try:
+                canonical_header = chain.chaindb.get_canonical_head(chain_address)
+                
+                start = canonical_header.block_number-start_idx
+
+                if start > 0:
+                    end = max([0, start-num_to_return])
+                    for i in range(canonical_header.block_number-1, end, -1):
+                        block = chain.get_block_by_number(i, chain_address)
+                        if block.hash == after_hash:
+                            break
+                        block_dicts_to_return.append(block_to_dict(block, include_transactions, chain))
+                    
+            except CanonicalHeadNotFound:
+                return []
+        else:
+            chain = self.get_new_chain()
+            at_block_index = -1
+            current_window = int(time.time() / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+            for timestamp in range(current_window, current_window-(NUMBER_OF_HEAD_HASH_TO_SAVE*TIME_BETWEEN_HEAD_HASH_SAVE), -1*TIME_BETWEEN_HEAD_HASH_SAVE):
+                chronological_blocks = chain.chain_head_db.load_chronological_block_window(Timestamp(timestamp))
+                if chronological_blocks is None:
+                    continue
+                chronological_blocks.reverse()
+
+                for block_timestamp_block_hash in chronological_blocks:
+                    at_block_index += 1
+                    if at_block_index < start_idx:
+                        continue
+
+                    block = chain.get_block_by_hash(block_timestamp_block_hash[1])
+                    if block.hash == after_hash:
+                        return block_dicts_to_return
+
+                    block_dicts_to_return.append(block_to_dict(block, include_transactions, chain))
+
+                    if len(block_dicts_to_return) >= num_to_return:
+                        return block_dicts_to_return
+
+            
+        return block_dicts_to_return
 
     #
     # Admin tools and dev debugging
     #
     async def getChronologicalBlockWindowTimestampHashes(self, timestamp: Timestamp):
-        chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+        chain = self.get_new_chain()
         chronological_block_window = chain.chain_head_db.load_chronological_block_window(timestamp)
 
         return [[timestamp_root_hash[0], encode_hex(timestamp_root_hash[1])] for timestamp_root_hash in chronological_block_window]
@@ -555,7 +623,7 @@ class Hls(RPCModule):
 
 
     async def getBlockchainDBDetails(self):
-        chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+        chain = self.get_new_chain()
         head_block_hashes = chain.chain_head_db.get_head_block_hashes()
 
         return [encode_hex(head_block_hash) for head_block_hash in head_block_hashes]
@@ -572,7 +640,7 @@ class Hls(RPCModule):
         return [(encode_hex(address), stake) for address, stake in stake_from_bootnode_response.peer_stake_from_bootstrap_node.items()]
 
     async def getAccountBalances(self):
-        chain = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+        chain = self.get_new_chain()
         next_head_hashes = chain.chain_head_db.get_head_block_hashes_list()
 
         wallet_addresses = []
@@ -587,7 +655,7 @@ class Hls(RPCModule):
         return out
 
     async def getBlockchainDatabase(self):
-        chain_object = self._chain_class(self._chain.db, wallet_address=self._chain.wallet_address)
+        chain_object = self.get_new_chain()
 
         chain_head_hashes = chain_object.chain_head_db.get_head_block_hashes_list()
 
@@ -611,8 +679,7 @@ class Hls(RPCModule):
         if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
             raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
 
-
-        chain_object = self._chain_class(self._chain.db, wallet_address=self._chain_class.faucet_private_key.public_key.to_canonical_address(), private_key= self._chain_class.faucet_private_key)
+        chain_object = self.get_new_chain(self._chain_class.faucet_private_key.public_key.to_canonical_address(), private_key= self._chain_class.faucet_private_key)
         receivable_transactions, _ = chain_object.get_receivable_transactions(chain_address)
         total_receivable = 0
         for tx in receivable_transactions:

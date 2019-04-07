@@ -39,7 +39,9 @@ from hvm.constants import (
     MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS,
     REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE,
     REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE,
-)
+    MASTERNODE_LEVEL_3_REQUIRED_BALANCE, MASTERNODE_LEVEL_3_REWARD_TYPE_2_MULTIPLIER,
+    MASTERNODE_LEVEL_2_REQUIRED_BALANCE, MASTERNODE_LEVEL_2_REWARD_TYPE_2_MULTIPLIER,
+    MASTERNODE_LEVEL_1_REQUIRED_BALANCE, MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER)
 from hvm.validation import (
     validate_is_bytes,
     validate_uint256,
@@ -255,7 +257,7 @@ class ConsensusDB():
     #
 
 
-    def calculate_reward_based_on_fractional_interest(self,  wallet_address: Address, fractional_interest: float, at_timestamp: Timestamp = None) -> int:
+    def calculate_reward_based_on_fractional_interest(self,  wallet_address: Address, fractional_interest: float, at_timestamp: Timestamp = None, user_masternode_multipliers = True) -> int:
         '''
         Here we assume the time period for the reward starts from the latest reward block. This is a valid assumption
         because blocks can only be added to the top of the chain
@@ -297,7 +299,19 @@ class ConsensusDB():
 
             calc_stake = header.account_balance
 
-            amount += time_difference * calc_stake * fractional_interest
+            if user_masternode_multipliers:
+                if calc_stake >= MASTERNODE_LEVEL_3_REQUIRED_BALANCE:
+                    masternode_multiplier = MASTERNODE_LEVEL_3_REWARD_TYPE_2_MULTIPLIER
+                elif calc_stake >= MASTERNODE_LEVEL_2_REQUIRED_BALANCE:
+                    masternode_multiplier = MASTERNODE_LEVEL_2_REWARD_TYPE_2_MULTIPLIER
+                elif calc_stake >= MASTERNODE_LEVEL_1_REQUIRED_BALANCE:
+                    masternode_multiplier = MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER
+                else:
+                    masternode_multiplier = 1
+            else:
+                masternode_multiplier = 1
+
+            amount += time_difference * calc_stake * fractional_interest * masternode_multiplier
 
             calc_to_timestamp = header_mature_timestamp
 
@@ -345,7 +359,7 @@ class ConsensusDB():
 
         fractional_interest = REWARD_TYPE_2_AMOUNT_FACTOR * final_score / 1000000
 
-        amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp)
+        amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp, user_masternode_multipliers=False)
         if amount != 0:
             return amount, final_list
         else:
@@ -364,7 +378,7 @@ class ConsensusDB():
 
         fractional_interest = REWARD_TYPE_1_AMOUNT_FACTOR
 
-        amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp)
+        amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp, user_masternode_multipliers=False)
 
         return amount
 

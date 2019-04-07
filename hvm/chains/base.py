@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+import operator
 
 from abc import (
     ABCMeta,
@@ -7,7 +8,6 @@ from abc import (
 import rlp_cython as rlp
 import time
 import math
-import operator
 from uuid import UUID
 from typing import (  # noqa: F401
     Any,
@@ -90,6 +90,7 @@ from hvm.exceptions import (
     ParentNotFound,
     NoChronologicalBlocks,
     RewardProofSenderBlockMissing,
+InvalidHeadRootTimestamp,
 
     RewardAmountRoundsToZero, TriedDeletingGenesisBlock, NoGenesisBlockPresent)
 from eth_keys.exceptions import (
@@ -174,7 +175,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     """
     The base class for all Chain objects
     """
-    chaindb = None  # type: BaseChainDB
+    chain_head_db: ChainHeadDB = None
+    consensus_db: ConsensusDB = None
+    chaindb: ChainDB = None
+
     chaindb_class = None  # type: Type[BaseChainDB]
     vm_configuration = None  # type: Tuple[Tuple[int, Type[BaseVM]], ...]
     genesis_wallet_address: Address = None
@@ -187,6 +191,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     @abstractmethod
     def get_chaindb_class(cls) -> Type[BaseChainDB]:
         raise NotImplementedError("Chain classes must implement this method")
+
 
     #
     # Chain API
@@ -369,6 +374,18 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
     #
+    # Chronological Chain API
+    #
+    @abstractmethod
+    def try_to_rebuild_chronological_chain_from_historical_root_hashes(self, historical_root_hash_timestamp: Timestamp) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp(self, historical_root_hash_timestamp: Timestamp) -> List[Tuple[Timestamp, Hash32]]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+
+    #
     # Execution API
     #
 #    @abstractmethod
@@ -459,9 +476,7 @@ class Chain(BaseChain):
     chain_head_db_class = ChainHeadDB
     consensus_db_class = ConsensusDB
 
-    chain_head_db: ChainHeadDB = None
-    consensus_db: ConsensusDB = None
-    chaindb: ChainDB = None
+
     _queue_block: BaseQueueBlock = None
 
 
@@ -1052,6 +1067,63 @@ class Chain(BaseChain):
     #     #todo: finish this function
     #     #print(receivable_tx_hashes)
 
+    #
+    # Chronological Chain api
+    #
+
+    def try_to_rebuild_chronological_chain_from_historical_root_hashes(self, historical_root_hash_timestamp: Timestamp) -> None:
+        try:
+            correct_chronological_block_window = self.get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp(historical_root_hash_timestamp)
+            self.chain_head_db.save_chronological_block_window(correct_chronological_block_window, historical_root_hash_timestamp-TIME_BETWEEN_HEAD_HASH_SAVE)
+        except InvalidHeadRootTimestamp:
+            pass
+
+    def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp(self, historical_root_hash_timestamp: Timestamp) -> List[Tuple[Timestamp, Hash32]]:
+        '''
+        This is a time consuming function that gets all of the blocks that are new in this root hash that didn't exist in the base root hash.
+        :param timestamp:
+        :return:
+        '''
+
+        block_window_start = historical_root_hash_timestamp - TIME_BETWEEN_HEAD_HASH_SAVE
+
+        base_root_hash = self.chain_head_db.get_historical_root_hash(block_window_start)
+        new_root_hash = self.chain_head_db.get_historical_root_hash(historical_root_hash_timestamp)
+
+        if base_root_hash == new_root_hash:
+            return None
+
+        if base_root_hash is None or new_root_hash is None:
+            raise InvalidHeadRootTimestamp(
+                "Could not load block hashes for this historical_root_hash_timestamp because we don't have a root hash for this window or the previous window.")
+
+        base_head_block_hashes = set(self.chain_head_db.get_head_block_hashes(base_root_hash))
+        new_head_block_hashes = set(self.chain_head_db.get_head_block_hashes(new_root_hash))
+        diff_head_block_hashes = new_head_block_hashes - base_head_block_hashes
+
+        chronological_block_hash_timestamps = []
+        # now we have to run down each chain until we get to a block that is older than block_window_start
+        for head_block_hash in diff_head_block_hashes:
+            header = self.chaindb.get_block_header_by_hash(head_block_hash)
+            chronological_block_hash_timestamps.append([header.timestamp, head_block_hash])
+
+            while True:
+                if header.parent_hash == GENESIS_PARENT_HASH:
+                    break
+                try:
+                    header = self.chaindb.get_block_header_by_hash(header.parent_hash)
+                except HeaderNotFound:
+                    break
+
+                if header.timestamp < block_window_start:
+                    break
+
+                chronological_block_hash_timestamps.append([header.timestamp, header.hash])
+
+        assert len(chronological_block_hash_timestamps) > 0
+
+        chronological_block_hash_timestamps.sort()
+        return chronological_block_hash_timestamps
 
     #
     # Execution API
@@ -1951,137 +2023,6 @@ class Chain(BaseChain):
         #self.logger.debug('duration = {} seconds'.format(duration))
         tx_per_centisecond = int(100/duration)
         return tx_per_centisecond
-
-
-
-
-
-# This was moved to helios
-# This class is a work in progress; its main purpose is to define the API of an asyncio-compatible
-# Chain implementation.
-# class AsyncChain(Chain):
-#
-#     async def coro_import_block(self,
-#                                 block: BlockHeader,
-#                                 perform_validation: bool=True) -> BaseBlock:
-#         raise NotImplementedError()
-#
-#     async def coro_import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
-#         raise NotImplementedError()
-#
-#
-#     async def coro_get_all_chronological_blocks_for_window(self, window_timestamp: Timestamp) -> List[BaseBlock]:
-#         raise NotImplementedError()
-#
-#     async def coro_import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp,
-#                                           save_block_head_hash_timestamp: bool = True,
-#                                           allow_unprocessed: bool = False) -> None:
-#         raise NotImplementedError()
-#
-#     async def coro_update_current_network_tpc_capability(self, current_network_tpc_cap: int,
-#                                               update_min_gas_price: bool = True) -> None:
-#         raise NotImplementedError()
-#
-#     async def coro_get_local_tpc_cap(self) -> int:
-#         raise NotImplementedError()
-#
-#     async def coro_re_initialize_historical_minimum_gas_price_at_genesis(self) -> None:
-#         raise NotImplementedError()
-#
-#     async def coro_import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
-#         raise NotImplementedError()
-#
-#     async def coro_get_block_by_hash(self, block_hash: Hash32) -> BaseBlock:
-#         raise NotImplementedError("Chain classes must implement this method")
-#
-#     async def coro_get_block_by_header(self, block_header: BlockHeader) -> BaseBlock:
-#         raise NotImplementedError("Chain classes must implement this method")
-#
-#     async def coro_get_block_by_number(self, block_number: BlockNumber, chain_address: Address = None) -> BaseBlock:
-#         raise NotImplementedError("Chain classes must implement this method")
-#
-#     async def coro_get_blocks_on_chain(self, start: int, end: int, chain_address: Address = None) -> List[BaseBlock]:
-#         raise NotImplementedError("Chain classes must implement this method")
-#
-#     async def coro_get_all_blocks_on_chain(self, chain_address: Address = None) -> List[BaseBlock]:
-#         raise NotImplementedError("Chain classes must implement this method")
-#
-#     async def coro_get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
-#         raise NotImplementedError("Chain classes must implement this method")
-#
-#     async def coro_get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
-#         raise NotImplementedError("Chain classes must implement this method")
-
-    #
-    # Async chain functions for calling chain directly
-    #
-
-
-    # async def coro_import_chain(self, *args, **kwargs):
-    #     loop = asyncio.get_event_loop()
-    #
-    #     return await loop.run_in_executor(
-    #         None,
-    #         partial(self.import_chain, *args, **kwargs)
-    #     )
-
-
-    # async def coro_import_current_queue_block_with_reward(self, *args, **kwargs):
-    #     loop = asyncio.get_event_loop()
-    #
-    #     return await loop.run_in_executor(
-    #         None,
-    #         partial(self.import_current_queue_block_with_reward, *args, **kwargs)
-    #     )
-
-    # async def coro_get_block_by_hash(self, *args, **kwargs):
-    #     loop = asyncio.get_event_loop()
-    #
-    #     return await loop.run_in_executor(
-    #         None,
-    #         partial(self.get_block_by_hash, *args, **kwargs)
-    #     )
-
-    # async def coro_get_blocks_on_chain(self, *args, **kwargs):
-    #     loop = asyncio.get_event_loop()
-    #
-    #     return await loop.run_in_executor(
-    #         None,
-    #         partial(self.get_blocks_on_chain, *args, **kwargs)
-    #     )
-
-    # async def coro_get_blocks_on_chain_up_to_block_hash(self, *args, **kwargs):
-    #     loop = asyncio.get_event_loop()
-    #
-    #     return await loop.run_in_executor(
-    #         None,
-    #         partial(self.get_blocks_on_chain_up_to_block_hash, *args, **kwargs)
-    #     )
-
-
-    # async def coro_get_block_by_number(self, *args, **kwargs):
-    #     loop = asyncio.get_event_loop()
-    #
-    #     return await loop.run_in_executor(
-    #         None,
-    #         partial(self.get_block_by_number, *args, **kwargs)
-    #     )
-
-    # async def coro_import_current_queue_block(self, *args, **kwargs):
-    #     loop = asyncio.get_event_loop()
-    #
-    #     return await loop.run_in_executor(
-    #         None,
-    #         partial(self.import_current_queue_block, *args, **kwargs)
-    #     )
-
-    # async def coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, *args, **kwargs):
-    #     loop = asyncio.get_event_loop()
-    #
-    #     return await loop.run_in_executor(
-    #         None,
-    #         partial(self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash, *args, **kwargs)
-    #     )
 
 
 
