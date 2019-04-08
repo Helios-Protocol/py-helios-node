@@ -604,8 +604,9 @@ class Consensus(BaseService, PeerSubscriber):
                 except UnknownPeerStake:
                     self.logger.debug("This node's stake = {}".format("unknown"))
 
+                self.logger.debug("This node's wallet address = {}".format(encode_hex(self.chain_config.node_wallet_address)))
                 self.logger.debug("Number of connected peers = {}".format(len(self.peer_pool)))
-                wallet_stake = [(peer.wallet_address, await peer.stake) for peer in self.peer_pool.peers]
+                wallet_stake = [(encode_hex(peer.wallet_address), await peer.stake) for peer in self.peer_pool.peers]
                 self.logger.debug("{}".format(wallet_stake))
                 #first lets ask the bootnode for the stake of any peers that we dont have the blockchain for
                 #this takes care of determining stake of our peers while we are still syncing our blockchain database

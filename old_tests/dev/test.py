@@ -11,6 +11,15 @@ from helios.rlp_templates.hls import (
 #                                       block_number = 1,
 #                                       block_hash = b'test')
 
+test_1 = b'21312'
+test_2 = b'sdfaf'
+
+print(test_1+test_2)
+exit()
+
+test = {'what': 12, 'yes':'sadf'}
+print(hash(test))
+exit()
 # print(block_hash_key.wallet_address)
 #
 # from eth_account import Account

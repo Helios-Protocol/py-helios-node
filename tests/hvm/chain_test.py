@@ -1400,28 +1400,31 @@ def test_get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp()
 
 
 def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp():
-
-    testdb = LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full')
-    testdb = JournalDB(testdb)
+    #testdb = LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full')
+    testdb = LevelDB('/WWW/.local/share/helios/mainnet/chain/full')
+    #testdb = JournalDB(testdb)
 
 
     sender_chain = MainnetChain(testdb, SENDER.public_key.to_canonical_address(), SENDER)
     start_time = time.time()
-    chronological_block_hash_timestamps_old_way = sender_chain.chain_head_db.load_chronological_block_window(1554611000)
+    chronological_block_hash_timestamps_old_way = sender_chain.chain_head_db.load_chronological_block_window(1554664000)
     print('old way took {}'.format(time.time() - start_time))
 
     start_time = time.time()
-    chronological_block_hash_timestamps_new_way = sender_chain.get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp(1554611000+TIME_BETWEEN_HEAD_HASH_SAVE)
+    chronological_block_hash_timestamps_new_way = sender_chain.get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp(1554664000+TIME_BETWEEN_HEAD_HASH_SAVE)
     print('new way took {}'.format(time.time() - start_time))
 
 
     print(chronological_block_hash_timestamps_old_way)
     print(chronological_block_hash_timestamps_new_way)
 
-    sender_chain.try_to_rebuild_chronological_chain_from_historical_root_hashes(1554611000+TIME_BETWEEN_HEAD_HASH_SAVE)
+    #assert chronological_block_hash_timestamps_old_way == chronological_block_hash_timestamps_new_way
 
-    chronological_block_hash_timestamps_old_way = sender_chain.chain_head_db.load_chronological_block_window(1554611000)
-    print(chronological_block_hash_timestamps_old_way)
+    #exit()
+    # sender_chain.try_to_rebuild_chronological_chain_from_historical_root_hashes(1554664000+TIME_BETWEEN_HEAD_HASH_SAVE)
+    #
+    # chronological_block_hash_timestamps_old_way = sender_chain.chain_head_db.load_chronological_block_window(1554664000)
+    # print(chronological_block_hash_timestamps_old_way)
 
     #
     # for timestamp_hash in chronological_block_hash_timestamps_old_way:
@@ -1444,8 +1447,8 @@ def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp():
     assert chronological_block_hash_timestamps_old_way == chronological_block_hash_timestamps_new_way
 
 
-get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp()
-sys.exit()
+# get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp()
+# sys.exit()
 
 
 

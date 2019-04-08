@@ -618,8 +618,10 @@ class Hls(RPCModule):
         )
 
         sync_parameters = current_syncing_parameters_request.current_syncing_parameters
-
-        return sync_parameters.__dict__
+        if sync_parameters is None:
+            return None
+        else:
+            return sync_parameters.__dict__
 
 
     async def getBlockchainDBDetails(self):

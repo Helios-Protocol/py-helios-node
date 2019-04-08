@@ -152,18 +152,11 @@ class UnorderedBlockHeaderHash(Command):
     structure = sedes.CountableList(BlockHashKey)
 
 
-# send the primary salt
-class GetWalletAddressVerification(Command):
-    _cmd_id = 23
-    structure = [
-        ('salt', sedes.binary)
-    ]
-
-
 class WalletAddressVerification(Command):
     _cmd_id = 24
     structure = [
-        ('salt', sedes.binary),
+        ('local_salt', sedes.binary),
+        ('peer_salt', sedes.binary),
         ('v', sedes.big_endian_int),
         ('r', sedes.big_endian_int),
         ('s', sedes.big_endian_int),

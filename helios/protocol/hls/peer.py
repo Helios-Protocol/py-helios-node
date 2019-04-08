@@ -41,7 +41,6 @@ from hvm.types import Timestamp
 from .commands import (
     Status,
     WalletAddressVerification,
-    GetWalletAddressVerification,
 )
 from .constants import MAX_HEADERS_FETCH
 from .proto import HLSProtocol
@@ -92,11 +91,7 @@ class HLSPeer(BaseChainPeer):
         return self._requests
 
     def handle_sub_proto_msg(self, cmd: Command, msg: _DecodedMsgType) -> None:
-        if isinstance(cmd, GetWalletAddressVerification):
-            msg = cast(Dict[str, Any], msg)
-            self.send_wallet_address_verification(msg['primary_salt'])
-        else:
-            super().handle_sub_proto_msg(cmd, msg)
+        super().handle_sub_proto_msg(cmd, msg)
 
 
     async def send_sub_proto_handshake(self) -> None:
@@ -129,7 +124,7 @@ class HLSPeer(BaseChainPeer):
                     self, encode_hex(msg['genesis_block_hash']), encode_hex(genesis_block_hash)))
 
         self.node_type = msg['node_type']
-        self.send_wallet_address_verification(msg['salt'])
+        self.send_wallet_address_verification(self.local_salt, msg['salt'])
 
         # After the sub_proto handshake, the peer will send back a signed message containing the wallet address
         cmd, msg = await self.read_msg()
@@ -150,16 +145,18 @@ class HLSPeer(BaseChainPeer):
         msg = cast(Dict[str, Any], msg)
 
         # make sure the salt they replied with is the salt we sent:
-        if msg['salt'] != self.local_salt:
+        if msg['peer_salt'] != self.local_salt:
             raise HandshakeFailure("The peer replied with a signed message using the wrong salt")
 
-        validate_transaction_signature(msg['salt'], msg['v'], msg['r'], msg['s'])
+        salt = msg['local_salt'] + msg['peer_salt']
+        validate_transaction_signature(salt, msg['v'], msg['r'], msg['s'])
 
-        self.wallet_address = extract_wallet_verification_sender(msg['salt'], msg['v'], msg['r'], msg['s'])
+        self.wallet_address = extract_wallet_verification_sender(salt, msg['v'], msg['r'], msg['s'])
 
-    def send_wallet_address_verification(self, salt):
+    def send_wallet_address_verification(self, local_salt, peer_salt):
+        salt = local_salt + peer_salt
         v, r, s = create_wallet_verification_signature(salt, self.chain_config.node_private_helios_key)
-        self.sub_proto.send_wallet_address_verification(salt, v, r, s)
+        self.sub_proto.send_wallet_address_verification(local_salt, peer_salt, v, r, s)
         self.peer_salt = salt
         # self.logger.debug("sending wallet address verification for wallet {}".format(self.chain_config.node_wallet_address))
 

@@ -6,6 +6,7 @@ import functools
 import logging
 import operator
 import struct
+import time
 from abc import (
     ABC,
     abstractmethod
@@ -172,6 +173,11 @@ class BasePeer(BaseService):
     # Will be set upon the successful completion of a P2P handshake.
     sub_proto: protocol.Protocol = None
     wallet_address = None
+    throttle_annoying_peers = False
+    last_msg_timestamp: int = 0
+    read_msg_count: int = 0
+    throttle_to_msg_per_second = 4
+    throttle_window = 100
 
     def __init__(self,
                  remote: Node,
@@ -365,6 +371,20 @@ class BasePeer(BaseService):
         # `boot` task.
         self.run_child_service(self.boot_manager)
         while self.is_operational:
+            if self.throttle_annoying_peers == True:
+                current_time = time.time()
+                current_throttle_window = int(current_time / self.throttle_window) * self.throttle_window
+                if self.last_msg_timestamp < current_throttle_window:
+                    self.read_msg_count = 1
+                else:
+                    self.read_msg_count += 1
+
+                self.last_msg_timestamp = current_time
+
+                if self.read_msg_count >= self.throttle_to_msg_per_second*self.throttle_window-8:
+                    self.logger.debug("Throttling peer")
+                    await asyncio.sleep(1/self.throttle_to_msg_per_second)
+
             try:
                 cmd, msg = await self.read_msg()
             except (PeerConnectionLost, TimeoutError) as err:

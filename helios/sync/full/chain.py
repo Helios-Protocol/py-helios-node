@@ -608,7 +608,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         self.logger.debug([encode_hex(x) for x in self.chain_head_db.get_head_block_hashes_list(test_hist_root_hashes[0][1])])
 
         timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(chronological_window_timestamp)
-        self.logger.debug("Our chronological block window has {} blocks".format(len(timestamp_block_hashes)))
+        #self.logger.debug("Our chronological block window has {} blocks".format(len(timestamp_block_hashes)))
         if timestamp_block_hashes is None:
             # we have no blocks for this window. So just request all of them automatically.
             # This is the same for all versions of syncing
@@ -1097,7 +1097,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             # the syncer will know which blocks are required to reach consensus and mark them with allow_import_for_expired_timestamp = True
 
             if not allow_import_for_expired_timestamp:
-                self.logger.debug("Tried importing a block that has an expired timestamp. Not allowing. Block hash {}".format(encode_hex(new_block.header.hash)))
+                self.logger.debug("Tried importing a block that has an expired timestamp. Not allowing. Block hash {}. block timestamp {}, current time {}".format(encode_hex(new_block.header.hash), new_block.header.timestamp, int(time.time())))
                 return False
 
         chain_address = new_block.header.chain_address

@@ -50,7 +50,6 @@ from .commands import (
     ChainHeadRootHashTimestamps,
     GetUnorderedBlockHeaderHash,
     UnorderedBlockHeaderHash,
-    GetWalletAddressVerification,
     WalletAddressVerification,
     GetStakeForAddresses,
     StakeForAddresses,
@@ -84,7 +83,7 @@ class HLSProtocol(Protocol):
         GetBlockBodies, BlockBodies, NewBlock, NewBlock, NewBlock,
         NewBlock, NewBlock, NewBlock, GetNodeData, NodeData,
         GetReceipts, Receipts, GetChainHeadTrieBranch, ChainHeadTrieBranch, GetChainHeadRootHashTimestamps,
-        ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, GetWalletAddressVerification, WalletAddressVerification,
+        ChainHeadRootHashTimestamps, GetUnorderedBlockHeaderHash, UnorderedBlockHeaderHash, WalletAddressVerification, WalletAddressVerification,
         GetStakeForAddresses, StakeForAddresses, GetChains, Chains, GetChronologicalBlockWindow,
         ChronologicalBlockWindow, GetMinGasParameters, MinGasParameters, GetChainSegment, GetBlocks,
         Blocks, GetNodeStakingScore, SendNodeStakingScore, GetHashFragments, SendHashFragments]
@@ -201,16 +200,11 @@ class HLSProtocol(Protocol):
         header, body = cmd.encode(block_hash_keys)
         self.send(header, body)
 
-    def send_get_wallet_address_verification(self, salt) -> None:
-        cmd = GetWalletAddressVerification(self.cmd_id_offset)
-        data = {
-            'salt': salt}
-        header, body = cmd.encode(data)
-        self.send(header, body)
 
-    def send_wallet_address_verification(self, salt, v, r, s) -> None:
+    def send_wallet_address_verification(self, local_salt, peer_salt, v, r, s) -> None:
         data = {
-            'salt': salt,
+            'local_salt': local_salt,
+            'peer_salt': peer_salt,
             'v': v,
             'r': r,
             's': s}
