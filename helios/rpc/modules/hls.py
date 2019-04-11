@@ -11,7 +11,7 @@ from eth_utils import (
     big_endian_to_int
 )
 import time
-
+from hvm.rlp.transactions import BaseReceiveTransaction
 from helios.exceptions import BaseRPCError
 from helios.rpc.constants import MAX_ALLOWED_AGE_OF_NEW_RPC_BLOCK
 from helios.rpc.format import (
@@ -20,13 +20,17 @@ from helios.rpc.format import (
     format_params,
     to_int_if_hex,
     transaction_to_dict,
-    receipt_to_dict, receive_transactions_to_dict, decode_hex_if_str)
+    receipt_to_dict,
+    receive_transactions_to_dict,
+    decode_hex_if_str,
+    receive_transaction_to_dict)
 import rlp_cython as rlp
 from helios.sync.common.constants import FULLY_SYNCED_STAGE_ID
 
 from hvm.exceptions import (
     CanonicalHeadNotFound,
     HeaderNotFound,
+    TransactionNotFound,
 )
 from hvm.utils.blocks import get_block_average_transaction_gas_price
 
@@ -401,6 +405,29 @@ class Hls(RPCModule):
     # Gets
     #
 
+    #
+    # Transactions
+    #
+    @format_params(decode_hex)
+    def getTransactionByHash(self, tx_hash):
+        chain = self.get_new_chain()
+        try:
+            tx = chain.get_canonical_transaction(tx_hash)
+        except TransactionNotFound:
+            raise BaseRPCError("Transaction not found on canonical chain.")
+        if isinstance(tx, BaseReceiveTransaction):
+            return receive_transaction_to_dict(tx, chain)
+        else:
+            return transaction_to_dict(tx, chain)
+
+    @format_params(decode_hex)
+    async def getTransactionReceipt(self, tx_hash):
+        chain = self.get_new_chain()
+        receipt = chain.chaindb.get_transaction_receipt(tx_hash)
+
+        receipt_dict = receipt_to_dict(receipt, tx_hash, chain)
+
+        return receipt_dict
 
     @format_params(decode_hex)
     async def getReceivableTransactions(self, chain_address):
@@ -412,15 +439,10 @@ class Hls(RPCModule):
 
         return receivable_transactions_dict
 
-    @format_params(decode_hex)
-    async def getTransactionReceipt(self, tx_hash):
-        chain = self.get_new_chain()
-        receipt = chain.chaindb.get_transaction_receipt(tx_hash)
 
-        receipt_dict = receipt_to_dict(receipt, tx_hash, chain)
-
-        return receipt_dict
-
+    #
+    # Gas system
+    #
     async def getGasPrice(self):
         required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price()
         return hex(required_min_gas_price)
@@ -435,7 +457,9 @@ class Hls(RPCModule):
 
         return encoded
 
-
+    #
+    # Blocks
+    #
     @format_params(decode_hex, to_int_if_hex)
     async def getBlockNumber(self, chain_address, before_timestamp = None):
         chain = self.get_new_chain(chain_address)

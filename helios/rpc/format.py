@@ -112,8 +112,10 @@ def receipt_to_dict(receipt: Receipt, tx_hash: Hash32, chain: AsyncChain) -> Dic
 
 def transaction_to_dict(transaction: BaseTransaction, chain: AsyncChain) -> Dict[str, str]:
     dict_to_return = all_rlp_fields_to_dict_camel_case(transaction)
+    dict_to_return['from'] = encode_hex(transaction.sender)
     dict_to_return['hash'] = encode_hex(transaction.hash)
     dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction.hash).gas_used)
+    dict_to_return['isReceive'] = False
     return dict_to_return
 
 
@@ -129,6 +131,7 @@ def transactions_to_dict(transactions: List[BaseTransaction],  chain: AsyncChain
 
 def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: AsyncChain) -> Dict[str, str]:
     dict_to_return = all_rlp_fields_to_dict_camel_case(transaction)
+    dict_to_return['isReceive'] = True
     dict_to_return['hash'] = encode_hex(transaction.hash)
 
     from_address = chain.get_block_header_by_hash(transaction.sender_block_hash).chain_address
@@ -146,7 +149,7 @@ def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: Asyn
 
     dict_to_return['value'] = to_hex(value)
     dict_to_return['gasPrice'] = to_hex(originating_transaction.gas_price)
-
+    dict_to_return['to'] = to_hex(originating_transaction.to)
     try:
         dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction.hash).gas_used)
     except TransactionNotFound:
@@ -169,6 +172,7 @@ def reward_bundle_to_dict(reward_bundle: StakeRewardBundle) -> Dict[str, str]:
     dict_to_return = all_rlp_fields_to_dict_camel_case(reward_bundle)
 
     dict_to_return['hash'] = encode_hex(reward_bundle.hash)
+    dict_to_return['isReward'] = True
     return dict_to_return
 
 
@@ -204,6 +208,7 @@ def header_to_dict(header: BlockHeader) -> Dict[str, str]:
     logs_bloom = '0x' + logs_bloom.rjust(512, '0')
     header_dict = {
         "chainAddress": encode_hex(header.chain_address),
+        "sender": encode_hex(header.sender),
         "extraData": encode_hex(header.extra_data),
         "gasLimit": hex(header.gas_limit),
         "gasUsed": hex(header.gas_used),

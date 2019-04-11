@@ -1102,7 +1102,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         chain_address = new_block.header.chain_address
 
-        self.logger.debug("handling new block")
+        self.logger.debug("handling new block with timestamp {}".format(new_block.header.timestamp))
         chain = self.node.get_new_chain()
 
         #we only check the min gas requirements for sync stage 3, 4
