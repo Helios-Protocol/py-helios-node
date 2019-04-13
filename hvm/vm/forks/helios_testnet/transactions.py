@@ -48,7 +48,7 @@ from hvm.rlp.sedes import (
     address,
     hash32,
 )
-
+import functools
 
 
 
@@ -58,6 +58,7 @@ class HeliosTestnetTransaction(BaseTransaction):
     _sender = None
     _valid_transaction = None
 
+    @functools.lru_cache(maxsize=128)
     def get_message_for_signing(self, chain_id: int = None) -> bytes:
         if chain_id is None:
             chain_id = self.chain_id
@@ -69,6 +70,7 @@ class HeliosTestnetTransaction(BaseTransaction):
         message = rlp.encode(transaction_parts_for_signature)
         return message
 
+    @functools.lru_cache(maxsize=128)
     def check_signature_validity(self):
         if self._cache:
             if self._valid_transaction is not None:
@@ -82,6 +84,7 @@ class HeliosTestnetTransaction(BaseTransaction):
         else:
             validate_transaction_signature(self)
 
+    @functools.lru_cache(maxsize=128)
     def get_sender(self):
         if self._cache:
             if self._sender is not None:

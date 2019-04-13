@@ -335,7 +335,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                   additional_candidate_peers: List[HLSPeer],
                                                   force_replace_existing_blocks: bool = True,
                                                   allow_import_for_expired_timestamp: bool = False,
-                                                  resolving_block_conflict: bool = False) -> HLSPeer:
+                                                  resolving_block_conflict: bool = False,
+                                                  allow_low_gas_block = False) -> HLSPeer:
         '''
         Requests the blocks from peer in manageable chunks. If peer doesn't respond it cycles through additional_candidate_peers.
         It then imports the blocks to our chain.
@@ -376,7 +377,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                 from_rpc=False,
                                                 force_replace_existing_blocks = force_replace_existing_blocks,
                                                 allow_import_for_expired_timestamp=allow_import_for_expired_timestamp,
-                                                resolving_block_conflict = resolving_block_conflict)
+                                                resolving_block_conflict = resolving_block_conflict,
+                                                allow_low_gas_block = allow_low_gas_block)
 
         return peer
 
@@ -632,7 +634,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                    peer = peer_to_sync_with,
                                                                                    additional_candidate_peers = additional_candidate_peers,
                                                                                    allow_import_for_expired_timestamp=True,
-                                                                                   force_replace_existing_blocks = force_replace_existing_blocks)
+                                                                                   force_replace_existing_blocks = force_replace_existing_blocks,
+                                                                                   allow_low_gas_block = True)
             except NoCandidatePeers:
                 return
 
@@ -727,7 +730,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                                peer = peer_to_sync_with,
                                                                                                additional_candidate_peers = additional_candidate_peers,
                                                                                                allow_import_for_expired_timestamp=True,
-                                                                                               force_replace_existing_blocks=force_replace_existing_blocks)
+                                                                                               force_replace_existing_blocks=force_replace_existing_blocks,
+                                                                                               allow_low_gas_block = True)
 
                         chain = self.node.get_chain()
                         if len(hash_positions_of_ours_that_they_need) > 0:
@@ -948,7 +952,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                     block_hash_list=required_block_hashes,
                                                     peer=peer_to_sync_with,
                                                     additional_candidate_peers=peers_to_sync_with,
-                                                    resolving_block_conflict=True)
+                                                    resolving_block_conflict=True,
+                                                    allow_import_for_expired_timestamp=True,
+                                                    allow_low_gas_block = True)
 
 
 
@@ -1085,7 +1091,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                propogate_to_network: bool = True, from_rpc: bool = False,
                                force_replace_existing_blocks:bool = False,
                                allow_import_for_expired_timestamp: bool = False,
-                               resolving_block_conflict: bool = False) -> Optional[bool]:
+                               resolving_block_conflict: bool = False,
+                               allow_low_gas_block = False) -> Optional[bool]:
 
         '''
         This returns true if the block is imported successfully, False otherwise
@@ -1106,7 +1113,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         chain = self.node.get_new_chain()
 
         #we only check the min gas requirements for sync stage 3, 4
-        if get_sync_stage_for_block_timestamp(new_block.header.timestamp) >= ADDITIVE_SYNC_STAGE_ID and len(new_block.transactions) != 0:
+        if not allow_low_gas_block and get_sync_stage_for_block_timestamp(new_block.header.timestamp) >= ADDITIVE_SYNC_STAGE_ID and len(new_block.transactions) != 0:
             try:
                 required_min_gas_price = self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)
             except HistoricalMinGasPriceError:

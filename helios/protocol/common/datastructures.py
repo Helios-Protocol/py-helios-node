@@ -5,12 +5,14 @@ from typing import (
     Union,
     TYPE_CHECKING,
     Optional,
+    Dict,
 )
 from eth_typing import Hash32
-
 from helios.protocol.hls.sync import get_sync_stage_for_historical_root_hash_timestamp
 if TYPE_CHECKING:
     from helios.protocol.common.peer import HLSPeer
+    from hp2p.kademlia import Node
+    from helios.protocol.common.peer import BaseChainPeer
 
 class HashFragmentRequestHistory:
     def __init__(self,
@@ -76,3 +78,26 @@ class FastSyncParameters():
 
         self.expected_block_hash_fragments: List[bytes] = expected_block_hash_fragments
         self.chain_idx_that_we_need: List[int] = chain_idx_that_we_need
+
+
+class ConnectedNodesInfo():
+    connected_nodes = []
+    def __init__(self, connected_nodes):
+        self.connected_nodes = connected_nodes
+
+    @classmethod
+    async def generate_object(cls, connected_nodes: Dict['Node', 'BaseChainPeer']):
+        connected_nodes_info = []
+        for node, peer in connected_nodes.items():
+            node_dict = {}
+            node_dict['url'] = node.__repr__()
+            node_dict['ip_address'] = node.address.ip
+            node_dict['udp_port'] = node.address.udp_port
+            node_dict['tcp_port'] = node.address.tcp_port
+            node_dict['stake'] = await peer.stake
+            health = peer.health
+            node_dict['requests_sent'] = health.requests_sent
+            node_dict['failed_requests'] = health.failed_requests
+            node_dict['average_response_time'] = health.average_response_time
+            connected_nodes_info.append(node_dict)
+        return cls(connected_nodes_info)

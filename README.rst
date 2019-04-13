@@ -51,6 +51,17 @@ Py-helios-node install instructions:
 
     4)  Install python 3.6
 
+        First, make sure you have some required packages installed:
+
+        .. code:: bash
+
+            $ sudo apt install build-essential
+            $ sudo apt install zlib1g
+            $ sudo apt install zlib1g-dev
+            $ sudo apt install libssl-dev
+
+        Then install python 3.6 using the following command
+
         .. code:: bash
 
             $ pyenv install 3.6.5
@@ -111,7 +122,7 @@ the node software to use your wallet as a source of coins to stake.
     `MyEtherWallet <http://myetherwallet.com>`_, then save the wallet file. This file will work with
     Helios Protocol.
 2)  Place keystore file within the directory helios/keystore
-3)  Configure node to use your keystore file. Copy helios/helios_config.template.py to helios/helios_config.py.
+3)  Configure node to use your keystore file. Copy helios/helios_config_template.py to helios/helios_config.py.
     Then edit the new file and tell it the filename of your keystore file to use.
 
 Open Ports in Firewall

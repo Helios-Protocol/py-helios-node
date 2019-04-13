@@ -23,7 +23,7 @@ from helios.rpc.format import (
     receipt_to_dict,
     receive_transactions_to_dict,
     decode_hex_if_str,
-    receive_transaction_to_dict)
+    receive_transaction_to_dict, connected_nodes_to_dict)
 import rlp_cython as rlp
 from helios.sync.common.constants import FULLY_SYNCED_STAGE_ID
 
@@ -62,7 +62,7 @@ import asyncio
 from typing import cast
 
 from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStageRequest, \
-    CurrentSyncingParametersRequest
+    CurrentSyncingParametersRequest, GetConnectedNodesRequest
 
 from hvm.rlp.consensus import StakeRewardBundle
 from hvm.vm.forks.helios_testnet.blocks import MicroBlock
@@ -409,12 +409,12 @@ class Hls(RPCModule):
     # Transactions
     #
     @format_params(decode_hex)
-    def getTransactionByHash(self, tx_hash):
+    async def getTransactionByHash(self, tx_hash):
         chain = self.get_new_chain()
         try:
             tx = chain.get_canonical_transaction(tx_hash)
         except TransactionNotFound:
-            raise BaseRPCError("Transaction not found on canonical chain.")
+            raise BaseRPCError("Transaction with hash {} not found on canonical chain.".format(encode_hex(tx_hash)))
         if isinstance(tx, BaseReceiveTransaction):
             return receive_transaction_to_dict(tx, chain)
         else:
@@ -626,6 +626,20 @@ class Hls(RPCModule):
 
             
         return block_dicts_to_return
+
+    #
+    # Network status information
+    #
+
+    async def getConnectedNodes(self):
+
+        get_connected_nodes_response = await self._event_bus.request(
+            GetConnectedNodesRequest()
+        )
+
+        get_connected_nodes_response = get_connected_nodes_response.connected_nodes
+        dict_to_output = connected_nodes_to_dict(get_connected_nodes_response)
+        return dict_to_output
 
     #
     # Admin tools and dev debugging

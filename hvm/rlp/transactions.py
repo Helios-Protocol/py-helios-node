@@ -5,6 +5,7 @@ from abc import (
 from typing import (
     Any,
 )
+import functools
 
 import rlp_cython as rlp
 from rlp_cython.sedes import (
@@ -79,7 +80,6 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
     @classmethod
     def from_base_transaction(cls, transaction: 'BaseTransaction') -> 'BaseTransaction':
         return rlp.decode(rlp.encode(transaction), sedes=cls)
-
 
 
     @property

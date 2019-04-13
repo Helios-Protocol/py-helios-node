@@ -2,6 +2,7 @@ from typing import (
     Type,
     Dict,
     Any,
+    TYPE_CHECKING
 )
 
 from lahja import (
@@ -13,7 +14,8 @@ from eth_typing import Address
 from helios.protocol.common.datastructures import SyncParameters
 
 from helios.rlp_templates.hls import P2PBlock
-
+if TYPE_CHECKING:
+    from helios.protocol.common.datastructures import ConnectedNodesInfo
 
 class PeerCountResponse(BaseEvent):
 
@@ -26,6 +28,18 @@ class PeerCountRequest(BaseRequestResponseEvent[PeerCountResponse]):
     @staticmethod
     def expected_response_type() -> Type[PeerCountResponse]:
         return PeerCountResponse
+
+class GetConnectedNodesResponse(BaseEvent):
+
+    def __init__(self, connected_nodes: 'ConnectedNodesInfo') -> None:
+        self.connected_nodes = connected_nodes
+
+
+class GetConnectedNodesRequest(BaseRequestResponseEvent[GetConnectedNodesResponse]):
+
+    @staticmethod
+    def expected_response_type() -> Type[GetConnectedNodesResponse]:
+        return GetConnectedNodesResponse
 
 class CurrentSyncingParametersResponse(BaseEvent):
 

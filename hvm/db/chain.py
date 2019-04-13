@@ -345,6 +345,13 @@ class BaseChainDB(metaclass=ABCMeta):
                                 receive_tx_class: Type['BaseReceiveTransaction']) -> Union['BaseTransaction', 'BaseReceiveTransaction']:
         raise NotImplementedError("ChainDB classes must implement this method")
 
+    @abstractmethod
+    def get_transaction_chain_address(self, transaction_hash: Hash32) -> Address:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_transaction_block_hash(self, transaction_hash: Hash32) -> Hash32:
+        raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
     def get_transaction_index(self, transaction_hash: Hash32) -> Tuple[BlockNumber, int, bool]:
@@ -1335,6 +1342,14 @@ class ChainDB(BaseChainDB):
     #     else:
     #         raise TransactionNotFound(
     #             "No transaction is at index {} of block {}".format(transaction_index, block_number))
+
+    def get_transaction_chain_address(self, transaction_hash: Hash32) -> Address:
+        block_hash, _, _ = self.get_transaction_index(transaction_hash)
+        return self.get_chain_wallet_address_for_block_hash(block_hash)
+
+    def get_transaction_block_hash(self, transaction_hash: Hash32) -> Hash32:
+        block_hash, _, _ = self.get_transaction_index(transaction_hash)
+        return block_hash
 
     def get_transaction_index(self, transaction_hash: Hash32) -> Tuple[Hash32, int, bool]:
         """

@@ -47,6 +47,7 @@ from cancel_token import CancelToken, OperationCancelled
 
 from lahja import Endpoint
 
+from helios.protocol.common.datastructures import ConnectedNodesInfo
 from hp2p import auth
 from hp2p import protocol
 from hp2p.kademlia import Node
@@ -92,7 +93,7 @@ from .constants import (
 from .events import (
     PeerCountRequest,
     PeerCountResponse,
-)
+    GetConnectedNodesRequest, GetConnectedNodesResponse)
 
 from sortedcontainers import SortedList
 
@@ -794,7 +795,8 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
             self.run_task(self.handle_peer_count_requests())
 
     async def handle_peer_count_requests(self) -> None:
-        async def f() -> None:
+
+        async def peer_count_requests() -> None:
             # FIXME: There must be a way to cancel event_bus.stream() when our token is triggered,
             # but for the time being we just wrap everything in self.wait().
             async for req in self.event_bus.stream(PeerCountRequest):
@@ -804,7 +806,19 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
                 # `event.broadcast_config()` API.
                 self.event_bus.broadcast(PeerCountResponse(len(self)), req.broadcast_config())
 
-        await self.wait(f())
+        async def connected_nodes_request() -> None:
+            # FIXME: There must be a way to cancel event_bus.stream() when our token is triggered,
+            # but for the time being we just wrap everything in self.wait().
+            async for req in self.event_bus.stream(GetConnectedNodesRequest):
+                # We are listening for all `PeerCountRequest` events but we ensure to only send a
+                # `PeerCountResponse` to the callsite that made the request.  We do that by
+                # retrieving a `BroadcastConfig` from the request via the
+                # `event.broadcast_config()` API.
+                node_info = await ConnectedNodesInfo.generate_object(self.connected_nodes)
+                self.event_bus.broadcast(GetConnectedNodesResponse(node_info), req.broadcast_config())
+
+
+        await self.wait_first(peer_count_requests(), connected_nodes_request())
 
     def __len__(self) -> int:
         return len(self.connected_nodes)

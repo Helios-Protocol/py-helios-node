@@ -26,13 +26,14 @@ import rlp_cython as rlp
 from helios.chains.coro import (
     AsyncChain
 )
+from helios.protocol.common.datastructures import ConnectedNodesInfo
 from hvm.constants import (
     CREATE_CONTRACT_ADDRESS)
 from hvm.exceptions import TransactionNotFound
 from hvm.rlp.blocks import (
     BaseBlock
 )
-from hvm.rlp.consensus import StakeRewardBundle
+from hvm.rlp.consensus import StakeRewardBundle, StakeRewardType2
 from hvm.rlp.headers import (
     BlockHeader
 )
@@ -53,6 +54,15 @@ def underscore_to_camel_case(input_string:str) -> str:
         return camel_case_string
     else:
         return ''
+
+def dict_keys_underscore_to_camel_case(input_dict):
+    output_dict = {}
+    for key, val in input_dict.items():
+        key = underscore_to_camel_case(key)
+        if isinstance(val, dict) or isinstance(val, list):
+            output_dict[key] = dict_keys_underscore_to_camel_case(val)
+        else:
+            output_dict[key] = val
 
 def all_rlp_fields_to_dict_camel_case(rlp_object: Union[rlp.Serializable, List, Tuple]) -> Union[Dict[str, any], List[any]]:
     #It is either rlp.Serializable or a list
@@ -81,6 +91,23 @@ def all_rlp_fields_to_dict_camel_case(rlp_object: Union[rlp.Serializable, List, 
             list_to_return.append(val)
         return list_to_return
 
+def connected_nodes_to_dict(connected_nodes_info: ConnectedNodesInfo) -> List[Dict[str, str]]:
+    connected_nodes = connected_nodes_info.connected_nodes
+    output_list = []
+    for connected_node in connected_nodes:
+        connected_node_dict = {}
+
+        connected_node_dict['url'] = to_hex(text = connected_node['url'])
+        connected_node_dict['ipAddress'] = to_hex(text = connected_node['ip_address'])
+        connected_node_dict['udpPort'] = to_hex(connected_node['udp_port'])
+        connected_node_dict['tcpPort'] = to_hex(connected_node['tcp_port'])
+        connected_node_dict['stake'] = to_hex(connected_node['stake'])
+        connected_node_dict['requestsSent'] = to_hex(connected_node['requests_sent'])
+        connected_node_dict['failedRequests'] = to_hex(connected_node['failed_requests'])
+        connected_node_dict['averageResponseTime'] = to_hex(connected_node['average_response_time'])
+
+        output_list.append(connected_node_dict)
+    return output_list
 
 def receipt_to_dict(receipt: Receipt, tx_hash: Hash32, chain: AsyncChain) -> Dict[str, str]:
     dict_to_return = all_rlp_fields_to_dict_camel_case(receipt)
@@ -111,11 +138,18 @@ def receipt_to_dict(receipt: Receipt, tx_hash: Hash32, chain: AsyncChain) -> Dic
     return dict_to_return
 
 def transaction_to_dict(transaction: BaseTransaction, chain: AsyncChain) -> Dict[str, str]:
+    transaction_hash = Hash32(transaction.hash)
     dict_to_return = all_rlp_fields_to_dict_camel_case(transaction)
     dict_to_return['from'] = encode_hex(transaction.sender)
     dict_to_return['hash'] = encode_hex(transaction.hash)
-    dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction.hash).gas_used)
-    dict_to_return['isReceive'] = False
+    dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction_hash).gas_used)
+    block_hash, tx_index, is_receive = chain.chaindb.get_transaction_index(transaction_hash)
+    dict_to_return['blockHash'] = encode_hex(block_hash)
+    block_header = chain.chaindb.get_block_header_by_hash(block_hash)
+    dict_to_return['blockNumber'] = to_hex(block_header.block_number)
+    dict_to_return['transactionIndex'] = to_hex(tx_index)
+    dict_to_return['input'] = encode_hex(transaction.data)
+    dict_to_return['isReceive'] = to_hex(False)
     return dict_to_return
 
 
@@ -130,9 +164,10 @@ def transactions_to_dict(transactions: List[BaseTransaction],  chain: AsyncChain
 
 
 def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: AsyncChain) -> Dict[str, str]:
+    tx_hash = transaction.hash
     dict_to_return = all_rlp_fields_to_dict_camel_case(transaction)
-    dict_to_return['isReceive'] = True
-    dict_to_return['hash'] = encode_hex(transaction.hash)
+    dict_to_return['isReceive'] = to_hex(True)
+    dict_to_return['hash'] = encode_hex(tx_hash)
 
     from_address = chain.get_block_header_by_hash(transaction.sender_block_hash).chain_address
 
@@ -153,7 +188,13 @@ def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: Asyn
     try:
         dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction.hash).gas_used)
     except TransactionNotFound:
-        dict_to_return['gasUsed'] = 0
+        dict_to_return['gasUsed'] = to_hex(0)
+
+    block_hash, receive_tx_index, _ = chain.chaindb.get_transaction_index(tx_hash)
+    num_send_transactions = chain.chaindb.get_number_of_send_tx_in_block(block_hash)
+    block_tx_index = num_send_transactions + receive_tx_index
+    dict_to_return['transactionIndex'] = to_hex(block_tx_index)
+    dict_to_return['blockHash'] = to_hex(block_hash)
 
     return dict_to_return
 
@@ -167,12 +208,25 @@ def receive_transactions_to_dict(transactions: List[BaseTransaction], chain: Asy
 
     return dict_transactions
 
+def reward_type_2_to_dict(reward_type_2: StakeRewardType2) -> Dict[str, str]:
+    dict_to_return = {}
+    dict_to_return['amount'] = to_hex(reward_type_2.amount)
+
+    dict_to_return['proof'] = []
+
+    for proof in reward_type_2.proof:
+        proof_dict = all_rlp_fields_to_dict_camel_case(proof)
+        proof_dict['sender'] = to_hex(proof.sender)
+        dict_to_return['proof'].append(proof_dict)
+
+    return dict_to_return
 
 def reward_bundle_to_dict(reward_bundle: StakeRewardBundle) -> Dict[str, str]:
-    dict_to_return = all_rlp_fields_to_dict_camel_case(reward_bundle)
-
+    dict_to_return = {}
+    dict_to_return['rewardType1'] = all_rlp_fields_to_dict_camel_case(reward_bundle.reward_type_1)
+    dict_to_return['rewardType2'] = reward_type_2_to_dict(reward_bundle.reward_type_2)
     dict_to_return['hash'] = encode_hex(reward_bundle.hash)
-    dict_to_return['isReward'] = True
+    dict_to_return['isReward'] = to_hex(True)
     return dict_to_return
 
 
@@ -216,7 +270,7 @@ def header_to_dict(header: BlockHeader) -> Dict[str, str]:
         "logsBloom": logs_bloom,
         "number": hex(header.block_number),
         "parentHash": encode_hex(header.parent_hash),
-        "rewardHash": encode_hex(header.parent_hash),
+        "rewardHash": encode_hex(header.reward_hash),
         "accountHash": encode_hex(header.account_hash),
         "receiptsRoot": encode_hex(header.receipt_root),
         "timestamp": hex(header.timestamp),

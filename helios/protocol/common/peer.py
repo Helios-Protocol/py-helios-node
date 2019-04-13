@@ -27,8 +27,9 @@ from hp2p.peer import (
     BasePeerFactory,
     BasePeerPool,
 )
-
+from hvm.rlp.consensus import PeerNodeHealth
 from helios.db.chain_head import AsyncChainHeadDB
+from helios.db.consensus import AsyncConsensusDB
 from helios.db.chain import AsyncChainDB
 from helios.chains.coro import AsyncChain
 
@@ -68,6 +69,10 @@ class BaseChainPeer(BasePeer):
         return self.context.chain_head_db
 
     @property
+    def consensus_db(self) -> AsyncConsensusDB:
+        return self.context.consensus_db
+
+    @property
     def chain_config(self) -> 'ChainConfig':
         return self.context.chain_config
 
@@ -94,6 +99,10 @@ class BaseChainPeer(BasePeer):
             node_type=node_type,
             genesis_block_hash=genesis_block_hash
         )
+
+    @property
+    def health(self) -> PeerNodeHealth:
+        return self.consensus_db.get_current_peer_node_health(self.wallet_address)
 
 
 class BaseChainPeerFactory(BasePeerFactory):
