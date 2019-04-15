@@ -17,6 +17,7 @@ from hvm.rlp.headers import (
     BaseBlockHeader,
 )
 
+from eth_utils import from_wei, to_wei
 
 EIP155_CHAIN_ID_OFFSET = 35
 V_OFFSET = 27
@@ -116,12 +117,25 @@ def get_block_average_transaction_gas_price(block):
         num_tx += 1
         total_sum += transaction.gas_price
         
-    average = total_sum/num_tx
+    average = int(total_sum/num_tx)
     return average
         
 
 
 
+def does_block_meet_min_gas_price(block, chain):
+    average_gas_price_in_wei = get_block_average_transaction_gas_price(block) #in wei
+    required_min_gas_price_in_gwei = chain.chaindb.get_required_block_min_gas_price(block.header.timestamp) #in gwei
+
+    if average_gas_price_in_wei == float('inf'):
+        return True
+
+    average_gas_price_in_gwei = from_wei(average_gas_price_in_wei, 'gwei')
+
+    if average_gas_price_in_gwei < required_min_gas_price_in_gwei:
+        return False
+    else:
+        return True
 
 
 

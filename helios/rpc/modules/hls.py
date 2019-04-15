@@ -8,7 +8,9 @@ from eth_utils import (
     encode_hex,
     int_to_big_endian,
     is_integer,
-    big_endian_to_int
+    big_endian_to_int,
+    to_wei,
+    from_wei,
 )
 import time
 from hvm.rlp.transactions import BaseReceiveTransaction
@@ -32,7 +34,7 @@ from hvm.exceptions import (
     HeaderNotFound,
     TransactionNotFound,
 )
-from hvm.utils.blocks import get_block_average_transaction_gas_price
+from hvm.utils.blocks import does_block_meet_min_gas_price
 
 from hvm.types import Timestamp
 
@@ -532,14 +534,14 @@ class Hls(RPCModule):
             raise BaseRPCError("The block timestamp is to old. We can only import new blocks over RPC.")
 
         try:
-            canonical_head = self._chain.chaindb.get_canonical_head(full_block.header.chain_address)
+            canonical_head = chain.chaindb.get_canonical_head(full_block.header.chain_address)
             if canonical_head.block_number >= full_block.header.block_number:
                 raise BaseRPCError("You are attempting to replace an existing block. This is not allowed.")
         except CanonicalHeadNotFound:
             pass
 
         if((full_block.header.block_number != 0) and
-            (not self._chain.chaindb.is_in_canonical_chain(full_block.header.parent_hash))):
+            (not chain.chaindb.is_in_canonical_chain(full_block.header.parent_hash))):
             raise BaseRPCError("Parent block not found on canonical chain.")
 
         #Check our current syncing stage. Must be sync stage 4.
@@ -549,10 +551,9 @@ class Hls(RPCModule):
         if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
             raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
 
-        average_gas_price = get_block_average_transaction_gas_price(full_block)
-        required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price(full_block.header.timestamp)
 
-        if average_gas_price < required_min_gas_price:
+
+        if not does_block_meet_min_gas_price(full_block, chain):
             raise Exception("Block transactions don't meet the minimum gas price requirement of {}".format(required_min_gas_price))
 
         self._event_bus.broadcast(
@@ -726,9 +727,9 @@ class Hls(RPCModule):
             total_receivable += tx.value
 
         if (chain_object.get_vm().state.account_db.get_balance(chain_address) + total_receivable) < 5*10**18:
-
+            gas_price = int(to_wei(int(chain_object.chaindb.get_required_block_min_gas_price()+5), 'gwei'))
             chain_object.create_and_sign_transaction_for_queue_block(
-                gas_price=0x01,
+                gas_price=gas_price,
                 gas=0x0c3500,
                 to=chain_address,
                 value=int(1*10**18),

@@ -190,11 +190,14 @@ def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: Asyn
     except TransactionNotFound:
         dict_to_return['gasUsed'] = to_hex(0)
 
-    block_hash, receive_tx_index, _ = chain.chaindb.get_transaction_index(tx_hash)
-    num_send_transactions = chain.chaindb.get_number_of_send_tx_in_block(block_hash)
-    block_tx_index = num_send_transactions + receive_tx_index
-    dict_to_return['transactionIndex'] = to_hex(block_tx_index)
-    dict_to_return['blockHash'] = to_hex(block_hash)
+    try:
+        block_hash, receive_tx_index, _ = chain.chaindb.get_transaction_index(tx_hash)
+        num_send_transactions = chain.chaindb.get_number_of_send_tx_in_block(block_hash)
+        block_tx_index = num_send_transactions + receive_tx_index
+        dict_to_return['transactionIndex'] = to_hex(block_tx_index)
+        dict_to_return['blockHash'] = to_hex(block_hash)
+    except TransactionNotFound:
+        pass
 
     return dict_to_return
 

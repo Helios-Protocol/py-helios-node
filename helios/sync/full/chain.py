@@ -19,7 +19,7 @@ from helios.sync.common.constants import CHRONOLOGICAL_BLOCK_HASH_FRAGMENT_TYPE_
     SYNCER_RECENTLY_IMPORTED_BLOCK_MEMORY_EXPIRE_CHECK_LOOP_PERIOD
 from hp2p.events import NewBlockEvent
 
-from hvm.utils.blocks import get_block_average_transaction_gas_price
+from hvm.utils.blocks import get_block_average_transaction_gas_price, does_block_meet_min_gas_price
 
 from hvm.exceptions import (
     HeaderNotFound,
@@ -69,6 +69,7 @@ from eth_typing import Hash32, BlockNumber, Address
 from eth_utils import (
     ValidationError,
     encode_hex,
+    from_wei
 )
 
 from hvm.constants import (
@@ -1115,17 +1116,19 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         #we only check the min gas requirements for sync stage 3, 4
         if not allow_low_gas_block and get_sync_stage_for_block_timestamp(new_block.header.timestamp) >= ADDITIVE_SYNC_STAGE_ID and len(new_block.transactions) != 0:
             try:
-                required_min_gas_price = self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)
+                if not does_block_meet_min_gas_price(new_block, chain):
+                    block_gas_price = get_block_average_transaction_gas_price(new_block)
+                    if block_gas_price == float("inf"):
+                        self.logger.debug(
+                            "New block didn't have high enough gas price. block_gas_price = infinity, required_min_gas_price = {}".format(
+                                self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)))
+                    else:
+                        self.logger.debug(
+                            "New block didn't have high enough gas price. block_gas_price = {}, required_min_gas_price = {}".format(
+                                from_wei(int(get_block_average_transaction_gas_price(new_block)), 'gwei'), self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)))
+                    return False
             except HistoricalMinGasPriceError:
                 self.logger.error("Cannot import new block because the minimum gas price system has not been initialized.")
-                return False
-
-            block_gas_price = int(get_block_average_transaction_gas_price(new_block))
-
-            if block_gas_price < required_min_gas_price:
-                self.logger.debug(
-                    "New block didn't have high enough gas price. block_gas_price = {}, required_min_gas_price = {}".format(
-                        block_gas_price, required_min_gas_price))
                 return False
 
         else:
