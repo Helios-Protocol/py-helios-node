@@ -223,7 +223,7 @@ MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH = 6 #centisecond
 MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE = 9 #centisecond. This is the total number of centisecond that must pass before the minimum price of gas can change.
 from hp2p.constants import ADDITIVE_SYNC_MODE_CUTOFF
 MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP = int(ADDITIVE_SYNC_MODE_CUTOFF / 100 + 100)
-
+MIN_GAS_PRICE_CALCULATION_GOAL_TX_PER_CENTISECOND_MUTIPLIER = 0.5 # Start taking evasive action when the tpc reaches this fraction of the capability.
 
 
 ######

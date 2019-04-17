@@ -96,6 +96,8 @@ InvalidHeadRootTimestamp,
 from eth_keys.exceptions import (
     BadSignature,
 )
+
+from hvm.utils.blocks import reorganize_chronological_block_list_for_correct_chronological_order_at_index
 from hvm.validation import (
     validate_block_number,
     validate_uint256,
@@ -1284,6 +1286,9 @@ class Chain(BaseChain):
 
 
 
+
+
+
     def import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp, save_block_head_hash_timestamp:bool = True, allow_unprocessed:bool =False) -> None:
         validate_uint256(window_start_timestamp, title='timestamp')
 
@@ -1318,9 +1323,26 @@ class Chain(BaseChain):
         if len(block_list) > 0:
             self.logger.debug("starting block import for chronological block window")
             #if block list is empty, load the local historical root hashes and delete them all
-            for block in block_list:
-                wallet_address = block.header.chain_address
-                self.import_block(block, wallet_address = wallet_address, save_block_head_hash_timestamp = save_block_head_hash_timestamp, allow_unprocessed=allow_unprocessed)
+            for i in range(len(block_list)):
+                # Reset this after each block imports
+                blocks_that_have_been_reorganized = set()
+                wallet_address = block_list[i].header.chain_address
+                while True:
+                    try:
+                        self.import_block(block_list[i], wallet_address = wallet_address, save_block_head_hash_timestamp = save_block_head_hash_timestamp, allow_unprocessed=allow_unprocessed)
+                        break
+                    except (UnprocessedBlockNotAllowed, ParentNotFound) as e:
+                        # Because of the timestamps being in seconds, there may be multiple blocks that depend on each other
+                        # with the same timestamp, and they could be out of order.  So we attempt to reorganize the blocks
+                        # and import again. If it fails again we will raise the exception.
+                        if block_list[i].header.hash in blocks_that_have_been_reorganized:
+                            self.logger.debug("Already tried reorganizing this block.")
+                            raise e
+                        self.logger.debug("Attempting to reorganize chronological window for import")
+                        blocks_that_have_been_reorganized.add(block_list[i].header.hash)
+                        block_list = reorganize_chronological_block_list_for_correct_chronological_order_at_index(block_list, i, self.logger)
+
+
         else:
             self.logger.debug("importing an empty chronological window. going to make sure we have a saved historical root hash")
             historical_root_hashes = self.chain_head_db.get_historical_root_hashes()
@@ -1919,7 +1941,7 @@ class Chain(BaseChain):
         #hist_tpc = self.chaindb.load_historical_tx_per_centisecond()
 
 
-        end_outer = current_historical_window-6*TIME_BETWEEN_HEAD_HASH_SAVE
+        end_outer = current_historical_window-20*TIME_BETWEEN_HEAD_HASH_SAVE
 
 
         for historical_window_timestamp in range(current_historical_window,
@@ -1943,7 +1965,10 @@ class Chain(BaseChain):
                 for timestamp_block_hash in chronological_block_window:
                     #first count up the tx in the block
                     #if it is 0, then set to 1? in case block is all receive
-                    num_tx_in_block = self.chaindb.get_number_of_send_tx_in_block(timestamp_block_hash[1])
+                    num_tx_in_block = self.chaindb.get_number_of_total_tx_in_block(timestamp_block_hash[1])
+                    if num_tx_in_block == 0:
+                        num_tx_in_block = 1
+
                     #then add them to the dict
                     centisecond_window_for_block = int(timestamp_block_hash[0]/100) * 100
                     if centisecond_window_for_block <= end:
@@ -2022,7 +2047,7 @@ class Chain(BaseChain):
         duration = time.time()-start_time
         #self.logger.debug('duration = {} seconds'.format(duration))
         tx_per_centisecond = int(100/duration)
-        return 3
+        return 5
         return tx_per_centisecond
 
 

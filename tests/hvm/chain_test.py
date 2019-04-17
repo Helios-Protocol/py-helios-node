@@ -356,7 +356,7 @@ def test_send_transaction_then_receive():
     print('balance after delta= ', vm.state.account_db.get_balance(SENDER.public_key.to_canonical_address()))
     vm.state = vm.get_state_class()(
         db=vm.chaindb.db,
-        execution_context=vm.block.header.create_execution_context(vm.previous_hashes)
+        execution_context=vm.block.header.create_execution_context()
     )
     print('balance after state refresh = ', vm.state.account_db.get_balance(SENDER.public_key.to_canonical_address()))
     # exit()
@@ -728,8 +728,14 @@ def test_import_chronolgical_block_windows():
     testdb2 = MemoryDB()
 
     create_dev_test_random_blockchain_database(testdb1)
-    MainnetChain.from_genesis(testdb2, RECEIVER.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    chain_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
 
+    chain_2 = MainnetChain.from_genesis(testdb2, RECEIVER.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+
+    print('AAAAAAAAAAAAAAA')
+    print(encode_hex(chain_1.genesis_wallet_address))
+    print(chain_1.chaindb.get_canonical_block_header_by_number(0, chain_1.genesis_wallet_address))
+    print(chain_2.chaindb.get_canonical_block_header_by_number(0, chain_2.genesis_wallet_address))
     import_chronological_block_window(testdb1, testdb2)
 
     # Where node 2 has a different blockchain database. This requires overwriting.
@@ -738,6 +744,7 @@ def test_import_chronolgical_block_windows():
 
     create_dev_test_random_blockchain_database(testdb1)
     create_dev_test_random_blockchain_database(testdb2)
+
 
     import_chronological_block_window(testdb1, testdb2)
 

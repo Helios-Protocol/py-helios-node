@@ -8,12 +8,10 @@ class ExecutionContext:
             self,
             timestamp,
             block_number,
-            gas_limit,
-            prev_hashes):
+            gas_limit):
         self._timestamp = timestamp
         self._block_number = block_number
         self._gas_limit = gas_limit
-        self._prev_hashes = prev_hashes
 
 
     @property
@@ -28,6 +26,3 @@ class ExecutionContext:
     def gas_limit(self):
         return self._gas_limit
 
-    @property
-    def prev_hashes(self):
-        return self._prev_hashes

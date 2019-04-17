@@ -48,6 +48,7 @@ DISCOVERY_V5_BOOTNODES = ()
 
 # Maximum peers number, we'll try to keep open connections up to this number of peers
 DEFAULT_MAX_PEERS = 25
+DEFAULT_MAX_PEERS_BOOTNODE = 50
 
 # Maximum allowed depth for chain reorgs.
 MAX_REORG_DEPTH = 24

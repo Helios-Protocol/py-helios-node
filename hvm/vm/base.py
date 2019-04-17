@@ -177,9 +177,9 @@ class BaseVM(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("VM classes must implement this method")
 
 
-    @abstractmethod
-    def set_block_transactions(self, base_block, new_header, transactions, receipts):
-        raise NotImplementedError("VM classes must implement this method")
+    # @abstractmethod
+    # def set_block_transactions(self, base_block, new_header, transactions, receipts):
+    #     raise NotImplementedError("VM classes must implement this method")
 
     #
     # Finalization
@@ -223,10 +223,10 @@ class BaseVM(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("VM classes must implement this method")
 
 
-    @classmethod
-    @abstractmethod
-    def get_prev_hashes(cls, last_block_hash, chaindb):
-        raise NotImplementedError("VM classes must implement this method")
+    # @classmethod
+    # @abstractmethod
+    # def get_prev_hashes(cls, last_block_hash, chaindb):
+    #     raise NotImplementedError("VM classes must implement this method")
 
     @classmethod
     @abstractmethod
@@ -344,7 +344,7 @@ class VM(BaseVM):
     @property
     def state(self) -> BaseState:
         if self._state is None:
-            self._state = self.get_state_class()(db=self.chaindb.db, execution_context=self.header.create_execution_context(self.previous_hashes))
+            self._state = self.get_state_class()(db=self.chaindb.db, execution_context=self.header.create_execution_context())
         return self._state
 
     @state.setter
@@ -612,7 +612,7 @@ class VM(BaseVM):
     def refresh_state(self):
         self.state = self.get_state_class()(
                 db=self.chaindb.db, 
-                execution_context=self.block.header.create_execution_context(self.previous_hashes)
+                execution_context=self.block.header.create_execution_context()
                 )
 
     def reverse_pending_transactions(self, block_header):
@@ -669,7 +669,7 @@ class VM(BaseVM):
             header=self.configure_header(
                 gas_limit=block.header.gas_limit,
                 gas_used=0,
-                timestamp=block.header.timestamp,
+                timestamp=block_timestamp,
                 extra_data=block.header.extra_data,
                 v=block.header.v,
                 r=block.header.r,
@@ -683,6 +683,7 @@ class VM(BaseVM):
 
         # we need to re-initialize the `state` to update the execution context.
         #this also removes and unpersisted state changes.
+        #TODO, make sure we don't change anything in the execution context after this point.
         self.refresh_state()
         
         #run all of the transactions.
@@ -698,35 +699,39 @@ class VM(BaseVM):
 
         #then combine
         receipts.extend(receive_receipts)
-        
-        block = self.set_block_transactions(
-            block,
-            last_header,
-            block.transactions,
-            receipts,
-        )
-
-        block = self.set_block_receive_transactions(
-            block,
-            block.header,
-            processed_receive_transactions
-        )
-
-        block = self.set_block_reward_hash(
-            block,
-            block.header,
-            block.reward_bundle
-        )
 
 
+        #
+        # Setting block parameters, and saving transaction and receipt tries
+        #
 
-        
-        block = self.save_account_hash(block)
+        # Send tx
+        sent_tx_root_hash, _ = self.save_items_to_db_as_trie(block.transactions)
+        receipt_root_hash, _ = self.save_items_to_db_as_trie(receipts)
 
+        # Receive tx
+        receive_tx_root_hash, _ = self.save_items_to_db_as_trie(processed_receive_transactions)
+
+        # Reward bundle
+        if block.reward_bundle is None:
+            reward_hash = BLANK_REWARD_HASH
+        else:
+            reward_hash = block.reward_bundle.hash
+
+        # Account hash
+        account_hash = self.state.account_db.get_account_hash(self.wallet_address)
+
+        # Account balance
         account_balance = self.state.account_db.get_balance(self.wallet_address)
-        self.logger.debug("setting account_balance of block to {}".format(account_balance))
+
         block = block.copy(
-            header=block.header.copy(
+            receive_transactions = processed_receive_transactions,
+            header=last_header.copy(
+                transaction_root=sent_tx_root_hash,
+                receipt_root=receipt_root_hash,
+                receive_transaction_root=receive_tx_root_hash,
+                reward_hash=reward_hash,
+                account_hash=account_hash,
                 account_balance=account_balance,
             ),
         )
@@ -738,12 +743,12 @@ class VM(BaseVM):
             It cannot be signed earlier because the header fields were changing
             """
             #update timestamp now.
-            self.logger.debug("setting timestamp of block to {}".format(int(time.time())))
-            block = block.copy(
-                header=block.header.copy(
-                    timestamp=block_timestamp,
-                ),
-            )
+            # self.logger.debug("setting timestamp of block to {}".format(int(time.time())))
+            # block = block.copy(
+            #     header=block.header.copy(
+            #         timestamp=block_timestamp,
+            #     ),
+            # )
 
             # change any final header parameters before signing
             block = self.pack_block(block, **kwargs)
@@ -857,46 +862,55 @@ class VM(BaseVM):
         return root_hash, kv_nodes
 
 
-    def set_block_reward_hash(self, block: BaseBlock, header:BlockHeader, reward_bundle: StakeRewardBundle) -> BaseBlock:
-        if reward_bundle is None:
-            reward_hash = BLANK_REWARD_HASH
-        else:
-            reward_hash = reward_bundle.hash
 
-        return block.copy(
-            reward_bundle=reward_bundle,
-            header=header.copy(
-                reward_hash=reward_hash
-            ),
-        )
-
-
-    def set_block_transactions(self, base_block, new_header, transactions, receipts):
-        tx_root_hash, tx_kv_nodes = self.save_items_to_db_as_trie(transactions)
-        receipt_root_hash, receipt_kv_nodes = self.save_items_to_db_as_trie(receipts)
-
-        
-        return base_block.copy(
-            transactions=transactions,
-            header=new_header.copy(
-                transaction_root=tx_root_hash,
-                receipt_root=receipt_root_hash,
-            ),
-        )
-            
-    
-            
-    def set_block_receive_transactions(self, base_block, new_header, transactions):
-        tx_root_hash, tx_kv_nodes = self.save_items_to_db_as_trie(transactions)
-#        tx_root_hash, tx_kv_nodes = make_trie_root_and_nodes(transactions)
-#        self.chaindb.persist_trie_data_dict(tx_kv_nodes)
-
-        return base_block.copy(
-            receive_transactions=transactions,
-            header=new_header.copy(
-                receive_transaction_root=tx_root_hash
-            ),
-        )
+#     def set_block_reward_hash(self, block: BaseBlock, header:BlockHeader, reward_bundle: StakeRewardBundle) -> BaseBlock:
+#         if reward_bundle is None:
+#             reward_hash = BLANK_REWARD_HASH
+#         else:
+#             reward_hash = reward_bundle.hash
+#
+#         return block.copy(
+#             reward_bundle=reward_bundle,
+#             header=header.copy(
+#                 reward_hash=reward_hash
+#             ),
+#         )
+#
+#
+#     def set_block_transactions(self, base_block, new_header, transactions, receipts):
+#         tx_root_hash, tx_kv_nodes = self.save_items_to_db_as_trie(transactions)
+#         receipt_root_hash, receipt_kv_nodes = self.save_items_to_db_as_trie(receipts)
+#
+#
+#         return base_block.copy(
+#             transactions=transactions,
+#             header=new_header.copy(
+#                 transaction_root=tx_root_hash,
+#                 receipt_root=receipt_root_hash,
+#             ),
+#         )
+#
+#
+#
+#     def set_block_receive_transactions(self, base_block, new_header, transactions):
+#         tx_root_hash, tx_kv_nodes = self.save_items_to_db_as_trie(transactions)
+# #        tx_root_hash, tx_kv_nodes = make_trie_root_and_nodes(transactions)
+# #        self.chaindb.persist_trie_data_dict(tx_kv_nodes)
+#
+#         return base_block.copy(
+#             receive_transactions=transactions,
+#             header=new_header.copy(
+#                 receive_transaction_root=tx_root_hash
+#             ),
+#         )
+#
+#     def set_account_hash(self, block: BaseBlock):
+#         account_hash = self.state.account_db.get_account_hash(self.wallet_address)
+#         return block.copy(
+#             header=block.header.copy(
+#                 account_hash = account_hash
+#             ),
+#         )
 
     #
     # Finalization
@@ -910,13 +924,7 @@ class VM(BaseVM):
             ),
         )
             
-    def save_account_hash(self, block):
-        account_hash = self.state.account_db.get_account_hash(self.wallet_address)
-        return block.copy(
-            header=block.header.copy(
-                account_hash = account_hash
-            ),
-        )
+
         
     def pack_block(self, block, **kwargs):
         """
@@ -1016,28 +1024,28 @@ class VM(BaseVM):
         genesis_block = block.make_genesis_block(chain_address)
         return genesis_block
     
-    @classmethod
-    @functools.lru_cache(maxsize=32)
-    @to_tuple
-    def get_prev_hashes(cls, last_block_hash, chaindb):
-        if last_block_hash == GENESIS_PARENT_HASH:
-            return
+    # @classmethod
+    # @functools.lru_cache(maxsize=32)
+    # @to_tuple
+    # def get_prev_hashes(cls, last_block_hash, chaindb):
+    #     if last_block_hash == GENESIS_PARENT_HASH:
+    #         return
+    #
+    #     block_header = get_block_header_by_hash(last_block_hash, chaindb)
+    #
+    #     for _ in range(MAX_PREV_HEADER_DEPTH):
+    #         yield block_header.hash
+    #         try:
+    #             block_header = get_parent_header(block_header, chaindb)
+    #         except (IndexError, HeaderNotFound):
+    #             break
 
-        block_header = get_block_header_by_hash(last_block_hash, chaindb)
-
-        for _ in range(MAX_PREV_HEADER_DEPTH):
-            yield block_header.hash
-            try:
-                block_header = get_parent_header(block_header, chaindb)
-            except (IndexError, HeaderNotFound):
-                break
-
-    @property
-    def previous_hashes(self):
-        """
-        Convenience API for accessing the previous 255 block hashes.
-        """
-        return self.get_prev_hashes(self.block.header.parent_hash, self.chaindb)
+    # @property
+    # def previous_hashes(self):
+    #     """
+    #     Convenience API for accessing the previous 255 block hashes.
+    #     """
+    #     return self.get_prev_hashes(self.block.header.parent_hash, self.chaindb)
     
     
         

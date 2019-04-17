@@ -149,7 +149,7 @@ def test_min_allowed_gas_system():
     # It will only go back at most 60 centiseconds, or at least 50.
 
     # need to say == True to make pytest happy
-    assert(all([x[1] == tpc_of_blockchain_database for x in historical_tpc[-50:-1]]))
+    assert(all([x[1] == tpc_of_blockchain_database*2 for x in historical_tpc[-50:-1]]))
 
     # the given tpc from the database is below the threshold. So min gas should stay at 1
     assert(all([x[1] == 1 for x in historical_min_gas_price[-50:]]))
@@ -204,7 +204,8 @@ def test_min_allowed_gas_system():
     # It will only go back at most 60 centiseconds, or at least 50.
 
     #need to say == True to make pytest happy
-    assert (all([x[1] == tpc_of_blockchain_database for x in historical_tpc[-50:-1]]))
+
+    assert (all([x[1] == tpc_of_blockchain_database*2 for x in historical_tpc[-50:-1]]))
 
 
 # test_min_allowed_gas_system()

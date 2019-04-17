@@ -51,7 +51,7 @@ from hvm.constants import (
     MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE,
     MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP,
     ZERO_HASH32,
-    BLANK_REWARD_HASH)
+    BLANK_REWARD_HASH, MIN_GAS_PRICE_CALCULATION_GOAL_TX_PER_CENTISECOND_MUTIPLIER)
 from hvm.exceptions import (
     CanonicalHeadNotFound,
     HeaderNotFound,
@@ -249,6 +249,10 @@ class BaseChainDB(metaclass=ABCMeta):
 
     @abstractmethod
     def get_number_of_send_tx_in_block(self, block_hash):
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def get_number_of_total_tx_in_block(self, block_hash: Hash32) -> int:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     #
@@ -676,6 +680,7 @@ class ChainDB(BaseChainDB):
         """
         return self.db.exists(block_hash)
 
+    @functools.lru_cache(maxsize=128)
     def get_block_header_by_hash(self, block_hash: Hash32) -> BlockHeader:
         """
         Returns the requested block header as specified by block hash.
@@ -769,7 +774,7 @@ class ChainDB(BaseChainDB):
 
 
     #this also accepts a header that has a smaller block number than the current header
-    #in which case it will trunkate the chain.
+    #in which case it will truncate the chain.
     def _set_as_canonical_chain_head(self, header: BlockHeader) -> Tuple[BlockHeader, ...]:
         """
         Returns iterable of headers newly on the canonical head
@@ -872,8 +877,8 @@ class ChainDB(BaseChainDB):
     #
     # Block API
     #
-    @functools.lru_cache(maxsize=32)
-    def get_number_of_send_tx_in_block(self, block_hash):
+    @functools.lru_cache(maxsize=128)
+    def get_number_of_send_tx_in_block(self, block_hash: Hash32) -> int:
         '''
         returns the number of send tx in a block
         '''
@@ -881,6 +886,18 @@ class ChainDB(BaseChainDB):
         header = self.get_block_header_by_hash(block_hash)
 
         return self._get_block_transaction_count(header.transaction_root)
+
+    @functools.lru_cache(maxsize=128)
+    def get_number_of_total_tx_in_block(self, block_hash: Hash32) -> int:
+        '''
+        returns the number of send tx in a block
+        '''
+        # get header
+        header = self.get_block_header_by_hash(block_hash)
+
+        tx_count = self._get_block_transaction_count(header.transaction_root)
+        tx_count += self._get_block_transaction_count(header.receive_transaction_root)
+        return tx_count
 
     def get_chain_wallet_address_for_block_hash(self, block_hash: Hash32) -> Address:
         block_header = self.get_block_header_by_hash(block_hash)
@@ -1396,6 +1413,7 @@ class ChainDB(BaseChainDB):
             count += 1
 
 
+
     @functools.lru_cache(maxsize=32)
     @to_list
     def _get_block_transactions(
@@ -1706,7 +1724,7 @@ class ChainDB(BaseChainDB):
         )
 
 
-    def load_historical_minimum_gas_price(self, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
+    def load_historical_minimum_gas_price(self, sort:bool = True) -> Optional[List[List[Union[Timestamp, int]]]]:
         '''
         saved as timestamp, min gas price
         '''
@@ -1736,7 +1754,7 @@ class ChainDB(BaseChainDB):
             encoded_data,
         )
 
-    def load_historical_tx_per_centisecond(self, sort = False) -> Optional[List[List[int]]]:
+    def load_historical_tx_per_centisecond(self, sort = True) -> Optional[List[List[int]]]:
         '''
         returns a list of [timestamp, tx/centisecond]
         '''
@@ -1777,7 +1795,7 @@ class ChainDB(BaseChainDB):
 
 
 
-    def load_historical_network_tpc_capability(self, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
+    def load_historical_network_tpc_capability(self, sort:bool = True) -> Optional[List[List[Union[Timestamp, int]]]]:
         '''
         Returns a list of [timestamp, transactions per second]
         :param mutable:
@@ -1797,6 +1815,7 @@ class ChainDB(BaseChainDB):
 
 
     def _calculate_next_centisecond_minimum_gas_price(self, historical_minimum_allowed_gas: List[List[int]], historical_tx_per_centisecond: List[List[int]], goal_tx_per_centisecond: int) -> int:
+        goal_tx_per_centisecond = int(goal_tx_per_centisecond*MIN_GAS_PRICE_CALCULATION_GOAL_TX_PER_CENTISECOND_MUTIPLIER)
         average_centisecond_delay = MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY
         average_centisecond_window_length = MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH
         min_centisecond_time_between_change_in_minimum_gas = MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE

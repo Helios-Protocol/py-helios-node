@@ -26,7 +26,7 @@ from helios.constants import (
 )
 from hp2p.constants import (
     MAINNET_BOOTNODES,
-)
+    DEFAULT_MAX_PEERS_BOOTNODE)
 from helios.utils.chains import (
     construct_chain_config_params,
     get_data_dir_for_network_id,
@@ -127,6 +127,9 @@ class ChainConfig:
             self.node_type = 4
         else:
             self.node_type = int(node_type)
+
+        if self.node_type == 4 and max_peers == 25:
+            max_peers = DEFAULT_MAX_PEERS_BOOTNODE
 
         if helios_root_dir is not None:
             self.helios_root_dir = helios_root_dir

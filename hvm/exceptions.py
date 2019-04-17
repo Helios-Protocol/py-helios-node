@@ -365,3 +365,9 @@ class AttemptedToAccessExternalStorage(VMError):
     on Helios. Use DelegateCall instead of Call.
     """
     pass
+
+class DepreciatedVMFunctionality(VMError):
+    """
+    Raised when a contract calls another a depreciated global variable or function
+    """
+    pass

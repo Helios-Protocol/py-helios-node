@@ -1077,6 +1077,8 @@ class Consensus(BaseService, PeerSubscriber):
 
             try:
                 average_network_tpc_cap = int(stake_weighted_average(all_candidate_item_stake))
+                self.logger.debug("Calculated average_network_tpc_cap = {}".format(average_network_tpc_cap))
+                self.logger.debug(all_candidate_item_stake)
                 return average_network_tpc_cap
             except ZeroDivisionError:
                 self.logger.debug("Divided by zero when calculating average network tpc cap. all_candidate_item_stake = {}".format(all_candidate_item_stake))
@@ -1746,34 +1748,35 @@ class Consensus(BaseService, PeerSubscriber):
     async def _handle_msg(self, peer: HLSPeer, cmd: protocol.Command,
                           msg: protocol._DecodedMsgType) -> None:
         #TODO: change these to use something else other than isinstance. Check the command id and offset maybe?
-        if isinstance(cmd, UnorderedBlockHeaderHash):
-            await self._handle_block_choices(peer, cast(List[BlockHashKey], msg))
+        if peer.wallet_address != self.chain_config.node_wallet_address:
+            if isinstance(cmd, UnorderedBlockHeaderHash):
+                await self._handle_block_choices(peer, cast(List[BlockHashKey], msg))
 
-        elif isinstance(cmd, GetUnorderedBlockHeaderHash):
-            await self._handle_get_block_choices(peer, cast(List[BlockNumberKey], msg))
+            elif isinstance(cmd, GetUnorderedBlockHeaderHash):
+                await self._handle_get_block_choices(peer, cast(List[BlockNumberKey], msg))
 
-        elif isinstance(cmd, ChainHeadRootHashTimestamps):
-            await self._handle_chain_head_root_hash_timestamps(peer, cast(List[Any], msg))
-            
-        elif isinstance(cmd, GetChainHeadRootHashTimestamps):
-            await self._handle_get_chain_head_root_hash_timestamps(peer, cast(Dict[str, Any], msg))
-        
-        elif isinstance(cmd, StakeForAddresses):
-            await self._handle_stake_for_addresses(peer, cast(Dict[str, Any], msg))
-            
-        elif isinstance(cmd, GetStakeForAddresses):
-            if await self.current_sync_stage >= 2 or self.chain_config.network_startup_node:
-                await self._handle_get_stake_for_addresses(peer, cast(Dict[str, Any], msg))
-            
-        elif isinstance(cmd, GetMinGasParameters):
-            await self._handle_get_min_gas_parameters(peer, cast(Dict[str, Any], msg))
-            
-        elif isinstance(cmd, MinGasParameters):
-            await self._handle_min_gas_parameters(peer, cast(Dict[str, Any], msg))
+            elif isinstance(cmd, ChainHeadRootHashTimestamps):
+                await self._handle_chain_head_root_hash_timestamps(peer, cast(List[Any], msg))
 
-        elif isinstance(cmd, GetNodeStakingScore):
-            if await self.current_sync_stage >= 4 or self.chain_config.network_startup_node:
-                await self._handle_get_node_staking_score(peer, cast(NodeStakingScore, msg))
+            elif isinstance(cmd, GetChainHeadRootHashTimestamps):
+                await self._handle_get_chain_head_root_hash_timestamps(peer, cast(Dict[str, Any], msg))
+
+            elif isinstance(cmd, StakeForAddresses):
+                await self._handle_stake_for_addresses(peer, cast(Dict[str, Any], msg))
+
+            elif isinstance(cmd, GetStakeForAddresses):
+                if await self.current_sync_stage >= 2 or self.chain_config.network_startup_node:
+                    await self._handle_get_stake_for_addresses(peer, cast(Dict[str, Any], msg))
+
+            elif isinstance(cmd, GetMinGasParameters):
+                await self._handle_get_min_gas_parameters(peer, cast(Dict[str, Any], msg))
+
+            elif isinstance(cmd, MinGasParameters):
+                await self._handle_min_gas_parameters(peer, cast(Dict[str, Any], msg))
+
+            elif isinstance(cmd, GetNodeStakingScore):
+                if await self.current_sync_stage >= 4 or self.chain_config.network_startup_node:
+                    await self._handle_get_node_staking_score(peer, cast(NodeStakingScore, msg))
 
 
         

@@ -443,7 +443,7 @@ class Hls(RPCModule):
 
 
     #
-    # Gas system
+    # Gas system and network performance
     #
     async def getGasPrice(self):
         required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price()
@@ -456,6 +456,26 @@ class Hls(RPCModule):
         encoded = []
         for timestamp_gas_price in historical_min_gas_price:
             encoded.append([hex(timestamp_gas_price[0]), hex(timestamp_gas_price[1])])
+
+        return encoded
+
+    async def getApproximateHistoricalNetworkTPCCapability(self):
+
+        historical_tpc_cap = self._chain.chaindb.load_historical_network_tpc_capability()
+
+        encoded = []
+        for timestamp_tpc_cap in historical_tpc_cap:
+            encoded.append([hex(timestamp_tpc_cap[0]), hex(timestamp_tpc_cap[1])])
+
+        return encoded
+
+    async def getApproximateHistoricalTPC(self):
+
+        historical_tpc = self._chain.chaindb.load_historical_tx_per_centisecond()
+
+        encoded = []
+        for timestamp_tpc in historical_tpc:
+            encoded.append([hex(timestamp_tpc[0]), hex(timestamp_tpc[1])])
 
         return encoded
 
@@ -593,7 +613,7 @@ class Hls(RPCModule):
 
                 if start > 0:
                     end = max([0, start-num_to_return])
-                    for i in range(canonical_header.block_number-1, end, -1):
+                    for i in range(start, end, -1):
                         block = chain.get_block_by_number(i, chain_address)
                         if block.hash == after_hash:
                             break

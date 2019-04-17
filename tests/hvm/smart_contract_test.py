@@ -118,7 +118,8 @@ def test_smart_contract_deploy_system():
 
     from web3 import Web3
 
-    W3_TX_DEFAULTS = {'gas': 0, 'gasPrice': 0}
+
+    W3_TX_DEFAULTS = {'gas': 0, 'gasPrice': 0, 'chainId': 0}
 
     from hvm.constants import CREATE_CONTRACT_ADDRESS
 

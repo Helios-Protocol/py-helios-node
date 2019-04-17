@@ -71,7 +71,7 @@ from helios.sync.full.service import FullNodeSyncer
 from hp2p.consensus import Consensus
 from hp2p.smart_contract_chain_manager import SmartContractChainManager
 
-DIAL_IN_OUT_RATIO = 0.75
+DIAL_IN_OUT_RATIO = 0.5
 
 
 ANY_PEER_POOL = Union[HLSPeerPool]
@@ -316,7 +316,7 @@ class BaseServer(BaseService):
             in self.peer_pool.connected_nodes.values()
             if peer.inbound
         ])
-        if total_peers > 1 and inbound_peer_count / total_peers > DIAL_IN_OUT_RATIO:
+        if self.chain_config.node_type != 4 and total_peers > 1 and inbound_peer_count / total_peers > DIAL_IN_OUT_RATIO:
             # make sure to have at least 1/4 outbound connections
             await peer.disconnect(DisconnectReason.too_many_peers)
         else:

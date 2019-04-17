@@ -235,24 +235,24 @@ class BaseState(Configurable, metaclass=ABCMeta):
         self.account_db.commit(checkpoint_id)
 
     #
-    # Access self.prev_hashes (Read-only)
+    # Access self.prev_hashes (Read-only) - depreciated
     #
-    def get_ancestor_hash(self, block_number):
-        """
-        Return the hash for the ancestor block with number ``block_number``.
-        Return the empty bytestring ``b''`` if the block number is outside of the
-        range of available block numbers (typically the last 255 blocks).
-        """
-        ancestor_depth = self.block_number - block_number - 1
-        is_ancestor_depth_out_of_range = (
-            ancestor_depth >= MAX_PREV_HEADER_DEPTH or
-            ancestor_depth < 0 or
-            ancestor_depth >= len(self.execution_context.prev_hashes)
-        )
-        if is_ancestor_depth_out_of_range:
-            return b''
-        ancestor_hash = self.execution_context.prev_hashes[ancestor_depth]
-        return ancestor_hash
+    # def get_ancestor_hash(self, block_number):
+    #     """
+    #     Return the hash for the ancestor block with number ``block_number``.
+    #     Return the empty bytestring ``b''`` if the block number is outside of the
+    #     range of available block numbers (typically the last 255 blocks).
+    #     """
+    #     ancestor_depth = self.block_number - block_number - 1
+    #     is_ancestor_depth_out_of_range = (
+    #         ancestor_depth >= MAX_PREV_HEADER_DEPTH or
+    #         ancestor_depth < 0 or
+    #         ancestor_depth >= len(self.execution_context.prev_hashes)
+    #     )
+    #     if is_ancestor_depth_out_of_range:
+    #         return b''
+    #     ancestor_hash = self.execution_context.prev_hashes[ancestor_depth]
+    #     return ancestor_hash
 
     #
     # Computation

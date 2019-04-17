@@ -41,7 +41,7 @@ from hvm.constants import (
     EMPTY_UNCLE_HASH,
     GENESIS_NONCE,
     BLANK_ROOT_HASH,
-    BLOCK_GAS_LIMIT)
+    BLOCK_GAS_LIMIT, BLANK_REWARD_HASH)
 from hvm.exceptions import (
     ValidationError,
 )
@@ -142,7 +142,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
                  bloom: int=0,
                  gas_used: int=0,
                  extra_data: bytes=b'',
-                 reward_hash: bytes = ZERO_HASH32,
+                 reward_hash: bytes = BLANK_REWARD_HASH,
                  chain_address: Address = ZERO_ADDRESS,
                  v: int=0,
                  r: int=0,
@@ -162,7 +162,7 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
                  bloom=0,
                  gas_used=0,
                  extra_data=b'',
-                 reward_hash = ZERO_HASH32,
+                 reward_hash = BLANK_REWARD_HASH,
                  chain_address = ZERO_ADDRESS,
                  v=0,
                  r=0,
@@ -260,14 +260,12 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
         header = cls(**header_kwargs)
         return header
 
-    def create_execution_context(
-            self, prev_hashes: Union[Tuple[bytes], Tuple[bytes, bytes]]) -> ExecutionContext:
+    def create_execution_context(self) -> ExecutionContext:
 
         return ExecutionContext(
             timestamp=self.timestamp,
             block_number=self.block_number,
             gas_limit=self.gas_limit,
-            prev_hashes=prev_hashes,
         )
         
     #
