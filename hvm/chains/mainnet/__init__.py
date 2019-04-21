@@ -2,9 +2,10 @@ from typing import Tuple, Type  # noqa: F401
 from eth_utils import decode_hex
 
 from hvm.constants import TESTNET_FAUCET_PRIVATE_KEY
+from hvm.vm.forks.boson import BosonVM
 from .constants import (
     HELIOS_TESTNET_TIMESTAMP,
-)
+    BOSON_TIMESTAMP)
 from hvm import constants
 
 from hvm.chains import Chain
@@ -27,6 +28,7 @@ from eth_keys import keys
 
 MAINNET_VM_CONFIGURATION = (
     (HELIOS_TESTNET_TIMESTAMP, HeliosTestnetVM),
+    (BOSON_TIMESTAMP, BosonVM),
 )
 
 

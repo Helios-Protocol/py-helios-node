@@ -1,4 +1,4 @@
-
+from hvm.vm.forks.helios_testnet.consensus import HeliosTestnetConsensusDB
 from .constants import (
     EIP658_TRANSACTION_STATUS_CODE_FAILURE,
     EIP658_TRANSACTION_STATUS_CODE_SUCCESS,
@@ -10,7 +10,6 @@ from .blocks import (
     HeliosTestnetBlock,
     HeliosTestnetQueueBlock,
 )
-from .consensus import HeliosTestnetBlockConflictMessage
 
 from .headers import (
     create_helios_testnet_header_from_parent,
@@ -105,10 +104,10 @@ class HeliosTestnetVM(VM):
     fork = 'helios_testnet'
 
     # classes
-    block_class = HeliosTestnetBlock  # type: Type[BaseBlock]
-    queue_block_class = HeliosTestnetQueueBlock  # type: Type[BaseBlock]
-    block_conflict_message_class = HeliosTestnetBlockConflictMessage
-    _state_class = HeliosTestnetState  # type: Type[BaseState]
+    block_class = HeliosTestnetBlock
+    queue_block_class = HeliosTestnetQueueBlock
+    _state_class = HeliosTestnetState
+    consensus_db_class = HeliosTestnetConsensusDB
 
     # Methods
     create_header_from_parent = staticmethod(create_helios_testnet_header_from_parent)

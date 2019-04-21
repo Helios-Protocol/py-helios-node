@@ -476,7 +476,6 @@ class Chain(BaseChain):
 
     chaindb_class = ChainDB  # type: Type[BaseChainDB]
     chain_head_db_class = ChainHeadDB
-    consensus_db_class = ConsensusDB
 
 
     _queue_block: BaseQueueBlock = None
@@ -498,7 +497,6 @@ class Chain(BaseChain):
         self.wallet_address = wallet_address
         self.chaindb = self.get_chaindb_class()(self.db)
         self.chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(self.db)
-        self.consensus_db = self.get_consensus_db_class()(self.chaindb)
 
         try:
             self.header = self.create_header_from_parent(self.get_canonical_head())
@@ -530,6 +528,12 @@ class Chain(BaseChain):
     @queue_block.setter
     def queue_block(self,val:BaseQueueBlock):
         self._queue_block = val
+
+    @property
+    def consensus_db(self, header = None):
+        # gets the consensus db corresponding to the block timestamp
+        return self.get_vm(header).consensus_db
+
 
     #
     # Global Record and discard API
@@ -593,11 +597,6 @@ class Chain(BaseChain):
             raise AttributeError("`chain_head_db class` not set")
         return cls.chain_head_db_class
 
-    @classmethod
-    def get_consensus_db_class(cls) -> Type[ConsensusDB]:
-        if cls.consensus_db_class is None:
-            raise AttributeError("`consensus_db` not set")
-        return cls.consensus_db_class
 
     @classmethod
     def get_genesis_wallet_address(cls) -> Address:
@@ -721,7 +720,6 @@ class Chain(BaseChain):
             vm_class = self.get_vm_class_for_block_timestamp(header.timestamp)
             return vm_class(header=header,
                                chaindb=self.chaindb,
-                               consensus_db = self.consensus_db,
                                wallet_address = self.wallet_address,
                                private_key=self.private_key,
                                network_id=self.network_id)
@@ -730,7 +728,6 @@ class Chain(BaseChain):
 
             return vm_class(header=header,
                             chaindb=self.chaindb,
-                            consensus_db = self.consensus_db,
                             wallet_address = self.wallet_address,
                             private_key=self.private_key,
                             network_id=self.network_id)

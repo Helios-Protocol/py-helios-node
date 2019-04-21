@@ -90,6 +90,10 @@ class ConsensusDB():
 
     logger = logging.getLogger('hvm.db.consensus.ConsensusDB')
 
+    reward_type_1_amount_factor = REWARD_TYPE_1_AMOUNT_FACTOR
+    reward_type_2_amount_factor = REWARD_TYPE_2_AMOUNT_FACTOR
+
+
     def __init__(self, chaindb:'BaseChainDB'):
         """
         Binary trie database for storing the hash of the head block of each wallet address.
@@ -357,7 +361,7 @@ class ConsensusDB():
         final_score = int(stake_weighted_average(item_stake_list))
 
 
-        fractional_interest = REWARD_TYPE_2_AMOUNT_FACTOR * final_score / 1000000
+        fractional_interest = self.reward_type_2_amount_factor * final_score / 1000000
 
         amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp, user_masternode_multipliers=False)
         if amount != 0:
@@ -376,7 +380,7 @@ class ConsensusDB():
         if at_timestamp == None:
             at_timestamp = int(time.time())
 
-        fractional_interest = REWARD_TYPE_1_AMOUNT_FACTOR
+        fractional_interest = self.reward_type_1_amount_factor
 
         amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp, user_masternode_multipliers=False)
 

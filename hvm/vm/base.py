@@ -95,8 +95,11 @@ from hvm.vm.computation import BaseComputation
 class BaseVM(Configurable, metaclass=ABCMeta):
     block_class: Type[BaseBlock] = None
     queue_block_class: Type[BaseQueueBlock] = None
+    consensus_db_class: Type[ConsensusDB] = None
+
     fork: str = None
     chaindb: BaseChainDB = None
+    consensus_db: ConsensusDB = None
     _state_class: Type[BaseState] = None
     network_id: int = 0
     state: BaseState = None
@@ -301,9 +304,9 @@ class VM(BaseVM):
     _queue_block: BaseQueueBlock = None
     _state: BaseState = None
 
-    def __init__(self, header:BlockHeader, chaindb: BaseChainDB, consensus_db: ConsensusDB, wallet_address:Address, private_key: BaseKey, network_id: int):
+    def __init__(self, header:BlockHeader, chaindb: BaseChainDB, wallet_address:Address, private_key: BaseKey, network_id: int):
         self.chaindb = chaindb
-        self.consensus_db = consensus_db
+        self.consensus_db = self.consensus_db_class(chaindb)
         self.wallet_address = wallet_address
         self.private_key = private_key
         self.network_id = network_id
