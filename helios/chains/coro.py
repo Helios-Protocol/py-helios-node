@@ -107,6 +107,10 @@ class AsyncChainMixin(AsyncChain):
 
     coro_get_new_block_hash_to_test_peer_node_health = async_method('get_new_block_hash_to_test_peer_node_health')
 
+    coro_get_signed_peer_score = async_method('get_signed_peer_score')
+    coro_get_signed_peer_score_string_private_key = async_method('get_signed_peer_score_string_private_key')
+    coro_validate_node_staking_score = async_method('validate_node_staking_score')
+
 
 
 

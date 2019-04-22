@@ -762,7 +762,7 @@ class Consensus(BaseService, PeerSubscriber):
         self.logger.debug("Asing peer for our node staking score. peer = {}.".format(encode_hex(peer.wallet_address)))
         while True:
             try:
-                node_staking_score = await peer.requests.get_node_staking_score(since_block=since_block, consensus_db = self.consensus_db)
+                node_staking_score = await peer.requests.get_node_staking_score(since_block=since_block, consensus_db = self.node.get_new_chain().get_consensus_db())
 
                 if node_staking_score is not None:
                     self.logger.debug("Received node staking score from peer {}".format(encode_hex(peer.wallet_address)))
@@ -841,6 +841,7 @@ class Consensus(BaseService, PeerSubscriber):
         :return:
         '''
         self.logger.debug("Starting syncing peer node health with peer {}.".format(encode_hex(peer.wallet_address)))
+        chain = self.node.get_new_chain()
         while True:
             try:
                 received_blocks = await peer.requests.get_blocks(
@@ -848,19 +849,19 @@ class Consensus(BaseService, PeerSubscriber):
                 )
 
                 if len(received_blocks) > 0:
-                    self.consensus_db.save_health_request(peer.wallet_address,
+                    chain.save_health_request(peer.wallet_address,
                                                           response_time_in_micros = peer.requests.get_blocks.tracker.latest_response_time*1000*1000)
                 else:
                     self.logger.debug('Peer health request didnt send back any blocks')
-                    self.consensus_db.save_health_request(peer.wallet_address)
+                    chain.save_health_request(peer.wallet_address)
                 break
             except PeerConnectionLost:
                 self.logger.debug('Peer health request PeerConnectionLost error')
-                self.consensus_db.save_health_request(peer.wallet_address)
+                chain.save_health_request(peer.wallet_address)
                 break
             except TimeoutError:
                 self.logger.debug('Peer health request TimeoutError error')
-                self.consensus_db.save_health_request(peer.wallet_address)
+                chain.save_health_request(peer.wallet_address)
                 break
             except ValidationError as e:
                 raise e
@@ -869,10 +870,10 @@ class Consensus(BaseService, PeerSubscriber):
                 await asyncio.sleep(ROUND_TRIP_TIMEOUT)
                 continue
             except Exception as e:
-                raise e
+                self.logger.error("Error when syncing peer node health {}".format(e))
+                break
 
         self.logger.debug("Finished syncing peer node health with peer {}.".format(encode_hex(peer.wallet_address)))
-        self.logger.debug(self.consensus_db.get_current_peer_node_health(peer.wallet_address))
 
 
     async def get_missing_stake_from_bootnode_loop(self):
@@ -1896,9 +1897,10 @@ class Consensus(BaseService, PeerSubscriber):
 
     async def _handle_get_node_staking_score(self, peer: HLSPeer, msg) -> None:
         self.logger.debug("Received request to send node staking score.")
+        chain = self.node.get_new_chain()
         if peer.wallet_address != self.chain_config.node_wallet_address:
             try:
-                node_staking_score = await self.consensus_db.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), self.node.get_chain().network_id, peer.wallet_address)
+                node_staking_score = await chain.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), chain.network_id, peer.wallet_address)
             except (ValueError, CanonicalHeadNotFound) as e:
                 self.logger.warning("Failed to create node staking score for peer {}. Error: {}".format(encode_hex(peer.wallet_address), e))
             else:

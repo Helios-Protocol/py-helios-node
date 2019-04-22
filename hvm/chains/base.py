@@ -155,7 +155,7 @@ from sortedcontainers import (
     SortedList,
     SortedDict,
 )
-from hvm.rlp.consensus import NodeStakingScore
+from hvm.rlp.consensus import NodeStakingScore, PeerNodeHealth
 
 from hvm.rlp.accounts import TransactionKey
 
@@ -194,6 +194,9 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def get_chaindb_class(cls) -> Type[BaseChainDB]:
         raise NotImplementedError("Chain classes must implement this method")
 
+    @abstractmethod
+    def get_consensus_db(self, header: BlockHeader = None, timestamp: Timestamp = None) -> ConsensusDB:
+        raise NotImplementedError("Chain classes must implement this method")
 
     #
     # Chain API
@@ -457,6 +460,39 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def get_local_tpc_cap(self) -> int:
         raise NotImplementedError("Chain classes must implement this method")
 
+    #
+    # Consensus db passthrough with correct db corresponding to timestamp
+    #
+    @abstractmethod
+    def get_signed_peer_score(self, private_key: PrivateKey,
+                              network_id: int,
+                              peer_wallet_address: Address,
+                              after_block_number: BlockNumber = None,
+                              ) -> NodeStakingScore:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_signed_peer_score_string_private_key(self,
+                                                 private_key_string: bytes,
+                                                 network_id: int,
+                                                 peer_wallet_address: Address,
+                                                 after_block_number: BlockNumber = None,
+                                                 ) -> NodeStakingScore:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def validate_node_staking_score(self,
+                                    node_staking_score: NodeStakingScore,
+                                    since_block_number: BlockNumber) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def save_health_request(self, peer_wallet_address: Address, response_time_in_micros: int = float('inf')) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_current_peer_node_health(self,peer_wallet_address: Address) -> PeerNodeHealth:
+        raise NotImplementedError("Chain classes must implement this method")
 
 class Chain(BaseChain):
     """
@@ -529,11 +565,16 @@ class Chain(BaseChain):
     def queue_block(self,val:BaseQueueBlock):
         self._queue_block = val
 
-    @property
-    def consensus_db(self, header = None):
-        # gets the consensus db corresponding to the block timestamp
-        return self.get_vm(header).consensus_db
+    # @property
+    # def consensus_db(self, header: BlockHeader = None, timestamp: Timestamp = None):
+    #     # gets the consensus db corresponding to the block timestamp
+    #
+    #     return self.get_vm(header, timestamp).consensus_db
 
+    def get_consensus_db(self, header: BlockHeader = None, timestamp: Timestamp = None) -> ConsensusDB:
+        # gets the consensus db corresponding to the block timestamp
+
+        return self.get_vm(header, timestamp).consensus_db
 
     #
     # Global Record and discard API
@@ -711,20 +752,26 @@ class Chain(BaseChain):
     #
     # VM API
     #
-    def get_vm(self, header: BlockHeader=None) -> 'BaseVM':
+    def get_vm(self, header: BlockHeader=None, timestamp: Timestamp = None) -> 'BaseVM':
         """
-        Returns the VM instance for the given block number.
+        Returns the VM instance for the given block timestamp. Or if timestamp is given, gets the vm for that timestamp
         """
+
         if header is None or header == self.header:
             header = self.header
-            vm_class = self.get_vm_class_for_block_timestamp(header.timestamp)
+            if timestamp is None:
+                timestamp = header.timestamp
+
+            vm_class = self.get_vm_class_for_block_timestamp(timestamp)
             return vm_class(header=header,
                                chaindb=self.chaindb,
                                wallet_address = self.wallet_address,
                                private_key=self.private_key,
                                network_id=self.network_id)
         else:
-            vm_class = self.get_vm_class_for_block_timestamp(header.timestamp)
+            if timestamp is None:
+                timestamp = header.timestamp
+            vm_class = self.get_vm_class_for_block_timestamp(timestamp)
 
             return vm_class(header=header,
                             chaindb=self.chaindb,
@@ -1755,7 +1802,7 @@ class Chain(BaseChain):
         return self.import_block(self.queue_block)
 
     def import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
-        reward_bundle = self.consensus_db.create_reward_bundle_for_block(self.wallet_address, node_staking_score_list, at_timestamp=Timestamp(int(time.time())))
+        reward_bundle = self.get_consensus_db().create_reward_bundle_for_block(self.wallet_address, node_staking_score_list, at_timestamp=Timestamp(int(time.time())))
 
         # #testing
         # reward_bundle = reward_bundle.copy(reward_type_2 = reward_bundle.reward_type_2.copy(amount=0))
@@ -2047,5 +2094,48 @@ class Chain(BaseChain):
         return 5
         return tx_per_centisecond
 
+
+
+    #
+    # Consensus DB passthrough's that depend on block timestamp
+    #
+
+    def get_signed_peer_score(self, private_key: PrivateKey,
+                              network_id: int,
+                              peer_wallet_address: Address,
+                              after_block_number: BlockNumber = None,
+                              ) -> NodeStakingScore:
+        # This function should always use the vm for the current timestamp. So we dont need to ask for timestamp
+        return self.get_consensus_db(timestamp=Timestamp(int(time.time()))).get_signed_peer_score(private_key,
+                                                       network_id,
+                                                       peer_wallet_address,
+                                                       after_block_number)
+
+    def get_signed_peer_score_string_private_key(self,
+                                                 private_key_string: bytes,
+                                                 network_id: int,
+                                                 peer_wallet_address: Address,
+                                                 after_block_number: BlockNumber = None,
+                                                 ) -> NodeStakingScore:
+        # This always occurs at this time. So we take the current consensus db
+        return self.get_consensus_db(timestamp=Timestamp(int(time.time()))).get_signed_peer_score_string_private_key(private_key_string,
+                                                                          network_id,
+                                                                          peer_wallet_address,
+                                                                          after_block_number)
+
+    def validate_node_staking_score(self,
+                                    node_staking_score: NodeStakingScore,
+                                    since_block_number: BlockNumber) -> None:
+        # This depends on when the staking score was created. So get the consensus db given by that timestamp
+        return self.get_consensus_db(timestamp = node_staking_score.timestamp).validate_node_staking_score(node_staking_score, since_block_number)
+
+
+    def save_health_request(self, peer_wallet_address: Address, response_time_in_micros: int = float('inf')) -> None:
+        # This always occurs at this time. So we take the current consensus db
+        return self.get_consensus_db(timestamp=Timestamp(int(time.time()))).save_health_request(peer_wallet_address,
+                                                           response_time_in_micros)
+
+    def get_current_peer_node_health(self,peer_wallet_address: Address) -> PeerNodeHealth:
+        return self.get_consensus_db(timestamp=Timestamp(int(time.time()))).get_current_peer_node_health(peer_wallet_address)
 
 
