@@ -1,3 +1,4 @@
+from hvm.vm.forks.boson.consensus import BosonConsensusDB
 from .constants import (
     EIP658_TRANSACTION_STATUS_CODE_FAILURE,
     EIP658_TRANSACTION_STATUS_CODE_SUCCESS,
@@ -6,7 +7,7 @@ from .constants import (
 from .validation import validate_boson_transaction_against_header
 
 from .blocks import (
-    BosonBlock, BosonQueueBlock)
+    BosonBlock, BosonQueueBlock, BosonMicroBlock)
 
 from .headers import (
     create_boson_header_from_parent, configure_boson_header)
@@ -49,6 +50,7 @@ class BosonVM(VM):
     fork = 'boson'
 
     # classes
+    micro_block_class = BosonMicroBlock
     block_class = BosonBlock
     queue_block_class = BosonQueueBlock
     _state_class = BosonState
@@ -58,3 +60,4 @@ class BosonVM(VM):
     configure_header = configure_boson_header
     make_receipt = staticmethod(make_boson_receipt)
     validate_transaction_against_header = validate_boson_transaction_against_header
+    consensus_db_class = BosonConsensusDB

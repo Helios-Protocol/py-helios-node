@@ -57,3 +57,5 @@ class ChainProxy(BaseProxy):
     get_vm_class_for_timestamp = sync_method('get_vm_class_for_block_number')
 
     import_block_with_profiler = sync_method('import_block_with_profiler')
+
+    get_current_peer_node_health = sync_method('get_current_peer_node_health')

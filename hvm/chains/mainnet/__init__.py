@@ -14,9 +14,12 @@ from hvm.vm.base import BaseVM  # noqa: F401
 from hvm.vm.forks import (
     HeliosTestnetVM
 )
+from eth_typing import Address
 
 from eth_keys import keys
+from eth_keys.datatypes import PrivateKey
 
+from hvm.types import Timestamp
 
 #MAINNET_VM_CONFIGURATION = (
 #    (0, FrontierVM),
@@ -104,11 +107,11 @@ MAINNET_GENESIS_PARAMS = {'chain_address': b"\xdbL\xa4&\xd5;Y\xf6\x03p'O\xfb\x19
 
 
 class BaseMainnetChain:
-    faucet_private_key = keys.PrivateKey(TESTNET_FAUCET_PRIVATE_KEY)
-    vm_configuration = MAINNET_VM_CONFIGURATION  # type: Tuple[Tuple[int, Type[BaseVM]], ...]  # noqa: E501
-    network_id = MAINNET_NETWORK_ID  # type: int
-    genesis_wallet_address = GENESIS_WALLET_ADDRESS
-    genesis_block_timestamp = MAINNET_GENESIS_PARAMS['timestamp']
+    faucet_private_key: PrivateKey = keys.PrivateKey(TESTNET_FAUCET_PRIVATE_KEY)
+    vm_configuration: Tuple[Tuple[Timestamp, Type[BaseVM]]] = MAINNET_VM_CONFIGURATION
+    network_id: int = MAINNET_NETWORK_ID
+    genesis_wallet_address: Address = GENESIS_WALLET_ADDRESS
+    genesis_block_timestamp: Timestamp = MAINNET_GENESIS_PARAMS['timestamp']
 
 class MainnetChain(BaseMainnetChain, Chain):
     pass

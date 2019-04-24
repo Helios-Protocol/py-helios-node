@@ -1,4 +1,4 @@
-from hvm.vm.forks.helios_testnet.blocks import MicroBlock, HeliosTestnetBlock, HeliosTestnetQueueBlock
+from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock, HeliosTestnetBlock, HeliosTestnetQueueBlock
 from rlp_cython.sedes import (
     CountableList,
 )
@@ -16,8 +16,7 @@ from hvm.rlp.receipts import (
 )
 from hvm.rlp.consensus import StakeRewardBundle
 
-class BosonMicroBlock(MicroBlock):
-
+class BosonMicroBlock(HeliosMicroBlock):
     fields = [
         ('header', MicroBlockHeader),
         ('transactions', CountableList(BosonTransaction)),
@@ -53,3 +52,14 @@ class BosonQueueBlock(BosonBlock,HeliosTestnetQueueBlock):
         ('receive_transactions', CountableList(receive_transaction_class)),
         ('reward_bundle', StakeRewardBundle),
     ]
+
+    def as_complete_block(self, private_key, chain_id):
+        # first lets sign the header
+        """
+        signs the header of the given block and changes it to a complete block
+        doesnt validate the header before doing so
+        """
+
+        signed_header = self.header.get_signed(private_key, chain_id)
+
+        return BosonBlock(signed_header, self.transactions, self.receive_transactions, self.reward_bundle)

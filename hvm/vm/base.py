@@ -51,7 +51,7 @@ from hvm.exceptions import (
 from hvm.rlp.blocks import (  # noqa: F401
     BaseBlock,
     BaseQueueBlock,
-)
+    BaseMicroBlock)
 from hvm.rlp.transactions import (  # noqa: F401
     BaseTransaction,
     BaseReceiveTransaction
@@ -93,6 +93,7 @@ from hvm.types import Timestamp
 from hvm.vm.computation import BaseComputation
 
 class BaseVM(Configurable, metaclass=ABCMeta):
+    micro_block_class: Type[BaseMicroBlock] = None
     block_class: Type[BaseBlock] = None
     queue_block_class: Type[BaseQueueBlock] = None
     consensus_db_class: Type[ConsensusDB] = None
@@ -172,11 +173,15 @@ class BaseVM(Configurable, metaclass=ABCMeta):
         """
         raise NotImplementedError("VM classes must implement this method")
 
+    @abstractmethod
+    def reverse_pending_transactions(self, block_header: BaseBlockHeader) -> None:
+        raise NotImplementedError("VM classes must implement this method")
+
     #
     # Mining
     #
     @abstractmethod
-    def import_block(self, block):
+    def import_block(self, block: Union[BaseBlock, BaseQueueBlock], validate: bool = True, private_key: PrivateKey = None) -> BaseBlock:
         raise NotImplementedError("VM classes must implement this method")
 
 
@@ -304,17 +309,16 @@ class VM(BaseVM):
     _queue_block: BaseQueueBlock = None
     _state: BaseState = None
 
-    def __init__(self, header:BlockHeader, chaindb: BaseChainDB, wallet_address:Address, private_key: BaseKey, network_id: int):
+    def __init__(self, header: BlockHeader, chaindb: BaseChainDB, network_id: int):
         self.chaindb = chaindb
         self.consensus_db = self.consensus_db_class(chaindb)
-        self.wallet_address = wallet_address
-        self.private_key = private_key
         self.network_id = network_id
         self.header = header
 
-        if self.header.chain_address != self.wallet_address:
-            raise BlockOnWrongChain("Header chain address doesnt match chain wallet address. wallet_address = {}, chain_address in block header= {}".format(encode_hex(self.wallet_address), encode_hex(self.header.chain_address)))
-
+    def __repr__(self) -> str:
+        return '<{class_name}>'.format(
+            class_name=self.__class__.__name__
+        )
 
     #
     # Logging
@@ -353,6 +357,12 @@ class VM(BaseVM):
     @state.setter
     def state(self, val):
         self._state = val
+
+    def refresh_state(self) -> None:
+        self.state = self.get_state_class()(
+            db=self.chaindb.db,
+            execution_context=self.header.create_execution_context()
+        )
 
     #
     # Execution
@@ -507,10 +517,7 @@ class VM(BaseVM):
             else:
                 return None, None, computation, processed_transaction
 
-    def _apply_reward_bundle(self, reward_bundle: StakeRewardBundle, block_timestamp: Timestamp, wallet_address: Address = None, validate = True) -> None:
-
-        if wallet_address is None:
-            wallet_address = self.wallet_address
+    def _apply_reward_bundle(self, reward_bundle: StakeRewardBundle, block_timestamp: Timestamp, wallet_address: Address, validate = True) -> None:
 
         if validate:
             self.consensus_db.validate_reward_bundle(reward_bundle, chain_address=wallet_address, block_timestamp = block_timestamp)
@@ -564,11 +571,13 @@ class VM(BaseVM):
         )
 
 
-    def _apply_all_send_transactions(self, transactions, base_header, caller_chain_address, validate = True):
+    def _apply_all_send_transactions(self, transactions, base_header, validate = True):
         receipts = []
         previous_header = base_header
         result_header = base_header
         computations = []
+
+        caller_chain_address = base_header.chain_address
 
         if validate:
             for transaction in transactions:
@@ -585,13 +594,14 @@ class VM(BaseVM):
                 computations.append(computation)
             return result_header, [], computations
 
-    def _apply_all_receive_transactions(self, transactions, base_header, caller_chain_address, validate=True):
+    def _apply_all_receive_transactions(self, transactions, base_header, validate=True):
         receipts = []
         previous_header = base_header
         result_header = base_header
         computations = []
         processed_receive_transactions = []
 
+        caller_chain_address = base_header.chain_address
         if validate:
             for transaction in transactions:
                 result_header, receipt, computation, processed_receive_tx = self.apply_receive_transaction(previous_header, transaction,
@@ -612,13 +622,9 @@ class VM(BaseVM):
                 processed_receive_transactions.append(processed_receive_tx)
             return result_header, [], computations, processed_receive_transactions
 
-    def refresh_state(self):
-        self.state = self.get_state_class()(
-                db=self.chaindb.db, 
-                execution_context=self.block.header.create_execution_context()
-                )
 
-    def reverse_pending_transactions(self, block_header):
+
+    def reverse_pending_transactions(self, block_header: BaseBlockHeader) -> None:
         """
         Doesnt actually reverse transactions. It just re-adds the received transactions as receivable, 
         and removes all send transactions as receivable from the receiver state
@@ -646,22 +652,28 @@ class VM(BaseVM):
     # Mining
     #
 
-    def import_block(self, block: Union[BaseBlock, BaseQueueBlock], validate = True, **kwargs):
+    def import_block(self, block: Union[BaseBlock, BaseQueueBlock], validate: bool = True, private_key: PrivateKey = None, **kwargs) -> BaseBlock:
         """
         Import the given block to the chain.
         """
 
+        # Ensure that this is the correct VM for the block being imported. The timestamp must match that
+        # of the header in this VM.
+        if block.header.timestamp != self.header.timestamp:
+            raise ValidationError("This VM is valid for a timestamp that differs from the timestamp of the block being imported."
+                                  "The timestamp of this VM is {}, and the timestamp of the block being imported is {}".format(self.header.timestamp, block.header.timestamp))
+
+
         if isinstance(block, self.get_queue_block_class()):
             is_queue_block = True
             head_block = self.queue_block
-            block_timestamp = int(time.time())
-            # Replace the head block with a queueblock
+            if private_key is None:
+                raise ValueError("Cannot import queueblock because no private key given for signing.")
 
         else:
             is_queue_block = False
             head_block = self.block
-            block_timestamp = block.header.timestamp
-            if (block.sender != self.wallet_address and not (
+            if (block.sender != block.header.chain_address and not (
                 self.state.account_db.account_has_code(block.header.chain_address) or
                 self.state.account_db.has_pending_smart_contract_transactions(block.header.chain_address))):
                 raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
@@ -672,7 +684,6 @@ class VM(BaseVM):
             header=self.configure_header(
                 gas_limit=block.header.gas_limit,
                 gas_used=0,
-                timestamp=block_timestamp,
                 extra_data=block.header.extra_data,
                 v=block.header.v,
                 r=block.header.r,
@@ -683,21 +694,19 @@ class VM(BaseVM):
             reward_bundle = block.reward_bundle
         )
 
-
-        # we need to re-initialize the `state` to update the execution context.
-        #this also removes and unpersisted state changes.
-        #TODO, make sure we don't change anything in the execution context after this point.
-        self.refresh_state()
+        # We need to re-initialize the `state` to update the execution context.
+        # We don't need to refresh the state because it should have just been created for this block.
+        # self.refresh_state()
         
         #run all of the transactions.
-        last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, block.header, self.wallet_address)
+        last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, block.header)
         
         
         #then run all receive transactions
-        last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, last_header, self.wallet_address)
+        last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, last_header)
 
         if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
-            self._apply_reward_bundle(block.reward_bundle, block_timestamp, self.wallet_address, validate=validate)
+            self._apply_reward_bundle(block.reward_bundle, block.header.timestamp, block.header.chain_address, validate=validate)
 
 
         #then combine
@@ -722,10 +731,10 @@ class VM(BaseVM):
             reward_hash = block.reward_bundle.hash
 
         # Account hash
-        account_hash = self.state.account_db.get_account_hash(self.wallet_address)
+        account_hash = self.state.account_db.get_account_hash(block.header.chain_address)
 
         # Account balance
-        account_balance = self.state.account_db.get_balance(self.wallet_address)
+        account_balance = self.state.account_db.get_balance(block.header.chain_address)
 
         block = block.copy(
             receive_transactions = processed_receive_transactions,
@@ -738,7 +747,6 @@ class VM(BaseVM):
                 account_balance=account_balance,
             ),
         )
-
         
         if is_queue_block:
             """
@@ -755,12 +763,8 @@ class VM(BaseVM):
 
             # change any final header parameters before signing
             block = self.pack_block(block, **kwargs)
-
-
-            if self.private_key is None:
-                raise ValueError("Cannot sign block because no private key given")
             self.logger.debug("signing block")
-            block = block.as_complete_block(self.private_key, self.network_id)
+            block = block.as_complete_block(private_key, self.network_id)
             
 
         #save all send transactions in the state as receivable
@@ -778,36 +782,36 @@ class VM(BaseVM):
 
     #this can be used for fast sync
     #dangerous. It assumes all blocks are correct.
-    def import_block_no_verification(self, block, *args, **kwargs):
-        """
-        Import the given block to the chain.
-        """
-        #TODO:check to see if it is replacing a block, or being added to the top
-        #TODO: allow this for contract addresses
-        if block.sender != self.wallet_address:
-            raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
-            
-
-        # we need to re-initialize the `state` to update the execution context.
-        self.refresh_state()
-        
-        #if we don't validate here, then we are opening ourselves up to someone having invalid receive transactions.
-        #We would also not check to see if the send transaction exists. So lets validate for now. We can only 
-        #set validate to False if we 100% trust the source
-        #run all of the transactions.
-        #self._apply_all_transactions(block.transactions, block.header, validate = False)
-        self._apply_all_transactions(block.transactions, block.header, validate = True)
-        
-        #then run all receive transactions
-        #self._apply_all_transactions(block.receive_transactions, block.header, validate = False)
-        self._apply_all_transactions(block.receive_transactions, block.header, validate = True)
-
-        #save all send transactions in the state as receivable
-        self.save_transactions_as_receivable(block.header.hash, block.transactions)
-        
-        self.state.account_db.persist()
-        
-        return block
+    # def import_block_no_verification(self, block, *args, **kwargs):
+    #     """
+    #     Import the given block to the chain.
+    #     """
+    #     #TODO:check to see if it is replacing a block, or being added to the top
+    #     #TODO: allow this for contract addresses
+    #     if block.sender != self.wallet_address:
+    #         raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
+    #
+    #
+    #     # we need to re-initialize the `state` to update the execution context.
+    #     self.refresh_state()
+    #
+    #     #if we don't validate here, then we are opening ourselves up to someone having invalid receive transactions.
+    #     #We would also not check to see if the send transaction exists. So lets validate for now. We can only
+    #     #set validate to False if we 100% trust the source
+    #     #run all of the transactions.
+    #     #self._apply_all_transactions(block.transactions, block.header, validate = False)
+    #     self._apply_all_transactions(block.transactions, block.header, validate = True)
+    #
+    #     #then run all receive transactions
+    #     #self._apply_all_transactions(block.receive_transactions, block.header, validate = False)
+    #     self._apply_all_transactions(block.receive_transactions, block.header, validate = True)
+    #
+    #     #save all send transactions in the state as receivable
+    #     self.save_transactions_as_receivable(block.header.hash, block.transactions)
+    #
+    #     self.state.account_db.persist()
+    #
+    #     return block
 
 
     def save_recievable_transactions(self,block_header_hash: Hash32, computations: List[BaseComputation], receive_transactions: List[BaseReceiveTransaction]) -> None:
@@ -918,14 +922,14 @@ class VM(BaseVM):
     #
     # Finalization
     #
-    def save_closing_balance(self, block):
-        closing_balance = self.state.account_db.get_balance(self.wallet_address)
-        
-        return block.copy(
-            header=block.header.copy(
-                closing_balance = closing_balance
-            ),
-        )
+    # def save_closing_balance(self, block):
+    #     closing_balance = self.state.account_db.get_balance(self.wallet_address)
+    #
+    #     return block.copy(
+    #         header=block.header.copy(
+    #             closing_balance = closing_balance
+    #         ),
+    #     )
             
 
         

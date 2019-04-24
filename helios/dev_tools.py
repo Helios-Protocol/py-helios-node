@@ -184,7 +184,7 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
                 node_staking_scores.append(signed_node_staking_score)
 
 
-        reward_bundle = node_1.consensus_db.create_reward_bundle_for_block(privkey.public_key.to_canonical_address(),
+        reward_bundle = node_1.get_consensus_db().create_reward_bundle_for_block(privkey.public_key.to_canonical_address(),
                                                                node_staking_scores,
                                                                reward_block_time)
 
@@ -213,12 +213,13 @@ def create_valid_block_at_timestamp(base_db, private_key, transactions = None, r
     chain = MainnetChain(JournalDB(base_db), private_key.public_key.to_canonical_address(), private_key)
 
     queue_block = chain.get_queue_block()
-    queue_block = queue_block.copy(transactions=transactions,
+    queue_block = queue_block.copy(header = queue_block.header.copy(timestamp = timestamp),
+                                   transactions=transactions,
                                    receive_transactions=receive_transactions,
                                    reward_bundle=reward_bundle)
 
 
-    valid_block = chain.get_vm().import_block(queue_block, timestamp = timestamp, validate = False)
+    valid_block = chain.get_vm(timestamp = timestamp).import_block(queue_block, validate = False, private_key = chain.private_key)
 
 
     return valid_block
@@ -362,6 +363,7 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_gen
     prev_timestamp = 0
     for priv_key, balance_timestamp in key_balance_dict.items():
         sender_chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+
         dummy_sender_chain = MainnetChain(JournalDB(base_db), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
 
         balance = balance_timestamp[0]
@@ -382,9 +384,10 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_gen
                 s=0
                 )
 
+
+
         # import the block into the dummy chain to complete it and make sure it is valid
         imported_block = dummy_sender_chain.import_current_queue_block()
-
 
         # altering block timestamp and importing again
         timestamp_modified_imported_block = imported_block.copy(header = imported_block.header.copy(timestamp = timestamp).get_signed(GENESIS_PRIVATE_KEY,dummy_sender_chain.network_id))

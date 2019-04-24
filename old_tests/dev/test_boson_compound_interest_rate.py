@@ -11,11 +11,11 @@ from decimal import Decimal
 REWARD_TYPE_1_AMOUNT_FACTOR = 0 #1 % per year
 REWARD_TYPE_2_AMOUNT_FACTOR = Decimal(0.03*1/(60*60*24*365)) #3 % per year for normal nodes
 
-MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER = Decimal(4/3) #4 % per year
-MASTERNODE_LEVEL_2_REWARD_TYPE_2_MULTIPLIER = Decimal(6/3) #6 % per year
-MASTERNODE_LEVEL_3_REWARD_TYPE_2_MULTIPLIER = Decimal(8/3) #8 % per year
+MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER = Decimal(4/3) #5 % per year
+MASTERNODE_LEVEL_2_REWARD_TYPE_2_MULTIPLIER = Decimal(6/3) #7 % per year
+MASTERNODE_LEVEL_3_REWARD_TYPE_2_MULTIPLIER = Decimal(8/3) #9 % per year
 
-EARLY_BIRD_BONUS_FACTOR = 6 #6 x rewards for the first year
+EARLY_BIRD_BONUS_FACTOR = 5 #6 x rewards for the first year
 
 normal_node_fractional_interest = REWARD_TYPE_2_AMOUNT_FACTOR
 masternode_level_1_fractional_interest = REWARD_TYPE_2_AMOUNT_FACTOR*MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER

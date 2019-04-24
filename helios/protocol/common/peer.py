@@ -102,7 +102,7 @@ class BaseChainPeer(BasePeer):
 
     @property
     def health(self) -> PeerNodeHealth:
-        return self.consensus_db.get_current_peer_node_health(self.wallet_address)
+        return self.chains[0].get_current_peer_node_health(self.wallet_address)
 
 
 class BaseChainPeerFactory(BasePeerFactory):

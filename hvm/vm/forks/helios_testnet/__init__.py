@@ -9,7 +9,7 @@ from .validation import validate_helios_testnet_transaction_against_header
 from .blocks import (
     HeliosTestnetBlock,
     HeliosTestnetQueueBlock,
-)
+    HeliosMicroBlock)
 
 from .headers import (
     create_helios_testnet_header_from_parent,
@@ -104,6 +104,7 @@ class HeliosTestnetVM(VM):
     fork = 'helios_testnet'
 
     # classes
+    micro_block_class = HeliosMicroBlock
     block_class = HeliosTestnetBlock
     queue_block_class = HeliosTestnetQueueBlock
     _state_class = HeliosTestnetState

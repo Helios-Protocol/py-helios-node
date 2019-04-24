@@ -72,7 +72,7 @@ from eth_keys.datatypes import(
 from hvm.utils.profile import profile
 
 from hvm.constants import random_private_keys
-from hvm.vm.forks.helios_testnet.blocks import MicroBlock, HeliosTestnetBlock
+from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock, HeliosTestnetBlock
 
 
 

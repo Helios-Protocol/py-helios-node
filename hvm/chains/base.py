@@ -178,7 +178,6 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     The base class for all Chain objects
     """
     chain_head_db: ChainHeadDB = None
-    consensus_db: ConsensusDB = None
     chaindb: ChainDB = None
 
     chaindb_class = None  # type: Type[BaseChainDB]
@@ -235,7 +234,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         return cls.get_vm_class_for_block_timestamp(header.timestamp)
 
     @abstractmethod
-    def get_vm(self, header: BlockHeader=None) -> 'BaseVM':
+    def get_vm(self, header: BlockHeader=None, timestamp: Timestamp = None) -> 'BaseVM':
         raise NotImplementedError("Chain classes must implement this method")
 
     @classmethod
@@ -756,28 +755,24 @@ class Chain(BaseChain):
         """
         Returns the VM instance for the given block timestamp. Or if timestamp is given, gets the vm for that timestamp
         """
+        if header is not None and timestamp is not None:
+            raise ValueError("Cannot specify header and timestamp for get_vm(). Only one is allowed.")
 
         if header is None or header == self.header:
             header = self.header
-            if timestamp is None:
-                timestamp = header.timestamp
+            if timestamp is not None:
+                header = header.copy(timestamp = timestamp)
 
-            vm_class = self.get_vm_class_for_block_timestamp(timestamp)
+            vm_class = self.get_vm_class_for_block_timestamp(header.timestamp)
             return vm_class(header=header,
-                               chaindb=self.chaindb,
-                               wallet_address = self.wallet_address,
-                               private_key=self.private_key,
-                               network_id=self.network_id)
+                           chaindb=self.chaindb,
+                           network_id=self.network_id)
         else:
-            if timestamp is None:
-                timestamp = header.timestamp
-            vm_class = self.get_vm_class_for_block_timestamp(timestamp)
-
+            vm_class = self.get_vm_class_for_block_timestamp(header.timestamp)
             return vm_class(header=header,
                             chaindb=self.chaindb,
-                            wallet_address = self.wallet_address,
-                            private_key=self.private_key,
                             network_id=self.network_id)
+
 
     #
     # Header API
@@ -1225,9 +1220,10 @@ class Chain(BaseChain):
         self.chaindb._set_as_canonical_chain_head(block_parent_header)
         vm.state.revert_account_to_hash_keep_receivable_transactions_and_persist(block_parent_header.account_hash, block_parent_header.chain_address)
 
-    def revert_block(self, descendant_block_hash: Hash32, vm: 'BaseVM') -> None:
+    def revert_block(self, descendant_block_hash: Hash32) -> None:
         self.logger.debug('Reverting block with hash {}'.format(encode_hex(descendant_block_hash)))
         descendant_block_header = self.chaindb.get_block_header_by_hash(descendant_block_hash)
+        vm = self.get_vm(descendant_block_header)
         self.chain_head_db.delete_block_hash_from_chronological_window(descendant_block_hash, descendant_block_header.timestamp)
         self.chaindb.remove_block_from_all_parent_child_lookups(descendant_block_header, vm.get_block_class().receive_transaction_class)
         self.chaindb.delete_all_block_children_lookups(descendant_block_hash)
@@ -1240,6 +1236,7 @@ class Chain(BaseChain):
         # is still in the canonical chain to look up transactions
         self.chaindb.delete_block_from_canonical_chain(descendant_block_hash)
         #self.chaindb.save_unprocessed_block_lookup(descendant_block_hash)
+        vm.state.account_db.persist()
 
     def purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32, save_block_head_hash_timestamp: bool = True) -> None:
 
@@ -1281,18 +1278,21 @@ class Chain(BaseChain):
                                 else:
                                     self.set_parent_as_canonical_head(descendant_block_header, vm, save_block_head_hash_timestamp)
 
+                # Must persist now because revert_block creates new vm's for each block and could overrwite changes if we wait.
+                vm.state.account_db.persist()
+
                 #now we know what the new heads are, so we can deal with the rest of the descendants
                 for descendant_block_hash in all_descendant_block_hashes:
                     #here, since we are already going through all children, we don't need this function to purge children as well
                     if self.chaindb.is_block_unprocessed(descendant_block_hash):
                         self.purge_unprocessed_block(descendant_block_hash, purge_children_too = False)
                     else:
-                        self.revert_block(descendant_block_hash, vm)
+                        self.revert_block(descendant_block_hash)
 
-            self.revert_block(existing_block_header.hash, vm)
+            self.revert_block(existing_block_header.hash)
 
             #persist changes
-            vm.state.account_db.persist()
+
             self.chain_head_db.persist(True)
 
             self.reinitialize()
@@ -1340,11 +1340,11 @@ class Chain(BaseChain):
             return
 
         #if we are given a block that is not one of the two allowed classes, try converting it.
-        if len(block_list) > 0 and not isinstance(block_list[0], self.get_vm().get_block_class()):
+        if len(block_list) > 0 and not isinstance(block_list[0], self.get_vm(timestamp = block_list[0].header.timestamp).get_block_class()):
             self.logger.debug("converting chain to correct class")
             corrected_block_list = []
             for block in block_list:
-                corrected_block = self.get_vm().convert_block_to_correct_class(block)
+                corrected_block = self.get_vm(timestamp = block.header.timestamp).convert_block_to_correct_class(block)
                 corrected_block_list.append(corrected_block)
             block_list = corrected_block_list
 
@@ -1402,11 +1402,11 @@ class Chain(BaseChain):
     def import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
         self.logger.debug("importing chain")
         #if we are given a block that is not one of the two allowed classes, try converting it.
-        if len(block_list) > 0 and not isinstance(block_list[0], self.get_vm().get_block_class()):
+        if len(block_list) > 0 and not isinstance(block_list[0], self.get_vm(timestamp = block_list[0].header.timestamp).get_block_class()):
             self.logger.debug("converting chain to correct class")
             corrected_block_list = []
             for block in block_list:
-                corrected_block = self.get_vm().convert_block_to_correct_class(block)
+                corrected_block = self.get_vm(timestamp = block.header.timestamp).convert_block_to_correct_class(block)
                 corrected_block_list.append(corrected_block)
             block_list = corrected_block_list
 
@@ -1472,11 +1472,11 @@ class Chain(BaseChain):
         #if we are given a block that is not one of the two allowed classes, try converting it.
         #There is no reason why this should be a queueblock, because a queueblock would never come over the network, it
         #it always generated locally, and should have the correct class.
-        if not isinstance(block, self.get_vm().get_block_class()):
+        if not isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_block_class()):
             self.logger.debug("converting block to correct class")
-            block = self.get_vm().convert_block_to_correct_class(block)
+            block = self.get_vm(timestamp = block.header.timestamp).convert_block_to_correct_class(block)
 
-        if not isinstance(block, self.get_vm().get_queue_block_class()) and block.header.chain_address == self.genesis_wallet_address and block.header.block_number == 0:
+        if not isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()) and block.header.chain_address == self.genesis_wallet_address and block.header.block_number == 0:
             try:
                 our_genesis_hash = self.chaindb.get_canonical_block_header_by_number(BlockNumber(0), self.genesis_wallet_address).hash
             except HeaderNotFound:
@@ -1625,22 +1625,28 @@ class Chain(BaseChain):
         Imports a complete block.
         """
 
-        self.logger.debug("importing block number {}".format(block.number))
+        self.logger.debug("importing block {} with number {}".format(block.__repr__(), block.number))
 
         self.validate_time_between_blocks(block)
 
-        if isinstance(block, self.get_vm().get_queue_block_class()):
+        if isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()):
             # If it was a queueblock, then the header will have changed after importing
             perform_validation = False
             ensure_block_unchanged = False
-
+            queue_block = True
+        else:
+            queue_block = False
 
         if not self.chaindb.is_block_unprocessed(block.header.parent_hash):
 
             #this part checks to make sure the parent exists
             try:
-                vm = self.get_vm()
-                imported_block = vm.import_block(block)
+                vm = self.get_vm(timestamp = block.header.timestamp)
+                self.logger.debug("importing block with vm {}".format(vm.__repr__()))
+                if queue_block:
+                    imported_block = vm.import_block(block, private_key = self.private_key)
+                else:
+                    imported_block = vm.import_block(block)
 
 
                 # Validate the imported block.
@@ -1774,7 +1780,7 @@ class Chain(BaseChain):
 
 
         #save the transactions to db
-        vm = self.get_vm()
+        vm = self.get_vm(timestamp = block.header.timestamp)
         vm.save_items_to_db_as_trie(block.transactions, block.header.transaction_root)
         vm.save_items_to_db_as_trie(block.receive_transactions, block.header.receive_transaction_root)
 
@@ -1868,9 +1874,9 @@ class Chain(BaseChain):
 
         '''
 
-        if not isinstance(block, self.get_vm().get_block_class()):
+        if not isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_block_class()):
             self.logger.debug("converting block to correct class")
-            block = self.get_vm().convert_block_to_correct_class(block)
+            block = self.get_vm(timestamp = block.header.timestamp).convert_block_to_correct_class(block)
 
         block.header.check_signature_validity()
 
@@ -2080,7 +2086,7 @@ class Chain(BaseChain):
                                           MAINNET_TPC_CAP_TEST_GENESIS_STATE,
                                           private_key = TPC_CAP_TEST_GENESIS_PRIVATE_KEY)
 
-        block_to_import = chain.get_vm().get_block_class().from_dict(MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT)
+        block_to_import = chain.get_vm(timestamp = MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT['header']['timestamp']).get_block_class().from_dict(MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT)
 
 
         #@profile(sortby='cumulative')

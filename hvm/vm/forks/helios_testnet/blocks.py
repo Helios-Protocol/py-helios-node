@@ -23,12 +23,11 @@ from hvm import constants
 import time
 
 from eth_typing import Address
-
+from hvm.db.chain import BaseChainDB
 from hvm.rlp.consensus import StakeRewardBundle
 
 #this one is just used to decode blocks that come in through RPC
-class MicroBlock(BaseMicroBlock):
-
+class HeliosMicroBlock(BaseMicroBlock):
     fields = [
         ('header', MicroBlockHeader),
         ('transactions', CountableList(HeliosTestnetTransaction)),
@@ -118,7 +117,7 @@ class HeliosTestnetBlock(BaseBlock):
     # Header API
     #
     @classmethod
-    def from_header(cls, header, chaindb):
+    def from_header(cls, header, chaindb: 'BaseChainDB'):
         """
         Returns the block denoted by the given block header.
         """
@@ -138,7 +137,7 @@ class HeliosTestnetBlock(BaseBlock):
     # Microblock API
     #
     @classmethod
-    def from_micro_block(cls, micro_block: MicroBlock):
+    def from_micro_block(cls, micro_block: HeliosMicroBlock):
         header = cls.header_class.from_micro_header(micro_block.header)
         return cls(
             header=header,
@@ -183,7 +182,7 @@ class HeliosTestnetQueueBlock(HeliosTestnetBlock,BaseQueueBlock):
                     ),
             transactions=transactions,
             receive_transactions=receive_transactions,
-            reward_bundle=StakeRewardBundle(),
+            reward_bundle=cls.reward_bundle_class(),
         )
     
     @classmethod

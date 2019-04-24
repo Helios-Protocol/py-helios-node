@@ -38,10 +38,7 @@ from hvm.constants import (
     COIN_MATURE_TIME_FOR_STAKING,
     MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS,
     REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE,
-    REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE,
-    MASTERNODE_LEVEL_3_REQUIRED_BALANCE, MASTERNODE_LEVEL_3_REWARD_TYPE_2_MULTIPLIER,
-    MASTERNODE_LEVEL_2_REQUIRED_BALANCE, MASTERNODE_LEVEL_2_REWARD_TYPE_2_MULTIPLIER,
-    MASTERNODE_LEVEL_1_REQUIRED_BALANCE, MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER)
+    REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE)
 from hvm.validation import (
     validate_is_bytes,
     validate_uint256,
@@ -92,6 +89,9 @@ class ConsensusDB():
 
     reward_type_1_amount_factor = REWARD_TYPE_1_AMOUNT_FACTOR
     reward_type_2_amount_factor = REWARD_TYPE_2_AMOUNT_FACTOR
+    peer_node_health_check_response_time_penalty_start_ms = PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS
+    peer_node_health_check_response_time_penalty_50_percent_reduction_ms = 1000
+    time_between_peer_node_health_check = TIME_BETWEEN_PEER_NODE_HEALTH_CHECK
 
 
     def __init__(self, chaindb:'BaseChainDB'):
@@ -231,28 +231,32 @@ class ConsensusDB():
         Also bases the score on the percentage of time since last reward that the node was online.
         :param requests_sent:
         :param failed_requests:
-        :param average_response_time:
+        :param average_response_time: (in microseconds)
         :return:
         '''
 
-        PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_50_PERCENT_REDUCTION_MS = 1000
 
-        uptime = (requests_sent - failed_requests) * TIME_BETWEEN_PEER_NODE_HEALTH_CHECK
+        uptime = (requests_sent - failed_requests) * self.time_between_peer_node_health_check
 
         uptime_multiplier = uptime/time_since_last_reward
 
-        average_response_time_past_pentalty_start = average_response_time - PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS
+        average_response_time_past_pentalty_start = average_response_time/1000 - self.peer_node_health_check_response_time_penalty_start_ms
         if average_response_time_past_pentalty_start < 0:
             average_response_time_past_pentalty_start = 0
 
-        response_time_multiplier = ((PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_50_PERCENT_REDUCTION_MS-PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS)/
+        response_time_multiplier = ((self.peer_node_health_check_response_time_penalty_50_percent_reduction_ms-self.peer_node_health_check_response_time_penalty_start_ms)/
                                     (average_response_time_past_pentalty_start+
-                                     PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_50_PERCENT_REDUCTION_MS-
-                                     PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS))
+                                     self.peer_node_health_check_response_time_penalty_50_percent_reduction_ms-
+                                     self.peer_node_health_check_response_time_penalty_start_ms))
+
 
         score = int(uptime_multiplier*response_time_multiplier*1000000)
 
+        if score < 0:
+            score = 0
+
         return score
+
 
 
 
@@ -261,7 +265,7 @@ class ConsensusDB():
     #
 
 
-    def calculate_reward_based_on_fractional_interest(self,  wallet_address: Address, fractional_interest: float, at_timestamp: Timestamp = None, user_masternode_multipliers = True) -> int:
+    def calculate_reward_based_on_fractional_interest(self,  wallet_address: Address, fractional_interest: float, at_timestamp: Timestamp = None, include_masternode_bonus = False) -> int:
         '''
         Here we assume the time period for the reward starts from the latest reward block. This is a valid assumption
         because blocks can only be added to the top of the chain
@@ -303,17 +307,7 @@ class ConsensusDB():
 
             calc_stake = header.account_balance
 
-            if user_masternode_multipliers:
-                if calc_stake >= MASTERNODE_LEVEL_3_REQUIRED_BALANCE:
-                    masternode_multiplier = MASTERNODE_LEVEL_3_REWARD_TYPE_2_MULTIPLIER
-                elif calc_stake >= MASTERNODE_LEVEL_2_REQUIRED_BALANCE:
-                    masternode_multiplier = MASTERNODE_LEVEL_2_REWARD_TYPE_2_MULTIPLIER
-                elif calc_stake >= MASTERNODE_LEVEL_1_REQUIRED_BALANCE:
-                    masternode_multiplier = MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER
-                else:
-                    masternode_multiplier = 1
-            else:
-                masternode_multiplier = 1
+            masternode_multiplier = 1
 
             amount += time_difference * calc_stake * fractional_interest * masternode_multiplier
 
@@ -363,7 +357,7 @@ class ConsensusDB():
 
         fractional_interest = self.reward_type_2_amount_factor * final_score / 1000000
 
-        amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp, user_masternode_multipliers=False)
+        amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp)
         if amount != 0:
             return amount, final_list
         else:
@@ -382,7 +376,7 @@ class ConsensusDB():
 
         fractional_interest = self.reward_type_1_amount_factor
 
-        amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp, user_masternode_multipliers=False)
+        amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp)
 
         return amount
 
@@ -458,6 +452,8 @@ class ConsensusDB():
         latest_reward_block_number = self.chaindb.get_latest_reward_block_number(chain_address)
         latest_reward_block_timestamp = self.chaindb.get_canonical_block_header_by_number(latest_reward_block_number, chain_address).timestamp
 
+        validate_uint256(block_timestamp)
+
         # need to check to make sure it has been long enough since the last reward block.
         if block_timestamp - latest_reward_block_timestamp < MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS:
             raise ValidationError("Not enough time between reward blocks. Got {}, expected {}".format((block_timestamp - latest_reward_block_timestamp),
@@ -529,17 +525,20 @@ class ConsensusDB():
         validate_uint64(after_block_number, 'block_number')
 
         key = SchemaV1.make_peer_node_health_lookup(peer_wallet_address, after_block_number)
-        rlp_peer_node_health = self.db.get(key, b'')
-        if rlp_peer_node_health:
+        try:
+            rlp_peer_node_health = self.db[key]
             peer_node_health = rlp.decode(rlp_peer_node_health, sedes=PeerNodeHealth)
-        else:
+        except KeyError:
             peer_node_health = PeerNodeHealth()
+
         return peer_node_health
 
     def _set_peer_node_health(self, peer_wallet_address: Address, after_block_number: BlockNumber, peer_node_health: PeerNodeHealth) -> None:
         encoded_peer_node_health = rlp.encode(peer_node_health, sedes=PeerNodeHealth)
         key = SchemaV1.make_peer_node_health_lookup(peer_wallet_address, after_block_number)
+
         self.db[key] = encoded_peer_node_health
+
 
  
 

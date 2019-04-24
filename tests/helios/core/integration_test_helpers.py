@@ -94,7 +94,8 @@ class FakeAsyncChainHeadDB(AsyncChainHeadDB):
 
 
 class FakeAsyncConsensusDB(AsyncConsensusDB):
-    coro_get_signed_peer_score_string_private_key = async_passthrough('get_signed_peer_score_string_private_key')
+    pass
+    #coro_get_signed_peer_score_string_private_key = async_passthrough('get_signed_peer_score_string_private_key')
 
 
 
@@ -120,6 +121,8 @@ class FakeAsyncMainnetChain(MainnetChain):
     coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash = async_passthrough('purge_block_and_all_children_and_set_parent_as_chain_head_by_hash')
     coro_import_chain = async_passthrough('import_chain')
     coro_get_new_block_hash_to_test_peer_node_health = async_passthrough('get_new_block_hash_to_test_peer_node_health')
+
+    coro_get_signed_peer_score_string_private_key = async_passthrough('get_signed_peer_score_string_private_key')
 
 class FakeMainnetFullNode():
     chain_class = FakeAsyncMainnetChain
