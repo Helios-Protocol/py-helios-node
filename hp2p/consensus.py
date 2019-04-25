@@ -808,6 +808,7 @@ class Consensus(BaseService, PeerSubscriber):
             if timestamp_rounded >= time_of_last_request + TIME_BETWEEN_PEER_NODE_HEALTH_CHECK:
                 # choose random new block to ask all peers for
                 try:
+                    self.logger.debug("Asking peer for newish block to test their health.")
                     newish_block_hash = await chain.coro_get_new_block_hash_to_test_peer_node_health()
                 except NoChronologicalBlocks:
                     self.logger.debug("Skipping this round of peer node health checks because we have no blocks to ask for")
