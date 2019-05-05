@@ -51,6 +51,15 @@ class BosonConsensusDB(ConsensusDB):
     masternode_level_1_required_balance = MASTERNODE_LEVEL_1_REQUIRED_BALANCE
     masternode_level_1_multiplier = MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER
 
+    # TODO: move all of these into the consensus class here so they can change with forks.
+    # min_time_between_reward_blocks = MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS
+    # TIME_BETWEEN_PEER_NODE_HEALTH_CHECK = 5
+    # MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS = 1
+    # REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE = 300
+    # REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY = 5
+    # REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF = 100
+    # REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF = 1
+    # COIN_MATURE_TIME_FOR_STAKING = 1
 
     #calculate_node_staking_score done
 
