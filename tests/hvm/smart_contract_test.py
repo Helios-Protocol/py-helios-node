@@ -18,6 +18,8 @@ from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
 
+from hvm.types import Timestamp
+
 from hvm.constants import (
     BLANK_ROOT_HASH,
     ZERO_HASH32,
@@ -126,13 +128,13 @@ def test_smart_contract_deploy_system():
     # testdb = LevelDB('/home/tommy/.local/share/helios/instance_test/mainnet/chain/full/')
     # testdb = JournalDB(testdb)
     testdb = MemoryDB()
-
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    coin_mature_time = chain.get_vm(timestamp = Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
     private_keys = []
     for i in range(10):
         private_keys.append(get_primary_node_private_helios_key(i))
 
     now = int(time.time())
-    coin_mature_time = constants.COIN_MATURE_TIME_FOR_STAKING
     key_balance_dict = {
         private_keys[0]: (1000000000000, now - coin_mature_time * 10 - 100),
         private_keys[1]: (20000, now - coin_mature_time * 10 - 99),

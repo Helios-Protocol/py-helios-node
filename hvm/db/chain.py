@@ -45,7 +45,6 @@ from eth_hash.auto import keccak
 
 from hvm.constants import (
     GENESIS_PARENT_HASH,
-    COIN_MATURE_TIME_FOR_STAKING,
     MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY,
     MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH,
     MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE,
@@ -446,15 +445,16 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: Set = None) -> int:
+    def get_block_stake_from_children(self, block_hash: Hash32, coin_mature_time_for_staking: Timestamp, exclude_chains: Set = None) -> int:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_total_block_stake_of_block_hashes(self, block_hashes: List[Hash32]) -> int:
+    def get_total_block_stake_of_block_hashes(self, block_hashes: List[Hash32], coin_mature_time_for_staking: Timestamp, timestamp_for_stake = None) -> int:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def get_mature_stake(self, wallet_address: Address, timestamp: Timestamp = None,
+    def get_mature_stake(self, wallet_address: Address, coin_mature_time_for_staking: Timestamp,
+                         timestamp: Timestamp = None,
                          raise_canonical_head_not_found_error: bool = False) -> int:
          raise NotImplementedError("ChainDB classes must implement this method")
     #
@@ -1623,7 +1623,7 @@ class ChainDB(BaseChainDB):
             return child_chains
 
     #This doesnt include stake from this block
-    def get_block_stake_from_children(self, block_hash: Hash32, exclude_chains: Set = None) -> int:
+    def get_block_stake_from_children(self, block_hash: Hash32, coin_mature_time_for_staking: Timestamp, exclude_chains: Set = None) -> int:
         validate_word(block_hash, title="Block Hash")
 
         children_chain_wallet_addresses = self.get_block_children_chains(block_hash, exclude_chains)
@@ -1640,11 +1640,11 @@ class ChainDB(BaseChainDB):
 
         total_stake = 0
         for wallet_address in children_chain_wallet_addresses:
-            total_stake += self.get_mature_stake(wallet_address)
+            total_stake += self.get_mature_stake(wallet_address, coin_mature_time_for_staking)
         return total_stake
 
     #this includes children and blocks corresponding to these hashes
-    def get_total_block_stake_of_block_hashes(self, block_hashes: List[Hash32], timestamp_for_stake = None) -> int:
+    def get_total_block_stake_of_block_hashes(self, block_hashes: List[Hash32], coin_mature_time_for_staking: Timestamp, timestamp_for_stake = None) -> int:
         '''
         This will not double count any addresses that the blocks might have in common.
         timestamp_for_stake is the time where stake is calculated. So balances must be COIN_MATURE_TIME_FOR_STAKING time older than timestamp_for_stake
@@ -1665,11 +1665,11 @@ class ChainDB(BaseChainDB):
 
         total_stake = 0
         for wallet_address in children_chain_wallet_addresses:
-            total_stake += self.get_mature_stake(wallet_address, timestamp_for_stake)
+            total_stake += self.get_mature_stake(wallet_address, coin_mature_time_for_staking, timestamp_for_stake)
         return total_stake
 
 
-    def get_mature_stake(self, wallet_address: Address, timestamp: Timestamp = None,
+    def get_mature_stake(self, wallet_address: Address, coin_mature_time_for_staking: Timestamp, timestamp: Timestamp = None,
                          raise_canonical_head_not_found_error: bool = False) -> int:
 
         if timestamp is None:
@@ -1680,7 +1680,7 @@ class ChainDB(BaseChainDB):
 
         # get account balance
         return self._get_balance_at_time(wallet_address,
-                                         timestamp - COIN_MATURE_TIME_FOR_STAKING,
+                                         timestamp - coin_mature_time_for_staking,
                                          raise_canonical_head_not_found_error=raise_canonical_head_not_found_error)
 
     def _get_balance_at_time(self, wallet_address: Address, timestamp: Timestamp = None,

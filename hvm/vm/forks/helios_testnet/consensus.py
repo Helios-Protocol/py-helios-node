@@ -1,4 +1,8 @@
-from hvm.constants import REWARD_TYPE_1_AMOUNT_FACTOR, REWARD_TYPE_2_AMOUNT_FACTOR, TIME_BETWEEN_PEER_NODE_HEALTH_CHECK
+from hvm.constants import REWARD_TYPE_1_AMOUNT_FACTOR, REWARD_TYPE_2_AMOUNT_FACTOR, TIME_BETWEEN_PEER_NODE_HEALTH_CHECK, \
+    PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS, MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS, \
+    REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE, REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY, \
+    REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF, REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF, \
+    COIN_MATURE_TIME_FOR_STAKING
 from hvm.db.consensus import ConsensusDB
 
 HELIOS_TESTNET_REWARD_TYPE_1_AMOUNT_FACTOR = REWARD_TYPE_1_AMOUNT_FACTOR
@@ -8,6 +12,16 @@ class HeliosTestnetConsensusDB(ConsensusDB):
     reward_type_1_amount_factor = HELIOS_TESTNET_REWARD_TYPE_1_AMOUNT_FACTOR
     reward_type_2_amount_factor = HELIOS_TESTNET_REWARD_TYPE_2_AMOUNT_FACTOR
     time_between_peer_node_health_check = TIME_BETWEEN_PEER_NODE_HEALTH_CHECK
+
+    peer_node_health_check_response_time_penalty_start_ms = PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS
+    peer_node_health_check_response_time_penalty_50_percent_reduction_ms = 1000
+
+    min_time_between_reward_blocks = MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS
+    reward_proof_timestamp_variability_allowance = REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE
+    reward_block_creation_attempt_frequency = REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY
+    required_stake_for_reward_type_2_proof = REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF
+    required_number_of_proofs_for_reward_type_2_proof = REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF
+    coin_mature_time_for_staking = COIN_MATURE_TIME_FOR_STAKING
 
     def calculate_node_staking_score(self, requests_sent: int, failed_requests: int, average_response_time: int, time_since_last_reward) -> int:
         '''

@@ -38,7 +38,7 @@ from hvm.constants import (
     COIN_MATURE_TIME_FOR_STAKING,
     MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS,
     REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE,
-    REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE)
+    REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE, REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY)
 from hvm.validation import (
     validate_is_bytes,
     validate_uint256,
@@ -92,6 +92,13 @@ class ConsensusDB():
     peer_node_health_check_response_time_penalty_start_ms = PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS
     peer_node_health_check_response_time_penalty_50_percent_reduction_ms = 1000
     time_between_peer_node_health_check = TIME_BETWEEN_PEER_NODE_HEALTH_CHECK
+
+    min_time_between_reward_blocks = MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS
+    reward_proof_timestamp_variability_allowance = REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE
+    reward_block_creation_attempt_frequency = REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY
+    required_stake_for_reward_type_2_proof = REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF
+    required_number_of_proofs_for_reward_type_2_proof = REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF
+    coin_mature_time_for_staking = COIN_MATURE_TIME_FOR_STAKING
 
 
     def __init__(self, chaindb:'BaseChainDB'):
@@ -294,7 +301,7 @@ class ConsensusDB():
         for current_block_number in range(canonical_head_block_number, latest_reward_block_number - 1, -1):
             header = self.chaindb.get_canonical_block_header_by_number(BlockNumber(current_block_number), wallet_address)
 
-            header_mature_timestamp = header.timestamp + COIN_MATURE_TIME_FOR_STAKING
+            header_mature_timestamp = header.timestamp + self.coin_mature_time_for_staking
             # this finds the start of the calculation
             if header_mature_timestamp >= calc_to_timestamp:
                 continue
@@ -339,17 +346,17 @@ class ConsensusDB():
         final_list = []
         item_stake_list = []
         for node_staking_score in node_staking_score_list:
-            stake = self.chaindb.get_mature_stake(node_staking_score.sender, timestamp = node_staking_score.timestamp)
+            stake = self.chaindb.get_mature_stake(node_staking_score.sender, self.coin_mature_time_for_staking, timestamp = node_staking_score.timestamp)
             final_list.append(node_staking_score)
             item_stake_list.append((node_staking_score.score, stake))
 
             total_stake += stake
             num_proofs += 1
 
-            if total_stake >= REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF and num_proofs >= REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
+            if total_stake >= self.required_stake_for_reward_type_2_proof and num_proofs >= self.required_number_of_proofs_for_reward_type_2_proof:
                 break
 
-        if total_stake < REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF or num_proofs < REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
+        if total_stake < self.required_stake_for_reward_type_2_proof or num_proofs < self.required_number_of_proofs_for_reward_type_2_proof:
             raise NotEnoughProofsOrStakeForRewardType2Proof()
 
         final_score = int(stake_weighted_average(item_stake_list))
@@ -431,8 +438,8 @@ class ConsensusDB():
 
     def validate_node_staking_score_with_context(self, node_staking_score: NodeStakingScore, chain_address: Address, block_timestamp: Timestamp, latest_reward_block_number: BlockNumber) -> None:
 
-        if (node_staking_score.timestamp > (block_timestamp + REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE)
-                or node_staking_score.timestamp < (block_timestamp - REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE)):
+        if (node_staking_score.timestamp > (block_timestamp + self.reward_proof_timestamp_variability_allowance)
+                or node_staking_score.timestamp < (block_timestamp - self.reward_proof_timestamp_variability_allowance)):
             raise ValidationError('Reward type 2 proof isnt within acceptable range of block timestamp')
 
         # make sure recipient node wlalet address is this node
@@ -455,9 +462,9 @@ class ConsensusDB():
         validate_uint256(block_timestamp)
 
         # need to check to make sure it has been long enough since the last reward block.
-        if block_timestamp - latest_reward_block_timestamp < MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS:
+        if block_timestamp - latest_reward_block_timestamp < self.min_time_between_reward_blocks:
             raise ValidationError("Not enough time between reward blocks. Got {}, expected {}".format((block_timestamp - latest_reward_block_timestamp),
-                                                                                                      MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS))
+                                                                                                      self.min_time_between_reward_blocks))
 
 
         #first we validate reward type 1. All reward bundles must contain this.

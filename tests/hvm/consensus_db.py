@@ -251,7 +251,7 @@ def test_boson_vm_calculate_reward_based_on_fractional_interest():
     expected_reward_part_1 = fractional_interest*early_bird_bonus*(masternode_level_3_required_balance*100000*masternode_level_3_multiplier)
     expected_reward_part_2 = fractional_interest*early_bird_bonus*(masternode_level_2_required_balance*100000*masternode_level_2_multiplier)
     expected_reward_part_3 = fractional_interest*early_bird_bonus*(masternode_level_1_required_balance*100000*masternode_level_1_multiplier)
-    expected_reward_part_4 = fractional_interest*early_bird_bonus*(1000000)*(calculate_at_timestamp-(stake_start+300000)-COIN_MATURE_TIME_FOR_STAKING)
+    expected_reward_part_4 = fractional_interest*early_bird_bonus*(1000000)*(calculate_at_timestamp-(stake_start+300000)-consensus_db.coin_mature_time_for_staking)
     
     # print("Expected calculation = {} * {} * {} * {}".format((calculate_at_timestamp-(stake_start+300000)-COIN_MATURE_TIME_FOR_STAKING), 1000000, fractional_interest, 1))
     # print("Expected calculation = {} * {} * {} * {}".format(100000, masternode_level_1_required_balance, fractional_interest, masternode_level_1_multiplier))

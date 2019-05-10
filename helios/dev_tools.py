@@ -42,7 +42,7 @@ from hvm.db.hash_trie import HashTrie
 
 from hvm.db.chain_head import ChainHeadDB
 
-from hvm.constants import random_private_keys, GAS_TX, MIN_TIME_BETWEEN_BLOCKS, MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS, \
+from hvm.constants import random_private_keys, GAS_TX, MIN_TIME_BETWEEN_BLOCKS, \
     TIME_BETWEEN_HEAD_HASH_SAVE
 from hvm.vm.forks.helios_testnet import HeliosTestnetQueueBlock
 
@@ -162,7 +162,7 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
 
         chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
 
-        reward_block_time = tx_timestamp + MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS+MIN_TIME_BETWEEN_BLOCKS+2
+        reward_block_time = tx_timestamp + node_1.get_vm().consensus_db.min_time_between_reward_blocks+ MIN_TIME_BETWEEN_BLOCKS+2
 
         node_staking_scores = []
         for head_hash in chain_head_hashes:

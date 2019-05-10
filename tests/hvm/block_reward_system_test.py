@@ -17,6 +17,7 @@ from hvm.chains.mainnet import (
     TPC_CAP_TEST_GENESIS_PRIVATE_KEY,
     MAINNET_NETWORK_ID,
 )
+from hvm.types import Timestamp
 
 from hvm.constants import (
     BLANK_ROOT_HASH,
@@ -104,8 +105,9 @@ def test_block_rewards_system():
     for i in range(10):
         private_keys.append(get_primary_node_private_helios_key(i))
 
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    coin_mature_time = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
     now = int(time.time())
-    coin_mature_time = constants.COIN_MATURE_TIME_FOR_STAKING
     key_balance_dict = {
         private_keys[0]: (1000, now - coin_mature_time * 10 - 100),
         private_keys[1]: (20000, now - coin_mature_time * 10 - 99),
@@ -162,7 +164,7 @@ def test_block_rewards_system():
         node_staking_score.validate()
         print(node_staking_score.is_signature_valid)
         print(node_staking_score.sender)
-        print(node_staking_score.score, chain.chaindb.get_mature_stake(node_staking_score.sender, node_staking_score.timestamp))
+        print(node_staking_score.score, chain.chaindb.get_mature_stake(node_staking_score.sender, int(time.time()), node_staking_score.timestamp))
 
 
     reward_bundle = chain.get_consensus_db().create_reward_bundle_for_block(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), node_staking_scores, at_timestamp = int(time.time()))

@@ -66,7 +66,7 @@ from hvm.constants import (
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
     TIME_BETWEEN_PEER_NODE_HEALTH_CHECK,
-    REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY, MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS,
+    REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY,
     REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF, REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF,
     COIN_MATURE_TIME_FOR_STAKING)
 
@@ -371,7 +371,8 @@ class Consensus(BaseService, PeerSubscriber):
         return self._local_tpc_cap
 
     async def needs_stake_from_bootnode(self, peer):
-        time_for_stake_maturity = int(time.time()) - COIN_MATURE_TIME_FOR_STAKING
+        coin_mature_time_for_staking = self.node.get_chain().get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
+        time_for_stake_maturity = int(time.time()) - coin_mature_time_for_staking
         latest_timestamp = self.chain_head_db.get_latest_timestamp()
 
         if (latest_timestamp < time_for_stake_maturity or await peer.stake == None):
@@ -379,7 +380,8 @@ class Consensus(BaseService, PeerSubscriber):
         return False
 
     async def get_accurate_stake_for_this_node(self):
-        time_for_stake_maturity = int(time.time()) - COIN_MATURE_TIME_FOR_STAKING
+        coin_mature_time_for_staking = self.node.get_chain().get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
+        time_for_stake_maturity = int(time.time()) - coin_mature_time_for_staking
         latest_timestamp = self.chain_head_db.get_latest_timestamp()
 
         if latest_timestamp < time_for_stake_maturity and not self.chain_config.network_startup_node:
@@ -695,8 +697,9 @@ class Consensus(BaseService, PeerSubscriber):
                     latest_reward_block_number = await self.chaindb.coro_get_latest_reward_block_number(self.chain_config.node_wallet_address)
                     latest_reward_block_header = await self.chaindb.coro_get_canonical_block_header_by_number(latest_reward_block_number, self.chain_config.node_wallet_address)
                     latest_reward_block_timestamp = latest_reward_block_header.timestamp
+                    min_allowed_time_between_reward_blocks = self.node.get_chain().get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.min_time_between_reward_blocks
 
-                    if (int(time.time()) - latest_reward_block_timestamp) > MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS:
+                    if (int(time.time()) - latest_reward_block_timestamp) >  min_allowed_time_between_reward_blocks:
                         #clear the queue in case there are any old requests
                         empty_queue(self._new_node_staking_scores)
                         #send out all of the requests
@@ -717,17 +720,17 @@ class Consensus(BaseService, PeerSubscriber):
                             self.logger.warning("Attempted to create reward block, but not enough peers replied with a score. Will re-attempt later.")
                             pass
 
-
-            await asyncio.sleep(REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY)
+            reward_block_creation_attempt_frequency = self.node.get_chain().get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.reward_block_creation_attempt_frequency
+            await asyncio.sleep(reward_block_creation_attempt_frequency)
 
     async def receive_node_staking_scores(self, num_requests_sent: int) -> None:
         # receive all of the requests
         while True:
 
             q_size = self._new_node_staking_scores.qsize()
-
+            current_consensus_db = self.node.get_chain().get_vm(timestamp=Timestamp(int(time.time()))).consensus_db
             # make sure we got enough responses
-            required_responses = max((0.51 * num_requests_sent), REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF)
+            required_responses = max((0.51 * num_requests_sent), current_consensus_db.required_number_of_proofs_for_reward_type_2_proof)
             self.logger.debug("waiting for node_staking_scores to fill queue. Queue size = {}, required responses = {}".format(q_size, required_responses))
             if q_size >= required_responses:
                 self.logger.debug("got enough node_staking_scores responses")
@@ -736,9 +739,10 @@ class Consensus(BaseService, PeerSubscriber):
                 total_stake = 0
                 for node_staking_score in peer_node_staking_scores:
                     total_stake += await self.chaindb.coro_get_mature_stake(node_staking_score.sender)
-
-                self.logger.debug("total stake = {}, required stake = {}".format(total_stake, REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF))
-                if total_stake > REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF:
+                
+                required_stake_for_reward_type_2_proof = current_consensus_db.required_stake_for_reward_type_2_proof
+                self.logger.debug("total stake = {}, required stake = {}".format(total_stake, required_stake_for_reward_type_2_proof))
+                if total_stake > required_stake_for_reward_type_2_proof:
                     await self.process_reward_block(peer_node_staking_scores)
 
             await asyncio.sleep(ROUND_TRIP_TIMEOUT)
@@ -1154,8 +1158,8 @@ class Consensus(BaseService, PeerSubscriber):
             if await self.needs_stake_from_bootnode(peer):
                 addresses_needing_stake.append(peer.wallet_address)
 
-
-        time_for_stake_maturity = int(time.time()) - COIN_MATURE_TIME_FOR_STAKING
+        coin_mature_time_for_staking = self.node.get_chain().get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
+        time_for_stake_maturity = int(time.time()) - coin_mature_time_for_staking
         latest_timestamp = self.chain_head_db.get_latest_timestamp()
 
         if latest_timestamp < time_for_stake_maturity:
@@ -1586,7 +1590,7 @@ class Consensus(BaseService, PeerSubscriber):
 
                 consensus_root_hash = await self.coro_get_root_hash_consensus(timestamp, local_root_hash_timestamps=local_root_hash_timestamps)
 
-                if local_root_hash == consensus_root_hash:
+                if local_root_hash == consensus_root_hash or consensus_root_hash is None:
                     if debug:
                         self.logger.debug("get_blockchain_sync_parameters Matched at timestamp {}".format(timestamp))
                     if disagreement_found:

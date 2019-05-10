@@ -79,6 +79,8 @@ class AsyncChain(BaseChain):
     async def coro_try_to_rebuild_chronological_chain_from_historical_root_hashes(self, historical_root_hash_timestamp: Timestamp) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
+    async def coro_get_mature_stake(self, raise_canonical_head_not_found_error: bool) -> int:
+        raise NotImplementedError("Chain classes must implement this method")
 
 class AsyncChainMixin(AsyncChain):
 
@@ -111,6 +113,6 @@ class AsyncChainMixin(AsyncChain):
     coro_get_signed_peer_score_string_private_key = async_method('get_signed_peer_score_string_private_key')
     coro_validate_node_staking_score = async_method('validate_node_staking_score')
 
-
+    coro_get_mature_stake = async_method('coro_get_mature_stake')
 
 

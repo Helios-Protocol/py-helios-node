@@ -11,6 +11,7 @@ from typing import (
     Type,
     Optional,
     Union,
+    Set,
 )
 from hvm.types import Timestamp
 
@@ -109,6 +110,14 @@ class AsyncChainDB(ChainDB):
         raise NotImplementedError()
 
     async def coro_get_unprocessed_block_header_by_block_number(self, chain_address: Address, block_number: BlockNumber) -> BlockHeader:
+        raise NotImplementedError()
+
+    async def coro_get_mature_stake(self, wallet_address: Address, coin_mature_time_for_staking: Timestamp,
+                                     timestamp: Timestamp = None,
+                                     raise_canonical_head_not_found_error: bool = False) -> int:
+        raise NotImplementedError()
+
+    async def coro_get_block_stake_from_children(self,block_hash: Hash32, coin_mature_time_for_staking: Timestamp, exclude_chains: Set = None) -> int:
         raise NotImplementedError()
 
 class ChainDBProxy(BaseProxy):

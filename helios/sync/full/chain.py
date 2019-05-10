@@ -605,10 +605,10 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         else:
             force_replace_existing_blocks = True
 
-        self.logger.debug("Syncing to chronological window timestamp {}".format(chronological_window_timestamp))
+        self.logger.debug("Syncing to chronological window timestamp {}. Syncing to chain head hash {}. Local root hash {}".format(chronological_window_timestamp, encode_hex(sync_parameters.consensus_root_hash), encode_hex(sync_parameters.local_root_hash)))
         test_hist_root_hashes = self.chain_head_db.get_historical_root_hashes()[0:10]
         self.logger.debug([(x[0], encode_hex(x[1])) for x in test_hist_root_hashes])
-        self.logger.debug([encode_hex(x) for x in self.chain_head_db.get_head_block_hashes_list(test_hist_root_hashes[0][1])])
+        #self.logger.debug([encode_hex(x) for x in self.chain_head_db.get_head_block_hashes_list(test_hist_root_hashes[0][1])])
 
         timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(chronological_window_timestamp)
         #self.logger.debug("Our chronological block window has {} blocks".format(len(timestamp_block_hashes)))

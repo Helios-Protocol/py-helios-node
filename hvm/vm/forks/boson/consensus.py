@@ -3,7 +3,8 @@ from hvm.constants import (
     PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS,
     COIN_MATURE_TIME_FOR_STAKING,
     MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS, REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF,
-    REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF)
+    REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF, REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY,
+    REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE)
 from hvm.db.consensus import ConsensusDB
 from hvm.rlp.consensus import StakeRewardType2, StakeRewardBundle, NodeStakingScore
 from hvm.utils.numeric import stake_weighted_average
@@ -51,6 +52,13 @@ class BosonConsensusDB(ConsensusDB):
     masternode_level_1_required_balance = MASTERNODE_LEVEL_1_REQUIRED_BALANCE
     masternode_level_1_multiplier = MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER
 
+    min_time_between_reward_blocks = MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS
+    reward_proof_timestamp_variability_allowance = REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE
+    reward_block_creation_attempt_frequency = REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY
+    required_stake_for_reward_type_2_proof = REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF
+    required_number_of_proofs_for_reward_type_2_proof = REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF
+    coin_mature_time_for_staking = COIN_MATURE_TIME_FOR_STAKING
+
     # TODO: move all of these into the consensus class here so they can change with forks.
     # min_time_between_reward_blocks = MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS
     # TIME_BETWEEN_PEER_NODE_HEALTH_CHECK = 5
@@ -83,17 +91,17 @@ class BosonConsensusDB(ConsensusDB):
         final_list = []
         item_stake_list = []
         for node_staking_score in node_staking_score_list:
-            stake = self.chaindb.get_mature_stake(node_staking_score.sender, timestamp = node_staking_score.timestamp)
+            stake = self.chaindb.get_mature_stake(node_staking_score.sender, self.coin_mature_time_for_staking, timestamp = node_staking_score.timestamp)
             final_list.append(node_staking_score)
             item_stake_list.append((node_staking_score.score, stake))
 
             total_stake += stake
             num_proofs += 1
 
-            if total_stake >= REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF and num_proofs >= REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
+            if total_stake >= self.required_stake_for_reward_type_2_proof and num_proofs >= self.required_number_of_proofs_for_reward_type_2_proof:
                 break
 
-        if total_stake < REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF or num_proofs < REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF:
+        if total_stake < self.required_stake_for_reward_type_2_proof or num_proofs < self.required_number_of_proofs_for_reward_type_2_proof:
             raise NotEnoughProofsOrStakeForRewardType2Proof()
 
         final_score = int(stake_weighted_average(item_stake_list))
@@ -140,7 +148,7 @@ class BosonConsensusDB(ConsensusDB):
         for current_block_number in range(canonical_head_block_number, latest_reward_block_number - 1, -1):
             header = self.chaindb.get_canonical_block_header_by_number(BlockNumber(current_block_number), wallet_address)
 
-            header_mature_timestamp = header.timestamp + COIN_MATURE_TIME_FOR_STAKING
+            header_mature_timestamp = header.timestamp + self.coin_mature_time_for_staking
             # this finds the start of the calculation
             if header_mature_timestamp >= calc_to_timestamp:
                 continue
@@ -167,8 +175,8 @@ class BosonConsensusDB(ConsensusDB):
             else:
                 masternode_multiplier = 1
 
-            print('AAAAAA')
-            print(type(time_difference), type(calc_stake), type(fractional_interest), type(masternode_multiplier))
+            # print('AAAAAA')
+            # print(type(time_difference), type(calc_stake), type(fractional_interest), type(masternode_multiplier))
             amount += int(time_difference * calc_stake * fractional_interest * masternode_multiplier)
 
             #print("actual calculation = {} * {} * {} * {}".format(time_difference, calc_stake, fractional_interest, masternode_multiplier))

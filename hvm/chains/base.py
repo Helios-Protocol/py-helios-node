@@ -56,7 +56,6 @@ from hvm.constants import (
     BLANK_ROOT_HASH,
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
-    COIN_MATURE_TIME_FOR_STAKING,
     GENESIS_PARENT_HASH,
     MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY,
     MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH,
@@ -432,7 +431,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     # Stake API
     #
     @abstractmethod
-    def get_mature_stake(self) -> int:
+    def get_mature_stake(self, raise_canonical_head_not_found_error:bool = False) -> int:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -1902,8 +1901,9 @@ class Chain(BaseChain):
     # Stake API
     #
 
-    def get_mature_stake(self) -> int:
-        return self.chaindb.get_mature_stake(self.wallet_address)
+    def get_mature_stake(self, raise_canonical_head_not_found_error:bool = False) -> int:
+        coin_mature_time_for_staking = self.get_vm(timestamp = Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
+        return self.chaindb.get_mature_stake(self.wallet_address, coin_mature_time_for_staking, raise_canonical_head_not_found_error = raise_canonical_head_not_found_error)
 
     # gets the stake for the timestamp corresponding to teh chronological block window, so it is all blocks for the next 1000 seconds.
     def get_mature_stake_for_chronological_block_window(self, chronological_block_window_timestamp: Timestamp, timestamp_for_stake: Timestamp = None):
@@ -1912,7 +1912,8 @@ class Chain(BaseChain):
 
         chronological_block_hash_timestamps = self.chain_head_db.load_chronological_block_window(chronological_block_window_timestamp)
         chronological_block_hashes = [x[1] for x in chronological_block_hash_timestamps]
-        return self.chaindb.get_total_block_stake_of_block_hashes(chronological_block_hashes, timestamp_for_stake)
+        coin_mature_time_for_staking = self.get_vm(timestamp=timestamp_for_stake).consensus_db.coin_mature_time_for_staking
+        return self.chaindb.get_total_block_stake_of_block_hashes(chronological_block_hashes, coin_mature_time_for_staking, timestamp_for_stake)
 
 
 
