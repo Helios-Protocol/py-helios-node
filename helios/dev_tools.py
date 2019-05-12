@@ -48,7 +48,10 @@ from hvm.vm.forks.helios_testnet import HeliosTestnetQueueBlock
 
 logger = logging.getLogger("dev_tools_testing")
 
-
+from eth_utils import (
+    from_wei,
+    to_wei,
+)
 
 
 
@@ -272,9 +275,9 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
         tx_timestamp = int(tx_key[3])
 
         if len(tx_key) > 4:
-            gas_price = tx_key[4]
+            gas_price = to_wei(tx_key[4], 'gwei')
         else:
-            gas_price = 1
+            gas_price = to_wei(1, 'gwei')
 
         total_gas = gas_price
         sender_chain = MainnetChain(base_db, sender_priv_key.public_key.to_canonical_address(), sender_priv_key)
@@ -283,7 +286,7 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
 
         dummy_sender_chain.create_and_sign_transaction_for_queue_block(
             gas_price=gas_price,
-            gas=GAS_TX*gas_price,
+            gas=GAS_TX,
             to=receive_priv_key.public_key.to_canonical_address(),
             value=amount,
             data=b"",
@@ -323,8 +326,10 @@ def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list
 
     genesis_chain_stake = 100000000000000000
 
+    total_required_gas = sum([(to_wei(tx_key[4], 'gwei') if len(tx_key) > 4 else to_wei(1, 'gwei'))*GAS_TX for tx_key in tx_list])
+
     earliest_timestamp = tx_list[0][3]
-    required_total_supply = sum([x[2]+GAS_TX for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+genesis_chain_stake
+    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+genesis_chain_stake+total_required_gas
 
     if use_real_genesis:
         import_genesis_block(base_db)

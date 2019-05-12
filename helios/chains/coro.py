@@ -113,6 +113,6 @@ class AsyncChainMixin(AsyncChain):
     coro_get_signed_peer_score_string_private_key = async_method('get_signed_peer_score_string_private_key')
     coro_validate_node_staking_score = async_method('validate_node_staking_score')
 
-    coro_get_mature_stake = async_method('coro_get_mature_stake')
+    coro_get_mature_stake = async_method('get_mature_stake')
 
 

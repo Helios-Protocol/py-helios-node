@@ -42,7 +42,7 @@ from helios.sync.common.constants import (
     ADDITIVE_SYNC_STAGE_ID,
     FULLY_SYNCED_STAGE_ID,
 )
-
+from eth_utils import to_wei
 from helios.dev_tools import create_new_genesis_params_and_state
 from tests.integration_test_helpers import (
     ensure_blockchain_databases_identical,
@@ -198,13 +198,14 @@ async def _build_test_consensus(request, event_loop,
 
 
     tx_list = [
-        *[[GENESIS_PRIVATE_KEY, private_keys[i], 1000000-1000*i, genesis_block_timestamp + gap_between_genesis_block_and_first_transaction + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]
+        *[[GENESIS_PRIVATE_KEY, private_keys[i], ((1000000-1000)*10**18)*i, genesis_block_timestamp + gap_between_genesis_block_and_first_transaction + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]
     ]
 
+    total_required_gas = sum([(to_wei(tx_key[4], 'gwei') if len(tx_key) > 4 else to_wei(1, 'gwei'))*GAS_TX for tx_key in tx_list])
 
     genesis_chain_stake = 100
 
-    required_total_supply = sum([x[2]+GAS_TX for x in tx_list if x[0] == GENESIS_PRIVATE_KEY]) + genesis_chain_stake
+    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+genesis_chain_stake+total_required_gas
 
     genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply,
                                                                         genesis_block_timestamp)

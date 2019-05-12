@@ -81,6 +81,7 @@ class FakeAsyncChainDB(AsyncChainDB):
     coro_save_historical_minimum_gas_price = async_passthrough('save_historical_minimum_gas_price')
     coro_save_historical_network_tpc_capability = async_passthrough('save_historical_network_tpc_capability')
     coro_get_mature_stake = async_passthrough('get_mature_stake')
+    coro_get_unprocessed_block_header_by_block_number = async_passthrough('get_unprocessed_block_header_by_block_number')
 
 class FakeAsyncChainHeadDB(AsyncChainHeadDB):
     coro_get_dense_historical_root_hashes = async_passthrough('get_dense_historical_root_hashes')
@@ -124,6 +125,9 @@ class FakeAsyncMainnetChain(MainnetChain):
 
     coro_get_signed_peer_score_string_private_key = async_passthrough('get_signed_peer_score_string_private_key')
 
+    coro_get_mature_stake = async_passthrough('get_mature_stake')
+
+    coro_try_to_rebuild_chronological_chain_from_historical_root_hashes = async_passthrough('try_to_rebuild_chronological_chain_from_historical_root_hashes')
 class FakeMainnetFullNode():
     chain_class = FakeAsyncMainnetChain
     chain = None

@@ -179,6 +179,8 @@ async def _test_sync_with_variable_sync_parameters(request,
         node = client_node,
     )
 
+    #client.logger = logging.getLogger('dummy')
+
     server_node = FakeMainnetFullNode(
         base_db=server_peer.context.base_db,
         priv_key=server_peer.context.chains[0].private_key,
