@@ -109,10 +109,12 @@ def connected_nodes_to_dict(connected_nodes_info: ConnectedNodesInfo) -> List[Di
         output_list.append(connected_node_dict)
     return output_list
 
+
 def receipt_to_dict(receipt: Receipt, tx_hash: Hash32, chain: AsyncChain) -> Dict[str, str]:
     dict_to_return = all_rlp_fields_to_dict_camel_case(receipt)
 
     block_hash, index, is_receive = chain.chaindb.get_transaction_index(tx_hash)
+
     dict_to_return['blockHash'] = to_hex(block_hash)
     dict_to_return['transactionHash'] = to_hex(tx_hash)
     dict_to_return['isReceive'] = to_hex(is_receive)
@@ -120,6 +122,13 @@ def receipt_to_dict(receipt: Receipt, tx_hash: Hash32, chain: AsyncChain) -> Dic
 
     block_header = chain.get_block_header_by_hash(block_hash)
     dict_to_return['blockNumber'] = to_hex(block_header.block_number)
+
+    for i in range(len(dict_to_return['logs'])):
+        dict_to_return['logs'][i]['logIndex'] = to_hex(i)
+        dict_to_return['logs'][i]['transactionIndex'] = to_hex(index)
+        dict_to_return['logs'][i]['transactionHash'] = to_hex(tx_hash)
+        dict_to_return['logs'][i]['blockHash'] = to_hex(block_hash)
+        dict_to_return['logs'][i]['blockNumber'] = to_hex(block_header.block_number)
 
     transaction = chain.get_canonical_transaction(tx_hash)
 
