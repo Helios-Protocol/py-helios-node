@@ -7,7 +7,7 @@ import time
 from helios.db.chain_head import AsyncChainHeadDB
 from helios.protocol.hls import commands
 from helios.protocol.hls.sync import get_earliest_required_time_for_min_gas_system, \
-    get_sync_stage_for_historical_root_hash_timestamp
+    get_sync_stage_for_historical_root_hash_timestamp, get_fast_sync_cutoff_timestamp
 from helios.sync.common.constants import ADDITIVE_SYNC_STAGE_ID
 from helios.utils.queues import empty_queue
 from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, StakeFromBootnodeResponse, CurrentSyncStageRequest, \
@@ -40,7 +40,7 @@ from typing import (
 from itertools import repeat
 from hp2p.protocol import Command
 from helios.protocol.common.constants import ROUND_TRIP_TIMEOUT
-from helios.exceptions import AlreadyWaiting, NoCandidatePeers
+from helios.exceptions import AlreadyWaiting, NoCandidatePeers, NoPeerStatistics
 from cytoolz import (
     partition_all,
     unique,
@@ -380,7 +380,8 @@ class Consensus(BaseService, PeerSubscriber):
         return False
 
     async def get_accurate_stake_for_this_node(self):
-        coin_mature_time_for_staking = self.node.get_chain().get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
+        chain = self.node.get_new_chain()
+        coin_mature_time_for_staking = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
         time_for_stake_maturity = int(time.time()) - coin_mature_time_for_staking
         latest_timestamp = self.chain_head_db.get_latest_timestamp()
 
@@ -390,7 +391,7 @@ class Consensus(BaseService, PeerSubscriber):
             except KeyError:
                 raise UnknownPeerStake()
         else:
-            return await self.chaindb.coro_get_mature_stake(wallet_address=self.chain_config.node_wallet_address)
+            return await chain.coro_get_mature_stake(wallet_address=self.chain_config.node_wallet_address)
 
     async def get_accurate_stake(self, peer: HLSPeer):
         if self.chain_config.network_startup_node:
@@ -725,6 +726,7 @@ class Consensus(BaseService, PeerSubscriber):
 
     async def receive_node_staking_scores(self, num_requests_sent: int) -> None:
         # receive all of the requests
+        chain = self.node.get_new_chain()
         while True:
 
             q_size = self._new_node_staking_scores.qsize()
@@ -738,7 +740,7 @@ class Consensus(BaseService, PeerSubscriber):
                 # make sure we have enough stake
                 total_stake = 0
                 for node_staking_score in peer_node_staking_scores:
-                    total_stake += await self.chaindb.coro_get_mature_stake(node_staking_score.sender)
+                    total_stake += await chain.coro_get_mature_stake(node_staking_score.sender)
                 
                 required_stake_for_reward_type_2_proof = current_consensus_db.required_stake_for_reward_type_2_proof
                 self.logger.debug("total stake = {}, required stake = {}".format(total_stake, required_stake_for_reward_type_2_proof))
@@ -1071,7 +1073,9 @@ class Consensus(BaseService, PeerSubscriber):
             #add in our local tpc and stake
             local_tpc_cap = await self.local_tpc_cap
 
-            local_stake = await self.chaindb.coro_get_mature_stake(self.chain_config.node_wallet_address)
+            chain = self.node.get_new_chain()
+
+            local_stake = await chain.coro_get_mature_stake(self.chain_config.node_wallet_address)
 
 
             
@@ -1480,11 +1484,17 @@ class Consensus(BaseService, PeerSubscriber):
         Returns the consensus root hash for a given timestamp
         '''
 
-
         timestamp = round_down_to_nearest_historical_window(timestamp)
+        
+        try:
+            root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
+            peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
+        except KeyError:
+            raise NoPeerStatistics("There are no peer statistics available to calculate consensus root hash at timestamp {}".format(timestamp))
+
         if local_root_hash_timestamps is None:
             local_root_hash_timestamps = self.local_root_hash_timestamps
-            
+
         if local_root_hash_timestamps is not None:
             try:
                 local_root_hash = local_root_hash_timestamps[timestamp]
@@ -1492,13 +1502,8 @@ class Consensus(BaseService, PeerSubscriber):
                 local_root_hash = None
         else:
             local_root_hash = None
-
-        try:
-            root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
-            peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
-        except KeyError:
-            return None
-
+       
+            
         if peer_root_hash == local_root_hash or local_root_hash is None:
             return peer_root_hash
         else:
@@ -1506,7 +1511,8 @@ class Consensus(BaseService, PeerSubscriber):
                 our_stake_for_local_hash = await self.get_accurate_stake_for_this_node()
             except UnknownPeerStake:
                 # In this case, we have no blockchain for this node, and we havent recevied our stake from the bootnode yet.
-                return None
+                raise NoPeerStatistics("We don't have an accurate stake of our own node and cannot calculate the consensus root hash at timestamp {}".format(timestamp))
+            
             try:
                 peer_stake_for_local_hash = self.root_hash_timestamps_statistics[timestamp][local_root_hash]
             except KeyError:
@@ -1515,47 +1521,13 @@ class Consensus(BaseService, PeerSubscriber):
 
 
             to_return = self.get_winner_stake_binary_compare(peer_root_hash,
-                                                        peer_stake_for_peer_root_hash, 
-                                                        local_root_hash, 
-                                                        total_stake_for_local_hash)
+                                                            peer_stake_for_peer_root_hash, 
+                                                            local_root_hash, 
+                                                            total_stake_for_local_hash)
 
             return to_return
             
-    # def get_root_hash_consensus(self, timestamp, local_root_hash_timestamps = None):
-    #     '''
-    #     Returns the consensus root hash for a given timestamp
-    #     '''
-    #     if local_root_hash_timestamps is None:
-    #         local_root_hash_timestamps = self.local_root_hash_timestamps
-    #     if local_root_hash_timestamps is not None:
-    #         try:
-    #             local_root_hash = local_root_hash_timestamps[timestamp]
-    #         except KeyError:
-    #             local_root_hash = None
-    #     else:
-    #         local_root_hash = None
-    #
-    #
-    #     try:
-    #         root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
-    #         peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
-    #     except KeyError:
-    #         return local_root_hash
-    #
-    #     if peer_root_hash == local_root_hash or local_root_hash is None:
-    #         return peer_root_hash
-    #     else:
-    #         our_stake_for_local_hash = self.chain.get_mature_stake(self.chain_config.node_wallet_address)
-    #         try:
-    #             peer_stake_for_local_hash = self.root_hash_timestamps_statistics[timestamp][local_root_hash]
-    #         except KeyError:
-    #             peer_stake_for_local_hash = 0
-    #         total_stake_for_local_hash = our_stake_for_local_hash + peer_stake_for_local_hash
-    #
-    #         return self.get_winner_stake_binary_compare(peer_root_hash,
-    #                                                     peer_stake_for_peer_root_hash,
-    #                                                     local_root_hash,
-    #                                                     total_stake_for_local_hash)
+
 
     async def get_blockchain_sync_parameters(self, debug = False) -> Optional[SyncParameters]:
         '''
@@ -1566,16 +1538,16 @@ class Consensus(BaseService, PeerSubscriber):
         # We start one hash before the correct one, because if that one is also incorrect, then we havent synced up to
         # the time where additive syncing can occur.
 
+        debug = True
         do_fast_sync = False
 
-        earliest_allowed_time = int((int(time.time()) - NUMBER_OF_HEAD_HASH_TO_SAVE * TIME_BETWEEN_HEAD_HASH_SAVE)/1000)*1000
+        earliest_allowed_time = int(get_fast_sync_cutoff_timestamp()+TIME_BETWEEN_HEAD_HASH_SAVE*2)
 
         disagreement_found = False
         local_root_hash_timestamps = self.local_root_hash_timestamps
 
 
         if local_root_hash_timestamps is not None:
-
             #we run the loop from newest to oldest because the db is most often going to be close to syncing. This will be more effecient
             sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x) * -1, local_root_hash_timestamps)
             #we can assume the root hashes are dense and go up to the currently filling window
@@ -1587,12 +1559,30 @@ class Consensus(BaseService, PeerSubscriber):
 
             # it now goes from newest to oldest
             for timestamp, local_root_hash in sorted_local_root_hash_timestamps.items():
+                try:
+                    consensus_root_hash = await self.coro_get_root_hash_consensus(timestamp, local_root_hash_timestamps=local_root_hash_timestamps)
+                except NoPeerStatistics:
+                    # This can happen in 2 cases, 1) we have gone past the first root hash from the peers, in which we need to fast sync. 
+                    # or 2) We don't have any statistics from peers and need to wait for consensus to get some.
+                    # if 1 then do fast sync
+                    # if 2, then return that we are fully synced.
+                    if disagreement_found:
+                        if timestamp <= earliest_allowed_time:
+                            if debug:
+                                self.logger.debug("get_blockchain_sync_parameters forcing fast sync because there are no peer statistics for this timestamp, and it is older than earliest allowed time")
+                            do_fast_sync = True
+                            break
 
-                consensus_root_hash = await self.coro_get_root_hash_consensus(timestamp, local_root_hash_timestamps=local_root_hash_timestamps)
-
-                if local_root_hash == consensus_root_hash or consensus_root_hash is None:
                     if debug:
-                        self.logger.debug("get_blockchain_sync_parameters Matched at timestamp {}".format(timestamp))
+                        self.logger.debug('get_blockchain_sync_parameters couldnt calculate due to lack of peer statistics. returning fully synced.')
+                    self.current_sync_stage = 4
+                    return None
+
+
+
+                if local_root_hash == consensus_root_hash:
+                    if debug:
+                        self.logger.debug("get_blockchain_sync_parameters Matched at timestamp {}. Local root hash = {}. Consensus root hash = {}".format(timestamp, local_root_hash, consensus_root_hash))
                     if disagreement_found:
                         # this is the first agreeing one after some disagreeing ones. This is what we return
                         if timestamp <= earliest_allowed_time:
@@ -1640,7 +1630,7 @@ class Consensus(BaseService, PeerSubscriber):
 
         if local_root_hash_timestamps is None or disagreement_found or do_fast_sync:
             if debug:
-                self.logger.debug("get_blockchain_sync_parameters second part")
+                self.logger.debug("get_blockchain_sync_parameters second part {}, {}".format(disagreement_found, do_fast_sync))
 
             # Ours disagrees all of the way through. We need to perform a fast sync, or stage 1 sync.
             # By default, lets perform the fast sync up to the root hash from 24 hours ago.
@@ -1654,8 +1644,13 @@ class Consensus(BaseService, PeerSubscriber):
                 except KeyError:
                     local_root_hash = BLANK_ROOT_HASH
 
-
-            consensus_root_hash = await self.coro_get_root_hash_consensus(fast_sync_chronological_block_hash_timestamp, local_root_hash_timestamps=local_root_hash_timestamps)
+            try:
+                consensus_root_hash = await self.coro_get_root_hash_consensus(fast_sync_chronological_block_hash_timestamp, local_root_hash_timestamps=local_root_hash_timestamps)
+            except NoPeerStatistics:
+                if debug:
+                    self.logger.debug('get_blockchain_sync_parameters couldnt calculate due to lack of peer statistics. returning fully synced.')
+                self.current_sync_stage = 4
+                return None
 
 
             if consensus_root_hash is None:
@@ -1855,8 +1850,9 @@ class Consensus(BaseService, PeerSubscriber):
     async def _handle_get_stake_for_addresses(self, peer: HLSPeer, msg) -> None:
         self.logger.debug("Received request for stake for some addresses")
         address_stakes = []
+        chain = self.node.get_new_chain()
         for address in msg['addresses']:
-            stake = await self.chaindb.coro_get_mature_stake(address)
+            stake = await chain.coro_get_mature_stake(address)
             address_stakes.append([address,stake])
         peer.sub_proto.send_stake_for_addresses(address_stakes)
         

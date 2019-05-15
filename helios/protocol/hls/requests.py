@@ -117,9 +117,10 @@ class GetChainsRequest(BaseRequest[Tuple[Hash32, ...]]):
     cmd_type = GetChains
     response_type = Chains
 
-    def __init__(self, timestamp: Timestamp, idx_list: List[int]) -> None:
+    def __init__(self, timestamp: Timestamp, idx_list: List[int], start_block_number: int) -> None:
         self.command_payload = {'timestamp': timestamp,
-                                'idx_list': idx_list}
+                                'idx_list': idx_list,
+                                'start_block_number': start_block_number}
 
 class GetNodeStakingScoreRequest(BaseRequest[BlockNumber]):
     cmd_type = GetNodeStakingScore

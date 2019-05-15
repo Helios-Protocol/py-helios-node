@@ -16,6 +16,8 @@ from helios.dev_tools import create_dev_test_random_blockchain_database, create_
 
 from eth_keys import keys
 from hvm.constants import random_private_keys
+from tests.integration_test_helpers import load_compiled_sol_dict
+
 
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
@@ -27,6 +29,8 @@ RECEIVER3 = get_primary_node_private_helios_key(3)
 RECEIVER4 = get_primary_node_private_helios_key(4)
 RECEIVER5 = get_primary_node_private_helios_key(5)
 
+from web3 import Web3
+from tests.integration_test_helpers import W3_TX_DEFAULTS
 
 def test_get_receipts():
     testdb2 = MemoryDB()
@@ -76,7 +80,20 @@ def test_get_receipts():
     """
     Create a transaction with data in it.
     """
-    from contract_data.compiled_contract import w3_transaction_object
+    compiled_sol = load_compiled_sol_dict('contract_data/erc20_compiled.pkl')
+
+    contract_interface = compiled_sol['contract_data/erc20.sol:SimpleToken']
+
+    w3 = Web3()
+
+    SimpleToken = w3.eth.contract(
+        abi=contract_interface['abi'],
+        bytecode=contract_interface['bin']
+    )
+
+    # Build transaction to deploy the contract
+    w3_tx1 = SimpleToken.constructor().buildTransaction(W3_TX_DEFAULTS)
+
     from hvm.constants import CREATE_CONTRACT_ADDRESS
 
     receiver_chain.create_and_sign_transaction_for_queue_block(
@@ -84,7 +101,7 @@ def test_get_receipts():
         gas=1375666,
         to=CREATE_CONTRACT_ADDRESS,
         value=0,
-        data=decode_hex(w3_transaction_object['data']),
+        data=decode_hex(w3_tx1['data']),
         v=0,
         r=0,
         s=0
@@ -116,4 +133,4 @@ def test_get_receipts():
         assert (receipt.logs == ())
 
 
-test_get_receipts()
+# test_get_receipts()

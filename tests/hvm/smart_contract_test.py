@@ -106,7 +106,7 @@ import pickle
 from web3 import Web3
 
 
-W3_TX_DEFAULTS = {'gas': 0, 'gasPrice': 0, 'chainId': 0}
+from tests.integration_test_helpers import W3_TX_DEFAULTS
 
 from hvm.constants import CREATE_CONTRACT_ADDRESS
 
@@ -131,19 +131,10 @@ RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
 RECEIVER4 = get_primary_node_private_helios_key(4)
 
-
-
-def compile_sol_and_save_to_file(solidity_file, output_file):
-    compiled_sol = compile_files([solidity_file])
-    print("writing compiled code dictionary with keys {}".format(compiled_sol.keys()))
-    f = open(output_file, "wb")
-    pickle.dump(compiled_sol, f)
-    f.close()
-
-def load_compiled_sol_dict(compiled_file_location):
-    pickle_in = open(compiled_file_location, "rb")
-    compiled_sol_dict = pickle.load(pickle_in)
-    return compiled_sol_dict
+from tests.integration_test_helpers import (
+    compile_sol_and_save_to_file,
+    load_compiled_sol_dict
+)
 
 # compile_sol_and_save_to_file('contract_data/erc20.sol', 'contract_data/erc20_compiled.pkl')
 # exit()
@@ -332,7 +323,7 @@ def test_erc_20_smart_contract_deploy_system():
 
 
 
-def test_airdrop_calling_erc_20():
+def _test_airdrop_calling_erc_20():
 
     # testdb = LevelDB('/home/tommy/.local/share/helios/instance_test/mainnet/chain/full/')
     # testdb = JournalDB(testdb)
@@ -522,6 +513,6 @@ def test_airdrop_calling_erc_20():
     assert ((final_balance - initial_balance) == (max_gas - gas_used))
     print("Refunded gas is the expected amount.")
 
-test_airdrop_calling_erc_20()
+# test_airdrop_calling_erc_20()
 
 

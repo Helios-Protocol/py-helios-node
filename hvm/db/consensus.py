@@ -108,7 +108,6 @@ class ConsensusDB():
         self.db = chaindb.db
         self.chaindb = chaindb
 
-        self.logger.debug("starting consensus db")
 
     #
     # Peer node health API

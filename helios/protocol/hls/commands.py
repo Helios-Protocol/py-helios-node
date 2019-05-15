@@ -181,7 +181,8 @@ class GetChains(Command):
     _cmd_id = 27
     structure = [
         ('timestamp', sedes.f_big_endian_int),
-        ('idx_list', sedes.FCountableList(sedes.f_big_endian_int))
+        ('idx_list', sedes.FCountableList(sedes.f_big_endian_int)),
+        ('start_block_number', sedes.f_big_endian_int)
     ]
 
 

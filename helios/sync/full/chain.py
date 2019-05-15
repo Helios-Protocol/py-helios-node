@@ -12,6 +12,7 @@ from lahja import Endpoint
 from helios.exceptions import AlreadyWaiting, NoCandidatePeers, SyncingError
 from helios.protocol.common.constants import ROUND_TRIP_TIMEOUT
 from helios.protocol.common.exchanges import BaseExchange
+from helios.protocol.hls.constants import MAX_BLOCKS_FETCH
 from helios.protocol.hls.sync import get_sync_stage_for_block_timestamp
 from helios.sync.common.constants import CHRONOLOGICAL_BLOCK_HASH_FRAGMENT_TYPE_ID, \
     CHAIN_HEAD_BLOCK_HASH_FRAGMENT_TYPE_ID, CONSENSUS_MATCH_SYNC_STAGE_ID, ADDITIVE_SYNC_STAGE_ID, \
@@ -365,7 +366,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                              peer=peer,
                                                                              additional_candidate_peers=additional_candidate_peers)
             except NoCandidatePeers:
-                self.logger.error("request_chain_segment_then_priority_import NoCandidatePeers")
+                self.logger.error("request_blocks_then_priority_import NoCandidatePeers")
                 continue
 
             received_blocks = cast(List[P2PBlock], received_blocks)
@@ -437,10 +438,10 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                             save_block_head_hash_timestamp: bool = False,
                                             allow_replacement: bool = True) -> None:
         async with self.importing_blocks_lock:
-            chain = self.node.get_new_chain()
+            # chain = self.node.get_new_chain()
             for block_chain in chains:
                 try:
-                    await chain.coro_import_chain(block_list=block_chain,
+                    await self.chains[0].coro_import_chain(block_list=block_chain,
                                                   save_block_head_hash_timestamp=save_block_head_hash_timestamp,
                                                   allow_replacement=allow_replacement)
                 except ReplacingBlocksNotAllowed:
@@ -605,10 +606,15 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         else:
             force_replace_existing_blocks = True
 
-        self.logger.debug("Syncing to chronological window timestamp {}. Syncing to chain head hash {}. Local root hash {}".format(chronological_window_timestamp, encode_hex(sync_parameters.consensus_root_hash), encode_hex(sync_parameters.local_root_hash)))
+        if sync_parameters.consensus_root_hash is None:
+            hex_consensus_root_hash = None
+        else:
+            hex_consensus_root_hash = encode_hex(sync_parameters.consensus_root_hash)
+        self.logger.debug("Syncing to chronological window timestamp {}. Syncing to chain head hash {}. Local root hash {}".format(chronological_window_timestamp,hex_consensus_root_hash, encode_hex(sync_parameters.local_root_hash)))
+
         test_hist_root_hashes = self.chain_head_db.get_historical_root_hashes()[0:10]
         self.logger.debug([(x[0], encode_hex(x[1])) for x in test_hist_root_hashes])
-        #self.logger.debug([encode_hex(x) for x in self.chain_head_db.get_head_block_hashes_list(test_hist_root_hashes[0][1])])
+        self.logger.debug([encode_hex(x) for x in self.chain_head_db.get_head_block_hashes_list(test_hist_root_hashes[0][1])])
 
         timestamp_block_hashes = await self.chain_head_db.coro_load_chronological_block_window(chronological_window_timestamp)
         #self.logger.debug("Our chronological block window has {} blocks".format(len(timestamp_block_hashes)))
@@ -626,7 +632,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 required_block_hashes = cast(List[Hash32], fragment_bundle.fragments)
 
                 if len(required_block_hashes) == 0:
-                    raise SyncingError("Need to sync up to a chronological window timestamp, but there are no blocks to request. This is an empty window that cant possibly bring us to sync.")
+                    raise SyncingError("Need to sync up to a chronological window timestamp, but there are no blocks to request. This is an empty window that cant possibly bring us to sync. 1")
 
                 # if sync_stage >= ADDITIVE_SYNC_STAGE_ID:
                 #     required_block_hashes = self.remove_recently_imported_hashes(required_block_hashes)
@@ -719,7 +725,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                             len(hash_positions_of_theirs_that_we_need), len(hash_positions_of_ours_that_they_need)))
 
                         if len(hash_positions_of_ours_that_they_need) == 0 and len(hash_positions_of_theirs_that_we_need) == 0:
-                            raise SyncingError("Need to sync up to a chronological window timestamp, but there are no blocks to request. This is an empty window that cant possibly bring us to sync.")
+                            raise SyncingError("Need to sync up to a chronological window timestamp, but there are no blocks to request. This is an empty window that cant possibly bring us to sync. 2")
 
                         if len(hash_positions_of_theirs_that_we_need) > 0:
                             required_block_hashes = cast(List[Hash32], their_fragment_list_we_need_to_add)
@@ -914,21 +920,34 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             for idx in idx_list:
                 expected_chain_head_hash_fragments.append(expected_fragment_list[idx])
 
-            #todo: find out what chains we need isnt correct.
             self.logger.debug("fast sync worker sending request for chains start {} end {} with idxs {}. chains we need {}, expected_chain_head_hash_fragments {}".format(
                 start, end, idx_list, chains_that_we_need, [encode_hex(x) for x in expected_chain_head_hash_fragments]))
+            start_block_number = 0
             try:
-                chains, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_chains",
-                                                                                                         request_function_parameters = {'timestamp': timestamp,
-                                                                                                                                        'idx_list':idx_list,
-                                                                                                                                        'expected_chain_head_hash_fragments': expected_chain_head_hash_fragments},
-                                                                                                         peer = peer_to_sync_with,
-                                                                                                         additional_candidate_peers = additional_candidate_peers)
+                while True:
+                    self.logger.debug("fast sync worker requesting chains starting at block number {}".format(start_block_number))
+
+                    chains, peer_to_sync_with = await self.handle_getting_request_from_peers(request_function_name = "get_chains",
+                                                                                                             request_function_parameters = {'timestamp': timestamp,
+                                                                                                                                            'idx_list':idx_list,
+                                                                                                                                            'expected_chain_head_hash_fragments': expected_chain_head_hash_fragments,
+                                                                                                                                            'start_block_number': start_block_number},
+                                                                                                             peer = peer_to_sync_with,
+                                                                                                             additional_candidate_peers = additional_candidate_peers)
+
+                    await self.handle_priority_import_chains(chains, save_block_head_hash_timestamp=False)
+
+                    # If the final block numbers are less than the max length, then we have all of the chains.
+                    need_more_chain = any([len(chain) >= MAX_BLOCKS_FETCH for chain in chains])
+
+                    if not need_more_chain:
+                        break
+
+                    start_block_number += MAX_BLOCKS_FETCH
+
             except NoCandidatePeers:
                 self.logger.debug("Stopping fast sync worker because there are no candidate peers.")
                 break
-            await self.handle_priority_import_chains(chains, save_block_head_hash_timestamp=False)
-
 
         self.logger.debug("Worker finished getting all required chains for fast sync.")
         #raise OperationCancelled when finished to exit cleanly.
@@ -1058,6 +1077,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         timestamp = msg['timestamp']
         idx_list = msg['idx_list']
+        start_block_number = msg['start_block_number']
 
         self.logger.debug("received get_chains request for chains {}".format(idx_list))
 
@@ -1068,8 +1088,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         chain_object = self.node.get_new_chain()
         chains = []
         for head_hash in chain_head_hashes:
-            chain = await chain_object.coro_get_blocks_on_chain_up_to_block_hash(head_hash)
-            # chain = await chain_object.coro_get_all_blocks_on_chain_by_head_block_hash(head_hash)
+            chain = await chain_object.coro_get_blocks_on_chain_up_to_block_hash(head_hash, start_block_number = start_block_number, limit=MAX_BLOCKS_FETCH)
             chains.append(chain)
 
         self.logger.debug('sending {} chains of length {}'.format(len(chains), [len(chain) for chain in chains]))

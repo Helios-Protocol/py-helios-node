@@ -261,10 +261,11 @@ class GetChainsExchange(BaseGetChainsExchange):
             timestamp: Timestamp,
             idx_list: List[int],
             expected_chain_head_hash_fragments: List[bytes],
+            start_block_number: int = 0,
             timeout: float = None) -> Tuple[Tuple[P2PBlock], ...]:
 
         validator = GetChainsValidator(expected_chain_head_hash_fragments)
-        request = self.request_class(timestamp, idx_list)
+        request = self.request_class(timestamp, idx_list, start_block_number)
 
         return await self.get_result(
             request,

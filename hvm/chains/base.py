@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 import operator
+from collections import deque
 
 from abc import (
     ABCMeta,
@@ -302,7 +303,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
-    def get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
+    def get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32, start_block_number: int = 0, limit: int = float('inf')) -> List[BaseBlock]:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -431,7 +432,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     # Stake API
     #
     @abstractmethod
-    def get_mature_stake(self, raise_canonical_head_not_found_error:bool = False) -> int:
+    def get_mature_stake(self, wallet_address: Address = None, raise_canonical_head_not_found_error:bool = False) -> int:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -536,7 +537,7 @@ class Chain(BaseChain):
             self.header = self.create_header_from_parent(self.get_canonical_head())
         except CanonicalHeadNotFound:
             #this is a new block, lets make a genesis block
-            self.logger.debug("Creating new genesis block on chain {}".format(self.wallet_address))
+            # self.logger.debug("Creating new genesis block on chain {}".format(self.wallet_address))
             self.header = self.get_vm_class_for_block_timestamp().create_genesis_block(self.wallet_address).header
 
 
@@ -884,12 +885,15 @@ class Chain(BaseChain):
         chain_address = chain_head_header.chain_address
         return self.get_all_blocks_on_chain(chain_address)
 
-    def get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
+    def get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32, start_block_number: int = 0, limit: int = float('inf')) -> List[BaseBlock]:
         chain_head_header = self.get_block_header_by_hash(chain_head_hash)
         to_block_number = chain_head_header.block_number
+        if to_block_number > (start_block_number + limit):
+            to_block_number = (start_block_number + limit)
+
         chain_address = chain_head_header.chain_address
 
-        return self.get_blocks_on_chain(0, to_block_number + 1, chain_address)
+        return self.get_blocks_on_chain(start_block_number, to_block_number + 1, chain_address)
 
 
     def get_block(self) -> BaseBlock:
@@ -1402,46 +1406,47 @@ class Chain(BaseChain):
         #self.logger.debug("historical root hashes after chronological block import {}".format(self.chain_head_db.get_historical_root_hashes()))
 
     def import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
-        self.logger.debug("importing chain")
-        #if we are given a block that is not one of the two allowed classes, try converting it.
-        if len(block_list) > 0 and not isinstance(block_list[0], self.get_vm(timestamp = block_list[0].header.timestamp).get_block_class()):
-            self.logger.debug("converting chain to correct class")
-            corrected_block_list = []
+        if len(block_list) > 0:
+            self.logger.debug("importing chain")
+            #if we are given a block that is not one of the two allowed classes, try converting it.
+            if not isinstance(block_list[0], self.get_vm(timestamp = block_list[0].header.timestamp).get_block_class()):
+                self.logger.debug("converting chain to correct class")
+                corrected_block_list = []
+                for block in block_list:
+                    corrected_block = self.get_vm(timestamp = block.header.timestamp).convert_block_to_correct_class(block)
+                    corrected_block_list.append(corrected_block)
+                block_list = corrected_block_list
+
+
+            wallet_address = block_list[0].header.chain_address
             for block in block_list:
-                corrected_block = self.get_vm(timestamp = block.header.timestamp).convert_block_to_correct_class(block)
-                corrected_block_list.append(corrected_block)
-            block_list = corrected_block_list
+                self.import_block(block,
+                                  perform_validation = perform_validation,
+                                  save_block_head_hash_timestamp = save_block_head_hash_timestamp,
+                                  wallet_address = wallet_address,
+                                  allow_replacement = allow_replacement)
 
+            # If we started with a longer chain, and all the imported blocks match ours, our chain will remain longer even after importing the new one.
+            # To fix this, we need to delete any blocks of ours that is longer in length then this chain that we are importing
 
-        wallet_address = block_list[0].header.chain_address
-        for block in block_list:
-            self.import_block(block,
-                              perform_validation = perform_validation,
-                              save_block_head_hash_timestamp = save_block_head_hash_timestamp,
-                              wallet_address = wallet_address,
-                              allow_replacement = allow_replacement)
+            # First make sure the whole chain imported correctly. If not, then we don't need to do anything
 
-        # If we started with a longer chain, and all the imported blocks match ours, our chain will remain longer even after importing the new one.
-        # To fix this, we need to delete any blocks of ours that is longer in length then this chain that we are importing
-
-        # First make sure the whole chain imported correctly. If not, then we don't need to do anything
-
-        try:
-            local_canonical_head = self.chaindb.get_canonical_head(wallet_address)
-            imported_canonical_head = block_list[-1].header
-            #self.logger.debug("imported chain head hash {}. actual chain head hash {}".format(encode_hex(imported_canonical_head.hash), encode_hex(local_canonical_head.hash)))
-            if imported_canonical_head.block_number < local_canonical_head.block_number:
-                if self.chaindb.is_in_canonical_chain(imported_canonical_head.hash):
-                    # Our chain is the same as the imported one, but we have some extra blocks on top. In this case, we would like to prune our chain
-                    # to match the imported one.
-                    # We only need to purge the next block after the imported chain. The vm will automatically purge all children
-                    self.logger.debug("After importing a chain, our local chain is identical except with additional blocks on top. We will prune the top blocks to bring"
-                                      " our chain in line with the imported one.")
-                    block_number_to_purge = imported_canonical_head.block_number + 1
-                    hash_to_purge = self.chaindb.get_canonical_block_hash(BlockNumber(block_number_to_purge), wallet_address)
-                    self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(hash_to_purge, save_block_head_hash_timestamp)
-        except CanonicalHeadNotFound:
-            pass
+            try:
+                local_canonical_head = self.chaindb.get_canonical_head(wallet_address)
+                imported_canonical_head = block_list[-1].header
+                #self.logger.debug("imported chain head hash {}. actual chain head hash {}".format(encode_hex(imported_canonical_head.hash), encode_hex(local_canonical_head.hash)))
+                if imported_canonical_head.block_number < local_canonical_head.block_number:
+                    if self.chaindb.is_in_canonical_chain(imported_canonical_head.hash):
+                        # Our chain is the same as the imported one, but we have some extra blocks on top. In this case, we would like to prune our chain
+                        # to match the imported one.
+                        # We only need to purge the next block after the imported chain. The vm will automatically purge all children
+                        self.logger.debug("After importing a chain, our local chain is identical except with additional blocks on top. We will prune the top blocks to bring"
+                                          " our chain in line with the imported one.")
+                        block_number_to_purge = imported_canonical_head.block_number + 1
+                        hash_to_purge = self.chaindb.get_canonical_block_hash(BlockNumber(block_number_to_purge), wallet_address)
+                        self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(hash_to_purge, save_block_head_hash_timestamp)
+            except CanonicalHeadNotFound:
+                pass
 
 
     from hvm.utils.profile import profile
@@ -1602,6 +1607,14 @@ class Chain(BaseChain):
                                               allow_unprocessed = allow_unprocessed,
                                               ensure_block_unchanged= ensure_block_unchanged)
 
+            # handle importing unprocessed blocks here because doing it recursively results in maximum recursion depth exceeded error
+            if not self.chaindb.is_block_unprocessed(return_block.hash):
+                self.logger.debug("Checking to see if block has unprocessed children")
+                self.import_all_unprocessed_descendants(return_block.hash,
+                                                        perform_validation= True,
+                                                        save_block_head_hash_timestamp = save_block_head_hash_timestamp,
+                                                        allow_unprocessed = True)
+
         except Exception as e:
             if journal_enabled:
                 self.logger.debug('discarding journal')
@@ -1694,15 +1707,6 @@ class Chain(BaseChain):
                 if self.wallet_address != imported_block.header.chain_address:
                     raise ValidationError("Attempted to import a block onto the wrong chain.")
 
-                self.import_unprocessed_children(imported_block,
-                                                 perform_validation= True,
-                                               save_block_head_hash_timestamp = save_block_head_hash_timestamp,
-                                               allow_unprocessed = True)
-
-
-                #finally, remove unprocessed database lookups for this block
-                self.chaindb.delete_unprocessed_children_blocks_lookup(imported_block.hash)
-
                 return_block = imported_block
 
 
@@ -1731,40 +1735,87 @@ class Chain(BaseChain):
         return return_block
 
 
-
-    def import_unprocessed_children(self, block, *args, **kwargs):
-        """
-        Checks all block children for unprocessed blocks that were waiting for this one to be processed.
-        This includes children via transactions, and the children on this chain.
-        If it finds any unprocessed blocks it will, along with import_block, recursively import all unprocessed children.
-        it ignores errors so that it can make it through all of the children without stopping
-        """
-        if self.chaindb.has_unprocessed_children(block.hash):
+    def import_all_unprocessed_descendants(self, block_hash, *args, **kwargs):
+        # 1) get unprocessed children
+        # 2) loop through and import
+        # 3) if child imports, add their unprocessed children to list, and delete that block from unprocessed
+        # 4) if list of unprocessed children has 0 length, break
+        # need to step one level at a time. We use a queue to achieve this effect. It won't get to the next level
+        # until it finishes all of the blocks on this level. So it goes one level at a time.
+        if self.chaindb.has_unprocessed_children(block_hash):
             self.logger.debug("HAS UNPROCESSED BLOCKS")
-            #try to import all children
-            children_block_hashes = self.chaindb.get_block_children(block.hash)
+            # try to import all children
+            children_block_hashes = self.chaindb.get_block_children(block_hash)
             if children_block_hashes != None:
-                self.logger.debug("children_block_hashes = {}".format([encode_hex(x) for x in children_block_hashes]))
-                for child_block_hash in children_block_hashes:
-                    #this includes the child in this actual chain as well as children from send transactions.
-                    if self.chaindb.is_block_unprocessed(child_block_hash):
+                block_hashes_to_import = deque(children_block_hashes)
+                # iterate over children
+                while True:
+                    # remove from right side
+                    current_block_hash_to_import = block_hashes_to_import.pop()
+                    if self.chaindb.is_block_unprocessed(current_block_hash_to_import):
                         self.logger.debug("importing child block")
-                        #we want to catch errors here so that we process all children blocks. If one block has an error it will just go to the next
                         try:
-                            #attempt to import.
-                            #get chain for wallet address
-                            #child_chain = Chain(self.base_db, child_wallet_address)
-                            #get block
-                            child_block = self.get_block_by_hash(child_block_hash)
+                            child_block = self.get_block_by_hash(current_block_hash_to_import)
                             if child_block.header.chain_address != self.wallet_address:
-                                self.logger.debug("Changing to chain with wallet address {}".format(encode_hex(child_block.header.chain_address)))
+                                #self.logger.debug("Changing to chain with wallet address {}".format(encode_hex(child_block.header.chain_address)))
                                 self.set_new_wallet_address(wallet_address=child_block.header.chain_address)
                             self._import_block(child_block, *args, **kwargs)
+
+
+                            #if the block imported, add its children the the deque
+                            if not self.chaindb.is_block_unprocessed(current_block_hash_to_import):
+                                # it imported successfully
+                                if self.chaindb.has_unprocessed_children(current_block_hash_to_import):
+                                    children_block_hashes = self.chaindb.get_block_children(current_block_hash_to_import)
+                                    if children_block_hashes != None:
+                                        block_hashes_to_import.extendleft(children_block_hashes)
+
+                                # we have queued up its children to be imported. Assuming exceptions don't occur, we can remove this block from the unprocessed children lookup.
+                                self.chaindb.delete_unprocessed_children_blocks_lookup(current_block_hash_to_import)
+
                         except Exception as e:
                             self.logger.error("Tried to import an unprocessed child block and got this error {}".format(e))
-                            #todo need to delete child block and all of its children
-                            raise e
-                            #pass
+
+
+
+                    if len(block_hashes_to_import) == 0:
+                        return
+
+        self.chaindb.delete_unprocessed_children_blocks_lookup(block_hash)
+
+    # this was the recursive function
+    # def import_unprocessed_children(self, block, *args, **kwargs):
+    #     """
+    #     Checks all block children for unprocessed blocks that were waiting for this one to be processed.
+    #     This includes children via transactions, and the children on this chain.
+    #     If it finds any unprocessed blocks it will, along with import_block, recursively import all unprocessed children.
+    #     it ignores errors so that it can make it through all of the children without stopping
+    #     """
+    #     if self.chaindb.has_unprocessed_children(block.hash):
+    #         self.logger.debug("HAS UNPROCESSED BLOCKS")
+    #         #try to import all children
+    #         children_block_hashes = self.chaindb.get_block_children(block.hash)
+    #         if children_block_hashes != None:
+    #             self.logger.debug("children_block_hashes = {}".format([encode_hex(x) for x in children_block_hashes]))
+    #             for child_block_hash in children_block_hashes:
+    #                 #this includes the child in this actual chain as well as children from send transactions.
+    #                 if self.chaindb.is_block_unprocessed(child_block_hash):
+    #                     self.logger.debug("importing child block")
+    #                     #we want to catch errors here so that we process all children blocks. If one block has an error it will just go to the next
+    #                     try:
+    #                         #attempt to import.
+    #                         #get chain for wallet address
+    #                         #child_chain = Chain(self.base_db, child_wallet_address)
+    #                         #get block
+    #                         child_block = self.get_block_by_hash(child_block_hash)
+    #                         if child_block.header.chain_address != self.wallet_address:
+    #                             self.logger.debug("Changing to chain with wallet address {}".format(encode_hex(child_block.header.chain_address)))
+    #                             self.set_new_wallet_address(wallet_address=child_block.header.chain_address)
+    #                         self._import_block(child_block, *args, **kwargs)
+    #                     except Exception as e:
+    #                         self.logger.error("Tried to import an unprocessed child block and got this error {}".format(e))
+    #                         raise e
+    #                         #pass
 
 
     def save_block_as_unprocessed(self, block):
@@ -1904,14 +1955,19 @@ class Chain(BaseChain):
     # Stake API
     #
 
-    def get_mature_stake(self, raise_canonical_head_not_found_error:bool = False) -> int:
+    def get_mature_stake(self, wallet_address: Address = None, raise_canonical_head_not_found_error:bool = False) -> int:
+        if wallet_address is None:
+            wallet_address = self.wallet_address
         coin_mature_time_for_staking = self.get_vm(timestamp = Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
-        return self.chaindb.get_mature_stake(self.wallet_address, coin_mature_time_for_staking, raise_canonical_head_not_found_error = raise_canonical_head_not_found_error)
+        return self.chaindb.get_mature_stake(wallet_address, coin_mature_time_for_staking, raise_canonical_head_not_found_error = raise_canonical_head_not_found_error)
 
     # gets the stake for the timestamp corresponding to teh chronological block window, so it is all blocks for the next 1000 seconds.
     def get_mature_stake_for_chronological_block_window(self, chronological_block_window_timestamp: Timestamp, timestamp_for_stake: Timestamp = None):
         if timestamp_for_stake is not None and timestamp_for_stake < chronological_block_window_timestamp:
             raise ValidationError("Cannot get chronological block window stake for a timestamp before the window")
+
+        if timestamp_for_stake is None:
+            timestamp_for_stake = int(time.time())
 
         chronological_block_hash_timestamps = self.chain_head_db.load_chronological_block_window(chronological_block_window_timestamp)
         chronological_block_hashes = [x[1] for x in chronological_block_hash_timestamps]

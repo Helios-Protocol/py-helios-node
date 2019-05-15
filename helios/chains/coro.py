@@ -64,7 +64,7 @@ class AsyncChain(BaseChain):
     async def coro_get_all_blocks_on_chain(self, chain_address: Address = None) -> List[BaseBlock]:
         raise NotImplementedError("Chain classes must implement this method")
 
-    async def coro_get_all_blocks_on_chain_by_head_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
+    async def coro_get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32, start_block_number: int = 0, limit: int = float('inf')) -> List[BaseBlock]:
         raise NotImplementedError("Chain classes must implement this method")
 
     async def coro_get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
@@ -79,7 +79,10 @@ class AsyncChain(BaseChain):
     async def coro_try_to_rebuild_chronological_chain_from_historical_root_hashes(self, historical_root_hash_timestamp: Timestamp) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
-    async def coro_get_mature_stake(self, raise_canonical_head_not_found_error: bool) -> int:
+    async def coro_get_mature_stake(self, wallet_address: Address = None, raise_canonical_head_not_found_error:bool = False) -> int:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_get_block_header_by_hash(self, block_hash: Hash32) -> BlockHeader:
         raise NotImplementedError("Chain classes must implement this method")
 
 class AsyncChainMixin(AsyncChain):
@@ -97,6 +100,7 @@ class AsyncChainMixin(AsyncChain):
     coro_get_all_blocks_on_chain_by_head_block_hash = async_method('get_all_blocks_on_chain_by_head_block_hash')
     coro_try_to_rebuild_chronological_chain_from_historical_root_hashes = async_method('try_to_rebuild_chronological_chain_from_historical_root_hashes')
 
+    coro_get_block_header_by_hash = async_method('get_block_header_by_hash')
     coro_import_chain = async_method('import_chain')
     coro_import_current_queue_block_with_reward = async_method('import_current_queue_block_with_reward')
     coro_get_block_by_hash = async_method('get_block_by_hash')

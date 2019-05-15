@@ -85,7 +85,7 @@ class GetChainsNormalizer(BaseNormalizer[Dict[str, Any], Tuple[Tuple[P2PBlock]]]
     is_normalization_slow = False
 
     @staticmethod
-    def normalize_result(msg: Dict[str, Any]) -> HashFragmentBundle:
+    def normalize_result(msg: Dict[str, Any]) -> Tuple[Tuple[P2PBlock]]:
         result = msg['chains']
         return result
 

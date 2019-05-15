@@ -164,7 +164,7 @@ def test_block_rewards_system():
         node_staking_score.validate()
         print(node_staking_score.is_signature_valid)
         print(node_staking_score.sender)
-        print(node_staking_score.score, chain.chaindb.get_mature_stake(node_staking_score.sender, int(time.time()), node_staking_score.timestamp))
+        print(node_staking_score.score, chain.get_mature_stake(node_staking_score.sender, node_staking_score.timestamp))
 
 
     reward_bundle = chain.get_consensus_db().create_reward_bundle_for_block(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), node_staking_scores, at_timestamp = int(time.time()))

@@ -77,7 +77,7 @@ class HLSPeer(BaseChainPeer):
     async def stake(self) -> int:
         if self._last_stake_check_time < (int(time.time()) - PEER_STAKE_GONE_STALE_TIME_PERIOD):
             try:
-                self._stake = await self.chains[0].coro_get_mature_stake(raise_canonical_head_not_found_error = True)
+                self._stake = await self.chains[0].coro_get_mature_stake(self.wallet_address, raise_canonical_head_not_found_error = True)
                 # coin_mature_time_for_staking = self.chains[0].get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
                 # self._stake = await self.chaindb.coro_get_mature_stake(Address(self.wallet_address), coin_mature_time_for_staking, raise_canonical_head_not_found_error = True)
             except CanonicalHeadNotFound:

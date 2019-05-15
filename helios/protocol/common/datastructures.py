@@ -61,6 +61,7 @@ class SyncParameters():
         self.peers_to_sync_with: List['HLSPeer'] = peers_to_sync_with
 
 
+
 class ChainRequestInfo():
     def __init__(self, peer: 'HLSPeer', head_root_timestamp: Timestamp, head_root_hash: Hash32, start_idx: int, end_idx: int):
         self.peer = peer

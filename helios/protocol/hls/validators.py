@@ -5,6 +5,7 @@ from typing import (
     List,
 )
 
+from helios.protocol.hls.constants import MAX_BLOCKS_FETCH
 from helios.rlp_templates.hls import P2PBlock
 from hvm.rlp.consensus import NodeStakingScore
 from hvm.rlp.headers import BlockHeader
@@ -155,7 +156,8 @@ class GetChainsValidator(BaseValidator[Tuple[Tuple[P2PBlock], ...]]):
             return
 
         for chain in response:
-            if len(chain) > 0:
+            # If the chain is of length MAX_BLOCKS_FETCH, then we haven't reached the head yet.
+            if len(chain) > 0 and len(chain) < MAX_BLOCKS_FETCH:
                 chain_head = chain[-1]
                 if chain_head.header.hash[:self.fragment_length] not in self.expected_chain_head_hash_fragments:
                     # Sort the chain and check again just in case they came in the wrong order

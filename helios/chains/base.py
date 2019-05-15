@@ -35,6 +35,8 @@ class ChainProxy(BaseProxy):
     coro_get_blocks_on_chain_up_to_block_hash = async_method('get_blocks_on_chain_up_to_block_hash')
     coro_try_to_rebuild_chronological_chain_from_historical_root_hashes = async_method('try_to_rebuild_chronological_chain_from_historical_root_hashes')
 
+    coro_get_mature_stake = async_method('get_mature_stake')
+
     import_block = sync_method('import_block')
     import_chain = sync_method('import_chain')
 
@@ -59,3 +61,4 @@ class ChainProxy(BaseProxy):
     import_block_with_profiler = sync_method('import_block_with_profiler')
 
     get_current_peer_node_health = sync_method('get_current_peer_node_health')
+

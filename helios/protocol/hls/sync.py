@@ -74,3 +74,8 @@ def get_sync_stage_for_block_timestamp(timestamp: Timestamp) -> int:
     chronological_block_window_for_this_block = int(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE
     return get_sync_stage_for_chronological_block_window_timestamp(chronological_block_window_for_this_block)
 
+def get_fast_sync_cutoff_timestamp() -> Timestamp:
+    last_finished_window = int(time.time() / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+    current_window = last_finished_window + TIME_BETWEEN_HEAD_HASH_SAVE
+
+    return current_window - NUMBER_OF_HEAD_HASH_TO_SAVE * TIME_BETWEEN_HEAD_HASH_SAVE + TIME_BETWEEN_HEAD_HASH_SAVE

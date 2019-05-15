@@ -14,7 +14,7 @@ from helios.dev_tools import create_dev_test_blockchain_database_with_given_tran
     add_transactions_to_blockchain_db
 from hp2p.constants import TIME_OFFSET_TO_FAST_SYNC_TO
 from hvm.db.backends.memory import MemoryDB
-
+from pprint import pprint
 from hp2p.consensus import Consensus
 from hvm import constants
 from hvm import MainnetChain
@@ -42,7 +42,7 @@ from helios.sync.common.constants import (
     ADDITIVE_SYNC_STAGE_ID,
     FULLY_SYNCED_STAGE_ID,
 )
-from eth_utils import to_wei
+from eth_utils import to_wei, encode_hex, decode_hex
 from helios.dev_tools import create_new_genesis_params_and_state
 from tests.integration_test_helpers import (
     ensure_blockchain_databases_identical,
@@ -111,7 +111,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
 
 
 
-    node_index_to_listen_with_logger = 1
+    node_index_to_listen_with_logger = 7
     consensus_services = []
     for i in range(len(dbs_for_linking)):
         if i == 0:
@@ -175,6 +175,11 @@ async def _build_test_consensus(request, event_loop,
     '''
     This one creates a swarm of 4 nodes with one database, and 4 nodes with another database, then asks
     consensus which ones to choose. It checks to make sure they choose the correct one.
+    The bootnode, and the first half of the peers have the same blockchain database
+    The second half of the peers have a conflicting database
+    Then finally, the client has only the genesis block and is asked to choose which database is in consensus.
+    The first half of the peers have much more stake then the second half, so the client should choose the blockchain
+    database from the first half of the nodes, which is also the one the bootnode has.
     :param request:
     :param event_loop:
     :return:
@@ -198,7 +203,7 @@ async def _build_test_consensus(request, event_loop,
 
 
     tx_list = [
-        *[[GENESIS_PRIVATE_KEY, private_keys[i], ((1000000-1000)*10**18)*i, genesis_block_timestamp + gap_between_genesis_block_and_first_transaction + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]
+        *[[GENESIS_PRIVATE_KEY, private_keys[i], ((1000000-1000*i)*10**18), genesis_block_timestamp + gap_between_genesis_block_and_first_transaction + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]
     ]
 
     total_required_gas = sum([(to_wei(tx_key[4], 'gwei') if len(tx_key) > 4 else to_wei(1, 'gwei'))*GAS_TX for tx_key in tx_list])
@@ -220,6 +225,14 @@ async def _build_test_consensus(request, event_loop,
 
     add_transactions_to_blockchain_db(base_db, tx_list)
 
+    # chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    # print('AAAAAAAAAAA')
+    # print('genesis')
+    # print(chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address()))
+    # for i in range(len(random_private_keys)):
+    #     print(i)
+    #     print(chain.get_vm().state.account_db.get_balance(private_keys[i].public_key.to_canonical_address()))
+    # exit()
     # stake for the first half of chains should be from node 1 to node n:
     # 100
     # 1000000
@@ -285,18 +298,27 @@ async def _build_test_consensus(request, event_loop,
                 client_consensus_choice = await client_consensus.coro_get_root_hash_consensus(timestamp)
                 assert (client_consensus_choice == root_hash)
 
-            if i in [0, 2, 3, 4, 5]:
-                assert await client_consensus.get_blockchain_sync_parameters() == None
+            #consensus_service 0 is bootnode, it is in consensus
+            #consensus_service 1 is the client. It only has genesis block and is not in consensus
+            #consensus_services 2 to 2+int(num_peers_in_swarm/2) are in consensus
+            #the rest of the peers are not in consensus
+            await client_consensus.get_blockchain_sync_parameters()
+            if i in [0, *[j+2 for j in range(int(num_peers_in_swarm / 2))]]:
+                sync_parameters = await client_consensus.get_blockchain_sync_parameters()
+                assert sync_parameters == None
             if i == 1:
                 sync_parameters = await client_consensus.get_blockchain_sync_parameters(debug = True)
-                if (genesis_block_timestamp + gap_between_genesis_block_and_first_transaction) < int(time.time()/1000)*1000-1000*1000 or gap_between_genesis_block_and_first_transaction < TIME_BETWEEN_HEAD_HASH_SAVE:
+                if (genesis_block_timestamp + gap_between_genesis_block_and_first_transaction) < int(time.time()/1000)*1000-1000*1000+4*1000 or gap_between_genesis_block_and_first_transaction < TIME_BETWEEN_HEAD_HASH_SAVE:
                     assert sync_parameters.timestamp_for_root_hash == int((time.time() - TIME_OFFSET_TO_FAST_SYNC_TO) / 1000) * 1000
                 else:
                     assert sync_parameters.timestamp_for_root_hash == int((genesis_block_timestamp + gap_between_genesis_block_and_first_transaction)/1000)*1000 + 1000
-            if i in [6,7,8,9]:
+            if i in [j+2 for j in range(int(num_peers_in_swarm / 2),num_peers_in_swarm)]:
                 timestamp = int(diverging_transactions_timestamp/1000)*1000 + 1000
                 sync_parameters = await client_consensus.get_blockchain_sync_parameters(debug=True)
-                assert sync_parameters.timestamp_for_root_hash == timestamp
+                if timestamp > int(time.time())-1000*1000+1000*4:
+                    assert sync_parameters.timestamp_for_root_hash == timestamp
+                else:
+                    assert sync_parameters.timestamp_for_root_hash == int((time.time() - TIME_OFFSET_TO_FAST_SYNC_TO) / 1000) * 1000
 
 
 
@@ -440,9 +462,15 @@ async def wait_for_consensus(server_consensus, client_consensus):
 
     async def wait_loop():
 
-        while await server_consensus.coro_get_root_hash_consensus(int(time.time())) != await client_consensus.coro_get_root_hash_consensus(int(time.time())):
-            server_root_hash = await server_consensus.coro_get_root_hash_consensus(int(time.time()))
-            client_root_hash = await client_consensus.coro_get_root_hash_consensus(int(time.time()))
+        while True:
+            try:
+                if await server_consensus.coro_get_root_hash_consensus(int(time.time())) == await client_consensus.coro_get_root_hash_consensus(int(time.time())):
+                    return
+            except Exception:
+                pass
+
+            # server_root_hash = await server_consensus.coro_get_root_hash_consensus(int(time.time()))
+            # client_root_hash = await client_consensus.coro_get_root_hash_consensus(int(time.time()))
             # print('AAAAAAAAAAAAAA')
             # print(int(time.time()/1000)*1000)
             # print(server_root_hash)
@@ -455,7 +483,13 @@ async def wait_for_consensus_all(consensus_services):
     SYNC_TIMEOUT = 100
 
     async def wait_loop():
-        while not all([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time())) and await rest.coro_get_root_hash_consensus(int(time.time())) != None for rest in consensus_services]):
+        while True:
+            try:
+                if all([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time())) and await rest.coro_get_root_hash_consensus(int(time.time())) != None for rest in consensus_services]):
+                    return
+            except Exception:
+                pass
+
             # server_root_hash = await server_consensus.coro_get_root_hash_consensus(int(time.time()))
             # client_root_hash = await client_consensus.coro_get_root_hash_consensus(int(time.time()))
             #print('AAAAAAAAAAAAAA')

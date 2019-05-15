@@ -71,3 +71,20 @@ class BaseRPCError(BaseHeliosError):
     """
     pass
 
+class ConsensusError(BaseHeliosError):
+    """
+    The base class for all Consensus errors.
+    """
+    pass
+
+
+class NoPeerStatistics(ConsensusError):
+    """
+    Raised when there are no peer statistics available for a certain operation.
+    """
+    pass
+
+
+
+
+
