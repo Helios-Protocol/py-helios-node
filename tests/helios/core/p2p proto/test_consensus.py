@@ -35,7 +35,8 @@ from tests.helios.core.peer_helpers import (
     MockPeerPoolWithConnectedPeers,
 )
 from helios.protocol.common.datastructures import SyncParameters
-from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE, GAS_TX
+from hvm.constants import TIME_BETWEEN_HEAD_HASH_SAVE, GAS_TX
+from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
 from helios.sync.common.constants import (
     FAST_SYNC_STAGE_ID,
     CONSENSUS_MATCH_SYNC_STAGE_ID,
@@ -328,7 +329,7 @@ async def _build_test_consensus(request, event_loop,
 @pytest.mark.asyncio
 async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_1(request, event_loop):
     #FAST SYNC REGION with mismatching first root hash timestamp
-    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000*1000
+    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1005*1000
     await _build_test_consensus(request, event_loop,
                                                                    gap_between_genesis_block_and_first_transaction=0,
                                                                    genesis_block_timestamp = genesis_block_timestamp)
@@ -336,7 +337,7 @@ async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_1(reques
 @pytest.mark.asyncio
 async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_2(request, event_loop):
     # FAST SYNC REGION with matching first root hash timestamp
-    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000
+    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1005 * 1000
     await _build_test_consensus(request, event_loop,
                                                                    gap_between_genesis_block_and_first_transaction=1000,
                                                                    genesis_block_timestamp = genesis_block_timestamp)
@@ -352,7 +353,7 @@ async def test_consensus_root_hash_choice_diverging_in_fast_sync_window_3(reques
 @pytest.mark.asyncio
 async def test_consensus_root_hash_choice_diverging_in_consensus_match_window_1(request, event_loop):
     # CONSENSUS_MATCH_REGION with mismatching first root hash timestamp
-    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000*1000 + 1000
+    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000*1000 + 5000
 
     await _build_test_consensus(request, event_loop,
                                                                    gap_between_genesis_block_and_first_transaction=0,
@@ -361,7 +362,7 @@ async def test_consensus_root_hash_choice_diverging_in_consensus_match_window_1(
 @pytest.mark.asyncio
 async def test_consensus_root_hash_choice_diverging_in_consensus_match_window_2(request, event_loop):
     # CONSENSUS_MATCH_REGION with matching first root hash timestamp
-    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000 + 1000
+    genesis_block_timestamp = int(time.time() / 1000) * 1000 - 1000 * 1000 + 5000
     await _build_test_consensus(request, event_loop,
                                                                    gap_between_genesis_block_and_first_transaction=1000,
                                                                    genesis_block_timestamp=genesis_block_timestamp)

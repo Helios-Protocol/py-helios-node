@@ -22,6 +22,7 @@ from hvm.utils.numeric import (
     stake_weighted_average,
 )
 
+from helios.tools.timed_cache import timed_cache, async_timed_cache
 from typing import (
     Any,
     Callable,
@@ -61,14 +62,9 @@ from helios.rlp_templates.hls import (
 
 from hvm.constants import (
     BLANK_ROOT_HASH,
-    EMPTY_UNCLE_HASH,
-    GENESIS_PARENT_HASH,
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
-    TIME_BETWEEN_PEER_NODE_HEALTH_CHECK,
-    REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY,
-    REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF, REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF,
-    COIN_MATURE_TIME_FOR_STAKING)
+)
 
 from helios.chains.coro import AsyncChain
 from helios.db.chain import AsyncChainDB
@@ -214,6 +210,8 @@ class Consensus(BaseService, PeerSubscriber):
     _local_tpc_cap = 0
     _last_check_if_min_gas_system_ready_time = 0
     _current_sync_stage = 0 #0 means unknown.
+    _accurate_stake_for_this_node = None
+    _last_check_get_accurate_stake_for_this_node = 0
 
     def __init__(self,
                  context: ChainContext,
@@ -380,18 +378,24 @@ class Consensus(BaseService, PeerSubscriber):
         return False
 
     async def get_accurate_stake_for_this_node(self):
-        chain = self.node.get_new_chain()
-        coin_mature_time_for_staking = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
-        time_for_stake_maturity = int(time.time()) - coin_mature_time_for_staking
-        latest_timestamp = self.chain_head_db.get_latest_timestamp()
+        cache_time = 5
+        now = time.time()
+        if self._accurate_stake_for_this_node is None or self._last_check_get_accurate_stake_for_this_node < (now-cache_time):
+            chain = self.node.get_chain()
+            coin_mature_time_for_staking = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
+            time_for_stake_maturity = int(time.time()) - coin_mature_time_for_staking
+            latest_timestamp = self.chain_head_db.get_latest_timestamp()
 
-        if latest_timestamp < time_for_stake_maturity and not self.chain_config.network_startup_node:
-            try:
-                return self.peer_stake_from_bootstrap_node[self.chain_config.node_wallet_address]
-            except KeyError:
-                raise UnknownPeerStake()
-        else:
-            return await chain.coro_get_mature_stake(wallet_address=self.chain_config.node_wallet_address)
+            if latest_timestamp < time_for_stake_maturity and not self.chain_config.network_startup_node:
+                try:
+                    self._accurate_stake_for_this_node = self.peer_stake_from_bootstrap_node[self.chain_config.node_wallet_address]
+                except KeyError:
+                    raise UnknownPeerStake()
+            else:
+                self._accurate_stake_for_this_node = await chain.coro_get_mature_stake(wallet_address=self.chain_config.node_wallet_address)
+
+            self._last_check_get_accurate_stake_for_this_node = now
+        return self._accurate_stake_for_this_node
 
     async def get_accurate_stake(self, peer: HLSPeer):
         if self.chain_config.network_startup_node:
@@ -803,15 +807,16 @@ class Consensus(BaseService, PeerSubscriber):
         await self.coro_is_ready.wait()
         await asyncio.sleep(5)
         chain = self.node.get_chain()
+        time_between_peer_node_health_check = chain.get_vm(timestamp = Timestamp(int(time.time()))).consensus_db.time_between_peer_node_health_check
         self.logger.debug("Running peer node health syncer")
         while self.is_operational:
-            #make sure we havent don't a request within the past TIME_BETWEEN_PEER_NODE_HEALTH_CHECK
+            #make sure we havent don't a request within the past time_between_peer_node_health_check
             #here we need to account for the fact that the latest a health check can be saved is ROUND_TRIP_TIMEOUT from
             #when the request was made
-            timestamp_rounded = int(int((time.time()+ROUND_TRIP_TIMEOUT) / (TIME_BETWEEN_PEER_NODE_HEALTH_CHECK)) * (TIME_BETWEEN_PEER_NODE_HEALTH_CHECK))
+            timestamp_rounded = int(int((time.time()+ROUND_TRIP_TIMEOUT) / (time_between_peer_node_health_check)) * (time_between_peer_node_health_check))
             time_of_last_request = self.consensus_db.get_timestamp_of_last_health_request()
 
-            if timestamp_rounded >= time_of_last_request + TIME_BETWEEN_PEER_NODE_HEALTH_CHECK:
+            if timestamp_rounded >= time_of_last_request + time_between_peer_node_health_check:
                 # choose random new block to ask all peers for
                 try:
                     self.logger.debug("Asking peer for newish block to test their health.")
@@ -826,7 +831,7 @@ class Consensus(BaseService, PeerSubscriber):
                             #this will sync will all peers at the same time
                             self.run_task(self._sync_peer_node_health(peer, newish_block_hash))
 
-                        await asyncio.sleep(TIME_BETWEEN_PEER_NODE_HEALTH_CHECK)
+                        await asyncio.sleep(time_between_peer_node_health_check)
                         continue
                     else:
                         #we didn't have any connected nodes. This will occur if we just started. Lets wait a few seconds and try again.
@@ -1538,7 +1543,7 @@ class Consensus(BaseService, PeerSubscriber):
         # We start one hash before the correct one, because if that one is also incorrect, then we havent synced up to
         # the time where additive syncing can occur.
 
-        debug = True
+        debug = False
         do_fast_sync = False
 
         earliest_allowed_time = int(get_fast_sync_cutoff_timestamp()+TIME_BETWEEN_HEAD_HASH_SAVE*2)
@@ -1559,6 +1564,8 @@ class Consensus(BaseService, PeerSubscriber):
 
             # it now goes from newest to oldest
             for timestamp, local_root_hash in sorted_local_root_hash_timestamps.items():
+                if debug:
+                    self.logger.debug("get_blockchain_sync_parameters loop {}".format(timestamp))
                 try:
                     consensus_root_hash = await self.coro_get_root_hash_consensus(timestamp, local_root_hash_timestamps=local_root_hash_timestamps)
                 except NoPeerStatistics:

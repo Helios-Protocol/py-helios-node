@@ -34,7 +34,6 @@ from hvm.constants import (
     GENESIS_PARENT_HASH,
     MAX_PREV_HEADER_DEPTH,
     MAX_UNCLES,
-    MIN_TIME_BETWEEN_BLOCKS,
     ZERO_HASH32,
     BLANK_REWARD_HASH)
 from hvm.db.trie import make_trie_root_and_nodes
@@ -102,10 +101,14 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     chaindb: BaseChainDB = None
     consensus_db: ConsensusDB = None
     _state_class: Type[BaseState] = None
-    network_id: int = 0
+
     state: BaseState = None
     block: BaseBlock = None
     queue_block: BaseQueueBlock = None
+
+    network_id: int = 0
+    min_time_between_blocks: int = 0
+
 
     @abstractmethod
     def __init__(self, header, chaindb):
@@ -1095,12 +1098,6 @@ class VM(BaseVM):
     #
     # Validate
     #
-    def check_wait_before_new_block(self, block):
-        parent_header = get_parent_header(block.header, self.chaindb)
-        parent_time = parent_header.timestamp
-        difference = int(time.time())-parent_time
-        time_left = MIN_TIME_BETWEEN_BLOCKS - difference
-        return time_left
         
     def validate_block(self, block):
         """
@@ -1124,24 +1121,17 @@ class VM(BaseVM):
             validate_length_lte(block.header.extra_data, 32, title="BlockHeader.extra_data")
             
             # timestamp
-            if block.header.timestamp < parent_header.timestamp:
+            if (block.header.timestamp - parent_header.timestamp) < self.min_time_between_blocks:
                 raise ValidationError(
-                    "`timestamp` is before the parent block's timestamp.\n"
-                    "- block  : {0}\n"
-                    "- parent : {1}. ".format(
+                    "The block has less than the minimum time between blocks\n"
+                    "- block : {}\n"
+                    "- block : {}\n"
+                    "- parent: {}\n"
+                    "- current timestamp : {}".format(
+                        block,
                         block.header.timestamp,
                         parent_header.timestamp,
-                    )
-                )
-            elif (block.header.timestamp - parent_header.timestamp) < MIN_TIME_BETWEEN_BLOCKS:
-                raise ValidationError(
-                    "`timestamp` is equal to the parent block's timestamp\n"
-                    "- block : {0}\n"
-                    "- parent: {1}.\n"
-                    "- current timestamp : {2}".format(
-                        block.header.timestamp,
-                        parent_header.timestamp,
-                        time.time()
+                        int(time.time())
                     )
                 )
 

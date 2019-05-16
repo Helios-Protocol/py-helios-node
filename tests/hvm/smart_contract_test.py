@@ -20,16 +20,6 @@ from hvm.chains.mainnet import (
 
 from hvm.types import Timestamp
 
-from hvm.constants import (
-    BLANK_ROOT_HASH,
-    ZERO_HASH32,
-    EMPTY_SHA3,
-    SLASH_WALLET_ADDRESS,
-    NUMBER_OF_HEAD_HASH_TO_SAVE,
-    TIME_BETWEEN_HEAD_HASH_SAVE,
-    COIN_MATURE_TIME_FOR_STAKING,
-
-    COLLATION_SIZE)
 
 
 from hvm.db.backends.level import LevelDB

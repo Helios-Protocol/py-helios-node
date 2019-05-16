@@ -61,3 +61,5 @@ class BosonVM(VM):
     make_receipt = staticmethod(make_boson_receipt)
     validate_transaction_against_header = validate_boson_transaction_against_header
     consensus_db_class = BosonConsensusDB
+
+    min_time_between_blocks = constants.MIN_TIME_BETWEEN_BLOCKS

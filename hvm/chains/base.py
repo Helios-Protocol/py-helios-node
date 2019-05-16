@@ -58,10 +58,7 @@ from hvm.constants import (
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
     GENESIS_PARENT_HASH,
-    MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY,
-    MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH,
-    MIN_GAS_PRICE_CALCULATION_MIN_TIME_BETWEEN_CHANGE_IN_MIN_GAS_PRICE,
-    MIN_TIME_BETWEEN_BLOCKS)
+)
 
 from hvm.db.trie import make_trie_root_and_nodes
 
@@ -1188,8 +1185,7 @@ class Chain(BaseChain):
 
 
 
-
-    def validate_time_between_blocks(self,block):
+    def validate_time_from_genesis_block(self,block):
         if not block.is_genesis:
             #first make sure enough time has passed since genesis. We need at least TIME_BETWEEN_HEAD_HASH_SAVE since genesis so that the
             # genesis historical root hash only contains the genesis chain.
@@ -1197,12 +1193,6 @@ class Chain(BaseChain):
                 raise NotEnoughTimeBetweenBlocks("Not enough time has passed since the genesis block. Must wait at least {} seconds after genesis block. "
                                                  "This block timestamp is {}, genesis block timestamp is {}.".format(TIME_BETWEEN_HEAD_HASH_SAVE, block.header.timestamp, self.genesis_block_timestamp))
 
-            parent_header = self.chaindb.get_block_header_by_hash(block.header.parent_hash)
-            parent_block_timestamp = parent_header.timestamp
-            if (block.header.timestamp - parent_block_timestamp) < MIN_TIME_BETWEEN_BLOCKS:
-                raise NotEnoughTimeBetweenBlocks("Not enough time between blocks. We require {} seconds between blocks. The block timestamp is {}, and the previous block timestamp is {}".format(
-                    MIN_TIME_BETWEEN_BLOCKS, block.header.timestamp, parent_block_timestamp
-                ))
         return
 
     #
@@ -1642,7 +1632,7 @@ class Chain(BaseChain):
 
         self.logger.debug("importing block {} with number {}".format(block.__repr__(), block.number))
 
-        self.validate_time_between_blocks(block)
+        self.validate_time_from_genesis_block(block)
 
         if isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()):
             # If it was a queueblock, then the header will have changed after importing

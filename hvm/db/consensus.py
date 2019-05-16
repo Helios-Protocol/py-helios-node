@@ -27,18 +27,7 @@ from eth_keys import keys
 
 import rlp_cython as rlp
 
-from hvm.constants import (
-    TIME_BETWEEN_PEER_NODE_HEALTH_CHECK,
-    PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS,
-    PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_50_PERCENT_REDUCTION_MS,
-    REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF,
-    REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF,
-    REWARD_TYPE_2_AMOUNT_FACTOR,
-    REWARD_TYPE_1_AMOUNT_FACTOR,
-    COIN_MATURE_TIME_FOR_STAKING,
-    MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS,
-    REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE,
-    REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE, REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY)
+
 from hvm.validation import (
     validate_is_bytes,
     validate_uint256,
@@ -74,11 +63,26 @@ from hvm.rlp.consensus import (
 from hvm.db.backends.base import BaseDB
 from hvm.utils.numeric import stake_weighted_average
 
+from decimal import Decimal
 if TYPE_CHECKING:
     from hvm.db.chain import BaseChainDB
     from hvm.chains.base import BaseChain
 
 
+
+# These will all be overridden by the children classes within the vm's
+TIME_BETWEEN_PEER_NODE_HEALTH_CHECK = 5
+MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS = 1
+REWARD_PROOF_TIMESTAMP_VARIABILITY_ALLOWANCE = 300
+REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY = 5
+REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF = 100
+REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF = 1
+COIN_MATURE_TIME_FOR_STAKING = 1
+REWARD_TYPE_1_AMOUNT_FACTOR = Decimal(0.02*1/(60*60*24*365)) #2 % per year
+REWARD_TYPE_2_AMOUNT_FACTOR = Decimal(0.1*1/(60*60*24*365)) #10 % per year for normal nodes
+PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS = 100 #this is the average response time where the staking score starts to be reduced.
+PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_50_PERCENT_REDUCTION_MS = 500 #this is the response time in ms where the staking score is reduced by 50%
+REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE = 60
 
 class ConsensusDB():
 
@@ -260,6 +264,9 @@ class ConsensusDB():
 
         if score < 0:
             score = 0
+
+        if score >= 1000000:
+            score = 999999
 
         return score
 

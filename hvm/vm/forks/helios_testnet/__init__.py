@@ -115,3 +115,6 @@ class HeliosTestnetVM(VM):
     configure_header = configure_helios_testnet_header
     make_receipt = staticmethod(make_helios_testnet_receipt)
     validate_transaction_against_header = validate_helios_testnet_transaction_against_header
+
+    #constants
+    min_time_between_blocks = constants.MIN_TIME_BETWEEN_BLOCKS

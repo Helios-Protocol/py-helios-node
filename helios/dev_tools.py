@@ -42,7 +42,7 @@ from hvm.db.hash_trie import HashTrie
 
 from hvm.db.chain_head import ChainHeadDB
 
-from hvm.constants import random_private_keys, GAS_TX, MIN_TIME_BETWEEN_BLOCKS, \
+from hvm.constants import random_private_keys, GAS_TX, \
     TIME_BETWEEN_HEAD_HASH_SAVE
 from hvm.vm.forks.helios_testnet import HeliosTestnetQueueBlock
 
@@ -53,6 +53,7 @@ from eth_utils import (
     to_wei,
 )
 
+from hvm.types import Timestamp
 
 
 def create_new_genesis_params_and_state(private_key, total_supply = 100000000 * 10 ** 18, timestamp = int(time.time())):
@@ -131,6 +132,7 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
 
     node_1 = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
 
+    MIN_TIME_BETWEEN_BLOCKS = node_1.get_vm(timestamp = Timestamp(int(time.time()))).min_time_between_blocks
     chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
 
     last_block_timestamp = 0
@@ -239,6 +241,7 @@ def create_dev_test_random_blockchain_database(base_db = None, num_iterations = 
     #initialize db
     sender_chain = import_genesis_block(base_db)
     # sender_chain.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=5)\
+    MIN_TIME_BETWEEN_BLOCKS = sender_chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
 
     if timestamp == None:
         timestamp = int(time.time()) - num_iterations*MIN_TIME_BETWEEN_BLOCKS
@@ -469,7 +472,8 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
     if genesis_block_timestamp is None:
         genesis_block_timestamp = MAINNET_GENESIS_PARAMS['timestamp']
 
-    from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE
+    from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
+    from hvm.constants import TIME_BETWEEN_HEAD_HASH_SAVE
 
     private_keys = []
     for i in range(11):
@@ -483,7 +487,7 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
             private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),
             private_keys[4]: (14000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*5),
             private_keys[5]: (2400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*6),
-            private_keys[6]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+            private_keys[6]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*7),
             private_keys[7]: (40000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*8),
             private_keys[8]: (10000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*9),
             private_keys[9]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
@@ -497,7 +501,7 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
             private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),
             private_keys[4]: (14000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*5),
             private_keys[5]: (2400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*6),
-            private_keys[6]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+            private_keys[6]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*7),
             private_keys[7]: (40000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*8),
             private_keys[8]: (10000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*9),
             private_keys[9]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
@@ -513,7 +517,7 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
             private_keys[3]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*4),
             private_keys[4]: (14000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*5),
             private_keys[5]: (2400*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*6),
-            private_keys[6]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS),
+            private_keys[6]: (100000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*7),
             private_keys[7]: (40000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*8),
             private_keys[8]: (10000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*9),
             private_keys[9]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
@@ -527,7 +531,8 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
 
 def create_blockchain_database_for_exceeding_tpc_cap(base_db, tpc_cap_to_exceed=5, num_tpc_windows_to_go_back=200, use_real_genesis = False):
 
-    from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE
+    from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
+    from hvm.constants import TIME_BETWEEN_HEAD_HASH_SAVE
 
     genesis_block_timestamp = int(time.time()/100)*100 - num_tpc_windows_to_go_back*100
 
@@ -546,10 +551,11 @@ def create_blockchain_database_for_exceeding_tpc_cap(base_db, tpc_cap_to_exceed=
             receiver = private_keys[0]
             amount = 1000
             timestamp = centisecond_window_timestamp+j*MIN_TIME_BETWEEN_BLOCKS
-
+            if timestamp >= int(time.time()):
+                break
             tx_list.append([sender,receiver,amount,timestamp])
 
-    assert(len(tx_list) == tpc_cap_to_exceed*num_tpc_windows_to_go_back)
+    #assert(len(tx_list) == tpc_cap_to_exceed*num_tpc_windows_to_go_back)
 
     #print(tx_list)
     create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list, use_real_genesis)
@@ -557,7 +563,7 @@ def create_blockchain_database_for_exceeding_tpc_cap(base_db, tpc_cap_to_exceed=
 
 def create_random_blockchain_database_to_time(base_db, start_time, end_time, tx_per_1000_seconds=1, use_real_genesis = False):
 
-    from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE
+    from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
 
     genesis_block_timestamp = int(start_time/100)*100
 
@@ -585,7 +591,7 @@ def create_random_blockchain_database_to_time(base_db, start_time, end_time, tx_
 
 def add_random_transactions_to_db_for_time_window(base_db, start_time, end_time, tx_per_1000_seconds=1):
 
-    from hvm.constants import MIN_TIME_BETWEEN_BLOCKS, TIME_BETWEEN_HEAD_HASH_SAVE
+    from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
 
     genesis_block_timestamp = int(start_time / 100) * 100
 

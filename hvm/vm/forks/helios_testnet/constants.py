@@ -1,6 +1,3 @@
-from eth_typing import (
-    Address
-)
 
 #
 # Gas Costs and Refunds
@@ -34,3 +31,6 @@ GAS_CALL_EIP150 = 700
 GAS_EXTCODE_EIP150 = 700
 GAS_BALANCE_EIP150 = 400
 GAS_SLOAD_EIP150 = 200
+
+
+MIN_TIME_BETWEEN_BLOCKS = 0 #seconds

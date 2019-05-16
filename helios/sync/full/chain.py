@@ -4,6 +4,7 @@ from asyncio import (
     PriorityQueue,
 )
 
+
 import time
 from random import shuffle
 
@@ -63,6 +64,7 @@ from typing import (
     NamedTuple,
     Iterable,
     Callable,
+    Awaitable,
 )
 
 from cancel_token import CancelToken, OperationCancelled
@@ -248,7 +250,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         self.base_db = context.base_db
         self.peer_pool = peer_pool
 
-        self._new_blocks_to_import: asyncio.Queue[List[NewBlockQueueItem]] = asyncio.Queue()
+        self._new_blocks_to_import: asyncio.Queue[NewBlockQueueItem] = asyncio.Queue()
+        self.fast_sync_chains_queue: asyncio.Queue[List[List[P2PBlock]]] = asyncio.Queue()
 
     def register_peer(self, peer: HLSPeer) -> None:
         pass
@@ -778,6 +781,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
     async def fast_sync_main(self, sync_parameters: SyncParameters):
         self.logger.debug('fast_sync_main starting')
 
+        fast_sync_finished_event = asyncio.Event()
+        asyncio.ensure_future(self.fast_sync_chains_importer_loop(fast_sync_finished_event))
 
         fragment_length = 3
         additional_candidate_peers = list(sync_parameters.peers_to_sync_with)
@@ -795,6 +800,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         #assert(self.chain_head_db.get_historical_root_hash(historical_root_hash_timestamp) == local_root_hash)
         while self.is_operational:
+            # first start the fast sync chain importer loop
+
+
             self.chain_head_db.load_saved_root_hash()
             local_root_hash = self.chain_head_db.get_saved_root_hash()
             our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list(local_root_hash)
@@ -814,7 +822,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                                          peer = peer_to_sync_with,
                                                                                                          additional_candidate_peers = additional_candidate_peers)
             except NoCandidatePeers:
-                return
+                break
 
 
 
@@ -864,6 +872,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             else:
                 await self.wait_all(worker_tasks)
 
+            # wait till the fast sync block import queue is empty
+            await self.fast_sync_chains_queue.join()
+
             resulting_chain_head_root_hash = self.chain_head_db.get_saved_root_hash()
             if resulting_chain_head_root_hash == consensus_root_hash:
                 break
@@ -883,6 +894,11 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             # Set this after each loop to avoid requesting the same chains over and over again
             final_root_hash = self.chain_head_db.get_saved_root_hash()
             await self.chain_head_db.coro_initialize_historical_root_hashes(final_root_hash, historical_root_hash_timestamp)
+
+
+        # wait till the fast sync block queue is empty, then stop the importer loop
+        await self.fast_sync_chains_queue.join()
+        fast_sync_finished_event.set()
 
         # Set this again at the end in case it succeeded.
         final_root_hash = self.chain_head_db.get_saved_root_hash()
@@ -935,8 +951,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                                              peer = peer_to_sync_with,
                                                                                                              additional_candidate_peers = additional_candidate_peers)
 
-                    await self.handle_priority_import_chains(chains, save_block_head_hash_timestamp=False)
-
+                    # await self.handle_priority_import_chains(chains, save_block_head_hash_timestamp=False)
+                    await self.fast_sync_chains_queue.put(chains)
                     # If the final block numbers are less than the max length, then we have all of the chains.
                     need_more_chain = any([len(chain) >= MAX_BLOCKS_FETCH for chain in chains])
 
@@ -953,6 +969,21 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         #raise OperationCancelled when finished to exit cleanly.
         raise OperationCancelled()
 
+    async def fast_sync_chains_importer_loop(self, finished_event: asyncio.Event):
+        self.logger.debug("starting fast_sync_chains_importer_loop")
+        while self.is_running:
+            try:
+                self.logger.debug("fast_sync_chains_importer_loop waiting for chains in queue")
+                chains = await self.wait_first(self.fast_sync_chains_queue.get(), finished_event.wait())
+            except OperationCancelled:
+                break
+
+            if finished_event.is_set():
+                self.logger.debug("stopping fast_sync_chains_importer_loop because finished_event is set")
+                break
+
+            self.logger.debug("fast_sync_chains_importer_loop importing chains")
+            await self.handle_priority_import_chains(chains, save_block_head_hash_timestamp=False)
 
 
     async def sync_block_conflict_with_consensus(self):
