@@ -105,7 +105,8 @@ class BosonConsensusDB(ConsensusDB):
                 break
 
         if total_stake < self.required_stake_for_reward_type_2_proof or num_proofs < self.required_number_of_proofs_for_reward_type_2_proof:
-            raise NotEnoughProofsOrStakeForRewardType2Proof()
+            raise NotEnoughProofsOrStakeForRewardType2Proof("Total stake = {}, required stake = {}. Num proofs = {}, required num proofs = {}".format(total_stake, self.required_stake_for_reward_type_2_proof, num_proofs, self.required_number_of_proofs_for_reward_type_2_proof))
+
 
         final_score = int(stake_weighted_average(item_stake_list))
 

@@ -25,6 +25,9 @@ from eth_utils import (
     decode_hex,        
 )
 
+import random
+
+
 from hp2p.kademlia import Address, Node
 
 
@@ -36,6 +39,7 @@ from sys import exit
 from trie import (
     HexaryTrie,
 )
+from pprint import pprint
 
 from helios.rpc.format import block_to_dict
 from hvm.db.hash_trie import HashTrie
@@ -149,13 +153,22 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
     private_keys_dict[GENESIS_PRIVATE_KEY.public_key.to_address()] = GENESIS_PRIVATE_KEY
 
     for i in range(num_iterations):
-        random_int = random.randint(0,len(private_keys_dict)-1)
+
+        # random_int = random.randint(0,len(private_keys_dict)-1)
+        # numbers = [x in range(0, len(private_keys_dict)-1) if x != random_int]
+        # random_int = random.choice(numbers)
+
         if i == 0:
+            numbers = [x for x in range(0, len(private_keys_dict) - 1)]
+            random_int = random.choice(numbers)
             privkey = GENESIS_PRIVATE_KEY
             receiver_privkey = private_keys_dict[list(private_keys_dict.keys())[random_int]]
         else:
+            numbers = [x for x in range(0, len(private_keys_dict) - 1) if x != random_int]
+            random_int = random.choice(numbers)
             privkey = receiver_privkey
             receiver_privkey = private_keys_dict[list(private_keys_dict.keys())[random_int]]
+
 
         tx_timestamp = last_block_timestamp + MIN_TIME_BETWEEN_BLOCKS+2
         tx_list = [[privkey, receiver_privkey, 10000000*10**18-i*100000*10**18-random.randint(0,1000), tx_timestamp]]
@@ -165,9 +178,14 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
 
         node_1 = MainnetChain(base_db, privkey.public_key.to_canonical_address(), privkey)
 
+
         chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
 
-        reward_block_time = tx_timestamp + node_1.get_vm().consensus_db.min_time_between_reward_blocks+ MIN_TIME_BETWEEN_BLOCKS+2
+        reward_block_time = tx_timestamp + node_1.get_vm(timestamp = tx_timestamp).consensus_db.min_time_between_reward_blocks+ MIN_TIME_BETWEEN_BLOCKS+2+node_1.get_vm(timestamp = tx_timestamp).consensus_db.coin_mature_time_for_staking
+
+        # print('BBBBBBB')
+        # print(node_1.get_vm(timestamp=tx_timestamp).state.account_db.get_balance(receiver_privkey.public_key.to_canonical_address()))
+        # print(node_1.chaindb.get_mature_stake(receiver_privkey.public_key.to_canonical_address(), node_1.get_consensus_db(timestamp=tx_timestamp).coin_mature_time_for_staking, reward_block_time))
 
         node_staking_scores = []
         for head_hash in chain_head_hashes:
@@ -188,16 +206,20 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
 
                 node_staking_scores.append(signed_node_staking_score)
 
+        if len(node_staking_scores) >= node_1.get_consensus_db(timestamp = tx_timestamp).required_number_of_proofs_for_reward_type_2_proof:
+            # print('AAAAAAAAAAAA')
+            # print(len(node_staking_scores))
+            # print(node_1.get_consensus_db(timestamp = tx_timestamp).required_number_of_proofs_for_reward_type_2_proof)
+            reward_bundle = node_1.get_consensus_db(timestamp=tx_timestamp).create_reward_bundle_for_block(privkey.public_key.to_canonical_address(),
+                                                                   node_staking_scores,
+                                                                   reward_block_time)
 
-        reward_bundle = node_1.get_consensus_db().create_reward_bundle_for_block(privkey.public_key.to_canonical_address(),
-                                                               node_staking_scores,
-                                                               reward_block_time)
 
+            valid_block = create_valid_block_at_timestamp(base_db, privkey, reward_bundle = reward_bundle, timestamp = reward_block_time)
 
-        valid_block = create_valid_block_at_timestamp(base_db, privkey, reward_bundle = reward_bundle, timestamp = reward_block_time)
+            assert(valid_block.header.timestamp == reward_block_time)
+            node_1.import_block(valid_block)
 
-        assert(valid_block.header.timestamp == reward_block_time)
-        node_1.import_block(valid_block)
         last_block_timestamp = reward_block_time
 
 
@@ -250,18 +272,30 @@ def create_dev_test_random_blockchain_database(base_db = None, num_iterations = 
 
     tx_list = []
     for i in range (num_iterations):
-        random.shuffle(random_private_keys)
         if i == 0:
+            numbers = [x for x in range(0, len(random_private_keys) - 1)]
+            random_int = random.choice(numbers)
             privkey = GENESIS_PRIVATE_KEY
-            receiver_privkey = keys.PrivateKey(random_private_keys[0])
+            receiver_privkey = keys.PrivateKey(random_private_keys[random_int])
         else:
+            numbers = [x for x in range(0, len(random_private_keys) - 1) if x != random_int]
+            random_int = random.choice(numbers)
             privkey = receiver_privkey
-            receiver_privkey = keys.PrivateKey(random_private_keys[0])
+            receiver_privkey = keys.PrivateKey(random_private_keys[random_int])
+
+        # random.shuffle(random_private_keys)
+        # if i == 0:
+        #     privkey = GENESIS_PRIVATE_KEY
+        #     receiver_privkey = keys.PrivateKey(random_private_keys[0])
+        # else:
+        #     privkey = receiver_privkey
+        #     receiver_privkey = keys.PrivateKey(random_private_keys[0])
 
         tx_timestamp = timestamp+i*MIN_TIME_BETWEEN_BLOCKS
         tx_list.append([privkey, receiver_privkey, 10000000 * 10 ** 18 - i * 100000 * 10 ** 18 - random.randint(0, 1000), tx_timestamp])
 
-
+    print('ZZZZZZZZZZZ')
+    pprint(tx_list)
     add_transactions_to_blockchain_db(base_db, tx_list)
 
     return base_db
@@ -308,7 +342,7 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
         sender_chain.import_block(timestamp_modified_imported_block, allow_unprocessed=False)
 
         # then receive the transactions
-        receiver_chain = MainnetChain(base_db, receive_priv_key.public_key.to_canonical_address(), receive_priv_key)
+
         dummy_receiver_chain = MainnetChain(JournalDB(base_db), receive_priv_key.public_key.to_canonical_address(),
                                             receive_priv_key)
         dummy_receiver_chain.populate_queue_block_with_receive_tx()
@@ -317,7 +351,10 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
         # altering block timestamp and importing again
         timestamp_modified_imported_block = imported_block.copy(
             header=imported_block.header.copy(timestamp=tx_timestamp).get_signed(receive_priv_key,
-                                                                                 dummy_receiver_chain.network_id))
+                                                                                  dummy_receiver_chain.network_id))
+        print('XXXXXXXXXX')
+        print(tx_timestamp)
+        receiver_chain = MainnetChain(base_db, receive_priv_key.public_key.to_canonical_address(), receive_priv_key)
         receiver_chain.import_block(timestamp_modified_imported_block, allow_unprocessed=False)
 
 

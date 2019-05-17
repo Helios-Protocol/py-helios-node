@@ -396,17 +396,10 @@ def test_send_transaction_then_receive():
     assert ((balance_1 - balance_2) == (tx.intrinsic_gas * 2 + 2))
     print("Passed gas and balance test")
 
-    # print(sender_chain.chain_head_db.get_last_complete_historical_root_hash())
-    # print(sender_chain.chain_head_db.get_historical_root_hashes())
-    # print(sender_chain.chain_head_db.get_root_hash())
-    ##exit()
-    #    converted_block = sender_chain.get_vm().convert_block_to_correct_class(sender_block_1_imported)
-    #    for i in range(len(sender_block_1_imported.transactions)):
-    #        print(sender_block_1_imported.transactions[i]._meta.fields)
-    #        print(converted_block.transactions[i]._meta.fields)
-    #    #print(*list(dict(sender_block_1_imported._meta.fields).values()))
-    #    exit()
 
+    min_time_between_blocks = sender_chain.get_vm(timestamp = Timestamp(int(time.time()))).min_time_between_blocks
+    print("waiting {} seconds before we can import the next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
     sender_chain = MainnetChain(testdb, SENDER.public_key.to_canonical_address(), SENDER)
     sender_chain.create_and_sign_transaction_for_queue_block(
         gas_price=0x01,
@@ -444,6 +437,11 @@ def test_send_transaction_then_receive():
     #    receiver_chain.enable_journal_db()
     #    journal_record = receiver_chain.record_journal()
 
+
+    print("Imported block timestamp = {}".format(block_0_imported.header.timestamp))
+    print("waiting {} seconds before we can import the next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+
     receiver_chain.create_and_sign_transaction_for_queue_block(
         gas_price=0x01,
         gas=0x0c3500,
@@ -454,6 +452,8 @@ def test_send_transaction_then_receive():
         r=0,
         s=0
     )
+    print("Queue block timestamp = {}".format(receiver_chain.queue_block.header.timestamp))
+
 
     block_1_imported = receiver_chain.import_current_queue_block()
 
@@ -504,6 +504,10 @@ def test_send_transaction_then_receive():
     historical_root_hashes = receiver_chain.chain_head_db.get_historical_root_hashes()
     print(receiver_chain.chain_head_db.root_hash)
     print(historical_root_hashes[-1][1])
+
+    print("Imported block timestamp = {}".format(block_0_imported.header.timestamp))
+    print("waiting {} seconds before we can import the next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
 
     receiver_chain.populate_queue_block_with_receive_tx()
     block_2_imported = receiver_chain.import_current_queue_block()
@@ -880,6 +884,7 @@ def test_import_invalid_transaction_nonce_too_great():
 
     valid_block = dummy_chain.import_current_queue_block()
 
+    # import a second block to increase tx nonce
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
         gas=21000,
@@ -890,6 +895,10 @@ def test_import_invalid_transaction_nonce_too_great():
         r=0,
         s=0
     )
+
+    min_time_between_blocks = dummy_chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    print("waiting {} seconds before we can import the next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
 
     invalid_block = dummy_chain.import_current_queue_block()
 

@@ -1473,16 +1473,20 @@ class Chain(BaseChain):
             self.logger.debug("converting block to correct class")
             block = self.get_vm(timestamp = block.header.timestamp).convert_block_to_correct_class(block)
 
-        if not isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()) and block.header.chain_address == self.genesis_wallet_address and block.header.block_number == 0:
-            try:
-                our_genesis_hash = self.chaindb.get_canonical_block_header_by_number(BlockNumber(0), self.genesis_wallet_address).hash
-            except HeaderNotFound:
-                raise NoGenesisBlockPresent("Tried importing a block, but we have no genesis block loaded. Need to load a genesis block first.")
+        if isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()):
+            # Set the queue block timestamp to now, when it is being imported.
+            block = block.copy(header=block.header.copy(timestamp=int(time.time())))
+        else:
+            if block.header.chain_address == self.genesis_wallet_address and block.header.block_number == 0:
+                try:
+                    our_genesis_hash = self.chaindb.get_canonical_block_header_by_number(BlockNumber(0), self.genesis_wallet_address).hash
+                except HeaderNotFound:
+                    raise NoGenesisBlockPresent("Tried importing a block, but we have no genesis block loaded. Need to load a genesis block first.")
 
-            if block.header.hash == our_genesis_hash:
-                return block
-            else:
-                raise ValidationError("Tried to import a new genesis block on the genesis chain. This is not allowed.")
+                if block.header.hash == our_genesis_hash:
+                    return block
+                else:
+                    raise ValidationError("Tried to import a new genesis block on the genesis chain. This is not allowed.")
 
 
         if len(block.transactions) == 0 and len(block.receive_transactions) == 0:

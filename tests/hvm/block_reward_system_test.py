@@ -98,18 +98,20 @@ def test_block_rewards_system():
 
     chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
     coin_mature_time = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
     now = int(time.time())
+    start = now - max((coin_mature_time * 2), (min_time_between_blocks*20))
     key_balance_dict = {
-        private_keys[0]: (1000, now - coin_mature_time * 10 - 100),
-        private_keys[1]: (20000, now - coin_mature_time * 10 - 99),
-        private_keys[2]: (34000, now - coin_mature_time * 10 - 98),
-        private_keys[3]: (100000, now - coin_mature_time * 10 - 97),
-        private_keys[4]: (140000, now - coin_mature_time * 10 - 96),
-        private_keys[5]: (240000, now - coin_mature_time * 10 - 50),
-        private_keys[6]: (300000, now - coin_mature_time * 10 - 45),
-        private_keys[7]: (400000, now - coin_mature_time * 10 - 40),
-        private_keys[8]: (100000, now-1),
-        private_keys[9]: (1000000, now),# immature
+        private_keys[0]: (1000, start),
+        private_keys[1]: (20000, start + min_time_between_blocks * 1),
+        private_keys[2]: (34000, start + min_time_between_blocks * 2),
+        private_keys[3]: (100000, start + min_time_between_blocks * 3),
+        private_keys[4]: (140000, start + min_time_between_blocks * 4),
+        private_keys[5]: (240000, start + min_time_between_blocks * 5),
+        private_keys[6]: (300000, start + min_time_between_blocks * 6),
+        private_keys[7]: (400000, start + min_time_between_blocks * 7),
+        private_keys[8]: (100000, start + min_time_between_blocks * 8),
+        private_keys[9]: (1000000, now-coin_mature_time+1),# immature
 
 
     }
@@ -160,12 +162,14 @@ def test_block_rewards_system():
 
     reward_bundle = chain.get_consensus_db().create_reward_bundle_for_block(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), node_staking_scores, at_timestamp = int(time.time()))
 
+
     chain.get_consensus_db().validate_reward_bundle(reward_bundle, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), int(time.time()))
 
-
+    print('AAAAAAAAAAA')
     print(reward_bundle.reward_type_1.amount)
     print(reward_bundle.reward_type_2.amount)
-    print(reward_bundle.reward_type_2.proof)
+    print(reward_bundle.reward_type_2.proof[0].score)
+
 
     initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     print("balance before reward = ", initial_balance)
