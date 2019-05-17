@@ -96,6 +96,8 @@ class ConnectedNodesInfo():
             node_dict['udp_port'] = node.address.udp_port
             node_dict['tcp_port'] = node.address.tcp_port
             node_dict['stake'] = await peer.stake
+            if node_dict['stake'] is None:
+                node_dict['stake'] = 0
             health = peer.health
             node_dict['requests_sent'] = health.requests_sent
             node_dict['failed_requests'] = health.failed_requests

@@ -741,6 +741,7 @@ class Consensus(BaseService, PeerSubscriber):
             if q_size >= required_responses:
                 self.logger.debug("got enough node_staking_scores responses")
                 peer_node_staking_scores = [self._new_node_staking_scores.get_nowait() for _ in range(q_size)]
+                self.logger.debug("peer node staking scores {}".format(peer_node_staking_scores))
                 # make sure we have enough stake
                 total_stake = 0
                 for node_staking_score in peer_node_staking_scores:

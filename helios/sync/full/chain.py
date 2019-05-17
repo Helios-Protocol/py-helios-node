@@ -873,6 +873,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 await self.wait_all(worker_tasks)
 
             # wait till the fast sync block import queue is empty
+            self.logger.debug("waiting for fast sync queue to join at position 1")
             await self.fast_sync_chains_queue.join()
 
             resulting_chain_head_root_hash = self.chain_head_db.get_saved_root_hash()
@@ -897,6 +898,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
 
         # wait till the fast sync block queue is empty, then stop the importer loop
+        self.logger.debug("waiting for fast sync queue to join at position 2")
         await self.fast_sync_chains_queue.join()
         fast_sync_finished_event.set()
 
@@ -975,6 +977,10 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             try:
                 self.logger.debug("fast_sync_chains_importer_loop waiting for chains in queue")
                 chains = await self.wait_first(self.fast_sync_chains_queue.get(), finished_event.wait())
+                try:
+                    self.fast_sync_chains_queue.task_done()
+                except ValueError:
+                    pass
             except OperationCancelled:
                 break
 
@@ -984,6 +990,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
             self.logger.debug("fast_sync_chains_importer_loop importing chains")
             await self.handle_priority_import_chains(chains, save_block_head_hash_timestamp=False)
+
+
+
 
 
     async def sync_block_conflict_with_consensus(self):
