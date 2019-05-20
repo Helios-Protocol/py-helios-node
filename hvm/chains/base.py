@@ -325,7 +325,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
-    def import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
+    def import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore]) -> BaseBlock:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -470,7 +470,6 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     @abstractmethod
     def get_signed_peer_score_string_private_key(self,
                                                  private_key_string: bytes,
-                                                 network_id: int,
                                                  peer_wallet_address: Address,
                                                  after_block_number: BlockNumber = None,
                                                  ) -> NodeStakingScore:
@@ -1854,7 +1853,7 @@ class Chain(BaseChain):
 
         return self.import_block(self.queue_block)
 
-    def import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore] = None) -> BaseBlock:
+    def import_current_queue_block_with_reward(self, node_staking_score_list: List[NodeStakingScore]) -> BaseBlock:
         reward_bundle = self.get_consensus_db().create_reward_bundle_for_block(self.wallet_address, node_staking_score_list, at_timestamp=Timestamp(int(time.time())))
 
         # #testing
@@ -2173,10 +2172,10 @@ class Chain(BaseChain):
 
     def get_signed_peer_score_string_private_key(self,
                                                  private_key_string: bytes,
-                                                 network_id: int,
                                                  peer_wallet_address: Address,
                                                  after_block_number: BlockNumber = None,
                                                  ) -> NodeStakingScore:
+        network_id = self.network_id
         # This always occurs at this time. So we take the current consensus db
         return self.get_consensus_db(timestamp=Timestamp(int(time.time()))).get_signed_peer_score_string_private_key(private_key_string,
                                                                           network_id,

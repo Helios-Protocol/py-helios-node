@@ -287,6 +287,8 @@ class ConsensusDB():
         :param at_timestamp:
         :return:
         '''
+
+
         validate_canonical_address(wallet_address, 'wallet_address')
 
         if at_timestamp is None:
@@ -312,6 +314,7 @@ class ConsensusDB():
             if header_mature_timestamp >= calc_to_timestamp:
                 continue
 
+            # todo: fix this part by copying the code from boson consensus
             # this finds the end of the calculation
             if header_mature_timestamp <= since_timestamp:
                 break
@@ -371,6 +374,8 @@ class ConsensusDB():
         fractional_interest = self.reward_type_2_amount_factor * final_score / 1000000
 
         amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp)
+
+
         if amount != 0:
             return amount, final_list
         else:

@@ -1,4 +1,4 @@
-
+import time
 from hvm import MainnetChain
 from hvm.chains.mainnet import (
     GENESIS_PRIVATE_KEY,
@@ -8,7 +8,7 @@ from hvm.constants import (
    GAS_TX)
 
 from hvm.db.backends.memory import MemoryDB
-
+from hvm.types import Timestamp
 from eth_utils import (
     decode_hex,
 )
@@ -42,6 +42,8 @@ def test_get_receipts():
     Create some receive transactions for RECEIVER
     """
     sender_chain = MainnetChain(testdb2, SENDER.public_key.to_canonical_address(), SENDER)
+
+    min_time_between_blocks = sender_chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
     for i in range(6):
         sender_chain.create_and_sign_transaction_for_queue_block(
             gas_price=i+1,
@@ -109,6 +111,9 @@ def test_get_receipts():
 
 
     receiver_chain.populate_queue_block_with_receive_tx()
+
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
     imported_block = receiver_chain.import_current_queue_block()
 
     for i in range(7):

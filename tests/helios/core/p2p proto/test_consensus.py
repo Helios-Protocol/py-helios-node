@@ -34,6 +34,7 @@ from tests.helios.core.peer_helpers import (
     get_directly_linked_peers,
     MockPeerPoolWithConnectedPeers,
 )
+
 from helios.protocol.common.datastructures import SyncParameters
 from hvm.constants import TIME_BETWEEN_HEAD_HASH_SAVE, GAS_TX
 from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
@@ -202,6 +203,8 @@ async def _build_test_consensus(request, event_loop,
     for i in range(len(random_private_keys)):
         private_keys.append(keys.PrivateKey(random_private_keys[i]))
 
+    if gap_between_genesis_block_and_first_transaction < MIN_TIME_BETWEEN_BLOCKS:
+        gap_between_genesis_block_and_first_transaction = MIN_TIME_BETWEEN_BLOCKS
 
     tx_list = [
         *[[GENESIS_PRIVATE_KEY, private_keys[i], ((1000000-1000*i)*10**18), genesis_block_timestamp + gap_between_genesis_block_and_first_transaction + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]

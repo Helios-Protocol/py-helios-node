@@ -45,12 +45,12 @@ PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_START_MS = 100 #this is the average
 PEER_NODE_HEALTH_CHECK_RESPONSE_TIME_PENALTY_50_PERCENT_REDUCTION_MS = 500 #this is the response time in ms where the staking score is reduced by 50%
 #REWARD_BLOCK_AND_BUNDLE_TIMESTAMP_VARIABILITY_ALLOWANCE = 60
 
-#testing
-MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS = 60
-REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY = 10
-REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF = 1
-REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF = 1
-TIME_BETWEEN_PEER_NODE_HEALTH_CHECK = 10
+# testing
+# MIN_ALLOWED_TIME_BETWEEN_REWARD_BLOCKS =10
+# REWARD_BLOCK_CREATION_ATTEMPT_FREQUENCY = 10
+# REQUIRED_STAKE_FOR_REWARD_TYPE_2_PROOF = 1
+# REQUIRED_NUMBER_OF_PROOFS_FOR_REWARD_TYPE_2_PROOF = 1
+# TIME_BETWEEN_PEER_NODE_HEALTH_CHECK = 10
 
 class BosonConsensusDB(ConsensusDB):
     reward_type_1_amount_factor = REWARD_TYPE_1_AMOUNT_FACTOR
@@ -113,7 +113,9 @@ class BosonConsensusDB(ConsensusDB):
 
         fractional_interest = self.reward_type_2_amount_factor * Decimal(final_score / 1000000)
 
+        # print("Calculating type 2 reward amount. final_score = {}, fractional_interest = {}, ".format(final_score,fractional_interest))
         amount = self.calculate_reward_based_on_fractional_interest(wallet_address, fractional_interest, at_timestamp)
+
         if amount != 0:
             return amount, final_list
         else:
@@ -143,13 +145,12 @@ class BosonConsensusDB(ConsensusDB):
                                                                                 wallet_address).timestamp
         except HeaderNotFound:
             return 0
-
         canonical_head_block_number = self.chaindb.get_canonical_head(wallet_address).block_number
 
         # loop backwards to make things simpler
         calc_to_timestamp = at_timestamp
         amount = 0
-        for current_block_number in range(canonical_head_block_number, latest_reward_block_number - 1, -1):
+        for current_block_number in range(canonical_head_block_number, -1, -1):
             header = self.chaindb.get_canonical_block_header_by_number(BlockNumber(current_block_number), wallet_address)
 
             header_mature_timestamp = header.timestamp + self.coin_mature_time_for_staking
@@ -158,10 +159,17 @@ class BosonConsensusDB(ConsensusDB):
                 continue
 
             # this finds the end of the calculation
-            if header_mature_timestamp <= since_timestamp:
+            if calc_to_timestamp <= since_timestamp:
                 break
 
-            time_difference = int(calc_to_timestamp - header_mature_timestamp)
+            # if header_mature_timestamp <= since_timestamp:
+            #     break
+
+            if header_mature_timestamp < since_timestamp:
+                # if the block is older than the since timestamp, but there is still a small window of coin_mature_time_for_staking to add in.
+                time_difference = int(calc_to_timestamp - since_timestamp)
+            else:
+                time_difference = int(calc_to_timestamp - header_mature_timestamp)
 
             calc_stake = header.account_balance
             if include_masternode_bonus:
@@ -179,9 +187,10 @@ class BosonConsensusDB(ConsensusDB):
             else:
                 masternode_multiplier = 1
 
-            # print('AAAAAA')
-            # print(type(time_difference), type(calc_stake), type(fractional_interest), type(masternode_multiplier))
+
             amount += int(time_difference * calc_stake * fractional_interest * masternode_multiplier)
+            # print('XXXXXXXXXXXXXXXXXXX')
+            # print(amount, time_difference, calc_stake, fractional_interest, masternode_multiplier)
 
             #print("actual calculation = {} * {} * {} * {}".format(time_difference, calc_stake, fractional_interest, masternode_multiplier))
 
@@ -189,7 +198,6 @@ class BosonConsensusDB(ConsensusDB):
 
         # if we are calculating all the way to the genesis block, there will be a small
         # COIN_MATURE_TIME_FOR_STAKING that we missed. however, this window has 0 stake, so it would add nothing
-
         return int(amount)
 
     def calculate_final_reward_type_1_amount(self, wallet_address: Address, at_timestamp: Timestamp = None) -> int:

@@ -37,7 +37,8 @@ import rlp as rlp
 
 from eth_utils import (
     encode_hex,
-    decode_hex,        
+    decode_hex,
+    to_wei,
 )
 from helios.dev_tools import create_dev_test_random_blockchain_database, create_dev_test_blockchain_database_with_given_transactions
 from eth_keys import keys
@@ -102,18 +103,16 @@ def test_block_rewards_system():
     now = int(time.time())
     start = now - max((coin_mature_time * 2), (min_time_between_blocks*20))
     key_balance_dict = {
-        private_keys[0]: (1000, start),
-        private_keys[1]: (20000, start + min_time_between_blocks * 1),
-        private_keys[2]: (34000, start + min_time_between_blocks * 2),
-        private_keys[3]: (100000, start + min_time_between_blocks * 3),
-        private_keys[4]: (140000, start + min_time_between_blocks * 4),
-        private_keys[5]: (240000, start + min_time_between_blocks * 5),
-        private_keys[6]: (300000, start + min_time_between_blocks * 6),
-        private_keys[7]: (400000, start + min_time_between_blocks * 7),
-        private_keys[8]: (100000, start + min_time_between_blocks * 8),
-        private_keys[9]: (1000000, now-coin_mature_time+1),# immature
-
-
+        private_keys[0]: (to_wei(10, 'ether'), start),
+        private_keys[1]: (to_wei(200, 'ether'), start + min_time_between_blocks * 1),
+        private_keys[2]: (to_wei(340, 'ether'), start + min_time_between_blocks * 2),
+        private_keys[3]: (to_wei(1000, 'ether'), start + min_time_between_blocks * 3),
+        private_keys[4]: (to_wei(1400, 'ether'), start + min_time_between_blocks * 4),
+        private_keys[5]: (to_wei(2400, 'ether'), start + min_time_between_blocks * 5),
+        private_keys[6]: (to_wei(3000, 'ether'), start + min_time_between_blocks * 6),
+        private_keys[7]: (to_wei(4000, 'ether'), start + min_time_between_blocks * 7),
+        private_keys[8]: (to_wei(1000, 'ether'), start + min_time_between_blocks * 8),
+        private_keys[9]: (to_wei(10000, 'ether'), now-coin_mature_time+1),# immature
     }
     create_dev_fixed_blockchain_database(testdb, key_balance_dict)
 
@@ -180,9 +179,74 @@ def test_block_rewards_system():
     print("balance after reward = ",final_balance)
     assert((reward_bundle.reward_type_1.amount + reward_bundle.reward_type_2.amount) == (final_balance- initial_balance))
 
+    print("waiting {} seconds before importing the next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
 
+    proof_chain = MainnetChain(testdb, private_keys[1].public_key.to_canonical_address(), private_keys[1])
+    mature_stake = proof_chain.get_mature_stake()
+    print("proof chain mature stake")
+    print(mature_stake)
 
+    staking_score = proof_chain.get_signed_peer_score_string_private_key(private_keys[1].to_bytes(), private_keys[0].public_key.to_canonical_address())
+    staking_score = staking_score.copy(score=1532)
+    staking_score = staking_score.get_signed(private_keys[1], proof_chain.network_id)
+    print('staking score')
+    print(staking_score.score)
 
+    # fields = [
+    #     ('recipient_node_wallet_address', address),
+    #     ('score', f_big_endian_int),  # a score out of 1,000,000
+    #     ('since_block_number', f_big_endian_int),
+    #     ('timestamp', f_big_endian_int),
+    #     ('head_hash_of_sender_chain', hash32),
+    #     ('v', big_endian_int),
+    #     ('r', big_endian_int),
+    #     ('s', big_endian_int),
+    # ]
+    #
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    reward_bundle = reward_chain.get_consensus_db().create_reward_bundle_for_block(private_keys[0].public_key.to_canonical_address(), [staking_score],at_timestamp=Timestamp(int(time.time())))
+    print("reward type 2 amount")
+    print(reward_bundle.reward_type_2.amount)
+    print("reward type 2 proof")
+    print(reward_bundle.reward_type_2.proof)
+    reward_chain.import_current_queue_block_with_reward([staking_score])
+
+    # todo: this will fail if the reward block time is too long. Need to manually set it to a small number for the test... or manually make the blocks older?
+    print("waiting {} seconds before importing the next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+
+    proof_chain = MainnetChain(testdb, private_keys[1].public_key.to_canonical_address(), private_keys[1])
+    mature_stake = proof_chain.get_mature_stake()
+    print("proof chain mature stake")
+    print(mature_stake)
+
+    staking_score = proof_chain.get_signed_peer_score_string_private_key(private_keys[1].to_bytes(), private_keys[
+        0].public_key.to_canonical_address())
+    staking_score = staking_score.copy(score=1000000)
+    staking_score = staking_score.get_signed(private_keys[1], proof_chain.network_id)
+    print('staking score')
+    print(staking_score.score)
+
+    # fields = [
+    #     ('recipient_node_wallet_address', address),
+    #     ('score', f_big_endian_int),  # a score out of 1,000,000
+    #     ('since_block_number', f_big_endian_int),
+    #     ('timestamp', f_big_endian_int),
+    #     ('head_hash_of_sender_chain', hash32),
+    #     ('v', big_endian_int),
+    #     ('r', big_endian_int),
+    #     ('s', big_endian_int),
+    # ]
+    #
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    reward_bundle = reward_chain.get_consensus_db().create_reward_bundle_for_block(
+        private_keys[0].public_key.to_canonical_address(), [staking_score], at_timestamp=Timestamp(int(time.time())))
+    print("reward type 2 amount")
+    print(reward_bundle.reward_type_2.amount)
+    print("reward type 2 proof")
+    print(reward_bundle.reward_type_2.proof)
+    reward_chain.import_current_queue_block_with_reward([staking_score])
 
 #
 # test_block_rewards_system()

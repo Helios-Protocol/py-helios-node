@@ -745,6 +745,7 @@ class Consensus(BaseService, PeerSubscriber):
                 # make sure we have enough stake
                 total_stake = 0
                 for node_staking_score in peer_node_staking_scores:
+                    print("Node staking score from peer: {}".format(node_staking_score.score))
                     total_stake += await chain.coro_get_mature_stake(node_staking_score.sender)
                 
                 required_stake_for_reward_type_2_proof = current_consensus_db.required_stake_for_reward_type_2_proof
@@ -1909,7 +1910,7 @@ class Consensus(BaseService, PeerSubscriber):
         chain = self.node.get_new_chain()
         if peer.wallet_address != self.chain_config.node_wallet_address:
             try:
-                node_staking_score = await chain.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), chain.network_id, peer.wallet_address)
+                node_staking_score = await chain.coro_get_signed_peer_score_string_private_key(self.chain_config.node_private_helios_key.to_bytes(), peer.wallet_address)
             except (ValueError, CanonicalHeadNotFound) as e:
                 self.logger.warning("Failed to create node staking score for peer {}. Error: {}".format(encode_hex(peer.wallet_address), e))
             else:

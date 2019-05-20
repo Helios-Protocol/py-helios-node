@@ -157,16 +157,7 @@ def test_erc_20_smart_contract_deploy_system():
 
     now = int(time.time())
     key_balance_dict = {
-        private_keys[0]: (1000000000000, now - coin_mature_time * 10 - 100),
-        private_keys[1]: (20000, now - coin_mature_time * 10 - 99),
-        private_keys[2]: (34000, now - coin_mature_time * 10 - 98),
-        private_keys[3]: (100000, now - coin_mature_time * 10 - 97),
-        private_keys[4]: (140000, now - coin_mature_time * 10 - 96),
-        private_keys[5]: (240000, now - coin_mature_time * 10 - 50),
-        private_keys[6]: (300000, now - coin_mature_time * 10 - 45),
-        private_keys[7]: (400000, now - coin_mature_time * 10 - 40),
-        private_keys[8]: (100000, now-1),
-        private_keys[9]: (1000000, now),# immature
+        private_keys[0]: (1000000000000, now - coin_mature_time * 10 - 100)
 
 
     }
@@ -174,6 +165,7 @@ def test_erc_20_smart_contract_deploy_system():
 
     chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
 
+    min_time_between_blocks = chain.get_vm(timestamp = Timestamp(int(time.time()))).min_time_between_blocks
     for private_key, balance_time in key_balance_dict.items():
         assert(chain.get_vm().state.account_db.get_balance(private_key.public_key.to_canonical_address()) == balance_time[0])
 
@@ -272,6 +264,9 @@ def test_erc_20_smart_contract_deploy_system():
 
     #lets make sure it subtracts the entire max gas
     initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
     chain.import_current_queue_block()
     final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     assert((initial_balance - final_balance) == max_gas)
@@ -282,6 +277,9 @@ def test_erc_20_smart_contract_deploy_system():
 
     chain = MainnetChain(testdb, deployed_contract_address, private_keys[0])
     chain.populate_queue_block_with_receive_tx()
+
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
     imported_block = chain.import_current_queue_block()
 
     receipt = chain.chaindb.get_receipts(imported_block.header, Receipt)[0]
@@ -302,6 +300,9 @@ def test_erc_20_smart_contract_deploy_system():
     initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
     chain.populate_queue_block_with_receive_tx()
+
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
     imported_block = chain.import_current_queue_block()
     final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     assert ((final_balance - initial_balance) == (max_gas - gas_used))

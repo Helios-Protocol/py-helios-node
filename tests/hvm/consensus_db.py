@@ -256,3 +256,7 @@ def test_boson_vm_calculate_reward_based_on_fractional_interest():
 
 # test_boson_vm_calculate_reward_based_on_fractional_interest()
 # exit()
+
+
+# def test_make_node_staking_score():
+

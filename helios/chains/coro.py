@@ -67,9 +67,6 @@ class AsyncChain(BaseChain):
     async def coro_get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32, start_block_number: int = 0, limit: int = float('inf')) -> List[BaseBlock]:
         raise NotImplementedError("Chain classes must implement this method")
 
-    async def coro_get_blocks_on_chain_up_to_block_hash(self, chain_head_hash: Hash32) -> List[BaseBlock]:
-        raise NotImplementedError("Chain classes must implement this method")
-
     async def coro_get_new_block_hash_to_test_peer_node_health(self) -> Hash32:
         raise NotImplementedError("Chain classes must implement this method")
 
@@ -83,6 +80,13 @@ class AsyncChain(BaseChain):
         raise NotImplementedError("Chain classes must implement this method")
 
     async def coro_get_block_header_by_hash(self, block_hash: Hash32) -> BlockHeader:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_get_signed_peer_score_string_private_key(self,
+                                                 private_key_string: bytes,
+                                                 peer_wallet_address: Address,
+                                                 after_block_number: BlockNumber = None,
+                                                 ) -> NodeStakingScore:
         raise NotImplementedError("Chain classes must implement this method")
 
 class AsyncChainMixin(AsyncChain):
