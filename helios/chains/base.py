@@ -37,6 +37,8 @@ class ChainProxy(BaseProxy):
 
     coro_get_mature_stake = async_method('get_mature_stake')
 
+    coro_initialize_historical_root_hashes_and_chronological_blocks = async_method('initialize_historical_root_hashes_and_chronological_blocks')
+
     import_block = sync_method('import_block')
     import_chain = sync_method('import_chain')
 

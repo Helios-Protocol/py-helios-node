@@ -89,6 +89,9 @@ class AsyncChain(BaseChain):
                                                  ) -> NodeStakingScore:
         raise NotImplementedError("Chain classes must implement this method")
 
+    async def coro_initialize_historical_root_hashes_and_chronological_blocks(self) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
 class AsyncChainMixin(AsyncChain):
 
     coro_get_canonical_block_by_number = async_method('get_canonical_block_by_number')
@@ -123,4 +126,4 @@ class AsyncChainMixin(AsyncChain):
 
     coro_get_mature_stake = async_method('get_mature_stake')
 
-
+    coro_initialize_historical_root_hashes_and_chronological_blocks = async_method('initialize_historical_root_hashes_and_chronological_blocks')

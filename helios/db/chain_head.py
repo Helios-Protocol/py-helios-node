@@ -39,8 +39,8 @@ class AsyncChainHeadDB(ChainHeadDB):
     async def coro_get_head_block_hashes_by_idx_list(self, idx_list: List[int], root_hash: Hash32 = None) -> List[Hash32]:
         raise NotImplementedError("ChainHeadDB classes must implement this method")
 
-    async def coro_initialize_historical_root_hashes(self, root_hash: Hash32, timestamp: Timestamp) -> None:
-        raise NotImplementedError("ChainHeadDB classes must implement this method")
+    # async def coro_initialize_historical_root_hashes(self, root_hash: Hash32, timestamp: Timestamp) -> None:
+    #     raise NotImplementedError("ChainHeadDB classes must implement this method")
 
 class ChainHeadDBProxy(BaseProxy):
 
@@ -58,7 +58,7 @@ class ChainHeadDBProxy(BaseProxy):
     coro_save_single_historical_root_hash = async_method('save_single_historical_root_hash')
     coro_get_dense_historical_root_hashes = async_method('get_dense_historical_root_hashes')
     coro_get_head_block_hashes_by_idx_list = async_method('get_head_block_hashes_by_idx_list')
-    coro_initialize_historical_root_hashes = async_method('initialize_historical_root_hashes')
+    # coro_initialize_historical_root_hashes = async_method('initialize_historical_root_hashes')
 
 
     coro_get_latest_historical_root_hash = async_method('get_latest_historical_root_hash')

@@ -352,8 +352,8 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
         timestamp_modified_imported_block = imported_block.copy(
             header=imported_block.header.copy(timestamp=tx_timestamp).get_signed(receive_priv_key,
                                                                                   dummy_receiver_chain.network_id))
-        print('XXXXXXXXXX')
-        print(tx_timestamp)
+        # print('XXXXXXXXXX')
+        # print(tx_timestamp)
         receiver_chain = MainnetChain(base_db, receive_priv_key.public_key.to_canonical_address(), receive_priv_key)
         receiver_chain.import_block(timestamp_modified_imported_block, allow_unprocessed=False)
 

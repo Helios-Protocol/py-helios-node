@@ -45,6 +45,7 @@ from eth_utils import (
 
 
 from hvm.db.backends.base import BaseDB
+from hvm.db.backends.memory import MemoryDB
 from hvm.db.chain import (
     BaseChainDB,
     ChainDB,
@@ -385,6 +386,9 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp(self, historical_root_hash_timestamp: Timestamp) -> List[Tuple[Timestamp, Hash32]]:
         raise NotImplementedError("Chain classes must implement this method")
 
+    @abstractmethod
+    def initialize_historical_root_hashes_and_chronological_blocks(self) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
 
     #
     # Execution API
@@ -1167,6 +1171,127 @@ class Chain(BaseChain):
 
         chronological_block_hash_timestamps.sort()
         return chronological_block_hash_timestamps
+
+    # def initialize_historical_root_hashes_and_chronological_blocks(self) -> None:
+    #     '''
+    #     This function rebuilds all historical root hashes, and chronological blocks, from the blockchain database. It starts with the saved root hash and works backwards.
+    #     This function needs to be run from chain because it requires chain_head_db and chaindb.
+    #     :return:
+    #     '''
+    #
+    #     self.chain_head_db.load_saved_root_hash()
+    #     current_window = self.chain_head_db.current_window
+    #     earliest_root_hash = self.chain_head_db.earliest_window
+    #     #TIME_BETWEEN_HEAD_HASH_SAVE
+    #
+    #     # 1) iterate down the root hash times
+    #     # 2) create new chain_head_db with memorydb
+    #     # 3) go through each chain and any blocks newer than the timestamp, save to chronological window.
+    #     # 4) when you reach a block less than the timestamp, set it as chain head in the new memory based chain_head_db
+    #     # 5) get the root hash
+    #     # 6) set this root hash in the real chain_head_db at the correct timestamp.
+    #
+    #     # A chronological block window holds all of the blocks starting at its timestamp, going to timestamp + TIME_BETWEEN_HEAD_HASH_SAVE
+    #     # A historical root hash is the root hash at the given timestamp, so it includes all blocks earlier than that timestamp.
+    #
+    #     # us a journaldb so that it doesnt write changes to the database.
+    #     temp_chain_head_db = self.get_chain_head_db_class()(MemoryDB())
+    #     #temp_chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(JournalDB(self.db))
+    #     for current_timestamp in range(current_window, earliest_root_hash-TIME_BETWEEN_HEAD_HASH_SAVE, -TIME_BETWEEN_HEAD_HASH_SAVE):
+    #         self.logger.debug("Rebuilding chronological block window {}".format(current_timestamp))
+    #         if current_timestamp < self.genesis_block_timestamp:
+    #             break
+    #
+    #         if current_timestamp == current_window:
+    #             head_block_hashes = self.chain_head_db.get_head_block_hashes_list()
+    #         else:
+    #             head_block_hashes = temp_chain_head_db.get_head_block_hashes_list()
+    #
+    #         # iterate over all chains
+    #         for head_block_hash in head_block_hashes:
+    #             current_block_hash = head_block_hash
+    #             # now iterate over blocks in chain
+    #             while True:
+    #                 current_header = self.chaindb.get_block_header_by_hash(current_block_hash)
+    #                 if current_header.timestamp >= current_timestamp:
+    #                     # add it to chronological block window in the real chain head db
+    #                     self.chain_head_db.add_block_hash_to_chronological_window(current_header.hash, current_header.timestamp)
+    #                 else:
+    #                     # The block is older than the timestamp. Set it as the chain head block hash in our temp chain head db
+    #                     temp_chain_head_db.set_chain_head_hash(current_header.chain_address, current_header.hash)
+    #                     break
+    #                 if current_header.parent_hash == GENESIS_PARENT_HASH:
+    #                     # we reached the end of the chain
+    #                     temp_chain_head_db.delete_chain_head_hash(current_header.chain_address)
+    #                     break
+    #                 # set the current block to the parent so we move down the chain
+    #                 current_block_hash = current_header.parent_hash
+    #
+    #         # Now that we have gone through all chains, and removed any blocks newer than this timestamp, the root hash in the
+    #         # temp chain head db is the correct one for this historical root hash timestamp.
+    #         self.chain_head_db.save_single_historical_root_hash(temp_chain_head_db.root_hash, Timestamp(current_timestamp))
+
+
+    def initialize_historical_root_hashes_and_chronological_blocks(self) -> None:
+        '''
+        This function rebuilds all historical root hashes, and chronological blocks, from the blockchain database. It starts with the saved root hash and works backwards.
+        This function needs to be run from chain because it requires chain_head_db and chaindb.
+        :return:
+        '''
+
+        self.chain_head_db.load_saved_root_hash()
+        current_window = self.chain_head_db.current_window
+        earliest_root_hash = self.chain_head_db.earliest_window
+        #TIME_BETWEEN_HEAD_HASH_SAVE
+
+        # 1) iterate down the root hash times
+        # 2) create new chain_head_db with memorydb
+        # 3) go through each chain and any blocks newer than the timestamp, save to chronological window.
+        # 4) when you reach a block less than the timestamp, set it as chain head in the new memory based chain_head_db
+        # 5) get the root hash
+        # 6) set this root hash in the real chain_head_db at the correct timestamp.
+
+        # A chronological block window holds all of the blocks starting at its timestamp, going to timestamp + TIME_BETWEEN_HEAD_HASH_SAVE
+        # A historical root hash is the root hash at the given timestamp, so it includes all blocks earlier than that timestamp.
+
+        # us a journaldb so that it doesnt write changes to the database.
+        temp_chain_head_db = self.get_chain_head_db_class()(MemoryDB())
+        #temp_chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(JournalDB(self.db))
+        for current_timestamp in range(current_window, earliest_root_hash-TIME_BETWEEN_HEAD_HASH_SAVE, -TIME_BETWEEN_HEAD_HASH_SAVE):
+            self.logger.debug("Rebuilding chronological block window {}".format(current_timestamp))
+            if current_timestamp < self.genesis_block_timestamp:
+                break
+
+            head_block_hashes = self.chain_head_db.get_head_block_hashes_list()
+
+            # iterate over all chains
+            for head_block_hash in head_block_hashes:
+                current_block_hash = head_block_hash
+                # now iterate over blocks in chain
+                while True:
+                    current_header = self.chaindb.get_block_header_by_hash(current_block_hash)
+                    if current_header.timestamp >= current_timestamp:
+                        # add it to chronological block window in the real chain head db
+                        self.chain_head_db.add_block_hash_to_chronological_window(current_header.hash, current_header.timestamp)
+                    else:
+                        # The block is older than the timestamp. Set it as the chain head block hash in our temp chain head db
+                        self.chain_head_db.set_chain_head_hash(current_header.chain_address, current_header.hash)
+                        break
+                    if current_header.parent_hash == GENESIS_PARENT_HASH:
+                        # we reached the end of the chain
+                        self.chain_head_db.delete_chain_head_hash(current_header.chain_address)
+                        break
+                    # set the current block to the parent so we move down the chain
+                    current_block_hash = current_header.parent_hash
+
+            # Now that we have gone through all chains, and removed any blocks newer than this timestamp, the root hash in the
+            # temp chain head db is the correct one for this historical root hash timestamp.
+            self.chain_head_db.save_single_historical_root_hash(self.chain_head_db.root_hash, Timestamp(current_timestamp))
+
+        self.chain_head_db.persist()
+
+        # finally, lets load the saved root hash again so we are up to date.
+        self.chain_head_db.load_saved_root_hash()
 
     #
     # Execution API

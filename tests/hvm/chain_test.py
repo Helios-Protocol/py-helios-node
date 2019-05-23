@@ -1469,6 +1469,82 @@ def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp():
 # sys.exit()
 
 
+def test_chronological_block_initialization():
+    '''
+    This mimics a fast sync, which doesnt update chronological block windows, then we do an initialization and they should be the same.
+    :return:
+    '''
+    testdb1 = MemoryDB()
+    testdb2 = MemoryDB()
+
+    tpc_of_blockchain_database = 1
+    num_tpc_windows_to_go_back = 6*10 # 6 chronological block windows
+    create_blockchain_database_for_exceeding_tpc_cap(testdb1,tpc_of_blockchain_database, num_tpc_windows_to_go_back, use_real_genesis=True)
+
+    server = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    client = MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+
+    server_chain_head_hashes = server.chain_head_db.get_head_block_hashes_list()
+    for head_hash in server_chain_head_hashes:
+        chain = server.get_all_blocks_on_chain_by_head_block_hash(head_hash)
+        client.import_chain(block_list=chain,
+                            save_block_head_hash_timestamp=False,
+                            allow_replacement=True)
+
+
+    # server_historical_root_hashes = server.chain_head_db.get_historical_root_hashes()
+    # client_historical_root_hashes = client.chain_head_db.get_historical_root_hashes()
+    #
+    # print(server_historical_root_hashes)
+    # print(client_historical_root_hashes)
+
+    client.initialize_historical_root_hashes_and_chronological_blocks()
+
+    server_historical_root_hashes = server.chain_head_db.get_historical_root_hashes()
+    client_historical_root_hashes = client.chain_head_db.get_historical_root_hashes()
+
+    assert(server_historical_root_hashes == client_historical_root_hashes)
+
+    current_window = server.chain_head_db.current_window
+    end = current_window - TIME_BETWEEN_HEAD_HASH_SAVE*10
+    for current_timestamp in range(current_window, end, -TIME_BETWEEN_HEAD_HASH_SAVE):
+        server_chronological_block_hashes = server.chain_head_db.load_chronological_block_window(current_timestamp)
+        client_chronological_block_hashes = client.chain_head_db.load_chronological_block_window(current_timestamp)
+
+        assert(server_chronological_block_hashes == client_chronological_block_hashes)
+
+
+    test = client.chain_head_db.get_head_block_hashes_list()
+
+# test_chronological_block_initialization()
+# exit()
+
+
+
+def test_chronological_block_initialization_2():
+    '''
+    This mimics a fast sync, which doesnt update chronological block windows, then we do an initialization and they should be the same.
+    :return:
+    '''
+    # testdb1 = MemoryDB()
+    testdb1 = JournalDB(LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full_bak/'))
+
+
+
+    server = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+
+
+    server.initialize_historical_root_hashes_and_chronological_blocks()
+
+    server.initialize_historical_root_hashes_and_chronological_blocks()
+
+    server_historical_root_hashes = server.chain_head_db.get_historical_root_hashes()
+
+    test = server.chain_head_db.get_head_block_hashes_list()
+
+# test_chronological_block_initialization_2()
+# exit()
+
 
 # Try importing a block with the same receive transaction twice.
 # Try importing block with invalid parent hash

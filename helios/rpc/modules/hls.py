@@ -549,6 +549,8 @@ class Hls(RPCModule):
 
         full_block = block_class.from_micro_block(micro_block)
 
+        min_time_between_blocks = chain.get_vm(header=full_block.header).min_time_between_blocks
+
         # Validate the block here
         if(full_block.header.timestamp < (int(time.time()) - MAX_ALLOWED_AGE_OF_NEW_RPC_BLOCK)):
             raise BaseRPCError("The block timestamp is to old. We can only import new blocks over RPC.")
@@ -557,6 +559,10 @@ class Hls(RPCModule):
             canonical_head = chain.chaindb.get_canonical_head(full_block.header.chain_address)
             if canonical_head.block_number >= full_block.header.block_number:
                 raise BaseRPCError("You are attempting to replace an existing block. This is not allowed.")
+
+            if full_block.header.timestamp < (canonical_head.timestamp + min_time_between_blocks):
+                raise BaseRPCError("Not enough time has passed for you to add a new block yet. New blocks can only be added to your chain every {} seconds".format(min_time_between_blocks))
+
         except CanonicalHeadNotFound:
             pass
 

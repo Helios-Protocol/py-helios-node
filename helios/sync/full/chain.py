@@ -893,8 +893,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 break
 
             # Set this after each loop to avoid requesting the same chains over and over again
-            final_root_hash = self.chain_head_db.get_saved_root_hash()
-            await self.chain_head_db.coro_initialize_historical_root_hashes(final_root_hash, historical_root_hash_timestamp)
+            self.logger.info("Initializing historical root hashes and chronological blocks")
+            async with self.importing_blocks_lock:
+                await self.chains[0].coro_initialize_historical_root_hashes_and_chronological_blocks()
 
 
         # wait till the fast sync block queue is empty, then stop the importer loop
@@ -903,8 +904,10 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         fast_sync_finished_event.set()
 
         # Set this again at the end in case it succeeded.
-        final_root_hash = self.chain_head_db.get_saved_root_hash()
-        await self.chain_head_db.coro_initialize_historical_root_hashes(final_root_hash, historical_root_hash_timestamp)
+        self.logger.info("Initializing historical root hashes and chronological blocks")
+        async with self.importing_blocks_lock:
+            await self.chains[0].coro_initialize_historical_root_hashes_and_chronological_blocks()
+        #await self.chain_head_db.coro_initialize_historical_root_hashes(final_root_hash, historical_root_hash_timestamp)
 
         self.logger.debug('fast_sync_main finished')
 
@@ -977,10 +980,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             try:
                 self.logger.debug("fast_sync_chains_importer_loop waiting for chains in queue")
                 chains = await self.wait_first(self.fast_sync_chains_queue.get(), finished_event.wait())
-                try:
-                    self.fast_sync_chains_queue.task_done()
-                except ValueError:
-                    pass
+
             except OperationCancelled:
                 break
 
@@ -990,6 +990,11 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
             self.logger.debug("fast_sync_chains_importer_loop importing chains")
             await self.handle_priority_import_chains(chains, save_block_head_hash_timestamp=False)
+
+            try:
+                self.fast_sync_chains_queue.task_done()
+            except ValueError:
+                pass
 
 
 

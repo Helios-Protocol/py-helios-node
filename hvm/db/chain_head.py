@@ -149,6 +149,17 @@ class ChainHeadDB():
         #self.logger.debug("reading root hash {}".format(encode_hex(self._trie.root_hash)))
         return self._trie.root_hash
 
+    @property
+    def current_window(self) -> Timestamp:
+        last_finished_window = int(time.time() / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+        current_window = last_finished_window + TIME_BETWEEN_HEAD_HASH_SAVE
+        return Timestamp(int(current_window))
+
+    @property
+    def earliest_window(self) -> Timestamp:
+        earliest_window = self.current_window-TIME_BETWEEN_HEAD_HASH_SAVE*NUMBER_OF_HEAD_HASH_TO_SAVE
+        return Timestamp(int(earliest_window))
+
     @root_hash.setter
     def root_hash(self, value):
         #self.logger.debug("setting root hash {}".format(encode_hex(value)))
@@ -329,7 +340,7 @@ class ChainHeadDB():
         validate_canonical_address(address, title="Wallet Address")
         try:
             del(self._trie_cache[address])
-        except:
+        except Exception:
             pass
         
         
@@ -525,7 +536,7 @@ class ChainHeadDB():
     #
 
         
-    def persist(self, save_current_root_hash = False, append_current_root_hash_to_historical = True) -> None:
+    def persist(self, save_current_root_hash = False) -> None:
         self._batchtrie.commit(apply_deletes=False)
         
         if save_current_root_hash:
@@ -587,59 +598,59 @@ class ChainHeadDB():
         
  
     #this has loops which are slow. but this should be rare to loop far. it will only happen if the node was offline for a long time. and it will only happen once
-    def append_current_root_hash_to_historical(self):
-        """
-        Appends the current root hash to the list of historical root hashes that are in increments of TIME_BETWEEN_HEAD_HASH_SAVE
-        it will also fill the gaps between times with whichever head root hash was previously.
-        """
-        historical_roots = self.get_historical_root_hashes()
-        last_finished_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
-        current_window = last_finished_window + TIME_BETWEEN_HEAD_HASH_SAVE
-        if historical_roots is None:
-            historical_roots = [[current_window, self.root_hash]]
-            self.save_historical_root_hashes(historical_roots)
-            return
-        else:
-            initial_first_time = historical_roots[0][0]
-            latest_time = historical_roots[-1][0]
-            #now we have to build all of the blocks between the previous one till now.
-            if latest_time > last_finished_window:
-                #we are on the current unfinished window already
-                #simply update the last entry with the new hash
-                historical_roots[-1][1] = self.root_hash
-                self.save_historical_root_hashes(historical_roots)
-                return
-            
-            elif latest_time < int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
-                #it is older than the ones we save. Just create the last NUMBER_OF_HEAD_HASH_TO_SAVE and set them all to the last saved one.
-                new_historical_roots = []
-                start_time = last_finished_window - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
-                for i in range(NUMBER_OF_HEAD_HASH_TO_SAVE):
-                    new_historical_roots.append([start_time+TIME_BETWEEN_HEAD_HASH_SAVE*i,historical_roots[-1][1]])
-                #dont forget to append the new one idiot
-                new_historical_roots.append([current_window,self.root_hash])
-                self.save_historical_root_hashes(new_historical_roots)
-                final_first_time = new_historical_roots[0][0]
-                
-            else:
-                num_increments_needed = int((last_finished_window - latest_time)/TIME_BETWEEN_HEAD_HASH_SAVE)
-                for i in range(num_increments_needed):
-                    historical_roots.append([latest_time+TIME_BETWEEN_HEAD_HASH_SAVE*(i+1), historical_roots[-1][1]])
-                historical_roots.append([current_window,self.root_hash])
-                
-                #now trim it to the correct length. trim from the top
-                del(historical_roots[:-1*NUMBER_OF_HEAD_HASH_TO_SAVE])
-                self.save_historical_root_hashes(historical_roots)
-                final_first_time = historical_roots[0][0]
-            
-            #need to delete chronological chain for any deleted things windows
-            if latest_time < final_first_time:
-                delete_end = latest_time
-            else:
-                delete_end = final_first_time
-                
-            for i in range(initial_first_time, delete_end, TIME_BETWEEN_HEAD_HASH_SAVE):
-                self.delete_chronological_block_window(i)
+    # def append_current_root_hash_to_historical(self):
+    #     """
+    #     Appends the current root hash to the list of historical root hashes that are in increments of TIME_BETWEEN_HEAD_HASH_SAVE
+    #     it will also fill the gaps between times with whichever head root hash was previously.
+    #     """
+    #     historical_roots = self.get_historical_root_hashes()
+    #     last_finished_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+    #     current_window = last_finished_window + TIME_BETWEEN_HEAD_HASH_SAVE
+    #     if historical_roots is None:
+    #         historical_roots = [[current_window, self.root_hash]]
+    #         self.save_historical_root_hashes(historical_roots)
+    #         return
+    #     else:
+    #         initial_first_time = historical_roots[0][0]
+    #         latest_time = historical_roots[-1][0]
+    #         #now we have to build all of the blocks between the previous one till now.
+    #         if latest_time > last_finished_window:
+    #             #we are on the current unfinished window already
+    #             #simply update the last entry with the new hash
+    #             historical_roots[-1][1] = self.root_hash
+    #             self.save_historical_root_hashes(historical_roots)
+    #             return
+    #
+    #         elif latest_time < int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
+    #             #it is older than the ones we save. Just create the last NUMBER_OF_HEAD_HASH_TO_SAVE and set them all to the last saved one.
+    #             new_historical_roots = []
+    #             start_time = last_finished_window - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+    #             for i in range(NUMBER_OF_HEAD_HASH_TO_SAVE):
+    #                 new_historical_roots.append([start_time+TIME_BETWEEN_HEAD_HASH_SAVE*i,historical_roots[-1][1]])
+    #             #dont forget to append the new one idiot
+    #             new_historical_roots.append([current_window,self.root_hash])
+    #             self.save_historical_root_hashes(new_historical_roots)
+    #             final_first_time = new_historical_roots[0][0]
+    #
+    #         else:
+    #             num_increments_needed = int((last_finished_window - latest_time)/TIME_BETWEEN_HEAD_HASH_SAVE)
+    #             for i in range(num_increments_needed):
+    #                 historical_roots.append([latest_time+TIME_BETWEEN_HEAD_HASH_SAVE*(i+1), historical_roots[-1][1]])
+    #             historical_roots.append([current_window,self.root_hash])
+    #
+    #             #now trim it to the correct length. trim from the top
+    #             del(historical_roots[:-1*NUMBER_OF_HEAD_HASH_TO_SAVE])
+    #             self.save_historical_root_hashes(historical_roots)
+    #             final_first_time = historical_roots[0][0]
+    #
+    #         #need to delete chronological chain for any deleted things windows
+    #         if latest_time < final_first_time:
+    #             delete_end = latest_time
+    #         else:
+    #             delete_end = final_first_time
+    #
+    #         for i in range(initial_first_time, delete_end, TIME_BETWEEN_HEAD_HASH_SAVE):
+    #             self.delete_chronological_block_window(i)
                 
 
         
@@ -651,7 +662,7 @@ class ChainHeadDB():
         first_root_hash_timestamp = [[timestamp, root_hash]]
         self.save_historical_root_hashes(first_root_hash_timestamp)
     
-    def save_single_historical_root_hash(self, root_hash, timestamp):
+    def save_single_historical_root_hash(self, root_hash: Hash32, timestamp: Timestamp) -> None:
         validate_is_bytes(root_hash, title='Head Hash')
         validate_historical_timestamp(timestamp, title="timestamp")
         
@@ -714,8 +725,8 @@ class ChainHeadDB():
         #if root_hashes[-1][0] == 1534567000:
         #    exit()
 
-        if len(root_hashes) > 1000:
-            root_hashes = root_hashes[-1000:]
+        if len(root_hashes) > NUMBER_OF_HEAD_HASH_TO_SAVE:
+            root_hashes = root_hashes[-NUMBER_OF_HEAD_HASH_TO_SAVE:]
 
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
         data = rlp.encode(root_hashes, sedes=rlp.sedes.FCountableList(rlp.sedes.FList([f_big_endian_int, hash32])))
@@ -824,39 +835,7 @@ class ChainHeadDB():
     # Chronological chain
     #
 
-    #blocks with timestamp the same as a window will be included that window. eg: block timestamp is 5000, it will be included in the window at 50000
-    # def add_block_hash_to_chronological_window(self, head_hash, timestamp):
-    #     validate_is_bytes(head_hash, title='Head Hash')
-    #     validate_uint256(timestamp, title='timestamp')
-    #
-    #     #only add blocks for the proper time period
-    #     if timestamp > int(time.time()) - (NUMBER_OF_HEAD_HASH_TO_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE:
-    #         #unlike the root hashes, this window is for the blocks added after the time
-    #         window_for_this_block = int(timestamp/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
-    #
-    #         data = self.load_chronological_block_window(window_for_this_block)
-    #         #self.logger.debug("Saving chronological block window with old data {}".format(data))
-    #         #now we simply add it.
-    #         if data is None:
-    #             new_data = [[timestamp, head_hash]]
-    #
-    #         else:
-    #             #most of the time we will be adding the timestamp near the end. so lets iterate backwards
-    #             new_data = list(data)
-    #             inserted = False
-    #             for i in range(len(data)-1,-1,-1):
-    #                 #self.logger.debug("debug {0}, {1}".format(big_endian_to_int(data[i][0]), timestamp))
-    #                 if data[i][0] <= timestamp:
-    #                     new_data.insert(i+1, [timestamp,head_hash])
-    #                     inserted = True
-    #                     break
-    #             if not inserted:
-    #                 new_data.insert(0, [timestamp,head_hash])
-    #
-    #         #self.logger.debug("Saving chronological block window with new data {}".format(new_data))
-    #         self.save_chronological_block_window(new_data, window_for_this_block)
-
-    def add_block_hash_to_chronological_window(self, head_hash, timestamp):
+    def add_block_hash_to_chronological_window(self, head_hash: Hash32, timestamp: Timestamp) -> None:
         self.logger.debug("add_block_hash_to_chronological_window, hash = {}, timestamp = {}".format(encode_hex(head_hash), timestamp))
         validate_is_bytes(head_hash, title='Head Hash')
         validate_uint256(timestamp, title='timestamp')
