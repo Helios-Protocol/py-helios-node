@@ -19,8 +19,9 @@ from hvm.chains.mainnet import (
 )
 from hvm.types import Timestamp
 
+import pytest
 
-
+from hvm.exceptions import ValidationError, NotEnoughProofsOrStakeForRewardType2Proof, RewardAmountRoundsToZero
 
 from hvm.db.backends.level import LevelDB
 from hvm.db.backends.memory import MemoryDB
@@ -40,7 +41,8 @@ from eth_utils import (
     decode_hex,
     to_wei,
 )
-from helios.dev_tools import create_dev_test_random_blockchain_database, create_dev_test_blockchain_database_with_given_transactions
+from helios.dev_tools import create_dev_test_random_blockchain_database, \
+    create_dev_test_blockchain_database_with_given_transactions, add_transactions_to_blockchain_db
 from eth_keys import keys
 from sys import exit
 
@@ -55,6 +57,7 @@ from eth_utils import (
     int_to_big_endian,
     big_endian_to_int,
 )
+from helios.dev_tools import create_dev_fixed_blockchain_database
 from eth_keys import keys
 
 from eth_keys.datatypes import(
@@ -62,6 +65,7 @@ from eth_keys.datatypes import(
         PublicKey,
         PrivateKey
 )
+from hvm.rlp.consensus import NodeStakingScore, stake_reward_bundle_or_binary
 
 # import matplotlib.pyplot as plt
 
@@ -76,48 +80,62 @@ from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock, HeliosTestnetBl
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 
+private_keys = []
+for i in range(10):
+    private_keys.append(get_primary_node_private_helios_key(i))
+
 SENDER = GENESIS_PRIVATE_KEY
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
 RECEIVER4 = get_primary_node_private_helios_key(4)
 
-
-def test_block_rewards_system():
-    #The genesis chain will be adding a reward block. We need to generate fake NodeStakingScores from a bunch of other
-    #nodes
-    from helios.dev_tools import create_dev_fixed_blockchain_database
-    import random
-
-    # testdb = LevelDB('/home/tommy/.local/share/helios/instance_test/mainnet/chain/full/')
-    # testdb = JournalDB(testdb)
+def create_reward_test_blockchain_database():
     testdb = MemoryDB()
-
-    private_keys = []
-    for i in range(10):
-        private_keys.append(get_primary_node_private_helios_key(i))
 
     chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
     coin_mature_time = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
     min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    required_stake_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_stake_for_reward_type_2_proof
+
+
     now = int(time.time())
-    start = now - max((coin_mature_time * 2), (min_time_between_blocks*20))
-    key_balance_dict = {
-        private_keys[0]: (to_wei(10, 'ether'), start),
-        private_keys[1]: (to_wei(200, 'ether'), start + min_time_between_blocks * 1),
-        private_keys[2]: (to_wei(340, 'ether'), start + min_time_between_blocks * 2),
-        private_keys[3]: (to_wei(1000, 'ether'), start + min_time_between_blocks * 3),
-        private_keys[4]: (to_wei(1400, 'ether'), start + min_time_between_blocks * 4),
-        private_keys[5]: (to_wei(2400, 'ether'), start + min_time_between_blocks * 5),
-        private_keys[6]: (to_wei(3000, 'ether'), start + min_time_between_blocks * 6),
-        private_keys[7]: (to_wei(4000, 'ether'), start + min_time_between_blocks * 7),
-        private_keys[8]: (to_wei(1000, 'ether'), start + min_time_between_blocks * 8),
-        private_keys[9]: (to_wei(10000, 'ether'), now-coin_mature_time+1),# immature
-    }
+    start = now - max((coin_mature_time * 2), (min_time_between_blocks * 20))
+    key_balance_dict = {}
+    for i in range(10):
+        key_balance_dict[private_keys[i]] = (
+        required_stake_for_reward_type_2_proof, start + min_time_between_blocks * i)
+
     create_dev_fixed_blockchain_database(testdb, key_balance_dict)
+    return testdb
 
+# This test can only work if min time between reward blocks is set to a small number
+def _test_block_rewards_system():
+    #The genesis chain will be adding a reward block. We need to generate fake NodeStakingScores from a bunch of other
+    #nodes
 
-    from hvm.rlp.consensus import NodeStakingScore, stake_reward_bundle_or_binary
+    # testdb = LevelDB('/home/tommy/.local/share/helios/instance_test/mainnet/chain/full/')
+    # testdb = JournalDB(testdb)
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    coin_mature_time = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    # now = int(time.time())
+    # start = now - max((coin_mature_time * 2), (min_time_between_blocks*20))
+    # key_balance_dict = {
+    #     private_keys[0]: (to_wei(10, 'ether'), start),
+    #     private_keys[1]: (to_wei(200, 'ether'), start + min_time_between_blocks * 1),
+    #     private_keys[2]: (to_wei(340, 'ether'), start + min_time_between_blocks * 2),
+    #     private_keys[3]: (to_wei(1000, 'ether'), start + min_time_between_blocks * 3),
+    #     private_keys[4]: (to_wei(1400, 'ether'), start + min_time_between_blocks * 4),
+    #     private_keys[5]: (to_wei(2400, 'ether'), start + min_time_between_blocks * 5),
+    #     private_keys[6]: (to_wei(3000, 'ether'), start + min_time_between_blocks * 6),
+    #     private_keys[7]: (to_wei(4000, 'ether'), start + min_time_between_blocks * 7),
+    #     private_keys[8]: (to_wei(1000, 'ether'), start + min_time_between_blocks * 8),
+    #     private_keys[9]: (to_wei(10000, 'ether'), now-coin_mature_time+1),# immature
+    # }
+    # create_dev_fixed_blockchain_database(testdb, key_balance_dict)
 
     chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
 
@@ -251,3 +269,587 @@ def test_block_rewards_system():
 #
 # test_block_rewards_system()
 # sys.exit()
+
+
+
+
+def test_invalid_proofs_signed_by_importing_chain():
+
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    required_number_of_proofs_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_number_of_proofs_for_reward_type_2_proof
+
+    node_staking_scores = []
+
+    # First score/proof is from instance 0
+    current_private_key = private_keys[0]
+    node_staking_score = NodeStakingScore(
+        recipient_node_wallet_address=current_private_key.public_key.to_canonical_address(),
+        score=int(1000000),
+        since_block_number=0,
+        timestamp=int(time.time()),
+        head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+            current_private_key.public_key.to_canonical_address()),
+        v=0,
+        r=0,
+        s=0,
+        )
+    signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+    node_staking_scores.append(signed_node_staking_score)
+
+    score = 1000000
+    for i in range(1, required_number_of_proofs_for_reward_type_2_proof):
+        # Second score/proof is from instance 1
+        current_private_key = private_keys[i]
+        node_staking_score = NodeStakingScore(
+            recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+            score=int(score),
+            since_block_number=0,
+            timestamp=int(time.time()),
+            head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+                current_private_key.public_key.to_canonical_address()),
+            v=0,
+            r=0,
+            s=0,
+            )
+        signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+        node_staking_scores.append(signed_node_staking_score)
+
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(ValidationError):
+        reward_chain.import_current_queue_block_with_reward(node_staking_scores)
+
+# test_invalid_proofs_signed_by_importing_chain()
+# exit()
+
+def test_invalid_proofs_all_from_same_wallet():
+
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    required_number_of_proofs_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_number_of_proofs_for_reward_type_2_proof
+
+    node_staking_scores = []
+
+    score = 1000000
+    for i in range(1, 10):
+        # Second score/proof is from instance 1
+        current_private_key = private_keys[1]
+        node_staking_score = NodeStakingScore(
+            recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+            score=int(score-i),
+            since_block_number=0,
+            timestamp=int(time.time()),
+            head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+                current_private_key.public_key.to_canonical_address()),
+            v=0,
+            r=0,
+            s=0,
+            )
+        signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+        node_staking_scores.append(signed_node_staking_score)
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(ValidationError):
+        reward_chain.import_current_queue_block_with_reward(node_staking_scores)
+
+# test_invalid_proofs_all_from_same_wallet()
+# exit()
+
+
+def test_invalid_proofs_score_too_large():
+
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    required_number_of_proofs_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_number_of_proofs_for_reward_type_2_proof
+
+    node_staking_scores = []
+
+    # First score/proof has a score too large
+    current_private_key = private_keys[1]
+    node_staking_score = NodeStakingScore(
+        recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+        score=int(1000001),
+        since_block_number=0,
+        timestamp=int(time.time()),
+        head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+            current_private_key.public_key.to_canonical_address()),
+        v=0,
+        r=0,
+        s=0,
+    )
+    signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+    node_staking_scores.append(signed_node_staking_score)
+
+    score = 1000000
+    for i in range(2, 10):
+        # Second score/proof is from instance 1
+        current_private_key = private_keys[i]
+        node_staking_score = NodeStakingScore(
+            recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+            score=int(score-i),
+            since_block_number=0,
+            timestamp=int(time.time()),
+            head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+                current_private_key.public_key.to_canonical_address()),
+            v=0,
+            r=0,
+            s=0,
+            )
+        signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+        node_staking_scores.append(signed_node_staking_score)
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(ValidationError):
+        reward_chain.import_current_queue_block_with_reward(node_staking_scores)
+
+# test_invalid_proofs_score_too_large()
+# exit()
+
+
+def test_invalid_proofs_score_wrong_chain_head():
+
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    tx_list = [[private_keys[1], private_keys[0], to_wei(1, 'ether'), int(int(time.time())-min_time_between_blocks*10)]]
+
+    add_transactions_to_blockchain_db(testdb, tx_list)
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    required_number_of_proofs_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_number_of_proofs_for_reward_type_2_proof
+
+    node_staking_scores = []
+
+    # First score/proof with the incorrect head hash. It is using the head hash of an earlier block, not the header.
+    current_private_key = private_keys[1]
+    node_staking_score = NodeStakingScore(
+        recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+        score=int(1000000),
+        since_block_number=0,
+        timestamp=int(time.time()),
+        head_hash_of_sender_chain=chain.chaindb.get_canonical_block_hash(0,
+            current_private_key.public_key.to_canonical_address()),
+        v=0,
+        r=0,
+        s=0,
+    )
+    signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+    node_staking_scores.append(signed_node_staking_score)
+
+    score = 100000
+    for i in range(2, 10):
+        # Second score/proof is from instance 1
+        current_private_key = private_keys[i]
+        node_staking_score = NodeStakingScore(
+            recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+            score=int(score-i),
+            since_block_number=0,
+            timestamp=int(time.time()),
+            head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+                current_private_key.public_key.to_canonical_address()),
+            v=0,
+            r=0,
+            s=0,
+            )
+        signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+        node_staking_scores.append(signed_node_staking_score)
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(ValidationError):
+        reward_chain.import_current_queue_block_with_reward(node_staking_scores)
+
+# test_invalid_proofs_score_wrong_chain_head()
+# exit()
+
+
+
+def test_invalid_proofs_created_for_different_chain():
+
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    tx_list = [[private_keys[1], private_keys[0], to_wei(1, 'ether'), int(int(time.time())-min_time_between_blocks*10)]]
+
+    add_transactions_to_blockchain_db(testdb, tx_list)
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    required_number_of_proofs_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_number_of_proofs_for_reward_type_2_proof
+
+    node_staking_scores = []
+
+    # First score/proof with the incorrect head hash
+    current_private_key = private_keys[1]
+    node_staking_score = NodeStakingScore(
+        recipient_node_wallet_address=private_keys[1].public_key.to_canonical_address(),
+        score=int(1000000),
+        since_block_number=0,
+        timestamp=int(time.time()),
+        head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+            current_private_key.public_key.to_canonical_address()),
+        v=0,
+        r=0,
+        s=0,
+    )
+    signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+    node_staking_scores.append(signed_node_staking_score)
+
+    score = 100000
+    for i in range(2, 10):
+        # Second score/proof is from instance 1
+        current_private_key = private_keys[i]
+        node_staking_score = NodeStakingScore(
+            recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+            score=int(score-i),
+            since_block_number=0,
+            timestamp=int(time.time()),
+            head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+                current_private_key.public_key.to_canonical_address()),
+            v=0,
+            r=0,
+            s=0,
+            )
+        signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+        node_staking_scores.append(signed_node_staking_score)
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(ValidationError):
+        reward_chain.import_current_queue_block_with_reward(node_staking_scores)
+
+# test_invalid_proofs_created_for_different_chain()
+# exit()
+
+
+def test_invalid_proofs_previous_reward_block_incorrect():
+
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    tx_list = [[private_keys[1], private_keys[0], to_wei(1, 'ether'), int(int(time.time())-min_time_between_blocks*10)]]
+
+    add_transactions_to_blockchain_db(testdb, tx_list)
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    required_number_of_proofs_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_number_of_proofs_for_reward_type_2_proof
+
+    node_staking_scores = []
+
+    # First score/proof with the incorrect head hash
+    current_private_key = private_keys[1]
+    node_staking_score = NodeStakingScore(
+        recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+        score=int(1000000),
+        since_block_number=1,
+        timestamp=int(time.time()),
+        head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+            current_private_key.public_key.to_canonical_address()),
+        v=0,
+        r=0,
+        s=0,
+    )
+    signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+    node_staking_scores.append(signed_node_staking_score)
+
+    score = 100000
+    for i in range(2, 10):
+        # Second score/proof is from instance 1
+        current_private_key = private_keys[i]
+        node_staking_score = NodeStakingScore(
+            recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+            score=int(score-i),
+            since_block_number=1,
+            timestamp=int(time.time()),
+            head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+                current_private_key.public_key.to_canonical_address()),
+            v=0,
+            r=0,
+            s=0,
+            )
+        signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+        node_staking_scores.append(signed_node_staking_score)
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(ValidationError):
+        reward_chain.import_current_queue_block_with_reward(node_staking_scores)
+
+# test_invalid_proofs_previous_reward_block_incorrect()
+# exit()
+
+def test_invalid_proofs_timestamp_in_future():
+
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    tx_list = [[private_keys[1], private_keys[0], to_wei(1, 'ether'), int(int(time.time())-min_time_between_blocks*10)]]
+
+    add_transactions_to_blockchain_db(testdb, tx_list)
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    required_number_of_proofs_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_number_of_proofs_for_reward_type_2_proof
+
+    node_staking_scores = []
+
+    # First score/proof with timestamp far in future
+    current_private_key = private_keys[1]
+    node_staking_score = NodeStakingScore(
+        recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+        score=int(1000000),
+        since_block_number=0,
+        timestamp=int(time.time())+60*10,
+        head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+            current_private_key.public_key.to_canonical_address()),
+        v=0,
+        r=0,
+        s=0,
+    )
+    signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+    node_staking_scores.append(signed_node_staking_score)
+
+    score = 100000
+    for i in range(2, 10):
+        # Second score/proof is from instance 1
+        current_private_key = private_keys[i]
+        node_staking_score = NodeStakingScore(
+            recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+            score=int(score-i),
+            since_block_number=1,
+            timestamp=int(time.time()),
+            head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+                current_private_key.public_key.to_canonical_address()),
+            v=0,
+            r=0,
+            s=0,
+            )
+        signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+        node_staking_scores.append(signed_node_staking_score)
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(ValidationError):
+        reward_chain.import_current_queue_block_with_reward(node_staking_scores)
+
+# test_invalid_proofs_timestamp_in_future()
+# exit()
+
+
+def test_invalid_proofs_timestamp_in_past():
+
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    tx_list = [[private_keys[1], private_keys[0], to_wei(1, 'ether'), int(int(time.time())-min_time_between_blocks*10)]]
+
+    add_transactions_to_blockchain_db(testdb, tx_list)
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    required_number_of_proofs_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_number_of_proofs_for_reward_type_2_proof
+
+    node_staking_scores = []
+
+    # First score/proof with timestamp far in future
+    current_private_key = private_keys[1]
+    node_staking_score = NodeStakingScore(
+        recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+        score=int(1000000),
+        since_block_number=0,
+        timestamp=int(time.time())-60*10,
+        head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+            current_private_key.public_key.to_canonical_address()),
+        v=0,
+        r=0,
+        s=0,
+    )
+    signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+    node_staking_scores.append(signed_node_staking_score)
+
+    score = 100000
+    for i in range(2, 10):
+        # Second score/proof is from instance 1
+        current_private_key = private_keys[i]
+        node_staking_score = NodeStakingScore(
+            recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+            score=int(score-i),
+            since_block_number=1,
+            timestamp=int(time.time()),
+            head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+                current_private_key.public_key.to_canonical_address()),
+            v=0,
+            r=0,
+            s=0,
+            )
+        signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+        node_staking_scores.append(signed_node_staking_score)
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(ValidationError):
+        reward_chain.import_current_queue_block_with_reward(node_staking_scores)
+
+# test_invalid_proofs_timestamp_in_past()
+# exit()
+
+def test_invalid_proofs_not_enough_proofs():
+
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    tx_list = [[private_keys[1], private_keys[0], to_wei(1, 'ether'), int(int(time.time())-min_time_between_blocks*10)]]
+
+    add_transactions_to_blockchain_db(testdb, tx_list)
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    required_number_of_proofs_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_number_of_proofs_for_reward_type_2_proof
+
+    node_staking_scores = []
+
+    # First score/proof with timestamp far in future
+    current_private_key = private_keys[1]
+    node_staking_score = NodeStakingScore(
+        recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+        score=int(1000000),
+        since_block_number=0,
+        timestamp=int(time.time())-60*10,
+        head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+            current_private_key.public_key.to_canonical_address()),
+        v=0,
+        r=0,
+        s=0,
+    )
+    signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+    node_staking_scores.append(signed_node_staking_score)
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(NotEnoughProofsOrStakeForRewardType2Proof):
+        reward_chain.import_current_queue_block_with_reward(node_staking_scores)
+
+# test_invalid_proofs_not_enough_proofs()
+# exit()
+
+def test_invalid_proofs_no_proofs():
+
+    testdb = create_reward_test_blockchain_database()
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    tx_list = [[private_keys[1], private_keys[0], to_wei(1, 'ether'), int(int(time.time())-min_time_between_blocks*10)]]
+
+    add_transactions_to_blockchain_db(testdb, tx_list)
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    required_number_of_proofs_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_number_of_proofs_for_reward_type_2_proof
+
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(RewardAmountRoundsToZero):
+        imported_block = reward_chain.import_current_queue_block_with_reward([])
+
+# test_invalid_proofs_no_proofs()
+# exit()
+
+
+def test_invalid_proofs_not_enough_stake():
+    testdb = MemoryDB()
+
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    coin_mature_time = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    now = int(time.time())
+    start = now - max((coin_mature_time * 2), (min_time_between_blocks * 20))
+    key_balance_dict = {
+        private_keys[0]: (to_wei(1, 'ether'), start),
+        private_keys[1]: (to_wei(1, 'ether'), start + min_time_between_blocks * 1),
+        private_keys[2]: (to_wei(1, 'ether'), start + min_time_between_blocks * 2),
+        private_keys[3]: (to_wei(1, 'ether'), start + min_time_between_blocks * 3),
+        private_keys[4]: (to_wei(1, 'ether'), start + min_time_between_blocks * 4),
+        private_keys[5]: (to_wei(1, 'ether'), start + min_time_between_blocks * 5),
+        private_keys[6]: (to_wei(1, 'ether'), start + min_time_between_blocks * 6),
+        private_keys[7]: (to_wei(1, 'ether'), start + min_time_between_blocks * 7),
+        private_keys[8]: (to_wei(1, 'ether'), start + min_time_between_blocks * 8),
+        private_keys[9]: (to_wei(1, 'ether'), now - coin_mature_time + 1),  # immature
+    }
+    create_dev_fixed_blockchain_database(testdb, key_balance_dict)
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    node_staking_scores = []
+
+    # First score/proof with timestamp far in future
+    current_private_key = private_keys[1]
+    node_staking_score = NodeStakingScore(
+        recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+        score=int(1000000),
+        since_block_number=0,
+        timestamp=int(time.time())-60*10,
+        head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+            current_private_key.public_key.to_canonical_address()),
+        v=0,
+        r=0,
+        s=0,
+    )
+    signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+    node_staking_scores.append(signed_node_staking_score)
+
+    score = 100000
+    for i in range(2, 10):
+        # Second score/proof is from instance 1
+        current_private_key = private_keys[i]
+        node_staking_score = NodeStakingScore(
+            recipient_node_wallet_address=private_keys[0].public_key.to_canonical_address(),
+            score=int(score-i),
+            since_block_number=1,
+            timestamp=int(time.time()),
+            head_hash_of_sender_chain=chain.chaindb.get_canonical_head_hash(
+                current_private_key.public_key.to_canonical_address()),
+            v=0,
+            r=0,
+            s=0,
+            )
+        signed_node_staking_score = node_staking_score.get_signed(current_private_key, MAINNET_NETWORK_ID)
+        node_staking_scores.append(signed_node_staking_score)
+
+    # Now we try to import the reward block with instance 0
+    reward_chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    with pytest.raises(NotEnoughProofsOrStakeForRewardType2Proof):
+        reward_chain.import_current_queue_block_with_reward(node_staking_scores)
+
+# test_invalid_proofs_not_enough_stake()
+# exit()
+

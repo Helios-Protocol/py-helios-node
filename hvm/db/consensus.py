@@ -414,7 +414,7 @@ class ConsensusDB():
         reward_type_1_amount = self.calculate_final_reward_type_1_amount(wallet_address, at_timestamp)
         reward_type_1 = StakeRewardType1(reward_type_1_amount)
 
-        if node_staking_score_list is not None:
+        if node_staking_score_list is not None and len(node_staking_score_list) != 0:
             reward_type_2_amount, proof_list = self.calculate_final_reward_type_2_amount(node_staking_score_list,at_timestamp)
         else:
             reward_type_2_amount, proof_list = 0, []
@@ -436,6 +436,24 @@ class ConsensusDB():
         if not self.chaindb.is_in_canonical_chain(node_staking_score.head_hash_of_sender_chain):
             raise RewardProofSenderBlockMissing("Our chain for chain_address {} appears to be out of date. We need the block with hash {}".format(
                 encode_hex(node_staking_score.sender), encode_hex(node_staking_score.head_hash_of_sender_chain)))
+
+        # The node staking score proof cannot know about a block in the future.
+        claimed_header = self.chaindb.get_block_header_by_hash(node_staking_score.head_hash_of_sender_chain)
+        if claimed_header.timestamp > node_staking_score.timestamp:
+            raise ValidationError("Reward proof has a timestamp that is less than the claimed head hash of sender chain. This is impossible because it cannot know about the future, and not allowed.")
+
+        # we have to make sure the head_hash_of_sender_chain is the newest block before the given timestamp
+        current_block_number = claimed_header.block_number + 1
+        while True:
+            try:
+                test_header = self.chaindb.get_canonical_block_header_by_number(current_block_number, node_staking_score.sender)
+            except HeaderNotFound:
+                break
+            if test_header.timestamp > node_staking_score.timestamp:
+                break
+            else:
+                # it found a block that is earlier than the proof timestamp, but is newer than the claimed header. This means they claimed the wrong header
+                raise ValidationError("Reward proof has incorrect header hash for the sender chain, at the timestamp the proof was made.")
 
         # We need to validate that the previous reward block in proof equals the latest reward block
         if node_staking_score.since_block_number != since_block_number:
@@ -493,7 +511,15 @@ class ConsensusDB():
         if reward_bundle.reward_type_2.amount != 0:
             # need to create function that validates the reward.
             # check timestamps are all near the block timestamp. leave wiggle room for network latency
+            # here we also make sure there arent multiple scores for one chain
+            proof_senders = set()
             for node_staking_score in reward_bundle.reward_type_2.proof:
+                if node_staking_score.sender in proof_senders:
+                    raise ValidationError(
+                        "Multiple reward type 2 proofs from the same sender. Sender address: {}".format(
+                            encode_hex(node_staking_score.sender)))
+                proof_senders.add(node_staking_score.sender)
+
                 self.validate_node_staking_score_with_context(node_staking_score,
                                                               chain_address = chain_address,
                                                               block_timestamp = block_timestamp,
