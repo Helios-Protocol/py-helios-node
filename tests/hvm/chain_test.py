@@ -1521,29 +1521,30 @@ def test_chronological_block_initialization():
 
 
 
-def test_chronological_block_initialization_2():
-    '''
-    This mimics a fast sync, which doesnt update chronological block windows, then we do an initialization and they should be the same.
-    :return:
-    '''
-    # testdb1 = MemoryDB()
-    testdb1 = JournalDB(LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full_bak/'))
+# def test_chronological_block_initialization_2():
+#     '''
+#     This mimics a fast sync, which doesnt update chronological block windows, then we do an initialization and they should be the same.
+#     :return:
+#     '''
+#     # testdb1 = MemoryDB()
+#     testdb1 = JournalDB(LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full_bak/'))
+#
+#
+#
+#     server = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+#
+#
+#     server.initialize_historical_root_hashes_and_chronological_blocks()
+#
+#     server.initialize_historical_root_hashes_and_chronological_blocks()
+#
+#     server_historical_root_hashes = server.chain_head_db.get_historical_root_hashes()
+#
+#     test = server.chain_head_db.get_head_block_hashes_list()
+#
+# # test_chronological_block_initialization_2()
+# # exit()
 
-
-
-    server = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
-
-
-    server.initialize_historical_root_hashes_and_chronological_blocks()
-
-    server.initialize_historical_root_hashes_and_chronological_blocks()
-
-    server_historical_root_hashes = server.chain_head_db.get_historical_root_hashes()
-
-    test = server.chain_head_db.get_head_block_hashes_list()
-
-# test_chronological_block_initialization_2()
-# exit()
 
 
 # Try importing a block with the same receive transaction twice.

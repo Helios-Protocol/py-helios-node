@@ -274,6 +274,14 @@ class StakeRewardBundle(BaseRewardBundle):
     pass
 
 
+
+## Used to identify why a block cannot be imported due to chronological inconsistency
+# class blockChronologicalConsistencyKey(rlp.Serializable, metaclass=ABCMeta):
+#
+#     fields = [
+#         ('min_allowed_timestamp', rlp.sedes.big_endian_int),
+#         ('block_hash_causing_this', hash32),
+#     ]
 #
 # Sedes
 #

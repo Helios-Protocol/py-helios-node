@@ -337,7 +337,12 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader):
         raise NotImplementedError("Chain classes must implement this method")
 
-
+    #
+    # Chronologically consistent blockchain db API
+    #
+    @abstractmethod
+    def check_block_chronological_consistency(self, block: BaseBlock) -> List[Hash32]:
+        raise NotImplementedError("Chain classes must implement this method")
     #
     # Transaction API
     #
@@ -1347,6 +1352,7 @@ class Chain(BaseChain):
         self.chain_head_db.delete_block_hash_from_chronological_window(descendant_block_hash, descendant_block_header.timestamp)
         self.chaindb.remove_block_from_all_parent_child_lookups(descendant_block_header, vm.get_block_class().receive_transaction_class)
         self.chaindb.delete_all_block_children_lookups(descendant_block_hash)
+        self.revert_block_chronological_consistency_lookups(descendant_block_hash)
 
         #for every one, re-add pending receive transaction for all receive transactions only if sending block still exists
         #make all blocks unprocessed so that receivable transactions are not saved that came from one of the non-canonical blocks.
@@ -1357,6 +1363,21 @@ class Chain(BaseChain):
         self.chaindb.delete_block_from_canonical_chain(descendant_block_hash)
         #self.chaindb.save_unprocessed_block_lookup(descendant_block_hash)
         vm.state.account_db.persist()
+
+    def revert_block_chronological_consistency_lookups(self, block_hash: Hash32) -> None:
+        # check to see if there are any reward type 2 proofs. Then loop through each one to revert inconsistency lookups
+        block_header = self.chaindb.get_block_header_by_hash(block_hash)
+        block_class = self.get_vm_class_for_block_timestamp(block_header.timestamp).get_block_class()
+        reward_bundle = self.chaindb.get_reward_bundle(block_header.reward_hash, block_class.reward_bundle_class)
+        chronological_consistency_key = [block_header.timestamp, block_header.hash]
+
+        for proof in reward_bundle.reward_type_2.proof:
+            # timestamp, block hash of block responsible
+
+            sender_chain_header = self.chaindb.get_block_header_by_hash(proof.head_hash_of_sender_chain)
+            # The chronological consistency restrictions are placed on the block on top of the one giving the proof.
+            block_number_with_restrictions = sender_chain_header.block_number + 1
+            self.chaindb.delete_block_consistency_key(sender_chain_header.chain_address, block_number_with_restrictions, chronological_consistency_key)
 
     def purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(self, block_hash_to_delete: Hash32, save_block_head_hash_timestamp: bool = True) -> None:
 
@@ -1709,15 +1730,32 @@ class Chain(BaseChain):
                 self.logger.debug("tried to import a block that has a hash that matches the local block. no import required.")
                 return block
             else:
-
-                self.enable_journal_db()
-                journal_record = self.record_journal()
-                journal_enabled = True
+                if not journal_enabled:
+                    self.enable_journal_db()
+                    journal_record = self.record_journal()
+                    journal_enabled = True
 
                 self.purge_block_and_all_children_and_set_parent_as_chain_head(existing_block_header)
 
+        #check to see if this block is chronologically inconsistent - usually due to reward block that used proof from this chain
+        block_hashes_leading_to_inconsistency = self.check_block_chronological_consistency(block)
+        if len(block_hashes_leading_to_inconsistency) > 0:
+            if not allow_replacement:
+                raise ReplacingBlocksNotAllowed("Attempted to import chronologically inconsistent block. Block hashes leading to inconsistency = {}.".format([encode_hex(x) for x in block_hashes_leading_to_inconsistency]))
+            else:
+                # revert all of the blocks leading to the inconsistency.
+                if not journal_enabled:
+                    self.enable_journal_db()
+                    journal_record = self.record_journal()
+                    journal_enabled = True
 
-
+                for block_hash in block_hashes_leading_to_inconsistency:
+                    self.logger.debug("Purging block {} to preserve chronological consistency".format(encode_hex(block_hash)))
+                    block_header = self.chaindb.get_block_header_by_hash(block_hash)
+                    # This should be impossible, but lets double check that none of these blocks are on the same chain as this block
+                    if block_header.chain_address == block.header.chain_address:
+                        raise Exception("Tried to revert chronologically inconsistent block on this same chain. This should never happen...")
+                    self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header)
         try:
             return_block = self._import_block(block = block,
                                               perform_validation = perform_validation,
@@ -1808,6 +1846,9 @@ class Chain(BaseChain):
                 #because the children cannot be imported if their chain parent is unprocessed.
                 #but we cannot delete the lookup for unprocessed children yet.
                 self.chaindb.remove_block_from_unprocessed(imported_block)
+
+                # Add chronological consistency lookups
+                self.save_block_chronological_consistency_lookups(imported_block)
 
                 try:
                     self.header = self.create_header_from_parent(self.get_canonical_head())
@@ -1901,40 +1942,24 @@ class Chain(BaseChain):
 
         self.chaindb.delete_unprocessed_children_blocks_lookup(block_hash)
 
-    # this was the recursive function
-    # def import_unprocessed_children(self, block, *args, **kwargs):
-    #     """
-    #     Checks all block children for unprocessed blocks that were waiting for this one to be processed.
-    #     This includes children via transactions, and the children on this chain.
-    #     If it finds any unprocessed blocks it will, along with import_block, recursively import all unprocessed children.
-    #     it ignores errors so that it can make it through all of the children without stopping
-    #     """
-    #     if self.chaindb.has_unprocessed_children(block.hash):
-    #         self.logger.debug("HAS UNPROCESSED BLOCKS")
-    #         #try to import all children
-    #         children_block_hashes = self.chaindb.get_block_children(block.hash)
-    #         if children_block_hashes != None:
-    #             self.logger.debug("children_block_hashes = {}".format([encode_hex(x) for x in children_block_hashes]))
-    #             for child_block_hash in children_block_hashes:
-    #                 #this includes the child in this actual chain as well as children from send transactions.
-    #                 if self.chaindb.is_block_unprocessed(child_block_hash):
-    #                     self.logger.debug("importing child block")
-    #                     #we want to catch errors here so that we process all children blocks. If one block has an error it will just go to the next
-    #                     try:
-    #                         #attempt to import.
-    #                         #get chain for wallet address
-    #                         #child_chain = Chain(self.base_db, child_wallet_address)
-    #                         #get block
-    #                         child_block = self.get_block_by_hash(child_block_hash)
-    #                         if child_block.header.chain_address != self.wallet_address:
-    #                             self.logger.debug("Changing to chain with wallet address {}".format(encode_hex(child_block.header.chain_address)))
-    #                             self.set_new_wallet_address(wallet_address=child_block.header.chain_address)
-    #                         self._import_block(child_block, *args, **kwargs)
-    #                     except Exception as e:
-    #                         self.logger.error("Tried to import an unprocessed child block and got this error {}".format(e))
-    #                         raise e
-    #                         #pass
+    def save_block_chronological_consistency_lookups(self, block: BaseBlock) -> None:
+        '''
+        We need to require that the proof sender chain doesn't add a block after their claimed chain_head_hash, and the timestamp of this block being imported.
+        :param block:
+        :return:
+        '''
+        block_header = block.header
+        reward_bundle = self.chaindb.get_reward_bundle(block_header.reward_hash, block.reward_bundle_class)
+        chronological_consistency_key = [block_header.timestamp, block_header.hash]
 
+        for proof in reward_bundle.reward_type_2.proof:
+            # timestamp, block hash of block responsible
+
+            sender_chain_header = self.chaindb.get_block_header_by_hash(proof.head_hash_of_sender_chain)
+            # The chronological consistency restrictions are placed on the block on top of the one giving the proof.
+            block_number_with_restrictions = sender_chain_header.block_number + 1
+            self.logger.debug("saving chronological consistency lookup for chain {}, block {}, timestamp {}".format(encode_hex(sender_chain_header.chain_address), block_number_with_restrictions, block_header.timestamp))
+            self.chaindb.add_block_consistency_key(sender_chain_header.chain_address, block_number_with_restrictions, chronological_consistency_key)
 
     def save_block_as_unprocessed(self, block):
         #if it is already saved as unprocesessed, do nothing
@@ -2001,6 +2026,25 @@ class Chain(BaseChain):
                 list_of_blocks.append(new_block)
 
             return list_of_blocks
+
+    #
+    # Chronologically consistent blockchain db API
+    #
+    def check_block_chronological_consistency(self, block: BaseBlock) -> List[Hash32]:
+        '''
+        Checks to see if the block breaks any chronological consistency. If it does, it will return a list of blocks that need to be reverted for this block to be imported
+
+        returns list of block hashes that have to be reverted
+        :param block:
+        :return:
+        '''
+
+        consistency_keys = self.chaindb.get_block_chronological_consistency_keys(block.header.chain_address, block.header.block_number)
+        block_hashes_to_revert = list()
+        for consistency_key in consistency_keys:
+            if consistency_key[0] > block.header.timestamp:
+                block_hashes_to_revert.append(consistency_key[1])
+        return block_hashes_to_revert
 
     #
     # Validation API

@@ -131,3 +131,8 @@ class SchemaV1(BaseSchema):
     @staticmethod
     def make_smart_contracts_with_pending_transactions_lookup_key() -> bytes:
         return b'smart_contracts_with_pending_lookup'
+
+    @staticmethod
+    def make_block_hash_requirement_for_staking_rewards_consistency(chain_address: Address, block_number: BlockNumber) -> bytes:
+        key = b'chhrfsrc:%b-%d' % (chain_address, block_number)
+        return key

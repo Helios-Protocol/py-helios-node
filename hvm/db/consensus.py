@@ -584,8 +584,6 @@ class ConsensusDB():
         self.db[key] = encoded_peer_node_health
 
 
- 
-
     
   
 

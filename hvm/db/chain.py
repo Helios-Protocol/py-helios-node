@@ -83,7 +83,7 @@ from hvm.validation import (
     validate_is_bytes,
 )
 
-from hvm.rlp.consensus import StakeRewardBundle, BaseRewardBundle
+from hvm.rlp.consensus import StakeRewardBundle, BaseRewardBundle, NodeStakingScore
 from hvm.rlp import sedes as evm_rlp_sedes
 from hvm.rlp.sedes import(
     trie_root,
@@ -252,6 +252,25 @@ class BaseChainDB(metaclass=ABCMeta):
 
     @abstractmethod
     def get_number_of_total_tx_in_block(self, block_hash: Hash32) -> int:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    #
+    # Chronologically consistent blockchain db API
+    #
+    @abstractmethod
+    def get_block_chronological_consistency_keys(self, chain_address: Address, block_number: BlockNumber) -> List[Tuple[Timestamp, Hash32]]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def save_block_chronological_consistency_keys(self, chain_address: Address, block_number: BlockNumber, keys: List[Tuple[Timestamp, Hash32]]) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def add_block_consistency_key(self, chain_address: Address, block_number: BlockNumber, key: Tuple[Timestamp, Hash32]) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def delete_block_consistency_key(self, chain_address: Address, block_number: BlockNumber, key: Tuple[Timestamp, Hash32]) -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     #
@@ -945,6 +964,45 @@ class ChainDB(BaseChainDB):
         #we also have to save this block as the child of the parent block in the same chain
         if block.header.parent_hash != GENESIS_PARENT_HASH:
             self.add_block_child(block.header.parent_hash, block.header.hash)
+
+    #
+    # Chronologically consistent blockchain db API
+    #
+
+    # returns consistency keys list starting with newest timestamp to oldest.
+    def get_block_chronological_consistency_keys(self, chain_address: Address, block_number: BlockNumber) -> List[Tuple[Timestamp, Hash32]]:
+        lookup_key = SchemaV1.make_block_hash_requirement_for_staking_rewards_consistency(chain_address, block_number)
+        # keys are lists of [min_allowed_timestamp, block_hash_causing_this]
+        try:
+            consistency_keys = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, hash32])), use_list=True)
+        except KeyError:
+            return []
+
+        consistency_keys.sort(reverse=True)
+        return consistency_keys
+
+    def save_block_chronological_consistency_keys(self, chain_address: Address, block_number: BlockNumber, keys: List[Tuple[Timestamp, Hash32]]) -> None:
+        # keys are lists of [min_allowed_timestamp, block_hash_causing_this]
+        lookup_key = SchemaV1.make_block_hash_requirement_for_staking_rewards_consistency(chain_address, block_number)
+        self.db[lookup_key] = rlp.encode(keys, sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, hash32])))
+
+    def add_block_consistency_key(self, chain_address: Address, block_number: BlockNumber, key: Tuple[Timestamp, Hash32]) -> None:
+        consistency_keys = self.get_block_chronological_consistency_keys(chain_address, block_number)
+        consistency_keys_set = set(tuple(x) for x in consistency_keys)
+        consistency_keys_set.add(tuple(key))
+        self.save_block_chronological_consistency_keys(chain_address, block_number, tuple(consistency_keys_set))
+
+    def delete_block_consistency_key(self, chain_address: Address, block_number: BlockNumber, key: Tuple[Timestamp, Hash32]) -> None:
+        consistency_keys = self.get_block_chronological_consistency_keys(chain_address, block_number)
+        consistency_keys_set = set(tuple(x) for x in consistency_keys)
+        try:
+            consistency_keys_set.remove(tuple(key))
+            self.logger.debug("Removed key with tuple lookup")
+        except KeyError:
+            pass
+
+        self.save_block_chronological_consistency_keys(chain_address, block_number, list(consistency_keys_set))
+
 
     #
     # Unprocessed Block API
