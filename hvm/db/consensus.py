@@ -443,17 +443,24 @@ class ConsensusDB():
             raise ValidationError("Reward proof has a timestamp that is less than the claimed head hash of sender chain. This is impossible because it cannot know about the future, and not allowed.")
 
         # we have to make sure the head_hash_of_sender_chain is the newest block before the given timestamp
-        current_block_number = claimed_header.block_number + 1
-        while True:
-            try:
-                test_header = self.chaindb.get_canonical_block_header_by_number(current_block_number, node_staking_score.sender)
-            except HeaderNotFound:
-                break
-            if test_header.timestamp > node_staking_score.timestamp:
-                break
-            else:
+        next_block_number = claimed_header.block_number + 1
+        try:
+            next_header = self.chaindb.get_canonical_block_header_by_number(next_block_number, node_staking_score.sender)
+            if next_header.timestamp < node_staking_score.timestamp:
                 # it found a block that is earlier than the proof timestamp, but is newer than the claimed header. This means they claimed the wrong header
-                raise ValidationError("Reward proof has incorrect header hash for the sender chain, at the timestamp the proof was made.")
+                raise ValidationError(
+                    "Reward proof has incorrect header hash for the sender chain, at the timestamp the proof was made. "
+                    "The timestamp of the node staking score is {}. The timestamp of the next block is {}. "
+                    "The block number of the next block is {}. The hash of the next block is {}".format(
+                        node_staking_score.timestamp,
+                        next_header.timestamp,
+                        next_header.block_number,
+                        encode_hex(next_header.hash)
+                    ))
+        except HeaderNotFound:
+            pass
+
+
 
         # We need to validate that the previous reward block in proof equals the latest reward block
         if node_staking_score.since_block_number != since_block_number:

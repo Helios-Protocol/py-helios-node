@@ -1249,6 +1249,7 @@ class Chain(BaseChain):
         earliest_root_hash = self.chain_head_db.earliest_window
         #TIME_BETWEEN_HEAD_HASH_SAVE
 
+        # the saved
         # 1) iterate down the root hash times
         # 2) create new chain_head_db with memorydb
         # 3) go through each chain and any blocks newer than the timestamp, save to chronological window.

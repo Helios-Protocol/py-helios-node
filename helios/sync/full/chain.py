@@ -226,6 +226,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
     # = {'hash': timestamp,...}
     recently_imported_block_hashes = {}
 
+    fast_sync_received_chain_head_history = {}
+
     # This is the current index in the list of chains that we require. This may not correspond to the index of the chain.
     # For example, if we need the chains: [0,4,6,76,192], then when _fast_sync_required_chain_list_idx = 2 corresponds to chain 6.
     _fast_sync_required_chain_list_idx = 0
@@ -252,6 +254,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         self._new_blocks_to_import: asyncio.Queue[NewBlockQueueItem] = asyncio.Queue()
         self.fast_sync_chains_queue: asyncio.Queue[List[List[P2PBlock]]] = asyncio.Queue()
+
 
     def register_peer(self, peer: HLSPeer) -> None:
         pass
@@ -878,6 +881,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
             resulting_chain_head_root_hash = self.chain_head_db.get_saved_root_hash()
             if resulting_chain_head_root_hash == consensus_root_hash:
+                self.logger.debug("Fast sync successfully synced to saved root hash {}".format(encode_hex(resulting_chain_head_root_hash)))
                 break
 
             fragment_length += 1
@@ -891,6 +895,18 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 self.logger.debug([encode_hex(x) for x in their_fragment_list])
 
                 break
+
+            final_root_hash = self.chain_head_db.get_saved_root_hash()
+            our_block_hashes = await self.chain_head_db.coro_get_head_block_hashes_list(final_root_hash)
+            our_fragment_list = prepare_hash_fragments(our_block_hashes, fragment_length)
+            self.logger.debug(
+                "Fast sync loop finished unsuccessfully with fragment length {} Increasing and continuing.".format(
+                    fragment_length))
+            self.logger.debug(encode_hex(final_root_hash))
+            self.logger.debug([encode_hex(x) for x in our_fragment_list])
+            self.logger.debug([encode_hex(x) for x in their_fragment_list])
+            received_chain_head_hashes = [(encode_hex(x[0]), encode_hex(x[1])) for x in list(self.fast_sync_received_chain_head_history.items())]
+            self.logger.debug("Chain head hashes of all chains that were received (chain_address, head_hash) = {}".format(received_chain_head_hashes))
 
             # Set this after each loop to avoid requesting the same chains over and over again
             self.logger.info("Initializing historical root hashes and chronological blocks")
@@ -956,10 +972,18 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                                              peer = peer_to_sync_with,
                                                                                                              additional_candidate_peers = additional_candidate_peers)
 
+                    self.logger.debug("fast sync worker received chains of length {}".format([len(x) for x in chains]))
                     # await self.handle_priority_import_chains(chains, save_block_head_hash_timestamp=False)
                     await self.fast_sync_chains_queue.put(chains)
                     # If the final block numbers are less than the max length, then we have all of the chains.
                     need_more_chain = any([len(chain) >= MAX_BLOCKS_FETCH for chain in chains])
+
+                    #save all chain head hashes that we have received to make sure we got all the chains
+                    for chain in chains:
+                        if len(chain) > 0:
+                            head_block = chain[-1]
+                            chain_address = head_block.header.chain_address
+                            self.fast_sync_received_chain_head_history[chain_address] = head_block.header.hash
 
                     if not need_more_chain:
                         break

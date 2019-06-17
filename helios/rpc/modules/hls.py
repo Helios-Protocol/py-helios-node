@@ -677,6 +677,13 @@ class Hls(RPCModule):
 
         return [[timestamp_root_hash[0], encode_hex(timestamp_root_hash[1])] for timestamp_root_hash in chronological_block_window]
 
+
+    async def getHistoricalRootHashes(self):
+        chain = self.get_new_chain()
+        historical_root_hashes = chain.chain_head_db.get_historical_root_hashes()
+
+        return [[timestamp_root_hash[0], encode_hex(timestamp_root_hash[1])] for timestamp_root_hash in historical_root_hashes]
+
     async def getCurrentSyncingParameters(self):
         current_syncing_parameters_request = await self._event_bus.request(
             CurrentSyncingParametersRequest()
