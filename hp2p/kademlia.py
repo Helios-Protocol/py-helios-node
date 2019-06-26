@@ -14,6 +14,7 @@ from typing import (
     List,
     Sized,
     Tuple,
+    Optional,
 )
 from urllib import parse as urlparse
 
@@ -274,9 +275,12 @@ class RoutingTable:
     def remove_node(self, node: Node) -> None:
         binary_get_bucket_for_node(self.buckets, node).remove_node(node)
 
-    def add_node(self, node: Node) -> Node:
+    def add_node(self, node: Node) -> Optional[Node]:
         if node == self.this_node:
             raise ValueError("Cannot add this_node to routing table")
+        if node in self:
+            # node already added
+            return None
         bucket = binary_get_bucket_for_node(self.buckets, node)
         eviction_candidate = bucket.add(node)
         if eviction_candidate is not None:  # bucket is full

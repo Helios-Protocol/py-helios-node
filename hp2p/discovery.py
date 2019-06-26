@@ -155,6 +155,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         self.topic_nodes_callbacks = CallbackManager()
         self.parity_pong_tokens: Dict[Hash32, Hash32] = {}
         self.cancel_token = CancelToken('DiscoveryProtocol').chain(cancel_token)
+        self.bootstrap_lock = asyncio.Lock()
 
     def update_routing_table(self, node: kademlia.Node) -> None:
         """Update the routing table entry for the given node."""
@@ -337,7 +338,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         self.logger.debug("starting lookup; initial neighbours: %s", closest)
         nodes_to_ask = _exclude_if_asked(closest)
         while nodes_to_ask:
-            self.logger.trace("node lookup; querying %s", nodes_to_ask)
+            self.logger.debug("node lookup; querying %s", nodes_to_ask)
             nodes_asked.update(nodes_to_ask)
             results = await asyncio.gather(*(
                 _find_node(node_id, n)
@@ -394,31 +395,32 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
 
     async def bootstrap(self) -> None:
         self.logger.info("boostrapping with %s", self.bootstrap_nodes)
-        try:
-            nodes_to_bond_with = self.bootstrap_nodes
-            any_bonded = False
-            for node_to_bond_with in nodes_to_bond_with:
-                self.logger.debug("Attempting to bootstrap with node {}".format(node_to_bond_with))
-                for i in range(10):
-                    bonded = await self.bond(node_to_bond_with)
-                    if bonded:
-                        self.logger.debug("Successfully bootstrapped with node {}".format(node_to_bond_with))
-                        any_bonded = True
-                        break
+        async with self.bootstrap_lock:
+            try:
+                nodes_to_bond_with = self.bootstrap_nodes
+                any_bonded = False
+                for node_to_bond_with in nodes_to_bond_with:
+                    self.logger.debug("Attempting to bootstrap with node {}".format(node_to_bond_with))
+                    for i in range(10):
+                        bonded = await self.bond(node_to_bond_with)
+                        if bonded:
+                            self.logger.debug("Successfully bootstrapped with node {}".format(node_to_bond_with))
+                            any_bonded = True
+                            break
 
-                    self.logger.debug("Cannot bootstrap with node because we are waiting for a ping or a pong from them. Will retry in 5 seconds")
-                    await asyncio.sleep(5)
+                        self.logger.debug("Cannot bootstrap with node because we are waiting for a ping or a pong from them. Will retry in 5 seconds")
+                        await asyncio.sleep(5)
 
 
-            if not any_bonded:
-                self.logger.info("Failed to bond with bootstrap nodes %s", self.bootstrap_nodes)
-                return
-            await self.lookup_random()
-        except OperationCancelled as e:
-            self.logger.info("Bootstrapping cancelled: %s", e)
+                if not any_bonded:
+                    self.logger.info("Failed to bond with bootstrap nodes %s", self.bootstrap_nodes)
+                    return
+                await self.lookup_random()
+            except OperationCancelled as e:
+                self.logger.info("Bootstrapping cancelled: %s", e)
 
     async def bootstrap_if_needed(self) -> None:
-        if len(self.routing) < len(self.bootstrap_nodes):
+        if (len(self.routing) < len(self.bootstrap_nodes)) and not self.bootstrap_lock.locked():
             self.logger.debug("Redoing bootstrapping because we aren't connected to many nodes.")
             await self.bootstrap()
 
@@ -977,12 +979,13 @@ class DiscoveryService(BaseService):
 
     async def _run(self) -> None:
         await self._start_udp_listener()
-        connect_loop_sleep = 2
+        connect_loop_sleep = 5
         self.run_task(self.proto.bootstrap())
         while self.is_operational:
             await self.maybe_connect_to_more_peers()
-            await self.proto.bootstrap_if_needed()
             await self.sleep(connect_loop_sleep)
+            await self.proto.bootstrap_if_needed()
+            self.logger.debug("Nodes in discovery service: {}".format(list(self.proto.routing)))
 
     async def _start_udp_listener(self) -> None:
         loop = asyncio.get_event_loop()
