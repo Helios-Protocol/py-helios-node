@@ -417,6 +417,11 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         except OperationCancelled as e:
             self.logger.info("Bootstrapping cancelled: %s", e)
 
+    async def bootstrap_if_needed(self) -> None:
+        if len(self.routing) < len(self.bootstrap_nodes):
+            self.logger.debug("Redoing bootstrapping because we aren't connected to many nodes.")
+            await self.bootstrap()
+
     def datagram_received(self, data: Union[bytes, Text], addr: Tuple[str, int]) -> None:
         ip_address, udp_port = addr
         address = kademlia.Address(ip_address, udp_port)
@@ -976,6 +981,7 @@ class DiscoveryService(BaseService):
         self.run_task(self.proto.bootstrap())
         while self.is_operational:
             await self.maybe_connect_to_more_peers()
+            await self.proto.bootstrap_if_needed()
             await self.sleep(connect_loop_sleep)
 
     async def _start_udp_listener(self) -> None:
