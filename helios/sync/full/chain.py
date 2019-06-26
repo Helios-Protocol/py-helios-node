@@ -432,9 +432,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
     async def remove_block_by_hash(self, block_hash: Hash32) -> None:
         async with self.importing_blocks_lock:
-            chain = self.node.get_new_chain()
+            #chain = self.node.get_new_chain()
             try:
-                await chain.coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(block_hash)
+                await self.chains[0].coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(block_hash)
             except TriedDeletingGenesisBlock as e:
                 raise e
             except Exception as e:
@@ -843,7 +843,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             # in consensus and will not be overwritten by syncing. If we don't delete them, syncing will never finish.
             # This will only happen if we have chains that they need,
             # but they have no chains that we need.
-            if len(hash_positions_of_ours_that_they_need) > 0 and hash_positions_of_theirs_that_we_need == 0:
+
+            self.logger.debug('ZZZZZZZZZZZZZZZ {}, {}'.format(len(hash_positions_of_ours_that_they_need),len(hash_positions_of_theirs_that_we_need)))
+            if len(hash_positions_of_ours_that_they_need) > 0 and len(hash_positions_of_theirs_that_we_need) == 0:
                 self.logger.debug("Fast sync: deleting chains we have that are not in consensus.")
                 for idx in hash_positions_of_ours_that_they_need:
                     chain_head_hash = our_block_hashes[idx]
@@ -1020,7 +1022,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             except ValueError:
                 pass
 
-
+        self.logger.debug("fast_sync_chains_importer_loop finished")
 
 
 

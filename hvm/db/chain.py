@@ -1617,23 +1617,26 @@ class ChainDB(BaseChainDB):
         descentant_blocks = self._get_all_descendant_block_hashes(block_hash)
         return descentant_blocks
 
-    def _get_all_descendant_block_hashes(self, block_hash: Hash32) -> List[Hash32]:
-
+    def _get_all_descendant_block_hashes(self, block_hash: Hash32, exclude_block_hashes: Set[Hash32] = set()) -> List[Hash32]:
+        # Needed to add exclude_block_hashes to stop circular infinite loops. Seems like it is possible for parents to be their own children
+        #self.logger.debug('test1')
         #lookup children
         children = self.get_block_children(block_hash)
-
+        #self.logger.debug('test2 {}'.format(children))
         if children == None:
             return None
         else:
             child_blocks = set()
             for child_block_hash in children:
+                if child_block_hash not in exclude_block_hashes:
+                    #self.logger.debug('test3 {}'.format(child_block_hash))
+                    child_blocks.add(child_block_hash)
 
-                child_blocks.add(child_block_hash)
+                    exclude_block_hashes_current = exclude_block_hashes | child_blocks
+                    sub_children_blocks = self._get_all_descendant_block_hashes(child_block_hash, exclude_block_hashes= exclude_block_hashes_current)
 
-                sub_children_blocks = self._get_all_descendant_block_hashes(child_block_hash)
-
-                if sub_children_blocks is not None:
-                    child_blocks.update(sub_children_blocks)
+                    if sub_children_blocks is not None:
+                        child_blocks.update(sub_children_blocks)
             return child_blocks
 
     def save_block_children(self, parent_block_hash: Hash32,

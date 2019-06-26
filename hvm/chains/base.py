@@ -1259,12 +1259,12 @@ class Chain(BaseChain):
 
         # A chronological block window holds all of the blocks starting at its timestamp, going to timestamp + TIME_BETWEEN_HEAD_HASH_SAVE
         # A historical root hash is the root hash at the given timestamp, so it includes all blocks earlier than that timestamp.
-
+        self.logger.debug("Rebuilding chronological block windows")
         # us a journaldb so that it doesnt write changes to the database.
         temp_chain_head_db = self.get_chain_head_db_class()(MemoryDB())
         #temp_chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(JournalDB(self.db))
         for current_timestamp in range(current_window, earliest_root_hash-TIME_BETWEEN_HEAD_HASH_SAVE, -TIME_BETWEEN_HEAD_HASH_SAVE):
-            self.logger.debug("Rebuilding chronological block window {}".format(current_timestamp))
+
             if current_timestamp < self.genesis_block_timestamp:
                 break
 
@@ -1334,6 +1334,7 @@ class Chain(BaseChain):
         self.chain_head_db.delete_chain(wallet_address, save_block_head_hash_timestamp)
         self.chaindb.delete_canonical_chain(wallet_address)
         vm.state.clear_account_keep_receivable_transactions_and_persist(wallet_address)
+
 
     def set_parent_as_canonical_head(self, existing_block_header: BlockHeader, vm: 'BaseVM', save_block_head_hash_timestamp:bool = True) -> None:
         block_parent_header = self.chaindb.get_block_header_by_hash(existing_block_header.parent_hash)
@@ -1736,7 +1737,7 @@ class Chain(BaseChain):
                     journal_record = self.record_journal()
                     journal_enabled = True
 
-                self.purge_block_and_all_children_and_set_parent_as_chain_head(existing_block_header)
+                self.purge_block_and_all_children_and_set_parent_as_chain_head(existing_block_header, save_block_head_hash_timestamp = save_block_head_hash_timestamp)
 
         #check to see if this block is chronologically inconsistent - usually due to reward block that used proof from this chain
         block_hashes_leading_to_inconsistency = self.check_block_chronological_consistency(block)
@@ -1756,7 +1757,7 @@ class Chain(BaseChain):
                     # This should be impossible, but lets double check that none of these blocks are on the same chain as this block
                     if block_header.chain_address == block.header.chain_address:
                         raise Exception("Tried to revert chronologically inconsistent block on this same chain. This should never happen...")
-                    self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header)
+                    self.purge_block_and_all_children_and_set_parent_as_chain_head(block_header, save_block_head_hash_timestamp = save_block_head_hash_timestamp)
         try:
             return_block = self._import_block(block = block,
                                               perform_validation = perform_validation,

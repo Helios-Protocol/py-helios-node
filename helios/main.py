@@ -236,8 +236,8 @@ def main() -> None:
         log_levels['hp2p.consensus.Consensus'] = logging.DEBUG
         log_levels['hp2p.SmartContractChainManager'] = logging.DEBUG
         log_levels['hp2p.kademlia.KademliaProtocol'] = logging.DEBUG
-        log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.INFO
-        log_levels['hp2p.discovery.DiscoveryService'] = logging.INFO
+        log_levels['hp2p.discovery.DiscoveryProtocol'] = logging.DEBUG
+        log_levels['hp2p.discovery.DiscoveryService'] = logging.DEBUG
         log_levels['hp2p.nat.UPnPService'] = logging.CRITICAL
         log_levels['connectionpool'] = logging.CRITICAL
         log_levels['hp2p.protocol'] = logging.DEBUG

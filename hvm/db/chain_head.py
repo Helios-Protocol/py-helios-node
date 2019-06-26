@@ -836,7 +836,7 @@ class ChainHeadDB():
     #
 
     def add_block_hash_to_chronological_window(self, head_hash: Hash32, timestamp: Timestamp) -> None:
-        self.logger.debug("add_block_hash_to_chronological_window, hash = {}, timestamp = {}".format(encode_hex(head_hash), timestamp))
+        #self.logger.debug("add_block_hash_to_chronological_window, hash = {}, timestamp = {}".format(encode_hex(head_hash), timestamp))
         validate_is_bytes(head_hash, title='Head Hash')
         validate_uint256(timestamp, title='timestamp')
 

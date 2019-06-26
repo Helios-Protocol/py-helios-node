@@ -172,6 +172,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         Bonding consists of pinging the node, waiting for a pong and maybe a ping as well.
         It is necessary to do this at least once before we send find_node requests to a node.
         """
+        self.logger.debug("Bonding with node {}".format(node))
         if node in self.routing:
             return True
         elif node == self.this_node:
@@ -394,13 +395,22 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
     async def bootstrap(self) -> None:
         self.logger.info("boostrapping with %s", self.bootstrap_nodes)
         try:
-            bonded = await asyncio.gather(*(
-                self.bond(n)
-                for n
-                in self.bootstrap_nodes
-                if (not self.ping_callbacks.locked(n) and not self.pong_callbacks.locked(n))
-            ))
-            if not any(bonded):
+            nodes_to_bond_with = self.bootstrap_nodes
+            any_bonded = False
+            for node_to_bond_with in nodes_to_bond_with:
+                self.logger.debug("Attempting to bootstrap with node {}".format(node_to_bond_with))
+                for i in range(10):
+                    bonded = await self.bond(node_to_bond_with)
+                    if bonded:
+                        self.logger.debug("Successfully bootstrapped with node {}".format(node_to_bond_with))
+                        any_bonded = True
+                        break
+
+                    self.logger.debug("Cannot bootstrap with node because we are waiting for a ping or a pong from them. Will retry in 5 seconds")
+                    await asyncio.sleep(5)
+
+
+            if not any_bonded:
                 self.logger.info("Failed to bond with bootstrap nodes %s", self.bootstrap_nodes)
                 return
             await self.lookup_random()
