@@ -12,6 +12,8 @@ This is the beta stage of the HeliosProtocol node. It is currently under active 
 Install
 -------
 
+If you just installed Debian linux, and you are a beginner linux user, check the "First time Debian user notes" section at the bottom first
+
 
 Py-helios-node install instructions:
 
@@ -23,13 +25,27 @@ Py-helios-node install instructions:
     pyenv, use the setup script found `here <https://github.com/pyenv/pyenv-installer>`_.
     For completeness, we will summarize the current setup steps here:
 
-    1)  Install
+    1)  Prerequisites
+
+        .. code:: bash
+
+            $ sudo apt install git
+            $ sudo apt install curl
+
+        or for centos:
+
+        .. code:: bash
+
+            $ sudo yum install git
+            $ sudo yum install curl
+
+    2)  Install
 
         .. code:: bash
 
             $ curl -L https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
 
-    2)  Edit .bashrc
+    3)  Edit .bashrc
 
         .. code:: bash
 
@@ -43,13 +59,13 @@ Py-helios-node install instructions:
             eval "$(pyenv init -)"
             eval "$(pyenv virtualenv-init -)"
 
-    3)  Reload .bashrc
+    4)  Reload .bashrc
 
         .. code:: bash
 
             $ source ~/.bashrc
 
-    4)  Install python 3.6
+    5)  Install python 3.6
 
         First, make sure you have some required packages installed:
 
@@ -66,26 +82,21 @@ Py-helios-node install instructions:
 
             $ pyenv install 3.6.5
 
-2)  Install git
+        If you get any warnings, it is usually ok. But if you get an error at this step, it probably means
+        you didn't have a required package installed. Read the error message, and it will tell you which
+        package you need to install. Install the missing package using sudo apt install ... Then after that,
+        run the above command again. Make sure it succeeds without an error before moving on.
+
+
+2)  Clone this repo
 
     .. code:: bash
 
-                $ sudo apt install git
-
-    or
-
-    .. code:: bash
-
-        $ sudo yum install git
-
-3)  Clone this repo
-
-    .. code:: bash
-
+        $ cd ~/
         $ git clone https://github.com/Helios-Protocol/py-helios-node
 
 
-4)  Set python environment
+3)  Set python environment
 
     .. code:: bash
 
@@ -93,13 +104,13 @@ Py-helios-node install instructions:
         $ pyenv local 3.6.5
 
 
-5)  Install the Helios Node
+4)  Install the Helios Node
 
     .. code:: bash
 
         $ pip3 install -e .
 
-6)  Ensure that the slow version of RLP is uninstalled, and install
+5)  Ensure that the slow version of RLP is uninstalled, and install
     a fresh copy of the fast one. This will force all external libraries
     that use RLP to switch to the fast one.
 
@@ -154,10 +165,46 @@ Start the node
 
 .. code:: bash
 
-    $ helios
+    $ python ~/py-helios-node/helios/main.py
 
 Then enter your keystore password when prompted. This password is never saved, it is only used to initially decrypt your keystore
 file.
 
 
 This document is still a work in progress. More details will come soon.
+
+
+Node troubleshooting
+--------------------
+If your node shuts down unexpectedly, it may leave dangling processes and ipc sockets
+which will give you problems when you try to start
+it again. If this happens, run this command to force close all previous node processes:
+
+.. code:: bash
+
+    $ python ~/py-helios-node/helios/main.py fix-unclean-shutdown
+
+After this has finished running, you can then run the node software normally again.
+
+If you ever want to check the logs, you can find them at ~/.local/share/helios/mainnet/logs
+
+First time Debian user notes
+----------------------------
+
+If you just installed debian linux, you will need to give your personal user sudoer privileges. This is
+required for the above installation steps that have sudo at the beginning. Do this by running
+the following commands:
+
+.. code:: bash
+
+        $ su
+
+Type in your root password when prompted, then:
+
+.. code:: bash
+
+        $ usermod -aG sudo username
+
+Where "username" is replaced with the name of your personal user that you want to add to the sudoers.
+
+Then, logout and log back in. After this you will have sodoer privileges.

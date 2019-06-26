@@ -1,11 +1,11 @@
-from eth_keys import keys
-import json
-from hvm.constants import TESTNET_FAUCET_PRIVATE_KEY
-from hvm.constants import random_private_keys
-print(keys.PrivateKey(TESTNET_FAUCET_PRIVATE_KEY).public_key.to_address())
+# from eth_keys import keys
+# import json
+# from hvm.constants import TESTNET_FAUCET_PRIVATE_KEY
+# from hvm.constants import random_private_keys
+# print(keys.PrivateKey(TESTNET_FAUCET_PRIVATE_KEY).public_key.to_address())
 
-from helios.rlp_templates.hls import (
-    BlockHashKey)
+# from helios.rlp_templates.hls import (
+#     BlockHashKey)
 
 from decimal import Decimal
 REWARD_TYPE_1_AMOUNT_FACTOR = 0 #1 % per year
