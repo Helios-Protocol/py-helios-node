@@ -51,6 +51,7 @@ from eth_typing import BlockNumber, Hash32, Address
 from eth_utils import (
     encode_hex,
     ValidationError,
+    from_wei
 )
 
 from helios.rlp_templates.hls import (
@@ -96,7 +97,9 @@ from hp2p.constants import (
     MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG,
     ADDITIVE_SYNC_MODE_CUTOFF,
     PEER_STAKE_GONE_STALE_TIME_PERIOD, CONSENSUS_CHECK_CURRENT_SYNC_STAGE_PERIOD, SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD,
-    TIME_OFFSET_TO_FAST_SYNC_TO)
+    TIME_OFFSET_TO_FAST_SYNC_TO,
+    MIN_SAFE_PEER_STAKE_FOR_CONSENSUS_READY,
+)
 
 from hp2p import protocol
 
@@ -242,7 +245,7 @@ class Consensus(BaseService, PeerSubscriber):
         #{chain_wallet_address, {block_number, {block_hash, total_stake}}
         self.block_choice_statistics = {}
         
-        #{peer_wallet_address, [peer_stake, [[timestamp, root_hash],[timestamp, root_hash]...]]}
+        #{peer_wallet_address: [peer_stake, [[timestamp, root_hash],[timestamp, root_hash]...]]}
         self.peer_root_hash_timestamps = {}
         #{timestamp, (root_hash, stake)}
         #self.root_hash_timestamps_consensus = {}
@@ -303,13 +306,16 @@ class Consensus(BaseService, PeerSubscriber):
     @property
     def has_enough_consensus_participants(self):
         if len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_network_startup_node:
-            self.logger.debug("has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
+            total_stake = sum([x[0] for x in self.peer_root_hash_timestamps.values()])
+            self.logger.debug("has_enough_consensus_participants. wallets involved: {}, total_stake = {} HLS, required_stake = {} HLS".format(self.peer_root_hash_timestamps.keys(), from_wei(total_stake, 'ether'), from_wei(MIN_SAFE_PEER_STAKE_FOR_CONSENSUS_READY, 'ether')))
+            if total_stake >= MIN_SAFE_PEER_STAKE_FOR_CONSENSUS_READY:
+                self.logger.debug("has_enough_consensus_participants has enough stake")
+                return True
         else:
             self.logger.debug("doesnt has_enough_consensus_participants. wallets involved: {}".format(self.peer_root_hash_timestamps.keys()))
             pass
 
-        #we don't want to count any peers who we don't have stake for.
-        return len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_network_startup_node
+        return False
     
 
     @property
@@ -615,13 +621,6 @@ class Consensus(BaseService, PeerSubscriber):
                 self.logger.debug("Number of connected peers = {}".format(len(self.peer_pool)))
                 wallet_stake = [(encode_hex(peer.wallet_address), await peer.stake) for peer in self.peer_pool.peers]
                 self.logger.debug("{}".format(wallet_stake))
-                #first lets ask the bootnode for the stake of any peers that we dont have the blockchain for
-                #this takes care of determining stake of our peers while we are still syncing our blockchain database
-                #self.logger.debug("waiting for get missing stake from bootnode")
-                #await self.wait(self.get_missing_stake_from_bootnode())
-                #send sync messages, doesnt need to be async
-                #self.send_sync_get_messages()
-                #it will re-loop every time it gets a new response from a single peer. this ensures that the statistics are always as up to date as possible
 
                 self.logger.debug("done syncing consensus. These are the statistics for block_choices: {}".format(
                                     self.block_choice_statistics))
@@ -629,21 +628,7 @@ class Consensus(BaseService, PeerSubscriber):
                 sorted_root_hash_timestamps_statistics = list(SortedDict(self.root_hash_timestamps_statistics).items())
                 self.logger.debug("done syncing consensus. These are the statistics for root_hashes: {}".format(
                                    sorted_root_hash_timestamps_statistics[-10:]))
-                #blocks_to_change = await self.get_correct_block_conflict_choice_where_we_differ_from_consensus()
-                #self.logger.debug('get_correct_block_conflict_hashes_where_we_differ_from_consensus = {}'.format(blocks_to_change))
-#                if blocks_to_change is not None:
-#                    self.logger.debug('get_peers_who_have_conflict_block {}'.format(self.get_peers_who_have_conflict_block(blocks_to_change[0])))
-#                 test_1 = self.chaindb.load_historical_network_tpc_capability()
-#                 test_2 = self.chaindb.load_historical_minimum_gas_price()
-#                 test_3 = self.chaindb.load_historical_tx_per_centisecond()
-#                 self.logger.debug("net_tpc_cap = {}".format(test_1))
-#                 self.logger.debug("min_gas_price = {}".format(test_2))
-#                 self.logger.debug("tpc = {}".format(test_3))
-                
-                #here we shouldnt pause because if it returned early than thats because we got some data from peers. we want to process data asap.
-                #We removed this because we calculate consensus on the fly now.
-                #self.populate_peer_consensus()
-                #TODO. when a peer disconnects, make sure we delete their vote.
+
                 
                 #todo: re-enable these Actually need to re-enable
                 #todo: these will cause statistics problems because the statistics subtracts previous stake then adds new stake.

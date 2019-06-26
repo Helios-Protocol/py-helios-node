@@ -1,3 +1,5 @@
+from eth_utils import to_wei
+
 SUPPORTED_RLPX_VERSION = 4
 
 # Overhead added by ECIES encryption
@@ -71,7 +73,9 @@ DEFAULT_PEER_BOOT_TIMEOUT = 20
 # NEW HELIOS
 ############
 #the minimum number of peers to be connected to before consensus is ready.
-MIN_SAFE_PEERS = 1
+MIN_SAFE_PEERS = 2
+# the minimum amount of stake that connected peers have before we consider consensus ready
+MIN_SAFE_PEER_STAKE_FOR_CONSENSUS_READY = to_wei(300000, 'ether')
 #the minimum amount of time to wait between loading historical root hash from database
 LOCAL_ROOT_HASH_CHECK_MIN_TIME_PERIOD = 2
 #if this amount of time passes, and none of the peers have a different block than ours, we delete the conflicblock
@@ -80,7 +84,7 @@ BLOCK_CONFLICT_RESOLUTION_PERIOD = 60
 CONSENUS_PEER_DISCONNECT_CHECK_PERIOD = 120
 CONSENSUS_CHECK_READY_TIME_PERIOD = 2
 FAST_SYNC_NUM_CHAINS_TO_REQUEST = 5
-ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD = 60*24 #testing
+ASK_BOOT_NODE_FOR_STAKE_CUTOFF_PERIOD = 60*24
 
 CONSENSUS_SYNC_TIME_PERIOD = 3 #the amount of time between checking that we are in sync with peers
 CONSENSUS_CHECK_MIN_GAS_SYSTEM_READY_TIME_PERIOD = 5
@@ -99,13 +103,11 @@ SYNC_STAGE_4_START_OFFSET = 60*5 # The number of seconds before the current time
 
 PEER_STAKE_GONE_STALE_TIME_PERIOD = 60*5 # The amount of time that needs to pass before we re-update the peer stake from the
                                         # blockchain database or bootnode
-SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD = 1 # The amount of time between each main loop of the syncer
+SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD = 2 # The amount of time between each main loop of the syncer
 
 # When doing a fast sync, it will try to sync up until this many seconds ago.
 TIME_OFFSET_TO_FAST_SYNC_TO = 24*60*60
 
-#TESTING
-PEER_STAKE_GONE_STALE_TIME_PERIOD = 5
-#ADDITIVE_SYNC_MODE_CUTOFF = 60 * 60 * 24 * 10 #10 days
+
 
 

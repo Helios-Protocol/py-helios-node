@@ -252,6 +252,7 @@ def main() -> None:
         log_levels['helios.protocol.common'] = logging.DEBUG
         log_levels['helios.protocol.hls.peer.HLSPeer'] = 5
         log_levels['helios.memoryLogger'] = logging.DEBUG
+        log_levels['helios.protocol.hls.peer.HLSPeerPool'] = logging.DEBUG
 
         log_levels['hp2p.hls'] = logging.INFO
         log_levels['helios.server.FullServer'] = logging.DEBUG

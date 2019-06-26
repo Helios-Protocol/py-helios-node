@@ -2321,7 +2321,6 @@ class Chain(BaseChain):
         duration = time.time()-start_time
         #self.logger.debug('duration = {} seconds'.format(duration))
         tx_per_centisecond = int(100/duration)
-        return 5
         return tx_per_centisecond
 
 

@@ -954,7 +954,9 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
 
     async def connect_to_nodes(self, nodes: Iterator[Node]) -> None:
         for node in nodes:
+            self.logger.debug("Peer pool connecting to node {}".format(node))
             if self.is_full:
+                self.logger.debug("Peer pool node connection failed because we have max nodes")
                 return
 
             # TODO: Consider changing connect() to raise an exception instead of returning None,

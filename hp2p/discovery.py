@@ -420,7 +420,12 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
                 self.logger.info("Bootstrapping cancelled: %s", e)
 
     async def bootstrap_if_needed(self) -> None:
-        if (len(self.routing) < len(self.bootstrap_nodes)) and not self.bootstrap_lock.locked():
+        connected_to_bootstrap = False
+        for node in self.bootstrap_nodes:
+            if node in self.routing:
+                connected_to_bootstrap = True
+
+        if ((len(self.routing) < len(self.bootstrap_nodes)) or not connected_to_bootstrap) and not self.bootstrap_lock.locked():
             self.logger.debug("Redoing bootstrapping because we aren't connected to many nodes.")
             await self.bootstrap()
 
@@ -1003,6 +1008,7 @@ class DiscoveryService(BaseService):
 
         self.run_task(self.maybe_lookup_random_node())
 
+        self.logger.debug("maybe_connect_to_more_peers asking peer_pool to connect_to_nodes: {}".format(list(self.proto.get_nodes_to_connect(self.peer_pool.max_peers))))
         await self.peer_pool.connect_to_nodes(
             self.proto.get_nodes_to_connect(self.peer_pool.max_peers))
 
