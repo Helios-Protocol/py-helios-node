@@ -311,7 +311,7 @@ class Consensus(BaseService, PeerSubscriber):
         elif len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS:
             total_stake = 0
             for wallet_address, statistics in self.peer_root_hash_timestamps.items():
-                peer = self.peer_pool.wallet_address_to_peer_lookup(wallet_address)
+                peer = self.peer_pool.wallet_address_to_peer_lookup[wallet_address]
                 if self.needs_stake_from_bootnode(peer):
                     if wallet_address in self.peer_stake_from_bootstrap_node:
                         total_stake += self.peer_stake_from_bootstrap_node[wallet_address]
@@ -897,7 +897,10 @@ class Consensus(BaseService, PeerSubscriber):
         self.logger.debug("Running get_missing_stake_from_bootnode_loop")
         while self.is_operational:
             await self._get_missing_stake_from_bootnode()
-            await asyncio.sleep(PEER_STAKE_GONE_STALE_TIME_PERIOD)
+            if len(self.peer_stake_from_bootstrap_node) > 0:
+                await asyncio.sleep(PEER_STAKE_GONE_STALE_TIME_PERIOD)
+            else:
+                await asyncio.sleep(4)
 
     async def send_get_consensus_statistics_loop(self) -> None:
         self.logger.debug("Running send_get_consensus_statistics_loop")
