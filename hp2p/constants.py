@@ -73,7 +73,7 @@ DEFAULT_PEER_BOOT_TIMEOUT = 20
 # NEW HELIOS
 ############
 #the minimum number of peers to be connected to before consensus is ready.
-MIN_SAFE_PEERS = 2
+MIN_SAFE_PEERS = 1
 # the minimum amount of stake that connected peers have before we consider consensus ready
 MIN_SAFE_PEER_STAKE_FOR_CONSENSUS_READY = to_wei(300000, 'ether')
 #the minimum amount of time to wait between loading historical root hash from database

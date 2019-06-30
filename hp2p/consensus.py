@@ -306,7 +306,15 @@ class Consensus(BaseService, PeerSubscriber):
     @property
     def has_enough_consensus_participants(self):
         if len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_network_startup_node:
-            total_stake = sum([x[0] for x in self.peer_root_hash_timestamps.values()])
+            total_stake = 0
+            for wallet_address, statistics in self.peer_root_hash_timestamps.items():
+                peer = self.peer_pool.wallet_address_to_peer_lookup(wallet_address)
+                if self.needs_stake_from_bootnode(peer):
+                    if wallet_address in self.peer_stake_from_bootstrap_node:
+                        total_stake += self.peer_stake_from_bootstrap_node[wallet_address]
+                else:
+                    total_stake += statistics[0]
+
             self.logger.debug("has_enough_consensus_participants. wallets involved: {}, total_stake = {} HLS, required_stake = {} HLS".format(self.peer_root_hash_timestamps.keys(), from_wei(total_stake, 'ether'), from_wei(MIN_SAFE_PEER_STAKE_FOR_CONSENSUS_READY, 'ether')))
             if total_stake >= MIN_SAFE_PEER_STAKE_FOR_CONSENSUS_READY:
                 self.logger.debug("has_enough_consensus_participants has enough stake")
@@ -619,7 +627,14 @@ class Consensus(BaseService, PeerSubscriber):
 
                 self.logger.debug("This node's wallet address = {}".format(encode_hex(self.chain_config.node_wallet_address)))
                 self.logger.debug("Number of connected peers = {}".format(len(self.peer_pool)))
-                wallet_stake = [(encode_hex(peer.wallet_address), await peer.stake) for peer in self.peer_pool.peers]
+                wallet_stake = []
+                for peer in self.peer_pool.peers:
+                    peer_stake = await peer.stake
+                    if peer_stake is None:
+                        if peer.wallet_address in self.peer_stake_from_bootstrap_node:
+                            peer_stake = self.peer_stake_from_bootstrap_node[peer.wallet_address]
+                    wallet_stake.append((encode_hex(peer.wallet_address), peer_stake))
+                # wallet_stake = [(encode_hex(peer.wallet_address), await peer.stake) for peer in self.peer_pool.peers]
                 self.logger.debug("{}".format(wallet_stake))
 
                 self.logger.debug("done syncing consensus. These are the statistics for block_choices: {}".format(
@@ -1164,6 +1179,7 @@ class Consensus(BaseService, PeerSubscriber):
         if addresses_needing_stake == []:
             return
 
+        self.logger.debug("_get_missing_stake_from_bootnode")
         # self.logger.debug(self.bootstrap_nodes)
         # self.logger.debug(self.peer_pool.connected_nodes.keys())
         for boot_node in self.bootstrap_nodes:

@@ -1966,7 +1966,10 @@ class ChainDB(BaseChainDB):
             min_required_centiseconds_remaining = (MIN_GAS_PRICE_CALCULATION_AVERAGE_DELAY + MIN_GAS_PRICE_CALCULATION_AVERAGE_WINDOW_LENGTH) + 3
 
         #we assume we have hist_net_tpc_capability back to at least as early as the earliest hist_min_gas_price, which should always be the case
-        earliest_allowed_timestamp = sorted_hist_min_gas_price.keys()[min_required_centiseconds_remaining]
+        try:
+            earliest_allowed_timestamp = sorted_hist_min_gas_price.keys()[min_required_centiseconds_remaining]
+        except IndexError:
+            return
         if start_timestamp < earliest_allowed_timestamp:
             start_timestamp = earliest_allowed_timestamp
 
