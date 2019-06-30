@@ -311,12 +311,15 @@ class Consensus(BaseService, PeerSubscriber):
         elif len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS:
             total_stake = 0
             for wallet_address, statistics in self.peer_root_hash_timestamps.items():
-                peer = self.peer_pool.wallet_address_to_peer_lookup[wallet_address]
-                if self.needs_stake_from_bootnode(peer):
-                    if wallet_address in self.peer_stake_from_bootstrap_node:
-                        total_stake += self.peer_stake_from_bootstrap_node[wallet_address]
-                else:
-                    total_stake += statistics[0]
+                try:
+                    peer = self.peer_pool.wallet_address_to_peer_lookup[wallet_address]
+                    if self.needs_stake_from_bootnode(peer):
+                        if wallet_address in self.peer_stake_from_bootstrap_node:
+                            total_stake += self.peer_stake_from_bootstrap_node[wallet_address]
+                    else:
+                        total_stake += statistics[0]
+                except KeyError:
+                    pass
 
             self.logger.debug("has_enough_consensus_participants. wallets involved: {}, total_stake = {} HLS, required_stake = {} HLS".format(self.peer_root_hash_timestamps.keys(), from_wei(total_stake, 'ether'), from_wei(MIN_SAFE_PEER_STAKE_FOR_CONSENSUS_READY, 'ether')))
             if total_stake >= MIN_SAFE_PEER_STAKE_FOR_CONSENSUS_READY:
