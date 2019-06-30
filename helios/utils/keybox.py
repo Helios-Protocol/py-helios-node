@@ -8,7 +8,7 @@ from eth_keys.datatypes import(
 )
 
 from hvm.chains.mainnet import (
-    GENESIS_PRIVATE_KEY,
+    GENESIS_PRIVATE_KEY_FOR_TESTNET,
 )
 
 from hvm.constants import random_private_keys
@@ -19,6 +19,6 @@ from hvm.constants import random_private_keys
 def get_primary_node_private_helios_key(instance_number = 0):
     if instance_number == 0:
         print("this node is the genesis node")
-        return GENESIS_PRIVATE_KEY
+        return GENESIS_PRIVATE_KEY_FOR_TESTNET
     else:
         return keys.PrivateKey(random_private_keys[instance_number-1])

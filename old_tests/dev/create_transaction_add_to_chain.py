@@ -11,22 +11,11 @@ from hvm import MainnetChain
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY,
-    GENESIS_WALLET_ADDRESS,
+    GENESIS_PRIVATE_KEY_FOR_TESTNET,
     TPC_CAP_TEST_GENESIS_PRIVATE_KEY,
     MAINNET_NETWORK_ID,
 )
 
-from hvm.constants import (
-    BLANK_ROOT_HASH,
-    ZERO_HASH32,
-    EMPTY_SHA3,
-    SLASH_WALLET_ADDRESS,
-    NUMBER_OF_HEAD_HASH_TO_SAVE,
-    TIME_BETWEEN_HEAD_HASH_SAVE,
-    COIN_MATURE_TIME_FOR_STAKING,
-
-    COLLATION_SIZE)
 
 from helios_logging import (
     setup_helios_logging,
@@ -52,7 +41,6 @@ from eth_utils import (
     decode_hex,        
 )
 
-from keyBox import keyBox
 from eth_keys import keys
 from sys import exit
 
@@ -87,7 +75,7 @@ primary_private_keys = random_private_keys
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(primary_private_keys[instance_number])
 
-SENDER = GENESIS_PRIVATE_KEY
+SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -103,25 +91,154 @@ logger.propagate = False
 #logger.info(HELIOS_HEADER)
 from helios.rpc.format import block_to_dict
 
+import eth_keyfile
 
-print("Instance 1 wallet address = {}".format(RECEIVER.public_key.to_address()))
-base_db = LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full')
-#base_db = LevelDB('/WWW/.local/share/helios/mainnet/chain/full')
+import sys
+sys.path.append('/d:/Google Drive/forex/blockchain_coding/Helios/prototype desktop/helios_deploy/')
+from deploy_params import (
+    genesis_private_key,
+    airdrop_private_key,
+    bounties_private_key,
+    exchange_listings_private_key,
+    dapp_incubator_private_key,
+    bootnode_1_private_key,
+    bootnode_2_private_key,
+    masternode_1_private_key,
+)
 
-node_1 = MainnetChain(base_db, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+def create_new_genesis_params_and_state():
+    #
+    # GENESIS STATE, HEADER PARAMS
+    #
 
-queue_block = node_1.queue_block
+    new_genesis_private_key = genesis_private_key
+    print("Ceating new genesis params and state for genesis wallet address:")
+    print(new_genesis_private_key.public_key.to_canonical_address())
 
-chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
+    total_supply = 350000000 * 10 ** 18
+    new_mainnet_genesis_params = {
+        'chain_address': new_genesis_private_key.public_key.to_canonical_address(),
+        'parent_hash': constants.GENESIS_PARENT_HASH,
+        'transaction_root': constants.BLANK_ROOT_HASH,
+        'receive_transaction_root': constants.BLANK_ROOT_HASH,
+        'receipt_root': constants.BLANK_ROOT_HASH,
+        'bloom': 0,
+        'block_number': constants.GENESIS_BLOCK_NUMBER,
+        'gas_limit': constants.GENESIS_GAS_LIMIT,
+        'gas_used': 0,
+        'timestamp': 1556733839,
+        'extra_data': constants.GENESIS_EXTRA_DATA,
+        'reward_hash': constants.GENESIS_REWARD_HASH,
+        'account_balance': total_supply,
+    }
 
-i = 0
-for head_hash in chain_head_hashes:
-    print("Chain number {}".format(i))
-    chain = node_1.get_all_blocks_on_chain_by_head_block_hash(head_hash)
+    new_genesis_state = {
+        new_genesis_private_key.public_key.to_canonical_address(): {
+            "balance": total_supply,
+            "code": b"",
+            "nonce": 0,
+            "storage": {}
+        }
+    }
 
-    j = 0
-    for block in chain:
-        print("Block number {}".format(i))
-        print(block_to_dict(block, False, node_1))
-        j += 1
-    i += 1
+    testdb1 = MemoryDB()
+    genesis_header = MainnetChain.create_genesis_header(testdb1,
+                                                        new_genesis_private_key.public_key.to_canonical_address(),
+                                                        new_genesis_private_key, new_mainnet_genesis_params,
+                                                        new_genesis_state)
+
+    print()
+    print("New completed and signed genesis header params")
+    parameter_names = list(dict(genesis_header._meta.fields).keys())
+    header_params = {}
+    for parameter_name in parameter_names:
+        header_params[parameter_name] = getattr(genesis_header, parameter_name)
+    print(header_params)
+    print()
+
+
+    # TPC TEST STATE, HEADER PARAMS
+
+    # new_genesis_private_key = TPC_CAP_TEST_GENESIS_PRIVATE_KEY
+    # print(new_genesis_private_key.public_key.to_canonical_address())
+    #
+    # testdb1 = MemoryDB()
+    # genesis_header = MainnetChain.create_genesis_header(testdb1,
+    #                                                     new_genesis_private_key.public_key.to_canonical_address(),
+    #                                                     new_genesis_private_key, new_mainnet_genesis_params,
+    #                                                     new_genesis_state)
+    #
+    # print()
+    # print("New completed and signed tpc test header params")
+    # parameter_names = list(dict(genesis_header._meta.fields).keys())
+    # header_params = {}
+    # for parameter_name in parameter_names:
+    #     header_params[parameter_name] = getattr(genesis_header, parameter_name)
+    # print(header_params)
+    # print()
+    #
+    # db = MemoryDB()
+    # chain = MainnetChain.from_genesis(db,
+    #                                   TPC_CAP_TEST_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+    #                                   header_params,
+    #                                   new_genesis_state,
+    #                                   private_key=TPC_CAP_TEST_GENESIS_PRIVATE_KEY)
+    #
+    # receiver_privkey = keys.PrivateKey(random_private_keys[0])
+    #
+    # chain.create_and_sign_transaction_for_queue_block(
+    #     gas_price=0x01,
+    #     gas=0x0c3500,
+    #     to=receiver_privkey.public_key.to_canonical_address(),
+    #     value=1000,
+    #     data=b"",
+    #     v=0,
+    #     r=0,
+    #     s=0
+    # )
+    #
+    # imported_block = chain.import_current_queue_block()
+    #
+    # block_dict = imported_block.to_dict()
+    # print("TPC test block to import")
+    # print(block_dict)
+
+
+
+create_new_genesis_params_and_state()
+exit()
+
+def create_block_params():
+    from hvm.chains.mainnet import (
+        MAINNET_TPC_CAP_TEST_GENESIS_PARAMS,
+        MAINNET_TPC_CAP_TEST_GENESIS_STATE,
+        TPC_CAP_TEST_GENESIS_PRIVATE_KEY,
+    )
+
+    db = MemoryDB()
+    chain = MainnetChain.from_genesis(db,
+                                      TPC_CAP_TEST_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                      MAINNET_TPC_CAP_TEST_GENESIS_PARAMS,
+                                      MAINNET_TPC_CAP_TEST_GENESIS_STATE,
+                                      private_key=TPC_CAP_TEST_GENESIS_PRIVATE_KEY)
+
+    receiver_privkey = keys.PrivateKey(random_private_keys[0])
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=0x0c3500,
+        to=receiver_privkey.public_key.to_canonical_address(),
+        value=1000,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    imported_block = chain.import_current_queue_block()
+
+    block_dict = imported_block.to_dict()
+    print(block_dict)
+
+# create_block_params()
+# sys.exit()

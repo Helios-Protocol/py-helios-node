@@ -12,9 +12,7 @@ from hvm import MainnetChain
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY,
-    GENESIS_WALLET_ADDRESS,
-    TPC_CAP_TEST_GENESIS_PRIVATE_KEY,
+    GENESIS_PRIVATE_KEY_FOR_TESTNET,
     MAINNET_NETWORK_ID,
 )
 from hvm.types import Timestamp
@@ -85,7 +83,7 @@ private_keys = []
 for i in range(10):
     private_keys.append(get_primary_node_private_helios_key(i))
 
-SENDER = GENESIS_PRIVATE_KEY
+SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -94,7 +92,7 @@ RECEIVER4 = get_primary_node_private_helios_key(4)
 def create_reward_test_blockchain_database():
     testdb = MemoryDB()
 
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
     coin_mature_time = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
     min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
     required_stake_for_reward_type_2_proof = chain.get_consensus_db(timestamp=Timestamp(int(time.time()))).required_stake_for_reward_type_2_proof
@@ -119,7 +117,7 @@ def _test_block_rewards_system():
     # testdb = JournalDB(testdb)
     testdb = create_reward_test_blockchain_database()
 
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
     coin_mature_time = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
     min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
     # now = int(time.time())
@@ -138,7 +136,7 @@ def _test_block_rewards_system():
     # }
     # create_dev_fixed_blockchain_database(testdb, key_balance_dict)
 
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     # class NodeStakingScore(rlp.Serializable, metaclass=ABCMeta):
     #     fields = [
@@ -155,7 +153,7 @@ def _test_block_rewards_system():
 
     score = 1000000
     for private_key in private_keys:
-        node_staking_score = NodeStakingScore(recipient_node_wallet_address = GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        node_staking_score = NodeStakingScore(recipient_node_wallet_address = GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(),
                                               score = int(score),
                                               since_block_number = 0,
                                               timestamp = int(time.time()),
@@ -168,7 +166,7 @@ def _test_block_rewards_system():
         node_staking_scores.append(signed_node_staking_score)
         score = score/5
 
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     node_staking_scores.sort(key=lambda x: -1* x.score)
     for node_staking_score in node_staking_scores:
@@ -178,10 +176,10 @@ def _test_block_rewards_system():
         print(node_staking_score.score, chain.get_mature_stake(node_staking_score.sender, node_staking_score.timestamp))
 
 
-    reward_bundle = chain.get_consensus_db().create_reward_bundle_for_block(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), node_staking_scores, at_timestamp = int(time.time()))
+    reward_bundle = chain.get_consensus_db().create_reward_bundle_for_block(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), node_staking_scores, at_timestamp = int(time.time()))
 
 
-    chain.get_consensus_db().validate_reward_bundle(reward_bundle, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), int(time.time()))
+    chain.get_consensus_db().validate_reward_bundle(reward_bundle, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), int(time.time()))
 
     print('AAAAAAAAAAA')
     print(reward_bundle.reward_type_1.amount)
@@ -189,12 +187,12 @@ def _test_block_rewards_system():
     print(reward_bundle.reward_type_2.proof[0].score)
 
 
-    initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
     print("balance before reward = ", initial_balance)
 
     chain.import_current_queue_block_with_reward(reward_bundle.reward_type_2.proof)
 
-    final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
     print("balance after reward = ",final_balance)
     assert((reward_bundle.reward_type_1.amount + reward_bundle.reward_type_2.amount) == (final_balance- initial_balance))
 
@@ -788,7 +786,7 @@ def test_invalid_proofs_no_proofs():
 def test_invalid_proofs_not_enough_stake():
     testdb = MemoryDB()
 
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
     coin_mature_time = chain.get_vm(timestamp=Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
     min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
     now = int(time.time())

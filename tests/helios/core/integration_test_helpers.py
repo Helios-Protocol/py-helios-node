@@ -20,7 +20,7 @@ from helios.db.chain import AsyncChainDB
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY,
+    GENESIS_PRIVATE_KEY_FOR_TESTNET,
     MAINNET_NETWORK_ID,
 )
 
@@ -157,7 +157,7 @@ class FakeMainnetFullNode():
 
 def get_fresh_db():
     testdb1 = MemoryDB()
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
     return testdb1
 
 def get_random_blockchain_db():

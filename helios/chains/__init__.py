@@ -64,7 +64,7 @@ from helios.dev_tools import (
     create_dev_test_random_blockchain_database,
     import_genesis_block,
     create_predefined_blockchain_database,
-)
+    create_mainnet_genesis_transactions)
 
 
 def is_data_dir_initialized(chain_config: ChainConfig) -> bool:
@@ -156,6 +156,9 @@ def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> Non
     except CanonicalHeadNotFound:
         if chain_config.network_id == MAINNET_NETWORK_ID:
             MainnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+            if chain_config.network_startup_node:
+                # add the initial startup transactions
+                create_mainnet_genesis_transactions(chaindb.db)
         else:
             # TODO: add genesis data to ChainConfig and if it's present, use it
             # here to initialize the chain.

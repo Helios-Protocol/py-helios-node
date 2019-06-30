@@ -11,9 +11,7 @@ from hvm import MainnetChain
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY,
-    GENESIS_WALLET_ADDRESS,
-    TPC_CAP_TEST_GENESIS_PRIVATE_KEY,
+    GENESIS_PRIVATE_KEY_FOR_TESTNET,
     MAINNET_NETWORK_ID,
 )
 
@@ -82,7 +80,7 @@ from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock, HeliosTestnetBl
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 
-SENDER = GENESIS_PRIVATE_KEY
+SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -90,16 +88,16 @@ RECEIVER4 = get_primary_node_private_helios_key(4)
 
 
 def ensure_chronological_block_hashes_are_fully_synced(base_db_1, base_db_2):
-    node_1 = MainnetChain(base_db_1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
-    node_2 = MainnetChain(base_db_2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    node_1 = MainnetChain(base_db_1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    node_2 = MainnetChain(base_db_2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     node_1_chain_head_root_hash_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1]
     node_2_chain_head_root_hash_timestamp = node_2.chain_head_db.get_historical_root_hashes()[-1]
     assert (node_1_chain_head_root_hash_timestamp == node_2_chain_head_root_hash_timestamp)
 
 def ensure_chronological_block_hashes_are_identical(base_db_1, base_db_2):
-    node_1 = MainnetChain(base_db_1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
-    node_2 = MainnetChain(base_db_2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    node_1 = MainnetChain(base_db_1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    node_2 = MainnetChain(base_db_2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     node_1_chain_head_root_hash_timestamps = node_1.chain_head_db.get_historical_root_hashes()
     node_2_chain_head_root_hash_timestamps = node_2.chain_head_db.get_historical_root_hashes()
@@ -107,8 +105,8 @@ def ensure_chronological_block_hashes_are_identical(base_db_1, base_db_2):
 
 
 def ensure_blockchain_databases_identical(base_db_1, base_db_2):
-    node_1 = MainnetChain(base_db_1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
-    node_2 = MainnetChain(base_db_2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    node_1 = MainnetChain(base_db_1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    node_2 = MainnetChain(base_db_2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     # Get all of the addresses of every chain
     next_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()

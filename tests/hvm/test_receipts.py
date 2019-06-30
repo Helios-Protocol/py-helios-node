@@ -1,7 +1,7 @@
 import time
 from hvm import MainnetChain
 from hvm.chains.mainnet import (
-    GENESIS_PRIVATE_KEY,
+    GENESIS_PRIVATE_KEY_FOR_TESTNET,
     MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
 from hvm.constants import (
@@ -22,7 +22,7 @@ from tests.integration_test_helpers import load_compiled_sol_dict
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 
-SENDER = GENESIS_PRIVATE_KEY
+SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -35,7 +35,7 @@ from tests.integration_test_helpers import W3_TX_DEFAULTS
 def test_get_receipts():
     testdb2 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
 
     """

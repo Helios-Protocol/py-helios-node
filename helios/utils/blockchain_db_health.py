@@ -3,7 +3,7 @@ from hvm import constants
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY,
+    GENESIS_PRIVATE_KEY_FOR_TESTNET,
 )
 
 from hvm.db.backends.level import LevelDB
@@ -16,7 +16,7 @@ def fix_blockchain_database_errors(base_db):
     :param base_db:
     :return:
     '''
-    node_1 = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    node_1 = MainnetChain(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
     chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
 
     for head_hash in chain_head_hashes:

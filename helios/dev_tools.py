@@ -10,7 +10,7 @@ from hvm import constants
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY,
+    GENESIS_PRIVATE_KEY_FOR_TESTNET,
 )
 
 from hvm.db.backends.memory import MemoryDB
@@ -106,7 +106,7 @@ def create_new_genesis_params_and_state(private_key, total_supply = 100000000 * 
 
 
 def print_blockchain_database(base_db):
-    node_1 = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    node_1 = MainnetChain(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
 
@@ -134,7 +134,7 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
 
     create_dev_test_random_blockchain_database(base_db, timestamp = 'genesis')
 
-    node_1 = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    node_1 = MainnetChain(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     MIN_TIME_BETWEEN_BLOCKS = node_1.get_vm(timestamp = Timestamp(int(time.time()))).min_time_between_blocks
     chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
@@ -150,7 +150,7 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
         priv_key = keys.PrivateKey(random_private_key)
         private_keys_dict[priv_key.public_key.to_address()] = priv_key
 
-    private_keys_dict[GENESIS_PRIVATE_KEY.public_key.to_address()] = GENESIS_PRIVATE_KEY
+    private_keys_dict[GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_address()] = GENESIS_PRIVATE_KEY_FOR_TESTNET
 
     for i in range(num_iterations):
 
@@ -161,7 +161,7 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
         if i == 0:
             numbers = [x for x in range(0, len(private_keys_dict) - 1)]
             random_int = random.choice(numbers)
-            privkey = GENESIS_PRIVATE_KEY
+            privkey = GENESIS_PRIVATE_KEY_FOR_TESTNET
             receiver_privkey = private_keys_dict[list(private_keys_dict.keys())[random_int]]
         else:
             numbers = [x for x in range(0, len(private_keys_dict) - 1) if x != random_int]
@@ -275,7 +275,7 @@ def create_dev_test_random_blockchain_database(base_db = None, num_iterations = 
         if i == 0:
             numbers = [x for x in range(0, len(random_private_keys) - 1)]
             random_int = random.choice(numbers)
-            privkey = GENESIS_PRIVATE_KEY
+            privkey = GENESIS_PRIVATE_KEY_FOR_TESTNET
             receiver_privkey = keys.PrivateKey(random_private_keys[random_int])
         else:
             numbers = [x for x in range(0, len(random_private_keys) - 1) if x != random_int]
@@ -285,7 +285,7 @@ def create_dev_test_random_blockchain_database(base_db = None, num_iterations = 
 
         # random.shuffle(random_private_keys)
         # if i == 0:
-        #     privkey = GENESIS_PRIVATE_KEY
+        #     privkey = GENESIS_PRIVATE_KEY_FOR_TESTNET
         #     receiver_privkey = keys.PrivateKey(random_private_keys[0])
         # else:
         #     privkey = receiver_privkey
@@ -369,15 +369,15 @@ def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list
     total_required_gas = sum([(to_wei(tx_key[4], 'gwei') if len(tx_key) > 4 else to_wei(1, 'gwei'))*GAS_TX for tx_key in tx_list])
 
     earliest_timestamp = tx_list[0][3]
-    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+genesis_chain_stake+total_required_gas
+    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY_FOR_TESTNET]) + genesis_chain_stake + total_required_gas
 
     if use_real_genesis:
         import_genesis_block(base_db)
     else:
-        genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply, earliest_timestamp - 100000)
+        genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY_FOR_TESTNET, required_total_supply, earliest_timestamp - 100000)
 
         # import genesis block
-        MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
+        MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), genesis_params, genesis_state)
 
     add_transactions_to_blockchain_db(base_db, tx_list)
 
@@ -400,16 +400,16 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_gen
     if use_real_genesis:
         sender_chain = import_genesis_block(base_db)
     else:
-        genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply, earliest_timestamp - 100000)
-        sender_chain = MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
+        genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY_FOR_TESTNET, required_total_supply, earliest_timestamp - 100000)
+        sender_chain = MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), genesis_params, genesis_state)
 
     sender_chain.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=5)
 
     prev_timestamp = 0
     for priv_key, balance_timestamp in key_balance_dict.items():
-        sender_chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+        sender_chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
-        dummy_sender_chain = MainnetChain(JournalDB(base_db), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+        dummy_sender_chain = MainnetChain(JournalDB(base_db), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
         balance = balance_timestamp[0]
         timestamp = balance_timestamp[1]
@@ -435,7 +435,7 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_gen
         imported_block = dummy_sender_chain.import_current_queue_block()
 
         # altering block timestamp and importing again
-        timestamp_modified_imported_block = imported_block.copy(header = imported_block.header.copy(timestamp = timestamp).get_signed(GENESIS_PRIVATE_KEY,dummy_sender_chain.network_id))
+        timestamp_modified_imported_block = imported_block.copy(header = imported_block.header.copy(timestamp = timestamp).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_sender_chain.network_id))
         sender_chain.import_block(timestamp_modified_imported_block, allow_unprocessed = False)
 
         #logger.debug("Receiving ")
@@ -453,7 +453,7 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_gen
 
     logger.debug("finished creating fixed blockchain")
 
-    # sender_chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), privkey)
+    # sender_chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), privkey)
     # latest_historical_timestamp = sender_chain.chain_head_db.get_historical_root_hashes()[-1][0]
     # chronological_block_window = sender_chain.chain_head_db.load_chronological_block_window(latest_historical_timestamp)
     # print("AAAAAAAAAAAA")
@@ -470,8 +470,8 @@ def import_genesis_block(base_db):
     logger.debug("importing genesis block")
         
     #initialize db
-    return MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
-    #return MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    return MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    #return MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
 
 
@@ -584,7 +584,7 @@ def create_blockchain_database_for_exceeding_tpc_cap(base_db, tpc_cap_to_exceed=
     for centisecond_window_timestamp in range(start, end, 100):
         for j in range(tpc_cap_to_exceed):
             random.shuffle(private_keys)
-            sender = GENESIS_PRIVATE_KEY
+            sender = GENESIS_PRIVATE_KEY_FOR_TESTNET
             receiver = private_keys[0]
             amount = 1000
             timestamp = centisecond_window_timestamp+j*MIN_TIME_BETWEEN_BLOCKS
@@ -615,7 +615,7 @@ def create_random_blockchain_database_to_time(base_db, start_time, end_time, tx_
     for window_timestamp in range(start, end, 1000):
         for j in range(tx_per_1000_seconds):
             random.shuffle(private_keys)
-            sender = GENESIS_PRIVATE_KEY
+            sender = GENESIS_PRIVATE_KEY_FOR_TESTNET
             receiver = private_keys[0]
             amount = 1000
             timestamp = window_timestamp+j*MIN_TIME_BETWEEN_BLOCKS
@@ -643,7 +643,7 @@ def add_random_transactions_to_db_for_time_window(base_db, start_time, end_time,
     for window_timestamp in range(start, end, 1000):
         for j in range(tx_per_1000_seconds):
             random.shuffle(private_keys)
-            sender = GENESIS_PRIVATE_KEY
+            sender = GENESIS_PRIVATE_KEY_FOR_TESTNET
             receiver = private_keys[0]
             amount = 1000
             timestamp = window_timestamp + j * MIN_TIME_BETWEEN_BLOCKS
@@ -652,3 +652,40 @@ def add_random_transactions_to_db_for_time_window(base_db, start_time, end_time,
 
     add_transactions_to_blockchain_db(base_db, tx_list)
 
+
+
+def create_mainnet_genesis_transactions(base_db):
+    import sys
+    sys.path.append('/d:/Google Drive/forex/blockchain_coding/Helios/prototype desktop/helios_deploy/')
+    from deploy_params import (
+        genesis_private_key,
+        airdrop_private_key,
+        bounties_private_key,
+        exchange_listings_private_key,
+        dapp_incubator_private_key,
+        bootnode_1_private_key,
+        bootnode_2_private_key,
+        masternode_1_private_key,
+    )
+
+    chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+
+    genesis_block_timestamp = chain.genesis_block_timestamp
+    min_time_between_blocks = chain.get_vm(timestamp=genesis_block_timestamp).min_time_between_blocks
+    time_between_head_hash_save = TIME_BETWEEN_HEAD_HASH_SAVE
+    
+    start_time = genesis_block_timestamp + time_between_head_hash_save
+    tx_list = []
+    
+    # main accounts
+    tx_list.append([genesis_private_key, airdrop_private_key, to_wei(110000000, 'ether'), start_time + min_time_between_blocks])
+    tx_list.append([genesis_private_key, dapp_incubator_private_key, to_wei(70000000, 'ether'), start_time + min_time_between_blocks*2])
+    tx_list.append([genesis_private_key, bounties_private_key, to_wei(50000000, 'ether'), start_time + min_time_between_blocks*3])
+    tx_list.append([genesis_private_key, exchange_listings_private_key, to_wei(40000000, 'ether'), start_time + min_time_between_blocks*4])
+
+    # stake for bootnodes (this is large for now to prevent 51% attacks until the network has grown to a sufficiently stable size)
+    tx_list.append([airdrop_private_key, bootnode_1_private_key, to_wei(10000000, 'ether'), start_time + min_time_between_blocks*6])
+    tx_list.append([airdrop_private_key, bootnode_2_private_key, to_wei(10000000, 'ether'), start_time + min_time_between_blocks*7])
+    tx_list.append([airdrop_private_key, masternode_1_private_key, to_wei(10000000, 'ether'), start_time + min_time_between_blocks*8])
+
+    add_transactions_to_blockchain_db(base_db, tx_list)

@@ -12,9 +12,7 @@ from hvm import MainnetChain
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY,
-    GENESIS_WALLET_ADDRESS,
-    TPC_CAP_TEST_GENESIS_PRIVATE_KEY,
+    GENESIS_PRIVATE_KEY_FOR_TESTNET,
     MAINNET_NETWORK_ID,
 )
 
@@ -93,7 +91,7 @@ from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock, HeliosTestnetBl
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 
-SENDER = GENESIS_PRIVATE_KEY
+SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -201,14 +199,14 @@ def test_boson_vm_calculate_reward_based_on_fractional_interest():
     masternode_level_1_multiplier = MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER
 
     genesis_block_time = int(time.time())-10000000
-    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, masternode_level_3_required_balance*2, genesis_block_time)
+    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY_FOR_TESTNET, masternode_level_3_required_balance * 2, genesis_block_time)
 
     time_between_blocks = max(MIN_TIME_BETWEEN_BLOCKS, 1)
     # import genesis block
-    MainnetChain.from_genesis(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params,genesis_state)
+    MainnetChain.from_genesis(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), genesis_params, genesis_state)
 
     stake_start = genesis_block_time+time_between_blocks
-    tx_list = [[GENESIS_PRIVATE_KEY, RECEIVER, masternode_level_3_required_balance, stake_start],
+    tx_list = [[GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, masternode_level_3_required_balance, stake_start],
                [RECEIVER, RECEIVER2, (masternode_level_3_required_balance-masternode_level_2_required_balance-GAS_TX), stake_start+100000],
                [RECEIVER, RECEIVER2, (masternode_level_2_required_balance-masternode_level_1_required_balance-GAS_TX), stake_start+200000],
                [RECEIVER, RECEIVER2, (masternode_level_1_required_balance-1000000-GAS_TX), stake_start+300000]]

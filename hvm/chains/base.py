@@ -2312,6 +2312,9 @@ class Chain(BaseChain):
 
         block_to_import = chain.get_vm(timestamp = MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT['header']['timestamp']).get_block_class().from_dict(MAINNET_TPC_CAP_TEST_BLOCK_TO_IMPORT)
 
+        chain.genesis_wallet_address = MAINNET_TPC_CAP_TEST_GENESIS_PARAMS['chain_address']
+        chain.genesis_block_timestamp = MAINNET_TPC_CAP_TEST_GENESIS_PARAMS['timestamp']
+
 
         #@profile(sortby='cumulative')
         def temp():

@@ -53,7 +53,7 @@ from tests.integration_test_helpers import (
 from queue import Queue
 
 from hvm.constants import random_private_keys
-from hvm.chains.mainnet import GENESIS_PRIVATE_KEY
+from hvm.chains.mainnet import GENESIS_PRIVATE_KEY_FOR_TESTNET
 
 from helios.utils.logging import disable_logging, enable_logging
 
@@ -83,7 +83,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
         linked_peer_array.append([None]*(len(dbs_for_linking)))
 
     private_helios_keys = [
-        GENESIS_PRIVATE_KEY,
+        GENESIS_PRIVATE_KEY_FOR_TESTNET,
         keys.PrivateKey(random_private_keys[0]),
         *[keys.PrivateKey(random_private_keys[i+1]) for i in range(len(peer_swarm))]
     ]
@@ -207,20 +207,20 @@ async def _build_test_consensus(request, event_loop,
         gap_between_genesis_block_and_first_transaction = MIN_TIME_BETWEEN_BLOCKS
 
     tx_list = [
-        *[[GENESIS_PRIVATE_KEY, private_keys[i], ((1000000-1000*i)*10**18), genesis_block_timestamp + gap_between_genesis_block_and_first_transaction + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]
+        *[[GENESIS_PRIVATE_KEY_FOR_TESTNET, private_keys[i], ((1000000 - 1000 * i) * 10 ** 18), genesis_block_timestamp + gap_between_genesis_block_and_first_transaction + MIN_TIME_BETWEEN_BLOCKS * i] for i in range(len(random_private_keys))]
     ]
 
     total_required_gas = sum([(to_wei(tx_key[4], 'gwei') if len(tx_key) > 4 else to_wei(1, 'gwei'))*GAS_TX for tx_key in tx_list])
 
     genesis_chain_stake = 100
 
-    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY])+genesis_chain_stake+total_required_gas
+    required_total_supply = sum([x[2] for x in tx_list if x[0] == GENESIS_PRIVATE_KEY_FOR_TESTNET]) + genesis_chain_stake + total_required_gas
 
-    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, required_total_supply,
+    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY_FOR_TESTNET, required_total_supply,
                                                                         genesis_block_timestamp)
 
     # import genesis block
-    MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params,
+    MainnetChain.from_genesis(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), genesis_params,
                               genesis_state)
 
 
@@ -229,10 +229,10 @@ async def _build_test_consensus(request, event_loop,
 
     add_transactions_to_blockchain_db(base_db, tx_list)
 
-    # chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    # chain = MainnetChain(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
     # print('AAAAAAAAAAA')
     # print('genesis')
-    # print(chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY.public_key.to_canonical_address()))
+    # print(chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address()))
     # for i in range(len(random_private_keys)):
     #     print(i)
     #     print(chain.get_vm().state.account_db.get_balance(private_keys[i].public_key.to_canonical_address()))
@@ -290,7 +290,7 @@ async def _build_test_consensus(request, event_loop,
     for i in range(int(num_peers_in_swarm / 2),num_peers_in_swarm):
         peer_dbs.append(MemoryDB(competing_base_db.kv_store.copy()))
 
-    bootstrap_node = MainnetChain(base_db, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    bootstrap_node = MainnetChain(base_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
     bootstrap_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
     consensus_root_hash_timestamps = bootstrap_node.chain_head_db.get_historical_root_hashes()
 

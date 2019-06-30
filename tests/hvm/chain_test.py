@@ -12,9 +12,7 @@ from hvm import MainnetChain
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY,
-    GENESIS_WALLET_ADDRESS,
-    TPC_CAP_TEST_GENESIS_PRIVATE_KEY,
+    GENESIS_PRIVATE_KEY_FOR_TESTNET,
     MAINNET_NETWORK_ID,
 )
 
@@ -99,7 +97,7 @@ from hvm.exceptions import ParentNotFound
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 
-SENDER = GENESIS_PRIVATE_KEY
+SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -265,15 +263,15 @@ def test_chronological_block_window_stake():
 
 
 
-    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY, to_wei(100000000, 'ether'), genesis_block_time)
+    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY_FOR_TESTNET, to_wei(100000000, 'ether'), genesis_block_time)
 
     time_between_blocks = max(MIN_TIME_BETWEEN_BLOCKS,1)
     # import genesis block
-    MainnetChain.from_genesis(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
+    MainnetChain.from_genesis(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), genesis_params, genesis_state)
 
-    tx_list = [[GENESIS_PRIVATE_KEY, RECEIVER, to_wei(10000000, 'ether'), transactions_start_time],
-               [GENESIS_PRIVATE_KEY, RECEIVER2, to_wei(10000000, 'ether'), transactions_start_time+time_between_blocks],
-               [GENESIS_PRIVATE_KEY, RECEIVER3, to_wei(10000000, 'ether'), transactions_start_time+time_between_blocks*2],
+    tx_list = [[GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, to_wei(10000000, 'ether'), transactions_start_time],
+               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER2, to_wei(10000000, 'ether'), transactions_start_time + time_between_blocks],
+               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER3, to_wei(10000000, 'ether'), transactions_start_time + time_between_blocks * 2],
                [RECEIVER, RECEIVER4, to_wei(1000000, 'ether'), transactions_start_time+time_between_blocks*3],
                [RECEIVER, RECEIVER3, to_wei(1000000, 'ether'), transactions_start_time+time_between_blocks*4],
 
@@ -292,12 +290,12 @@ def test_chronological_block_window_stake():
     expected_genesis_stake_2 = to_wei((100000000-10000000-10000000), 'ether')-to_wei(GAS_TX, 'gwei') - to_wei(GAS_TX, 'gwei')
     expected_genesis_stake_3 = to_wei((100000000 - 10000000 - 10000000 - 10000000), 'ether') - to_wei(GAS_TX, 'gwei') - to_wei(GAS_TX, 'gwei') -to_wei(GAS_TX, 'gwei')
     
-    assert(sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), coin_mature_time_for_staking, expected_genesis_stake_1_time) == expected_genesis_stake_1)
-    assert(sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), coin_mature_time_for_staking,  expected_genesis_stake_2_time) == expected_genesis_stake_2)
-    assert(sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), coin_mature_time_for_staking) == expected_genesis_stake_3)
+    assert(sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), coin_mature_time_for_staking, expected_genesis_stake_1_time) == expected_genesis_stake_1)
+    assert(sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), coin_mature_time_for_staking, expected_genesis_stake_2_time) == expected_genesis_stake_2)
+    assert(sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), coin_mature_time_for_staking) == expected_genesis_stake_3)
     
-    expected_mature_stake_1 = (sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), coin_mature_time_for_staking)+
-                               sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address(), coin_mature_time_for_staking)+
+    expected_mature_stake_1 = (sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), coin_mature_time_for_staking) +
+                               sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address(), coin_mature_time_for_staking) +
                                sender_chain.chaindb.get_mature_stake(RECEIVER2.public_key.to_canonical_address(), coin_mature_time_for_staking) +
                                sender_chain.chaindb.get_mature_stake(RECEIVER3.public_key.to_canonical_address(), coin_mature_time_for_staking) +
                                sender_chain.chaindb.get_mature_stake(RECEIVER4.public_key.to_canonical_address(), coin_mature_time_for_staking)
@@ -306,10 +304,10 @@ def test_chronological_block_window_stake():
 
     expected_mature_stake_2_time = int(transactions_start_time+time_between_blocks*2+coin_mature_time_for_staking)
     expected_mature_stake_2 = (
-                sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), coin_mature_time_for_staking,expected_mature_stake_2_time) +
-                sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address(), coin_mature_time_for_staking,expected_mature_stake_2_time) +
-                sender_chain.chaindb.get_mature_stake(RECEIVER2.public_key.to_canonical_address(), coin_mature_time_for_staking,expected_mature_stake_2_time) +
-                sender_chain.chaindb.get_mature_stake(RECEIVER3.public_key.to_canonical_address(), coin_mature_time_for_staking,expected_mature_stake_2_time)
+            sender_chain.chaindb.get_mature_stake(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), coin_mature_time_for_staking, expected_mature_stake_2_time) +
+            sender_chain.chaindb.get_mature_stake(RECEIVER.public_key.to_canonical_address(), coin_mature_time_for_staking,expected_mature_stake_2_time) +
+            sender_chain.chaindb.get_mature_stake(RECEIVER2.public_key.to_canonical_address(), coin_mature_time_for_staking,expected_mature_stake_2_time) +
+            sender_chain.chaindb.get_mature_stake(RECEIVER3.public_key.to_canonical_address(), coin_mature_time_for_staking,expected_mature_stake_2_time)
                 )
 
 
@@ -612,7 +610,7 @@ def import_chain(testdb1, testdb2):
     :param testdb2:
     :return:
     '''
-    node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     next_head_hashes = node_1.chain_head_db.get_next_n_head_block_hashes(ZERO_HASH32, 0, 99999)
     print("IMPORTING {} CHAINS".format(len(next_head_hashes)))
@@ -623,7 +621,7 @@ def import_chain(testdb1, testdb2):
 
         chain_to_import = node_1.get_all_blocks_on_chain(chain_address)
 
-        node_2 = MainnetChain(testdb2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+        node_2 = MainnetChain(testdb2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
         node_2.import_chain(block_list=chain_to_import)
 
 
@@ -635,8 +633,8 @@ def _test_import_unprocessed_blocks(base_db = None):
     testdb1 = create_dev_test_random_blockchain_db_with_reward_blocks(base_db = base_db, num_iterations=30)
     testdb2 = MemoryDB()
 
-    node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
-    node_2 = MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+    node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    node_2 = MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(),
                                        MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
     chain_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
@@ -680,7 +678,7 @@ def test_import_chain():
     testdb2 = MemoryDB()
 
     create_dev_test_random_blockchain_database(testdb1)
-    MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
     import_chain(testdb1, testdb2)
 
@@ -711,7 +709,7 @@ def test_import_chain():
 
 def import_chronological_block_window(testdb1, testdb2):
 
-    node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
     node_2 = MainnetChain(testdb2, RECEIVER.public_key.to_canonical_address(), RECEIVER)
 
     node_1_historical_root_hashes = node_1.chain_head_db.get_historical_root_hashes()
@@ -734,14 +732,14 @@ def test_import_chronolgical_block_windows():
     testdb2 = MemoryDB()
 
     create_dev_test_random_blockchain_database(testdb1)
-    chain_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     chain_2 = MainnetChain.from_genesis(testdb2, RECEIVER.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    print('AAAAAAAAAAAAAAA')
-    print(encode_hex(chain_1.genesis_wallet_address))
-    print(chain_1.chaindb.get_canonical_block_header_by_number(0, chain_1.genesis_wallet_address))
-    print(chain_2.chaindb.get_canonical_block_header_by_number(0, chain_2.genesis_wallet_address))
+    # print('AAAAAAAAAAAAAAA')
+    # print(encode_hex(chain_1.genesis_wallet_address))
+    # print(chain_1.chaindb.get_canonical_block_header_by_number(0, chain_1.genesis_wallet_address))
+    # print(chain_2.chaindb.get_canonical_block_header_by_number(0, chain_2.genesis_wallet_address))
     import_chronological_block_window(testdb1, testdb2)
 
     # Where node 2 has a different blockchain database. This requires overwriting.
@@ -772,7 +770,7 @@ def test_importing_p2p_type_block():
     from hvm.rlp.transactions import BaseTransaction, BaseReceiveTransaction
 
     testdb1 = MemoryDB()
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     transactions = []
     for i in range(5):
@@ -818,9 +816,9 @@ def test_importing_p2p_type_block():
 def test_import_invalid_transaction_duplicate_nonce():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -837,7 +835,7 @@ def test_import_invalid_transaction_duplicate_nonce():
 
     print('First nonce =',valid_block.transactions[0].nonce)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -856,10 +854,10 @@ def test_import_invalid_transaction_duplicate_nonce():
     block_with_same_nonse_transaction = block_with_same_nonse_transaction.copy(
         header = block_with_same_nonse_transaction.header.copy(
             parent_hash=valid_block.hash,
-            block_number=2).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+            block_number=2).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
     print('Second nonce =', block_with_same_nonse_transaction.transactions[0].nonce)
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
     chain.import_block(valid_block)
     with pytest.raises(ValidationError):
         chain.import_block(block_with_same_nonse_transaction)
@@ -867,9 +865,9 @@ def test_import_invalid_transaction_duplicate_nonce():
 def test_import_invalid_transaction_nonce_too_great():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -906,11 +904,11 @@ def test_import_invalid_transaction_nonce_too_great():
     invalid_block = invalid_block.copy(
         header = invalid_block.header.copy(
             parent_hash=valid_block.header.parent_hash,
-            block_number=1).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+            block_number=1).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
     print('Second nonce =', invalid_block.transactions[0].nonce)
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -919,9 +917,9 @@ def test_import_invalid_transaction_nonce_too_great():
 def test_import_invalid_block_wrong_parent_hash():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -938,7 +936,7 @@ def test_import_invalid_block_wrong_parent_hash():
 
     print('First nonce =',valid_block.transactions[0].nonce)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -957,9 +955,9 @@ def test_import_invalid_block_wrong_parent_hash():
     block_with_same_nonse_transaction = block_with_same_nonse_transaction.copy(
         header = block_with_same_nonse_transaction.header.copy(
             parent_hash=valid_block.hash,
-            block_number=1).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+            block_number=1).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
     chain.import_block(valid_block)
     with pytest.raises(ValidationError):
         chain.import_block(block_with_same_nonse_transaction)
@@ -968,9 +966,9 @@ def test_import_invalid_block_wrong_parent_hash():
 def test_import_invalid_block_gas_limit_too_small():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -989,9 +987,9 @@ def test_import_invalid_block_gas_limit_too_small():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             gas_limit=5
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -999,9 +997,9 @@ def test_import_invalid_block_gas_limit_too_small():
 def test_import_invalid_block_gas_limit_too_large():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1020,9 +1018,9 @@ def test_import_invalid_block_gas_limit_too_large():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             gas_limit=99999999999999999
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -1030,9 +1028,9 @@ def test_import_invalid_block_gas_limit_too_large():
 def test_import_invalid_block_incorrect_account_hash():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1051,9 +1049,9 @@ def test_import_invalid_block_incorrect_account_hash():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             account_hash=keccak(int_to_big_endian(random.randint(1000000,10000000)))
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -1061,9 +1059,9 @@ def test_import_invalid_block_incorrect_account_hash():
 def test_import_invalid_block_incorrect_account_balance():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1082,9 +1080,9 @@ def test_import_invalid_block_incorrect_account_balance():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             account_balance=100000000000
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -1092,9 +1090,9 @@ def test_import_invalid_block_incorrect_account_balance():
 def test_import_invalid_block_incorrect_transaction_root():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1113,9 +1111,9 @@ def test_import_invalid_block_incorrect_transaction_root():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             transaction_root=keccak(int_to_big_endian(random.randint(1000000,10000000)))
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -1123,9 +1121,9 @@ def test_import_invalid_block_incorrect_transaction_root():
 def test_import_invalid_block_incorrect_receive_transaction_root():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1144,9 +1142,9 @@ def test_import_invalid_block_incorrect_receive_transaction_root():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             receive_transaction_root=keccak(int_to_big_endian(random.randint(1000000,10000000)))
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -1154,9 +1152,9 @@ def test_import_invalid_block_incorrect_receive_transaction_root():
 def test_import_invalid_block_incorrect_receipt_root():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1175,9 +1173,9 @@ def test_import_invalid_block_incorrect_receipt_root():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             receipt_root=keccak(int_to_big_endian(random.randint(1000000,10000000)))
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -1185,9 +1183,9 @@ def test_import_invalid_block_incorrect_receipt_root():
 def test_import_invalid_block_incorrect_bloom():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1206,9 +1204,9 @@ def test_import_invalid_block_incorrect_bloom():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             bloom=213901
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -1216,9 +1214,9 @@ def test_import_invalid_block_incorrect_bloom():
 def test_import_invalid_block_incorrect_gas_used():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1237,9 +1235,9 @@ def test_import_invalid_block_incorrect_gas_used():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             gas_used=213901
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -1248,9 +1246,9 @@ def test_import_invalid_block_incorrect_gas_used():
 def test_import_invalid_block_incorrect_extra_data():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1269,9 +1267,9 @@ def test_import_invalid_block_incorrect_extra_data():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             extra_data=33 * b'\x00'
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -1280,9 +1278,9 @@ def test_import_invalid_block_incorrect_extra_data():
 def test_import_invalid_block_incorrect_reward_hash():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1301,9 +1299,9 @@ def test_import_invalid_block_incorrect_reward_hash():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             reward_hash=keccak(int_to_big_endian(random.randint(1000000,10000000)))
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
@@ -1311,9 +1309,9 @@ def test_import_invalid_block_incorrect_reward_hash():
 def test_import_invalid_block_incorrect_chain_address():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1332,9 +1330,9 @@ def test_import_invalid_block_incorrect_chain_address():
     invalid_block = valid_block.copy(
         header = valid_block.header.copy(
             chain_address=RECEIVER.public_key.to_canonical_address()
-        ).get_signed(GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+        ).get_signed(GENESIS_PRIVATE_KEY_FOR_TESTNET, dummy_chain.network_id))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(ParentNotFound):
         chain.import_block(invalid_block)
@@ -1342,9 +1340,9 @@ def test_import_invalid_block_incorrect_chain_address():
 def test_import_invalid_block_incorrect_signature():
     testdb1 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
-    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    dummy_chain = MainnetChain(JournalDB(testdb1), GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
@@ -1367,7 +1365,7 @@ def test_import_invalid_block_incorrect_signature():
             s=100
         ))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     with pytest.raises(Exception):
         chain.import_block(invalid_block)
@@ -1376,9 +1374,9 @@ def test_import_invalid_block_incorrect_signature():
 def test_import_invalid_block_not_enough_gas():
     testdb1 = MemoryDB()
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
-    correct_nonce = chain.get_vm().state.account_db.get_nonce(GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    correct_nonce = chain.get_vm().state.account_db.get_nonce(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
 
     transaction = chain.create_and_sign_transaction(
         nonce=correct_nonce,
@@ -1481,8 +1479,8 @@ def test_chronological_block_initialization():
     num_tpc_windows_to_go_back = 6*10 # 6 chronological block windows
     create_blockchain_database_for_exceeding_tpc_cap(testdb1,tpc_of_blockchain_database, num_tpc_windows_to_go_back, use_real_genesis=True)
 
-    server = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
-    client = MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    server = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    client = MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
 
     server_chain_head_hashes = server.chain_head_db.get_head_block_hashes_list()
     for head_hash in server_chain_head_hashes:
@@ -1527,7 +1525,7 @@ def get_first_unprocessed_blocks():
 
     testdb1 = JournalDB(LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full/'))
 
-    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    chain = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 
     first_unprocessed_block_headers = []
     for chain_address in chain_addresses:
@@ -1605,7 +1603,7 @@ exit()
 #
 #
 #
-#     server = MainnetChain(testdb1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+#     server = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
 #
 #
 #     server.initialize_historical_root_hashes_and_chronological_blocks()

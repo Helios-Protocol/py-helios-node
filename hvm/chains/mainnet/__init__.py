@@ -21,6 +21,8 @@ from eth_keys.datatypes import PrivateKey
 
 from hvm.types import Timestamp
 
+from eth_utils import to_wei
+from eth_utils import encode_hex, decode_hex
 #MAINNET_VM_CONFIGURATION = (
 #    (0, FrontierVM),
 #    (HOMESTEAD_MAINNET_BLOCK, HomesteadVM),
@@ -37,80 +39,31 @@ MAINNET_VM_CONFIGURATION = (
 
 MAINNET_NETWORK_ID = 1
 
-
-GENESIS_PRIVATE_KEY = keys.PrivateKey(b'p.Oids\xedb\xa3\x93\xc5\xad\xb9\x8d\x92\x94\x00\x06\xb9\x82\xde\xb9\xbdBg\\\x82\xd4\x90W\xd0\xd5')
-GENESIS_WALLET_ADDRESS = b"\xdbL\xa4&\xd5;Y\xf6\x03p'O\xfb\x19\xf2&\x8d\xc3=\xdf"
-
+# for automated stuff on testnet
+GENESIS_PRIVATE_KEY_FOR_TESTNET = keys.PrivateKey(b'p.Oids\xedb\xa3\x93\xc5\xad\xb9\x8d\x92\x94\x00\x06\xb9\x82\xde\xb9\xbdBg\\\x82\xd4\x90W\xd0\xd5')
 
 
 
-#RECEIVER = keys.PrivateKey(b'\x16\xc3\xb37\xb8\x8aG`\xdf\xad\xe3},\x9a\xb4~\xff7&?\xab\x80\x03\xf8\x9fo/:c\x18\xaa>')
-#RECEIVER2 = keys.PrivateKey(b'\xd8>Fh\xefT\x04jf\x13\xca|E\xc4\x91\xed\x07\xcd\x02fW\xd8s;\xd8\xe4\xde\xb9\xbc\xe4\xf0I')
 
-#MAINNET_GENESIS_HEADER = BlockHeader(
-#    difficulty=17179869184,
-#    extra_data=decode_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa"),
-#    gas_limit=5000,
-#    gas_used=0,
-#    bloom=0,
-#    mix_hash=constants.ZERO_HASH32,
-#    nonce=constants.GENESIS_NONCE,
-#    block_number=0,
-#    parent_hash=constants.ZERO_HASH32,
-#    receipt_root=constants.BLANK_ROOT_HASH,
-#    uncles_hash=constants.EMPTY_UNCLE_HASH,
-#    state_root=decode_hex("0xd7f8974fb5ac78d9ac099b9ad5018bedc2ce0a72dad1827a1709da30580f0544"),
-#    timestamp=0,
-#    transaction_root=constants.BLANK_ROOT_HASH,
-#)
-    
-#MAINNET_GENESIS_HEADER = BlockHeader(
-#    account_hash=constants.GENESIS_ACCOUNT_HASH,
-#    extra_data=decode_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa"),
-#    gas_limit=5000,
-#    gas_used=0,
-#    bloom=0,
-#    block_number=0,
-#    parent_hash=constants.ZERO_HASH32,
-#    receipt_root=constants.BLANK_ROOT_HASH,
-#    timestamp=0,
-#    transaction_root=constants.BLANK_ROOT_HASH,
-#    receive_transaction_root=constants.BLANK_ROOT_HASH,
-#)
-
-#MAINNET_GENESIS_PARAMS = {
-#    'account_hash':constants.GENESIS_ACCOUNT_HASH,
-#    'parent_hash': constants.GENESIS_PARENT_HASH,
-#    'transaction_root': constants.BLANK_ROOT_HASH,
-#    'receive_transaction_root': constants.BLANK_ROOT_HASH,
-#    'receipt_root': constants.BLANK_ROOT_HASH,
-#    'bloom': 0,
-#    'block_number': constants.GENESIS_BLOCK_NUMBER,
-#    'gas_limit': constants.GENESIS_GAS_LIMIT,
-#    'gas_used': 0,
-#    'timestamp': 1514764800,
-#    'extra_data': constants.GENESIS_EXTRA_DATA
-#}
-
+MAINNET_GENESIS_PARAMS = {'chain_address': b'k\xfa\xf9\x95\xff\xce{\xe6\xe3\x07=\xc8\xaa\xf4^D\\\xf24\xe2', 'parent_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receive_transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receipt_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'bloom': 0, 'block_number': 0, 'gas_limit': 31415926, 'gas_used': 0, 'timestamp': 1556733839, 'extra_data': b'', 'reward_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'account_hash': b'\xd4\x9cGEs\xf6\x94d\xc1\x7ffQ\xfa\xe8M\x97\xbc\x174$\xcf\xbc\x85\xcfA\xe0\x03\x1d@V\x07k', 'account_balance': 350000000000000000000000000, 'v': 37, 'r': 93839323543945068717442670765493545859312542496119552239371011239431804284394, 's': 52575047971246554922163349509335225657857819685884165799268239475836117657622}
 
 #this state and header must go together to be valid.
 MAINNET_GENESIS_STATE = {
-    GENESIS_PRIVATE_KEY.public_key.to_canonical_address(): {
-        "balance": 100000000000000000000000000,
+    MAINNET_GENESIS_PARAMS['chain_address']: {
+        "balance": to_wei(350000000, 'ether'),
         "code": b"",
         "nonce": 0,
         "storage": {}
     }
 }
 
-MAINNET_GENESIS_PARAMS = {'chain_address': b"\xdbL\xa4&\xd5;Y\xf6\x03p'O\xfb\x19\xf2&\x8d\xc3=\xdf", 'parent_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receive_transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receipt_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'bloom': 0, 'block_number': 0, 'gas_limit': 31415926, 'gas_used': 0, 'timestamp': 1543700000, 'extra_data': b'', 'reward_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'account_hash': b'\x19\xfc\x94\x8d\x95\xacs\x06Db\x80\xf4\x9e\x94\x823\xa1\xe2#\x03t\x0f\x8d\\\xe9\x7f&;\xc9d\xc67', 'account_balance': 100000000000000000000000000, 'v': 38, 'r': 45034268824120027712675756355413116720367789723148269550183865435685699800523, 's': 27141080959376664758566629966709756538095401130381810437562609117602786161669}
-
+GENESIS_WALLET_ADDRESS = MAINNET_GENESIS_PARAMS['chain_address']
 
 class BaseMainnetChain:
     faucet_private_key: PrivateKey = keys.PrivateKey(TESTNET_FAUCET_PRIVATE_KEY)
     vm_configuration: Tuple[Tuple[Timestamp, Type[BaseVM]]] = MAINNET_VM_CONFIGURATION
     network_id: int = MAINNET_NETWORK_ID
-    genesis_wallet_address: Address = GENESIS_WALLET_ADDRESS
+    genesis_wallet_address: Address = MAINNET_GENESIS_PARAMS['chain_address']
     genesis_block_timestamp: Timestamp = MAINNET_GENESIS_PARAMS['timestamp']
 
 class MainnetChain(BaseMainnetChain, Chain):
@@ -125,7 +78,7 @@ class MainnetChain(BaseMainnetChain, Chain):
 TPC_CAP_TEST_GENESIS_PRIVATE_KEY = keys.PrivateKey(b'p.Oids\xedb\xa3\x93\xc5\xad\xb9\x8d\x92\x94\x00\x06\xb9\x82\xde\xb9\xbdBg\\\x82\xd4\x90W\xd0\xd5')
     
 MAINNET_TPC_CAP_TEST_GENESIS_STATE = {
-    GENESIS_PRIVATE_KEY.public_key.to_canonical_address(): {
+    GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(): {
         "balance": 100000000000000000000000000,
         "code": b"",
         "nonce": 0,
