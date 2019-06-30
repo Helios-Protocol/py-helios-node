@@ -305,7 +305,10 @@ class Consensus(BaseService, PeerSubscriber):
 
     @property
     def has_enough_consensus_participants(self):
-        if len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS or self.is_network_startup_node:
+        if self.is_network_startup_node:
+            return True
+
+        elif len(self.peer_root_hash_timestamps) >= MIN_SAFE_PEERS:
             total_stake = 0
             for wallet_address, statistics in self.peer_root_hash_timestamps.items():
                 peer = self.peer_pool.wallet_address_to_peer_lookup(wallet_address)
