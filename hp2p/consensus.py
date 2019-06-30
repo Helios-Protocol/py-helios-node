@@ -304,7 +304,7 @@ class Consensus(BaseService, PeerSubscriber):
         return self.chain_config.network_startup_node
 
     @property
-    async def has_enough_consensus_participants(self):
+    def has_enough_consensus_participants(self):
         if self.is_network_startup_node:
             return True
 
