@@ -120,6 +120,10 @@ class AsyncChainDB(ChainDB):
     async def coro_get_block_stake_from_children(self,block_hash: Hash32, coin_mature_time_for_staking: Timestamp, exclude_chains: Set = None) -> int:
         raise NotImplementedError()
 
+
+    async def coro_propogate_historical_min_gas_price_parameters_to_present(self) -> None:
+        raise NotImplementedError()
+
 class ChainDBProxy(BaseProxy):
     coro_get_block_header_by_hash = async_method('get_block_header_by_hash')
     coro_get_canonical_head = async_method('get_canonical_head')
@@ -151,6 +155,7 @@ class ChainDBProxy(BaseProxy):
     coro_get_mature_stake = async_method('get_mature_stake')
     coro_get_unprocessed_block_hash_by_block_number = async_method('get_unprocessed_block_hash_by_block_number')
     coro_get_unprocessed_block_header_by_block_number = async_method('get_unprocessed_block_header_by_block_number')
+    coro_propogate_historical_min_gas_price_parameters_to_present = async_method('propogate_historical_min_gas_price_parameters_to_present')
 
 
 

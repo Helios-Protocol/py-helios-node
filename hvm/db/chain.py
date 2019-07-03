@@ -111,7 +111,7 @@ from hvm.utils.numeric import (
     are_items_in_list_equal,
 )
 
-from hvm.utils.padding import de_sparse_timestamp_item_list
+from hvm.utils.padding import de_sparse_timestamp_item_list, propogate_timestamp_item_list_to_present
 if TYPE_CHECKING:
     from hvm.rlp.blocks import (  # noqa: F401
         BaseBlock
@@ -512,6 +512,10 @@ class BaseChainDB(metaclass=ABCMeta):
     @abstractmethod
     def initialize_historical_minimum_gas_price_at_genesis(self, min_gas_price: int, net_tpc_cap: int,
                                                            tpc: int = None) -> None:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def propogate_historical_min_gas_price_parameters_to_present(self) -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -1775,7 +1779,7 @@ class ChainDB(BaseChainDB):
     #
     def save_historical_minimum_gas_price(self, historical_minimum_gas_price: List[List[Union[Timestamp, int]]]) -> None:
         '''
-        This takes list of timestamp, gas_price. The timestamps are every minute
+        This takes list of timestamp, gas_price. The timestamps are every 100 seconds
         '''
         lookup_key = SchemaV1.make_historical_minimum_gas_price_lookup_key()
         encoded_data = rlp.encode(historical_minimum_gas_price[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
@@ -1803,7 +1807,7 @@ class ChainDB(BaseChainDB):
 
     def save_historical_tx_per_centisecond(self, historical_tx_per_centisecond: List[List[int]], de_sparse = True) -> None:
         '''
-        This takes list of timestamp, tx_per_centisecond. The timestamps are every minute, tx_per_minute must be an intiger
+        This takes list of timestamp, tx_per_centisecond.
         this one is naturally a sparse list because some 100 second intervals might have no tx. So we can de_sparse it.
         '''
         if de_sparse:
@@ -1936,7 +1940,21 @@ class ChainDB(BaseChainDB):
         self.save_historical_network_tpc_capability(historical_tpc_capability, de_sparse = False)
 
 
+    def propogate_historical_min_gas_price_parameters_to_present(self) -> None:
 
+        hist_min_gas_price = self.load_historical_minimum_gas_price()
+        hist_tpc_cap = self.load_historical_network_tpc_capability()
+        hist_tx_per_centisecond = self.load_historical_tx_per_centisecond()
+
+        current_centisecond = int(time.time() / 100) * 100
+
+        hist_min_gas_price = propogate_timestamp_item_list_to_present(hist_min_gas_price, 100, current_centisecond)
+        hist_tpc_cap = propogate_timestamp_item_list_to_present(hist_tpc_cap, 100, current_centisecond)
+        hist_tx_per_centisecond = propogate_timestamp_item_list_to_present(hist_tx_per_centisecond, 100, current_centisecond)
+
+        self.save_historical_minimum_gas_price(hist_min_gas_price)
+        self.save_historical_tx_per_centisecond(hist_tpc_cap, de_sparse=False)
+        self.save_historical_network_tpc_capability(hist_tx_per_centisecond, de_sparse=False)
 
     def _recalculate_historical_mimimum_gas_price(self, start_timestamp: Timestamp, end_timestamp: Timestamp = None) -> None:
         #we just have to delete the ones in front of this time and update
@@ -2112,6 +2130,7 @@ class ChainDB(BaseChainDB):
 
     def min_gas_system_initialization_required(self) -> bool:
         test_1 = self.load_historical_minimum_gas_price()
+        test_3 = self.load_historical_network_tpc_capability()
         test_3 = self.load_historical_network_tpc_capability()
 
         if test_1 is None or test_3 is None:

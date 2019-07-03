@@ -1113,10 +1113,13 @@ class Consensus(BaseService, PeerSubscriber):
         Makes sure our system for keeping track of minimum allowed gas price is in sync with the network
         This is used to throttle the transaction rate when it reaches the limit that the network can handle.
         '''
-        if self.chaindb.min_gas_system_initialization_required():
-            self.coro_min_gas_system_ready.clear()
-        else:
-            self.coro_min_gas_system_ready.set()
+
+        # Once the min gas price system is ready, it cannot become not ready until the node is shut down.
+        # if there is ever a lapse of data, it will just propogate its existing data to present.
+        # if self.chaindb.min_gas_system_initialization_required():
+        #     self.coro_min_gas_system_ready.clear()
+        # else:
+        #     self.coro_min_gas_system_ready.set()
 
         chain = self.node.get_chain()
         if self.coro_min_gas_system_ready.is_set():
@@ -1131,8 +1134,8 @@ class Consensus(BaseService, PeerSubscriber):
                     test_2 = self.chaindb.load_historical_minimum_gas_price()
                     #test_3 = self.chaindb.load_historical_tx_per_centisecond()
                     self.logger.debug("min_gas_price = {}".format(test_2[-10:]))
+                    await self.chaindb.coro_propogate_historical_min_gas_price_parameters_to_present()
 
-            #TODO. here we just ask for the last centisecond.
             for peer in self.peer_pool.peers:
                 peer.sub_proto.send_get_min_gas_parameters(num_centiseconds_from_now=0)
 
@@ -1144,22 +1147,27 @@ class Consensus(BaseService, PeerSubscriber):
 
     async def initialize_min_gas_price_from_bootnode_if_required(self):
         if not self.coro_min_gas_system_ready.is_set():
-            for boot_node in self.bootstrap_nodes:
-                try: 
-                    boot_node_peer = self.peer_pool.connected_nodes[boot_node]
-                    #lets just ask the first bootnode we find that we are connected to.
-                    self.logger.debug("found bootnode to ask for min_gas_price initialization")
+            if self.chain_config.node_type == 4:
+                self.logger.debug("This is the bootnode, so we are initializing historical min gas price by propogating existing to present")
+                await self.chaindb.coro_propogate_historical_min_gas_price_parameters_to_present()
+                self.coro_min_gas_system_ready.set()
+            else:
+                for boot_node in self.bootstrap_nodes:
+                    try:
+                        boot_node_peer = self.peer_pool.connected_nodes[boot_node]
+                        #lets just ask the first bootnode we find that we are connected to.
+                        self.logger.debug("found bootnode to ask for min_gas_price initialization")
 
-                    earliest_required_time = get_earliest_required_time_for_min_gas_system()
-                    # lets go a little further back to make sure we are fully covered
-                    safe_earliest_required_time = earliest_required_time - 100 * 10
+                        earliest_required_time = get_earliest_required_time_for_min_gas_system()
+                        # lets go a little further back to make sure we are fully covered
+                        safe_earliest_required_time = earliest_required_time - 100 * 10
 
-                    num_centiseconds_required = int((time.time()-safe_earliest_required_time)/100)+100
+                        num_centiseconds_required = int((time.time()-safe_earliest_required_time)/100)+100
 
-                    boot_node_peer.sub_proto.send_get_min_gas_parameters(num_centiseconds_from_now=num_centiseconds_required)
-                    return
-                except KeyError:
-                    pass
+                        boot_node_peer.sub_proto.send_get_min_gas_parameters(num_centiseconds_from_now=num_centiseconds_required)
+                        return
+                    except KeyError:
+                        pass
             
         
 
@@ -1889,7 +1897,7 @@ class Consensus(BaseService, PeerSubscriber):
         
         hist_net_tpc_capability = msg['hist_net_tpc_capability']
         hist_min_allowed_gas_price = msg['hist_min_allowed_gas_price']
-        
+        self.logger.debug("received min gas parameters from peer")
         if len(hist_net_tpc_capability) == 1:
             #require that the timestamp is set to 0 for the most recent average. Otherwise we shouldn't be receiving just 1.
             if hist_net_tpc_capability[0][0] == 0:
@@ -1904,9 +1912,11 @@ class Consensus(BaseService, PeerSubscriber):
         else:
             #we are receiving an entire list of historical tpc data. This can only come from a bootnode.
             if peer.remote in self.bootstrap_nodes:
+                self.logger.debug("received min gas initialization parameters from bootnode")
                 if not self.coro_min_gas_system_ready.is_set():
                     await self.chaindb.coro_save_historical_minimum_gas_price(hist_min_allowed_gas_price)
                     await self.chaindb.coro_save_historical_network_tpc_capability(hist_net_tpc_capability)
+                    self.coro_min_gas_system_ready.set()
 
     async def _handle_get_node_staking_score(self, peer: HLSPeer, msg) -> None:
         self.logger.debug("Received request to send node staking score.")

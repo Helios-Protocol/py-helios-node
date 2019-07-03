@@ -2,10 +2,12 @@ from cytoolz import (
     curry,
 )
 
+from typing import List
 from sortedcontainers import SortedDict
 
 ZERO_BYTE = b'\x00'
 
+import math
 
 @curry
 def zpad_right(value: bytes, to_size: int) -> bytes:
@@ -46,3 +48,26 @@ def de_sparse_timestamp_item_list(sparse_list, spacing, filler = None, end_times
             
     
     return list(sparse_dict.items())
+
+
+def propogate_timestamp_item_list_to_present(initial_list: List, spacing: int, end_timestamp: int):
+    if len(initial_list) == 0:
+        return initial_list
+
+    initial_dict = SortedDict(initial_list)
+
+    timestamps = list(initial_dict.keys())
+
+    last_timestamp = timestamps[-1]
+    if last_timestamp >= end_timestamp:
+        return initial_list
+
+    iter_start_timestamp = last_timestamp + spacing
+    iter_end_timestamp = end_timestamp + spacing
+
+    filler = initial_dict[last_timestamp]
+
+    for timestamp in range(iter_start_timestamp, iter_end_timestamp, spacing):
+        initial_dict[timestamp] = filler
+
+    return list(initial_dict.items())

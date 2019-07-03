@@ -41,6 +41,7 @@ class ChainProxy(BaseProxy):
     coro_purge_block_and_all_children_and_set_parent_as_chain_head_by_hash = async_method('purge_block_and_all_children_and_set_parent_as_chain_head_by_hash')
 
 
+
     import_block = sync_method('import_block')
     import_chain = sync_method('import_chain')
 
