@@ -606,7 +606,6 @@ class Hls(RPCModule):
             num_to_return = 10
         if start_idx is None:
             start_idx = 0
-
         num_to_return = min([10, num_to_return])
         block_dicts_to_return = []
 
@@ -614,11 +613,10 @@ class Hls(RPCModule):
             chain = self.get_new_chain(chain_address)
             try:
                 canonical_header = chain.chaindb.get_canonical_head(chain_address)
-                
                 start = canonical_header.block_number-start_idx
-
-                if start > 0:
-                    end = max([0, start-num_to_return])
+                if start >= 0:
+                    end = max([-1, start-num_to_return])
+                    print(end)
                     for i in range(start, end, -1):
                         block = chain.get_block_by_number(i, chain_address)
                         if block.hash == after_hash:
