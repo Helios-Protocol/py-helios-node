@@ -294,7 +294,6 @@ def create_dev_test_random_blockchain_database(base_db = None, num_iterations = 
         tx_timestamp = timestamp+i*MIN_TIME_BETWEEN_BLOCKS
         tx_list.append([privkey, receiver_privkey, 10000000 * 10 ** 18 - i * 100000 * 10 ** 18 - random.randint(0, 1000), tx_timestamp])
 
-    print('ZZZZZZZZZZZ')
     pprint(tx_list)
     add_transactions_to_blockchain_db(base_db, tx_list)
 

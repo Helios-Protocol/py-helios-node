@@ -496,7 +496,7 @@ class Hls(RPCModule):
 
     @format_params(decode_hex)
     async def getBlockCreationParams(self, chain_address):
-
+        print("GOT BLOCK CREATION PARAMS")
         #create new chain for all requests
         chain = self.get_new_chain(chain_address)
 
@@ -539,6 +539,7 @@ class Hls(RPCModule):
         return block_to_dict(block, include_transactions, chain)
 
     async def sendRawBlock(self, encoded_micro_block):
+        print("RECEIVED RAW BLOCK")
         chain = self.get_new_chain()
 
         encoded_micro_block = decode_hex(encoded_micro_block)
@@ -549,6 +550,7 @@ class Hls(RPCModule):
 
         full_block = block_class.from_micro_block(micro_block)
 
+        print(full_block.header.as_dict())
         min_time_between_blocks = chain.get_vm(header=full_block.header).min_time_between_blocks
 
         # Validate the block here
