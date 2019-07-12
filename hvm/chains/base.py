@@ -434,6 +434,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def validate_gaslimit(self, header: BlockHeader) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
+    @abstractmethod
+    def validate_block_specification(self, block) -> bool:
+        raise NotImplementedError("Chain classes must implement this method")
+
     #
     # Stake API
     #
@@ -1598,7 +1602,8 @@ class Chain(BaseChain):
                      wallet_address = None,
                      allow_unprocessed = True,
                      allow_replacement = True,
-                     ensure_block_unchanged:bool = True) -> BaseBlock:
+                     ensure_block_unchanged:bool = True,
+                     microblock_origin: bool = False) -> BaseBlock:
 
         #we handle replacing blocks here
         #this includes deleting any blocks that it might be replacing
@@ -1763,7 +1768,8 @@ class Chain(BaseChain):
                                               perform_validation = perform_validation,
                                               save_block_head_hash_timestamp = save_block_head_hash_timestamp,
                                               allow_unprocessed = allow_unprocessed,
-                                              ensure_block_unchanged= ensure_block_unchanged)
+                                              ensure_block_unchanged= ensure_block_unchanged,
+                                              microblock_origin = microblock_origin)
 
             # handle importing unprocessed blocks here because doing it recursively results in maximum recursion depth exceeded error
             if not self.chaindb.is_block_unprocessed(return_block.hash):
@@ -1793,7 +1799,8 @@ class Chain(BaseChain):
                       perform_validation: bool=True,
                       save_block_head_hash_timestamp = True,
                       allow_unprocessed = True,
-                      ensure_block_unchanged: bool = True) -> BaseBlock:
+                      ensure_block_unchanged: bool = True,
+                      microblock_origin: bool = False) -> BaseBlock:
         """
         Imports a complete block.
         """
@@ -1824,8 +1831,22 @@ class Chain(BaseChain):
 
                 # Validate the imported block.
                 if ensure_block_unchanged:
-                    self.logger.debug('ensuring block unchanged')
-                    ensure_imported_block_unchanged(imported_block, block)
+                    if microblock_origin:
+                        # this started out as a microblock. So we only ensure the microblock fields are unchanged.
+                        self.logger.debug('ensuring block unchanged. microblock correction')
+                        corrected_micro_block = block.copy(header = block.header.copy(
+                            receipt_root = imported_block.header.receipt_root,
+                            bloom = imported_block.header.bloom,
+                            gas_limit = imported_block.header.gas_limit,
+                            gas_used = imported_block.header.gas_used,
+                            account_hash = imported_block.header.account_hash,
+                            account_balance = imported_block.header.account_balance,
+                        ))
+
+                        ensure_imported_block_unchanged(imported_block, corrected_micro_block)
+                    else:
+                        self.logger.debug('ensuring block unchanged')
+                        ensure_imported_block_unchanged(imported_block, block)
                 else:
                     self.logger.debug('Not checking block for changes.')
                 if perform_validation:
@@ -2077,7 +2098,7 @@ class Chain(BaseChain):
                 "The gas limit on block {0} is too high: {1}. It must be at most {2}".format(
                     encode_hex(header.hash), header.gas_limit, BLOCK_GAS_LIMIT))
 
-    def validate_block_specification(self, block):
+    def validate_block_specification(self, block) -> bool:
         '''
         This validates everything we can without looking at the blockchain database. It doesnt need to assume
         that we have the block that sent the transactions.

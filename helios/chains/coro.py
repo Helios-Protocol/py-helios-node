@@ -19,9 +19,14 @@ from hvm.chains.base import BaseChain
 # When extending the actual chain class, make sure this is the last parameter so it doesnt overrride the real definitions
 class AsyncChain(BaseChain):
 
-    async def coro_import_block(self,
-                                block: BlockHeader,
-                                perform_validation: bool=True) -> BaseBlock:
+    async def coro_import_block(self, block: BaseBlock,
+                     perform_validation: bool=True,
+                     save_block_head_hash_timestamp = True,
+                     wallet_address = None,
+                     allow_unprocessed = True,
+                     allow_replacement = True,
+                     ensure_block_unchanged:bool = True,
+                     microblock_origin: bool = False) -> BaseBlock:
         raise NotImplementedError()
 
     async def coro_import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
