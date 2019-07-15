@@ -21,6 +21,9 @@ from lahja import (
 from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
+from hvm.chains.testnet import (
+    TESTNET_NETWORK_ID,
+)
 from hvm.db.backends.base import BaseDB
 from hvm.db.backends.level import LevelDB
 
@@ -92,7 +95,7 @@ from helios.utils.version import (
 from hvm.tools.logging import TRACE_LEVEL_NUM
 from helios.utils.db_proxy import create_db_manager
 
-PRECONFIGURED_NETWORKS = {MAINNET_NETWORK_ID}
+PRECONFIGURED_NETWORKS = {MAINNET_NETWORK_ID, TESTNET_NETWORK_ID}
 
 HELIOS_HEADER = (
     "\n"    
@@ -167,7 +170,7 @@ def main() -> None:
 
     if args.network_id not in PRECONFIGURED_NETWORKS:
         raise NotImplementedError(
-            "Unsupported network id: {0}.  Only the ropsten and mainnet "
+            "Unsupported network id: {0}.  Only the testnet and mainnet "
             "networks are supported.".format(args.network_id)
         )
 

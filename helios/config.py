@@ -16,6 +16,7 @@ from eth_keys.datatypes import PrivateKey
 from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
+from hvm.chains.testnet import TESTNET_NETWORK_ID
 
 from hp2p.kademlia import Node as KademliaNode
 
@@ -483,26 +484,21 @@ class ChainConfig:
     def node_class(self) -> Type['Node']:
         from helios.nodes.mainnet import (
             MainnetFullNode,
-            #MainnetLightNode,
         )
-        if self.sync_mode == SYNC_LIGHT:
-            if self.network_id == MAINNET_NETWORK_ID:
-                #return MainnetLightNode
-                return False
-            else:
-                raise NotImplementedError(
-                    "Only the mainnet and ropsten chains are currently supported"
-                )
-        elif self.sync_mode == SYNC_FULL:
+        from helios.nodes.testnet import TestnetFullNode
+
+        if self.sync_mode == SYNC_FULL:
             if self.network_id == MAINNET_NETWORK_ID:
                 return MainnetFullNode
+            elif self.network_id == TESTNET_NETWORK_ID:
+                return TestnetFullNode
             else:
                 raise NotImplementedError(
-                    "Only the mainnet and ropsten chains are currently supported"
+                    "Only the mainnet and testnet chains are currently supported"
                 )
         else:
             raise NotImplementedError(
-                "Only full and light sync modes are supported"
+                "Only full sync mode is supported"
             )
 
     @contextmanager

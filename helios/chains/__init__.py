@@ -16,7 +16,10 @@ from typing import (
     Type
 )
 
-from hvm import MainnetChain
+from hvm import (
+    MainnetChain,
+    TestnetChain,
+)
 from hvm.chains.base import (
     BaseChain
 )
@@ -25,6 +28,12 @@ from hvm.chains.mainnet import (
     MAINNET_GENESIS_STATE,
     MAINNET_NETWORK_ID,
     GENESIS_WALLET_ADDRESS,
+)
+from hvm.chains.testnet import (
+    TESTNET_GENESIS_PARAMS,
+    TESTNET_GENESIS_STATE,
+    TESTNET_NETWORK_ID,
+    GENESIS_WALLET_ADDRESS as TESTNET_GENESIS_WALLET_ADDRESS,
 )
 
 from hvm.db.backends.base import BaseAtomicDB
@@ -159,6 +168,8 @@ def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> Non
             if chain_config.network_startup_node:
                 # add the initial startup transactions
                 create_mainnet_genesis_transactions(chaindb.db)
+        elif chain_config.network_id == TESTNET_NETWORK_ID:
+            TestnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE)
         else:
             # TODO: add genesis data to ChainConfig and if it's present, use it
             # here to initialize the chain.
@@ -229,7 +240,6 @@ def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> Bas
     chaindb = AsyncChainDB(base_db)
     chain_head_db = AsyncChainHeadDB.load_from_saved_root_hash(base_db)
 
-    chain_class: Type[BaseChain]
     if not is_database_initialized(chaindb):
         if 'GENERATE_RANDOM_DATABASE' in os.environ:
             #this is for testing, we neeed to build an initial blockchain database
@@ -241,15 +251,6 @@ def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> Bas
         else:
             initialize_database(chain_config = chain_config, chaindb = chaindb)
 
-    if chain_config.network_id == MAINNET_NETWORK_ID:
-        chain_class = MainnetChain
-    else:
-        raise NotImplementedError(
-            "Only the mainnet and ropsten chains are currently supported"
-        )
-
-
-    #chain = chain_class(base_db, chain_config.node_wallet_address, chain_config.node_private_helios_key)  # type: ignore
 
     consensus_db = AsyncConsensusDB(chaindb)
 
@@ -292,6 +293,8 @@ def get_chain_manager(chain_config: ChainConfig, base_db: AsyncBaseDB, instance 
     # There might be a performance savings by doing the threaded work in this process to avoid one process hop.
     if chain_config.network_id == MAINNET_NETWORK_ID:
         chain_class = MainnetChain
+    elif chain_config.network_id == TESTNET_NETWORK_ID:
+        chain_class = TestnetChain
     else:
         raise NotImplementedError(
             "Only the mainnet chain is currently supported"
@@ -302,11 +305,8 @@ def get_chain_manager(chain_config: ChainConfig, base_db: AsyncBaseDB, instance 
     class ChainManager(BaseManager):
         pass
 
-
     ChainManager.register(  # type: ignore
         'get_chain', callable=lambda: TracebackRecorder(chain), proxytype=ChainProxy)
-
-
 
     manager = ChainManager(address=str(chain_config.get_chain_ipc_path(instance)))  # type: ignore
     return manager

@@ -4,6 +4,9 @@ from .base import (  # noqa: F401
 from .mainnet import (  # noqa: F401
     MainnetChain,
 )
+from .testnet import (  # noqa: F401
+    TestnetChain,
+)
 #from .ropsten import (  # noqa: F401
 #    RopstenChain,
 #)
