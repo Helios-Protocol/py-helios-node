@@ -128,7 +128,8 @@ class Hls(RPCModule):
         
 
     def gasPrice(self):
-        raise NotImplementedError()
+        required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price()
+        return hex(required_min_gas_price)
 
     @format_params(decode_hex, to_int_if_hex)
     async def getBalance(self, address, at_block):
