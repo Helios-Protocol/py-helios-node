@@ -132,6 +132,79 @@ None
     >>
 
 
+personal_sendTransaction
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Creates and signs the transaction, adds it to a block, and sends it to the blockchain. Unlike Ethereum, since each person is in charge of their own blockchain, there are no transaction queues. This means you have to wait the minimum time between blocks (currently 10 seconds) each time you use this function. If you would like to send many transactions at once, use personal_sendTransactions instead.
+
+**Parameters:**
+
+1. The transaction dictionary with the format:
+::
+
+    tx = {'from': hex encoded from address,
+          'to': hex encoded to address,
+          'value': hex encoded transaction amount,
+          'gas': hex encoded maximum gas (optional, defaults to min allowed gas),
+          'gasPrice': hex encoded gas price (in wei) (optional, defaults to 21,000),
+          'data': hex encoded data (optional, defaults to b''),
+          'nonce': hex encoded transaction nonce (optional)}.
+
+2. The password to unlock the account to send the transaction. If this is left blank (as ""), then the transaction will only send if the account is already unlocked.
+
+
+**RPC Call:**
+
+::
+
+    {"method": "personal_sendTransaction", "params": [tx, string]}
+
+**Response:**
+
+The hash of the transaction
+
+**Example:**
+
+::
+
+    <<
+    {"method": "personal_sendTransaction", "params": [{'from': '0x0D1630cb77c00D95F7FA32bCcfe80043639681Be', 'to': '0xd9107f501d15E07E75D281dCe80C96F09151B657', 'value': 10000000000000000}, 'test_password']}
+    >>
+    '0x58d825d4bfe9810cbe546e46c94edf4b41e7b3256d74bf694d946f92124d34b5'
+
+personal_sendTransactions
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Identical to personal_sendTransaction, except it takes multiple transactions and adds them all to the same block. This can be used to send many transactions at the same time, up to the max gas of the block. Since these are all going into the same block, they must all be from the same address. If you want to send multiple transactions from different addresses, just call this function once for each address. The minimum time between blocks is for each individual wallet address, but multiple addresses can import blocks in parallel.
+
+**Parameters:**
+
+1. A list of transaction dictionaries as described in personal_sendTransaction. All transactions must be from the same account:
+
+2. The password to unlock the account to send the transaction. If this is left blank (as ""), then the transaction will only send if the account is already unlocked.
+
+
+**RPC Call:**
+
+::
+
+    {"method": "personal_sendTransactions", "params": [[tx1,tx2,tx3...], string]}
+
+**Response:**
+
+A list of the transaction hashes
+
+**Example:**
+
+::
+
+    <<
+    {"method": "personal_sendTransactions", "params": [[{'from': '0x0D1630cb77c00D95F7FA32bCcfe80043639681Be', 'to': '0xd9107f501d15E07E75D281dCe80C96F09151B657', 'value': 10000000000000000},{'from': '0x0D1630cb77c00D95F7FA32bCcfe80043639681Be', 'to': '0xd9107f501d15E07E75D281dCe80C96F09151B657', 'value': 10000000000000000}], 'test_password']}
+    >>
+    ['0xd98d1d628ea4c93dee20a8b1e691acbb45b3b9aa6997baa1a0006a5f4c86efbb',
+    '0x297e7a7443926d6bbc202d81bff3081a9a53caaf64cc5685760aaca439ce1b50']
+
+
 personal_sign
 ~~~~~~~~~~~~~
 

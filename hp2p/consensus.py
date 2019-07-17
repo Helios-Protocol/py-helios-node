@@ -288,6 +288,10 @@ class Consensus(BaseService, PeerSubscriber):
     #TODO. check to make sure the peers also have stake that is not equal to None
     @property
     def has_enough_peers(self):
+        if self.is_network_startup_node:
+            self.logger.debug("Has enough peers because we are a network startup node")
+            return True
+
         if len(self.peer_pool.connected_nodes) >= MIN_SAFE_PEERS:
             self.logger.debug("Has enough peers. connected peers: {}".format(self.peer_pool.connected_nodes.keys()))
         else:

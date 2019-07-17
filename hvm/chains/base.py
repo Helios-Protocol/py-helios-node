@@ -53,6 +53,8 @@ from hvm.db.chain import (
 from hvm.db.journal import (
     JournalDB,
 )
+
+from hvm.db.read_only import ReadOnlyDB
 from hvm.constants import (
     BLOCK_GAS_LIMIT,
     BLANK_ROOT_HASH,
@@ -182,6 +184,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     vm_configuration = None  # type: Tuple[Tuple[int, Type[BaseVM]], ...]
     genesis_wallet_address: Address = None
     genesis_block_timestamp: Timestamp = None
+    min_time_between_blocks: int = None
 
     #
     # Helpers
@@ -193,6 +196,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
 
     @abstractmethod
     def get_consensus_db(self, header: BlockHeader = None, timestamp: Timestamp = None) -> ConsensusDB:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def enable_read_only_db(self) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
     #
@@ -427,6 +434,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     # Validation API
     #
     @abstractmethod
+    def get_allowed_time_of_next_block(self, chain_address: Address = None) -> Timestamp:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
     def validate_block(self, block: BaseBlock) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
@@ -573,6 +584,12 @@ class Chain(BaseChain):
     def queue_block(self,val:BaseQueueBlock):
         self._queue_block = val
 
+    @property
+    def min_time_between_blocks(self):
+        vm = self.get_vm(timestamp=Timestamp(int(time.time())))
+        min_allowed_time_between_blocks = vm.min_time_between_blocks
+        return min_allowed_time_between_blocks
+
     # @property
     # def consensus_db(self, header: BlockHeader = None, timestamp: Timestamp = None):
     #     # gets the consensus db corresponding to the block timestamp
@@ -587,6 +604,14 @@ class Chain(BaseChain):
     #
     # Global Record and discard API
     #
+
+    def enable_read_only_db(self) -> None:
+        if not isinstance(self.db, ReadOnlyDB):
+            self.base_db = self.db
+            self.db = ReadOnlyDB(self.base_db)
+            self.reinitialize()
+
+
     def enable_journal_db(self):
         if self._journaldb is None:
             self.base_db = self.db
@@ -1060,12 +1085,10 @@ class Chain(BaseChain):
         return signed_transaction
 
     def create_and_sign_transaction_for_queue_block(self, *args: Any, **kwargs: Any) -> BaseTransaction:
-        if 'nonce' in kwargs and kwargs['nonce'] is not None:
-            tx_nonce = kwargs['nonce']
-        else:
-            tx_nonce = self.get_current_queue_block_nonce()
+        if 'nonce' not in kwargs or kwargs['nonce'] is None:
+            kwargs['nonce'] = self.get_current_queue_block_nonce()
 
-        transaction = self.create_and_sign_transaction(nonce = tx_nonce, *args, **kwargs)
+        transaction = self.create_and_sign_transaction(*args, **kwargs)
 
         self.add_transactions_to_queue_block(transaction)
         return transaction
@@ -2075,6 +2098,21 @@ class Chain(BaseChain):
     #
     # Validation API
     #
+
+    def get_allowed_time_of_next_block(self, chain_address: Address = None) -> Timestamp:
+        if chain_address is None:
+            chain_address = self.wallet_address
+
+        try:
+            canonical_head = self.chaindb.get_canonical_head(chain_address=chain_address)
+        except CanonicalHeadNotFound:
+            return Timestamp(0)
+        vm = self.get_vm(timestamp=Timestamp(int(time.time())))
+        min_allowed_time_between_blocks = vm.min_time_between_blocks
+        return Timestamp(canonical_head.timestamp + min_allowed_time_between_blocks)
+
+
+
     def validate_block(self, block: BaseBlock) -> None:
         """
         Performs validation on a block that is either being mined or imported.

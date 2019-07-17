@@ -24,7 +24,6 @@ from helios.rpc.format import (
 from helios.rpc.modules import (  # type: ignore
     RPCModule,
 )
-from helios.sync.common.constants import FULLY_SYNCED_STAGE_ID
 from typing import (
     cast,
     Dict,
@@ -76,6 +75,13 @@ class Personal(RPCModule):
 
     _unlocked_accounts = {}
     _account_lock_cancel_events = {}
+
+    # Dict of asyncio queues. The keys are the wallet addresses for each queue.
+    _tx_queues: Dict[str, asyncio.Queue] = {}
+    _send_delayed_block_locks: Dict[str, asyncio.Lock] = {}
+
+    _newest_block_times_sent_to_event_bus = {}
+    _current_tx_nonce = {}
 
     _importing_block_lock = asyncio.Lock()
 
@@ -176,6 +182,50 @@ class Personal(RPCModule):
             account = await self._unlock_account(wallet_address, password)
         return account
 
+    #
+    # Transaction Queue Functions
+    #
+
+    async def _add_transaction_to_queue(self, tx) -> None:
+        print("Adding transaction to Queue")
+        normalized_wallet_address = to_normalized_address(tx['from'])
+        if normalized_wallet_address not in self._tx_queues:
+            self._tx_queues[normalized_wallet_address] = asyncio.Queue()
+
+        self._tx_queues[normalized_wallet_address].put_nowait(tx)
+
+    async def _get_transactions_from_queue(self, wallet_address: Address, limit = 50) -> List:
+        normalized_wallet_address = to_normalized_address(wallet_address)
+        if normalized_wallet_address not in self._tx_queues:
+            return []
+
+        transactions = []
+        while not self._tx_queues[normalized_wallet_address].empty():
+            tx = self._tx_queues[normalized_wallet_address].get_nowait()
+            transactions.append(tx)
+            if len(transactions) >= limit:
+                break
+
+        return transactions
+
+    async def _import_delayed_block_with_queue(self, account, seconds_from_now: int, min_time_between_blocks: int):
+        normalized_address = to_normalized_address(account.address)
+        if normalized_address not in self._send_delayed_block_locks:
+            self._send_delayed_block_locks[normalized_address] = asyncio.Lock()
+        else:
+            # There is already a lock. check if it is locked. if so, there is already another delayed block import occuring
+            if self._send_delayed_block_locks[normalized_address].locked():
+                return
+
+        async with self._send_delayed_block_locks[normalized_address]:
+            print("Waiting {} seconds to import new block".format(seconds_from_now))
+            await asyncio.sleep(seconds_from_now)
+            transactions = await self._get_transactions_from_queue(normalized_address)
+            print("Importing delayed block")
+            await self._send_transactions(transactions, account)
+            if not self._tx_queues[normalized_address].empty():
+                # If we didn't empty the queue, lets run this again in min_time_between_blocks
+                asyncio.ensure_future(self._import_delayed_block_with_queue(account, min_time_between_blocks, min_time_between_blocks))
 
     #
     # Transaction and Block Creation Functions
@@ -191,13 +241,6 @@ class Personal(RPCModule):
             wallet_address = decode_hex(wallet_address_hex)
 
             chain = self.get_new_chain(Address(wallet_address), account._key_obj)
-
-            allowed_time_of_next_block = chain.get_allowed_time_of_next_block()
-            now = int(time.time())
-
-            if now < allowed_time_of_next_block:
-                raise BaseRPCError("The minimum time between blocks has not passed. You must wait until {} to send the next block. "
-                                   "Use personal_sendTrasactions to send multiple transactions at once.".format(allowed_time_of_next_block))
 
             # make the chain read only for creating the block. We don't want to actually import it here.
             chain.enable_read_only_db()
@@ -226,7 +269,10 @@ class Personal(RPCModule):
                 if 'nonce' in tx:
                     nonce = tx['nonce']
                 else:
-                    nonce = None
+                    if normalized_wallet_address in self._current_tx_nonce:
+                        nonce_from_state = chain.get_vm().state.account_db.get_nonce(wallet_address)
+
+                    nonce = chain.get_vm().state.account_db.get_nonce(wallet_address)
 
                 transactions[i]['nonce'] = nonce
                 signed_tx = chain.create_and_sign_transaction_for_queue_block(
@@ -235,18 +281,36 @@ class Personal(RPCModule):
                     to=decode_hex(tx['to']),
                     value=to_int_if_hex(tx['value']),
                     data=data,
-                    nonce=nonce,
                     v=0,
                     r=0,
                     s=0
                 )
                 signed_transactions.append(signed_tx)
 
-            block = chain.import_current_queue_block()
+            # We put this part down here because we have to return the hashes of all the transactions.
+            # Check when the next block can be. If we are early, queue up the tx.
+            allowed_time_of_next_block = chain.get_allowed_time_of_next_block()
+            min_time_between_blocks = chain.min_time_between_blocks
+            now = int(time.time())
 
-            self._event_bus.broadcast(
-                NewBlockEvent(block=cast(P2PBlock, block), from_rpc=True)
-            )
+            # Or, we may have just sent a block and it hasn't been imported yet. Lets check. Then send to queue if that is the case.
+            if normalized_wallet_address in self._newest_block_times_sent_to_event_bus:
+                if self._newest_block_times_sent_to_event_bus[normalized_wallet_address] >= allowed_time_of_next_block:
+                    allowed_time_of_next_block = self._newest_block_times_sent_to_event_bus[normalized_wallet_address] + min_time_between_blocks
+
+            if now < allowed_time_of_next_block:
+                for tx in transactions:
+                    await self._add_transaction_to_queue(tx)
+
+                asyncio.ensure_future(self._import_delayed_block_with_queue(account, allowed_time_of_next_block-now, min_time_between_blocks))
+            else:
+                block = chain.import_current_queue_block()
+
+                self._event_bus.broadcast(
+                    NewBlockEvent(block=cast(P2PBlock, block), from_rpc=True)
+                )
+
+                self._newest_block_times_sent_to_event_bus[normalized_wallet_address] = block.header.timestamp
 
             if len(signed_transactions) == 1:
                 return encode_hex(signed_transactions[0].hash)
@@ -299,48 +363,21 @@ class Personal(RPCModule):
 
     async def sendTransaction(self, tx, password: str = None):
         # implement this here, and have hls.sendtransaction call this
+        # TODO: add tx queue for more than 1 tx per block
         '''
 
         :param tx: {'from', 'to', 'value', 'gas', 'gasPrice', 'data', 'nonce'}
         :param password:
         :return:
         '''
-
-        # Check our current syncing stage. Must be sync stage 4.
-        current_sync_stage_response = await self._event_bus.request(
-            CurrentSyncStageRequest()
-        )
-        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
-
-
         wallet_address_hex = tx['from']
 
         print(tx)
 
+        wallet_address = decode_hex(wallet_address_hex)
+
         account = await self._get_unlocked_account_or_unlock_now(wallet_address_hex, password)
         return await self._send_transactions([tx], account)
-
-
-    async def sendTransactions(self, txs, password: str = None):
-        '''
-
-        :param tx: {'from', 'to', 'value', 'gas', 'gasPrice', 'data', 'nonce'}
-        :param password:
-        :return:
-        '''
-
-        # Check our current syncing stage. Must be sync stage 4.
-        current_sync_stage_response = await self._event_bus.request(
-            CurrentSyncStageRequest()
-        )
-        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
-
-        wallet_address_hex = txs[0]['from']
-
-        account = await self._get_unlocked_account_or_unlock_now(wallet_address_hex, password)
-        return await self._send_transactions(txs, account)
 
 
     @format_params(dummy, decode_hex, dummy)
