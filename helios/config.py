@@ -252,9 +252,8 @@ class ChainConfig:
                     if self.keystore_path is not None:
                         self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(self.keystore_path, self.keystore_password))
                     else:
-                        absolute_dir = os.path.dirname(os.path.realpath(__file__))
-                        absolute_keystore_path = absolute_dir + '/keystore/'
-                        self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(absolute_keystore_path + KEYSTORE_FILENAME_TO_USE, self.keystore_password))
+                        absolute_keystore_path = self.keystore_dir / KEYSTORE_FILENAME_TO_USE
+                        self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(str(absolute_keystore_path), self.keystore_password))
                 except ValueError:
                     raise ValueError(
                         "An error occured when decoding your keyfile. This can be caused by an incorrect password, or damaged keyfile.")
@@ -331,6 +330,12 @@ class ChainConfig:
             return self._data_dir
         else:
             return get_data_dir_for_network_id(self.network_id, self.helios_root_dir)
+
+    @property
+    def keystore_dir(self) -> Path:
+        absolute_dir = os.path.dirname(os.path.realpath(__file__))
+        absolute_keystore_path = Path(absolute_dir) / 'keystore'
+        return absolute_keystore_path
 
     @data_dir.setter
     def data_dir(self, value: str) -> None:

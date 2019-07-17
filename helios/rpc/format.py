@@ -333,7 +333,8 @@ def to_int_if_hex(value: Any) -> Any:
     else:
         return value
 
-
+def dummy(value: Any):
+    return value
 
 def empty_to_0x(val: str) -> str:
     if val:

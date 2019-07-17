@@ -1060,7 +1060,10 @@ class Chain(BaseChain):
         return signed_transaction
 
     def create_and_sign_transaction_for_queue_block(self, *args: Any, **kwargs: Any) -> BaseTransaction:
-        tx_nonce = self.get_current_queue_block_nonce()
+        if 'nonce' in kwargs and kwargs['nonce'] is not None:
+            tx_nonce = kwargs['nonce']
+        else:
+            tx_nonce = self.get_current_queue_block_nonce()
 
         transaction = self.create_and_sign_transaction(nonce = tx_nonce, *args, **kwargs)
 

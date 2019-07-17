@@ -51,6 +51,8 @@ deps = {
         "lahja==0.8.0",
         "uvloop==0.11.2;platform_system=='Linux' or platform_system=='Darwin'",
         "websockets>=3.0.0",
+        "eth-keys>=0.3.0",
+        "eth-account>=0.4.0"
     ],
     'test': [
         "hypothesis==3.69.5",
