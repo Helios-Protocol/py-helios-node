@@ -7,7 +7,7 @@ Helios Protocol Node
     :alt: Python3.6
 
 
-This is the beta stage of the HeliosProtocol node. It is currently under active development and is not yet complete.
+This is the  HeliosProtocol node software.
 
 Install
 -------
