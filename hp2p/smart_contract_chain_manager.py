@@ -135,9 +135,9 @@ class SmartContractChainManager(BaseService, PeerSubscriber):
 
         consensus_ready = await self.consensus.coro_is_ready.wait()
 
-        if consensus_ready:
-            with self.subscribe(self.peer_pool):
-                await self.block_creation_loop()
+        #if consensus_ready:
+        #    with self.subscribe(self.peer_pool):
+        #        await self.block_creation_loop()
 
 
     async def _cleanup(self) -> None:
