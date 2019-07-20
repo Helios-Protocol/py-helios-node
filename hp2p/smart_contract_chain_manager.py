@@ -135,9 +135,9 @@ class SmartContractChainManager(BaseService, PeerSubscriber):
 
         consensus_ready = await self.consensus.coro_is_ready.wait()
 
-        #if consensus_ready:
-        #    with self.subscribe(self.peer_pool):
-        #        await self.block_creation_loop()
+        if consensus_ready:
+            with self.subscribe(self.peer_pool):
+                await self.block_creation_loop()
 
 
     async def _cleanup(self) -> None:
@@ -151,28 +151,28 @@ class SmartContractChainManager(BaseService, PeerSubscriber):
     #
     async def block_creation_loop(self):
         while self.is_operational:
-            self.logger.debug("Start of block creation loop")
-            if await self.consensus.current_sync_stage >= 4:
+            #self.logger.debug("Start of block creation loop")
+            #if await self.consensus.current_sync_stage >= 4:
 
-                chain_addresses = self.chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
-                for chain_address in chain_addresses:
-                    # 1) Add the new block, 2) Propogate it to the network
-                    # need to create a new chain to avoid conflicts with multiple processes
-                    chain = self.node.get_new_private_chain(chain_address)
-                    chain.populate_queue_block_with_receive_tx()
+            #    chain_addresses = self.chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
+            #    for chain_address in chain_addresses:
+            #        # 1) Add the new block, 2) Propogate it to the network
+            #        # need to create a new chain to avoid conflicts with multiple processes
+            #        chain = self.node.get_new_private_chain(chain_address)
+            #        chain.populate_queue_block_with_receive_tx()
 
-                    self.logger.debug("Importing new block on smart contract chain {}".format(encode_hex(chain_address)))
+            #        self.logger.debug("Importing new block on smart contract chain {}".format(encode_hex(chain_address)))
 
-                    new_block = await chain.coro_import_current_queue_block()
+            #        new_block = await chain.coro_import_current_queue_block()
 
-                    self.logger.debug("Sending new smart contract block to network")
+            #        self.logger.debug("Sending new smart contract block to network")
 
-                    self.event_bus.broadcast(
-                        NewBlockEvent(block=cast(P2PBlock, new_block),
-                                      only_propogate_to_network=True)
-                    )
+            #        self.event_bus.broadcast(
+            #            NewBlockEvent(block=cast(P2PBlock, new_block),
+            #                          only_propogate_to_network=True)
+            #        )
 
-                    self.logger.debug("Successfully updated smart contract chain")
+            #        self.logger.debug("Successfully updated smart contract chain")
 
 
             await asyncio.sleep(1)
