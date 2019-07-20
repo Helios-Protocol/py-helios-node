@@ -383,7 +383,7 @@ class AccountDB(BaseAccountDB):
         # first lets make sure we don't already have the transaction
         for tx_key in receivable_transactions:
             if tx_key.transaction_hash == transaction_hash:
-                raise ValueError("Tried to save a receivable transaction that was already saved")
+                raise ValueError("Tried to save a receivable transaction that was already saved. TX HASH = {}".format(encode_hex(transaction_hash)))
 
         
         new_receivable_transactions = receivable_transactions + (TransactionKey(transaction_hash, sender_block_hash), )
@@ -395,10 +395,9 @@ class AccountDB(BaseAccountDB):
 
         #finally, if this is a smart contract, lets add it to the list of smart contracts with pending transactions
         if is_contract_deploy or self.get_code_hash(address) != EMPTY_SHA3:
-            if len(new_receivable_transactions) == 1:
-                self.logger.debug("Adding address to list of smart contracts with pending transactions")
-                #we only need to run this when adding the first one.
-                self._add_address_to_smart_contracts_with_pending_transactions(address)
+            self.logger.debug("Adding address to list of smart contracts with pending transactions")
+            #we only need to run this when adding the first one.
+            self._add_address_to_smart_contracts_with_pending_transactions(address)
         
     def delete_receivable_transaction(self, address: Address, transaction_hash: Hash32, is_contract_deploy: bool = False) -> None:
         validate_canonical_address(address, title="Storage Address")

@@ -39,3 +39,4 @@ class ReadOnlyDB(BaseDB):
 
     def destroy_db(self):
         pass
+

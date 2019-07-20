@@ -311,6 +311,27 @@ def test_erc_20_smart_contract_deploy_system():
 
 
 
+def test_get_talamus_receipt():
+    testdb = LevelDB('/home/tommy/.local/share/helios/instance_0/chain/full/')
+    testdb = JournalDB(testdb)
+    talamus_contract_address = decode_hex('0x07d6EBBdd6Dd029764C6EC5EFfF685877Ad7AE08')
+    chain = TestnetChain(testdb, talamus_contract_address, private_keys[0])
+
+    receipt = chain.chaindb.get_transaction_receipt(decode_hex('0xe464498a4f990d5bef8ed474fa09af6af6503cb7e38ea8e1877bb1e3bd5f9470'))
+    print(receipt['logs'])
+    from hvm.constants import EMPTY_SHA3
+    code_hash = chain.get_vm().state.account_db.get_code_hash(talamus_contract_address)
+
+    print('code_hash')
+    print(code_hash)
+    print('EMPTY_SHA3')
+    print(EMPTY_SHA3)
+
+test_get_talamus_receipt()
+exit()
+
+
+
 
 def _test_airdrop_calling_erc_20():
 

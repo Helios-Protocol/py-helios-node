@@ -116,18 +116,19 @@ class Hls(RPCModule):
         """
         return True
 
-    def accounts(self):
+    async def chainId(self):
+        chain = self.get_new_chain()
+        return hex(chain.network_id)
+
+    async def accounts(self):
         raise NotImplementedError()
 
-    def blockNumber(self, chain_address):
+    async def blockNumber(self, chain_address):
         num = self._chain.get_canonical_head(chain_address).block_number
         return hex(num)
 
-    def coinbase(self):
-        raise NotImplementedError()
-        
 
-    def gasPrice(self):
+    async def gasPrice(self):
         required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price()
         return hex(required_min_gas_price)
 
@@ -159,23 +160,23 @@ class Hls(RPCModule):
 
 
     @format_params(decode_hex)
-    def getBlockTransactionCountByHash(self, block_hash):
+    async def getBlockTransactionCountByHash(self, block_hash):
         block = self._chain.get_block_by_hash(block_hash)
         return hex(len(block.transactions))
 
     @format_params(to_int_if_hex)
-    def getBlockTransactionCountByNumber(self, at_block):
+    async def getBlockTransactionCountByNumber(self, at_block):
         block = get_block_at_number(self._chain, at_block)
         return hex(len(block.transactions))
 
     @format_params(decode_hex, to_int_if_hex)
-    def getCode(self, address, at_block):
+    async def getCode(self, address, at_block):
         account_db = account_db_at_block(self._chain, at_block)
         code = account_db.get_code(address)
         return encode_hex(code)
 
     @format_params(decode_hex, to_int_if_hex, to_int_if_hex)
-    def getStorageAt(self, address, position, at_block):
+    async def getStorageAt(self, address, position, at_block):
         if not is_integer(position) or position < 0:
             raise TypeError("Position of storage must be a whole number, but was: %r" % position)
 
@@ -184,55 +185,49 @@ class Hls(RPCModule):
         return encode_hex(int_to_big_endian(stored_val))
 
     @format_params(decode_hex, to_int_if_hex)
-    def getTransactionByBlockHashAndIndex(self, block_hash, index):
+    async def getTransactionByBlockHashAndIndex(self, block_hash, index):
         block = self._chain.get_block_by_hash(block_hash)
         transaction = block.transactions[index]
         return transaction_to_dict(transaction)
 
     @format_params(to_int_if_hex, to_int_if_hex)
-    def getTransactionByBlockNumberAndIndex(self, at_block, index):
+    async def getTransactionByBlockNumberAndIndex(self, at_block, index):
         block = get_block_at_number(self._chain, at_block)
         transaction = block.transactions[index]
         return transaction_to_dict(transaction)
 
     @format_params(decode_hex, to_int_if_hex)
-    def getTransactionCount(self, address, at_block):
+    async def getTransactionCount(self, address, at_block):
         account_db = account_db_at_block(self._chain, at_block)
         nonce = account_db.get_nonce(address)
         return hex(nonce)
 
     @format_params(decode_hex)
-    def getUncleCountByBlockHash(self, block_hash):
+    async def getUncleCountByBlockHash(self, block_hash):
         block = self._chain.get_block_by_hash(block_hash)
         return hex(len(block.uncles))
 
     @format_params(to_int_if_hex)
-    def getUncleCountByBlockNumber(self, at_block):
+    async def getUncleCountByBlockNumber(self, at_block):
         block = get_block_at_number(self._chain, at_block)
         return hex(len(block.uncles))
 
     @format_params(decode_hex, to_int_if_hex)
-    def getUncleByBlockHashAndIndex(self, block_hash, index):
+    async def getUncleByBlockHashAndIndex(self, block_hash, index):
         block = self._chain.get_block_by_hash(block_hash)
         uncle = block.uncles[index]
         return header_to_dict(uncle)
 
     @format_params(to_int_if_hex, to_int_if_hex)
-    def getUncleByBlockNumberAndIndex(self, at_block, index):
+    async def getUncleByBlockNumberAndIndex(self, at_block, index):
         block = get_block_at_number(self._chain, at_block)
         uncle = block.uncles[index]
         return header_to_dict(uncle)
 
-    def hashrate(self):
-        raise NotImplementedError()
-
-    def mining(self):
-        return False
-
-    def protocolVersion(self):
+    async def protocolVersion(self):
         return "63"
 
-    def syncing(self):
+    async def syncing(self):
         raise NotImplementedError()
 
 
@@ -269,6 +264,19 @@ class Hls(RPCModule):
         receivable_transactions_dict = receive_transactions_to_dict(receivable_transactions, chain)
 
         return receivable_transactions_dict
+
+    @format_params(decode_hex)
+    async def getReceiveTransactionOfSendTransaction(self, tx_hash):
+        '''
+        Gets the receive transaction corresponding to a given send transaction, if it exists
+        '''
+        chain = self.get_new_chain()
+        receive_tx = chain.get_receive_tx_from_send_tx(tx_hash)
+        if receive_tx is not None:
+            receive_tx_dict = receive_transaction_to_dict(receive_tx, chain)
+            return receive_tx_dict
+        else:
+            raise BaseRPCError("No receive transaction found for the given send transaction hash")
 
 
     #

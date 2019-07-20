@@ -159,6 +159,16 @@ class SmartContractChainManager(BaseService, PeerSubscriber):
                     # 1) Add the new block, 2) Propogate it to the network
                     # need to create a new chain to avoid conflicts with multiple processes
                     chain = self.node.get_new_private_chain(chain_address)
+
+                    # make the chain read only for creating the block. We don't want to actually import it here.
+                    chain.enable_read_only_db()
+
+                    allowed_time_of_next_block = chain.get_allowed_time_of_next_block(chain_address)
+                    now = int(time.time())
+
+                    if now < allowed_time_of_next_block:
+                        continue
+
                     chain.populate_queue_block_with_receive_tx()
 
                     self.logger.debug("Importing new block on smart contract chain {}".format(encode_hex(chain_address)))
@@ -168,11 +178,10 @@ class SmartContractChainManager(BaseService, PeerSubscriber):
                     self.logger.debug("Sending new smart contract block to network")
 
                     self.event_bus.broadcast(
-                        NewBlockEvent(block=cast(P2PBlock, new_block),
-                                      only_propogate_to_network=True)
+                        NewBlockEvent(block=cast(P2PBlock, new_block))
                     )
 
-                    self.logger.debug("Successfully updated smart contract chain")
+                    self.logger.debug("Successfully created new block for smart contract chain, sent to event bus")
 
 
             await asyncio.sleep(1)

@@ -21,7 +21,7 @@ from lahja import (
 )
 
 from helios.rpc.modules import (
-    Hls as Eth,
+    Eth,
     Hls,
     EVM,
     Net,

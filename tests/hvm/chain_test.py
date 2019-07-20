@@ -419,6 +419,14 @@ def test_send_transaction_then_receive():
     receiver_chain.populate_queue_block_with_receive_tx()
     block_0_imported = receiver_chain.import_current_queue_block()
 
+
+    #
+    # Make sure we find the receive tx using get_receive_tx_from_send_tx()
+    #
+    receive_tx = receiver_chain.get_receive_tx_from_send_tx(tx.hash)
+    assert(block_0_imported.receive_transactions[0] == receive_tx)
+    print("get_receive_tx_from_send_tx test passed")
+
     receiver2_chain = TestnetChain(testdb, RECEIVER2.public_key.to_canonical_address(), RECEIVER2)
     receiver2_chain.populate_queue_block_with_receive_tx()
     receiver2_chain.import_current_queue_block()
@@ -599,7 +607,7 @@ def test_send_transaction_then_receive():
     print(receiver_chain.chain_head_db.get_historical_root_hash(int(time.time()) + 1000))
 
 
-
+#
 # test_send_transaction_then_receive()
 # sys.exit()
 
@@ -1370,6 +1378,69 @@ def test_import_invalid_block_incorrect_signature():
     with pytest.raises(Exception):
         chain.import_block(invalid_block)
 
+def test_import_invalid_block_repeat_transaction():
+    testdb1 = MemoryDB()
+
+    chain = TestnetChain.from_genesis(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE, private_key = TESTNET_GENESIS_PRIVATE_KEY)
+
+    transaction = chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER.public_key.to_canonical_address(),
+        value=1,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    chain.import_current_queue_block()
+
+    chain.add_transactions_to_queue_block(transaction)
+
+    with pytest.raises(Exception):
+        chain.import_current_queue_block()
+    
+    
+def test_read_only_db():
+    testdb1 = MemoryDB()
+    
+    chain = TestnetChain.from_genesis(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE, private_key = TESTNET_GENESIS_PRIVATE_KEY)
+    
+    testdb2 = MemoryDB(kv_store=testdb1.kv_store)
+    
+    chain.enable_read_only_db()
+    
+    transaction = chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER.public_key.to_canonical_address(),
+        value=1,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    chain.import_current_queue_block()
+    
+    # Receive it
+    
+    chain_receiver = TestnetChain(chain.db, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+    chain_receiver.populate_queue_block_with_receive_tx()
+    chain_receiver.import_current_queue_block()
+
+    chain1 = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    chain2 = TestnetChain(testdb2, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    print(chain1.get_vm().state.account_db.get_receivable_transactions(RECEIVER.public_key.to_canonical_address()))
+    print(chain2.get_vm().state.account_db.get_receivable_transactions(RECEIVER.public_key.to_canonical_address()))
+    
+test_read_only_db()
+exit()
+
+# test_import_invalid_block_repeat_transaction()
+# exit()
 
 def test_import_invalid_block_not_enough_gas():
     testdb1 = MemoryDB()

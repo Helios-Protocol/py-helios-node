@@ -426,6 +426,15 @@ class VM(BaseVM):
         receivable_tx_key = self.state.account_db.get_receivable_transaction(caller_chain_address,
                                                                              receive_transaction.send_transaction_hash)
 
+        # Very first thing, check to see if this transaction has been received before:
+        try:
+            block_hash, index, is_receive = self.chaindb.get_transaction_index(receive_transaction.hash)
+            if self.chaindb.is_in_canonical_chain(block_hash):
+                raise ValidationError(
+                    'Tried to import a receive transaction that has already been received in the canonical chain')
+        except TransactionNotFound:
+            pass
+
         if receivable_tx_key is None:
             # There is no receivable transaction that matches this one.
             # now check to see if the block is in the canonical chain, but didnt have the transaction in it
@@ -838,9 +847,12 @@ class VM(BaseVM):
         for receive_transaction in receive_transactions:
             if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:
                 sender_chain_address = self.chaindb.get_chain_wallet_address_for_block_hash(receive_transaction.sender_block_hash)
+                self.logger.debug("SAVING RECEIVABLE REFUND TX WITH HASH {} ON CHAIN {}: {}".format(encode_hex(receive_transaction.hash), encode_hex(sender_chain_address), receive_transaction.as_dict()))
+
                 self.state.account_db.add_receivable_transaction(sender_chain_address,
                                                                  receive_transaction.hash,
                                                                  block_header_hash)
+
 
             
     def delete_transaction_as_receivable(self, wallet_address, transaction_hash):

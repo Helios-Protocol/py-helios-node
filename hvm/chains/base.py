@@ -23,6 +23,7 @@ from typing import (  # noqa: F401
     TYPE_CHECKING,
     Union,
     List,
+    Iterable,
 )
 
 import logging
@@ -366,6 +367,15 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def populate_queue_block_with_receive_tx(self) -> List[BaseReceiveTransaction]:
         raise NotImplementedError("Chain classes must implement this method")
 
+    @abstractmethod
+    def get_block_receive_transactions_by_hash(
+            self,
+            block_hash: Hash32) -> List['BaseReceiveTransaction']:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_receive_tx_from_send_tx(self, tx_hash: Hash32) -> Optional['BaseReceiveTransaction']:
+        raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
     def create_receivable_transactions(self) -> List[BaseReceiveTransaction]:
@@ -1141,13 +1151,35 @@ class Chain(BaseChain):
         self.add_transactions_to_queue_block(receive_tx)
         return receive_tx
 
-    # def get_receive_transactions(self, wallet_address: Address):
-    #     validate_canonical_address(wallet_address, title="wallet_address")
-    #     vm = self.get_vm()
-    #     account_db = vm.state.account_db
-    #     receivable_tx_keys = account_db.get_receivable_transactions(wallet_address)
-    #     #todo: finish this function
-    #     #print(receivable_tx_hashes)
+    def get_block_receive_transactions_by_hash(
+            self,
+            block_hash: Hash32) -> List['BaseReceiveTransaction']:
+
+        block_header = self.get_block_header_by_hash(block_hash)
+        vm = self.get_vm(header = block_header)
+        receive_transaction_class = vm.get_block_class().receive_transaction_class
+        receive_transactions = self.chaindb.get_block_receive_transactions(header = block_header, transaction_class = receive_transaction_class)
+        return receive_transactions
+
+    def get_receive_tx_from_send_tx(self, tx_hash: Hash32) -> Optional['BaseReceiveTransaction']:
+        block_hash, index, is_receive = self.chaindb.get_transaction_index(tx_hash)
+        if is_receive:
+            raise ValidationError("The provided tx hash is not for a send transaction")
+
+        send_transaction = self.get_canonical_transaction(tx_hash)
+        block_children = self.chaindb.get_block_children(block_hash)
+
+        block_children_on_correct_chain = [child_hash for child_hash in block_children
+                                           if self.chaindb.get_chain_wallet_address_for_block_hash(child_hash) == send_transaction.to]
+
+        for block_hash in block_children_on_correct_chain:
+            receive_transactions = self.get_block_receive_transactions_by_hash(block_hash)
+            for receive_tx in receive_transactions:
+                if receive_tx.send_transaction_hash == tx_hash:
+                    return receive_tx
+
+        return None
+
 
     #
     # Chronological Chain api
