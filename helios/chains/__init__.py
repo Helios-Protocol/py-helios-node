@@ -106,9 +106,13 @@ def is_data_dir_initialized(chain_config: ChainConfig) -> bool:
     return True
 
 
-def is_database_initialized(chaindb: AsyncChainDB) -> bool:
+def is_database_initialized(chaindb: AsyncChainDB, chain_config) -> bool:
+    if chain_config.network_id == MAINNET_NETWORK_ID:
+        genesis_wallet_address = GENESIS_WALLET_ADDRESS
+    elif chain_config.network_id == TESTNET_NETWORK_ID:
+        genesis_wallet_address = TESTNET_GENESIS_WALLET_ADDRESS
     try:
-        chaindb.get_canonical_head(chain_address= GENESIS_WALLET_ADDRESS)
+        chaindb.get_canonical_head(chain_address= genesis_wallet_address)
     except CanonicalHeadNotFound:
         # empty chain database
         return False
@@ -240,7 +244,7 @@ def get_chaindb_manager(chain_config: ChainConfig, base_db: BaseAtomicDB) -> Bas
     chaindb = AsyncChainDB(base_db)
     chain_head_db = AsyncChainHeadDB.load_from_saved_root_hash(base_db)
 
-    if not is_database_initialized(chaindb):
+    if not is_database_initialized(chaindb, chain_config):
         if 'GENERATE_RANDOM_DATABASE' in os.environ:
             #this is for testing, we neeed to build an initial blockchain database
             #create_dev_test_random_blockchain_database(base_db)

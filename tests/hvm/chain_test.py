@@ -1436,8 +1436,8 @@ def test_read_only_db():
     print(chain1.get_vm().state.account_db.get_receivable_transactions(RECEIVER.public_key.to_canonical_address()))
     print(chain2.get_vm().state.account_db.get_receivable_transactions(RECEIVER.public_key.to_canonical_address()))
     
-test_read_only_db()
-exit()
+# test_read_only_db()
+# exit()
 
 # test_import_invalid_block_repeat_transaction()
 # exit()

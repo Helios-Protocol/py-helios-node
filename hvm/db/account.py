@@ -399,7 +399,7 @@ class AccountDB(BaseAccountDB):
             #we only need to run this when adding the first one.
             self._add_address_to_smart_contracts_with_pending_transactions(address)
         
-    def delete_receivable_transaction(self, address: Address, transaction_hash: Hash32, is_contract_deploy: bool = False) -> None:
+    def delete_receivable_transaction(self, address: Address, transaction_hash: Hash32) -> None:
         validate_canonical_address(address, title="Storage Address")
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         
@@ -421,7 +421,7 @@ class AccountDB(BaseAccountDB):
         
         self._set_account(address, account.copy(receivable_transactions=tuple(receivable_transactions)))
 
-        if is_contract_deploy or self.get_code_hash(address) != EMPTY_SHA3:
+        if self.get_code_hash(address) != EMPTY_SHA3:
             if len(receivable_transactions) == 0:
                 self.logger.debug("Removing address from list of smart contracts with pending transactions")
                 self._remove_address_from_smart_contracts_with_pending_transactions(address)
@@ -563,9 +563,11 @@ class AccountDB(BaseAccountDB):
     # Record and discard API
     #
     def record(self) -> UUID:
+        self.logger.debug("Recording account db changeset")
         return (self._journaldb.record())
 
     def discard(self, changeset: UUID) -> None:
+        self.logger.debug("Discarding account db changes")
         db_changeset = changeset
         self._journaldb.discard(db_changeset)
 
@@ -574,6 +576,7 @@ class AccountDB(BaseAccountDB):
         self._journaldb.commit(db_changeset)
 
     def persist(self, save_account_hash = False, wallet_address = None) -> None:
+        self.logger.debug('Persisting account db. save_account_hash {} | wallet_address {}'.format(save_account_hash, wallet_address))
         self._journaldb.persist()
         self._batchdb.commit(apply_deletes=True)
         

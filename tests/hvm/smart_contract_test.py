@@ -4,7 +4,7 @@ import random
 import time
 import sys
 from pprint import pprint
-
+from hvm.db.read_only import ReadOnlyDB
 
 from hvm import constants
 from hvm import TestnetChain
@@ -36,7 +36,8 @@ import rlp as rlp
 
 from eth_utils import (
     encode_hex,
-    decode_hex,        
+    decode_hex,
+    to_wei
 )
 from helios.dev_tools import create_dev_test_random_blockchain_database, \
     create_dev_test_blockchain_database_with_given_transactions, create_new_genesis_params_and_state
@@ -56,6 +57,7 @@ from eth_utils import (
 )
 from eth_keys import keys
 
+from eth_typing import Hash32
 from eth_keys.datatypes import(
         BaseKey,
         PublicKey,
@@ -276,6 +278,10 @@ def test_erc_20_smart_contract_deploy_system():
     chain = TestnetChain(testdb, deployed_contract_address, private_keys[0])
     chain.populate_queue_block_with_receive_tx()
 
+    receivable_transactions = chain.get_vm().state.account_db.get_receivable_transactions(deployed_contract_address)
+    print('receivable_transactions before imported into contract chain')
+    print(receivable_transactions)
+
     print("waiting {} seconds before importing next block".format(min_time_between_blocks))
     time.sleep(min_time_between_blocks)
     imported_block = chain.import_current_queue_block()
@@ -292,11 +298,21 @@ def test_erc_20_smart_contract_deploy_system():
     print("Total supply call gave expected result!")
     gas_used = to_int(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].gas_used)
 
+
+
     #
     # Interacting with deployed smart contract step 3) Receiving refund of extra gas that wasn't used in the computation
     #
     initial_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    #
+    # Make sure the receive transaction is no longer in the account receivable
+    #
+    receivable_transactions = chain.get_vm().state.account_db.get_receivable_transactions(deployed_contract_address)
+    print('receivable_transactions after imported into contract chain')
+    print(receivable_transactions)
+
     chain.populate_queue_block_with_receive_tx()
 
     print("waiting {} seconds before importing next block".format(min_time_between_blocks))
@@ -311,24 +327,127 @@ def test_erc_20_smart_contract_deploy_system():
 
 
 
-def test_get_talamus_receipt():
-    testdb = LevelDB('/home/tommy/.local/share/helios/instance_0/chain/full/')
-    testdb = JournalDB(testdb)
-    talamus_contract_address = decode_hex('0x07d6EBBdd6Dd029764C6EC5EFfF685877Ad7AE08')
-    chain = TestnetChain(testdb, talamus_contract_address, private_keys[0])
+def test_talamus_contract():
+    absolute_dir = os.path.dirname(os.path.realpath(__file__))
+    testdb = LevelDB(absolute_dir + "/predefined_databases/talamus_test")
 
-    receipt = chain.chaindb.get_transaction_receipt(decode_hex('0xe464498a4f990d5bef8ed474fa09af6af6503cb7e38ea8e1877bb1e3bd5f9470'))
-    print(receipt['logs'])
-    from hvm.constants import EMPTY_SHA3
-    code_hash = chain.get_vm().state.account_db.get_code_hash(talamus_contract_address)
+    testdb = ReadOnlyDB(testdb)
+    talamus_contract_address = decode_hex('0x81bdf63b9a6e871f560dca1d55e8732b5ccdc2f9')
 
-    print('code_hash')
-    print(code_hash)
-    print('EMPTY_SHA3')
-    print(EMPTY_SHA3)
+    print(private_keys[0].public_key.to_checksum_address())
+    chain = TestnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
 
-test_get_talamus_receipt()
-exit()
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+
+    COMPILED_SOLIDITY_FILE = load_compiled_sol_dict('contract_data/talamus_compiled.pkl')
+    SOLIDITY_SRC_FILE = 'contract/talamus.sol'
+
+    contract_interface = COMPILED_SOLIDITY_FILE['{}:TalamusHealth'.format(SOLIDITY_SRC_FILE)]
+
+    w3 = Web3()
+
+    talamus_contract = w3.eth.contract(
+        abi=contract_interface['abi'],
+        bytecode=contract_interface['bin']
+    )
+
+    max_gas = 2000000
+    w3_tx_params = {
+        'gas': max_gas,
+        'gasPrice': to_wei(2, 'gwei'),
+        'chainId': 2,
+        'to': talamus_contract_address,
+        'value': 0,
+        'nonce': 1
+    }
+
+    # from rpc
+    # {'gasPrice': 2000000000, 'chainId': 2, 'gas': 2000000, 'to': b'\x81\xbd\xf6;\x9an\x87\x1fV\r\xca\x1dU\xe8s+\\\xcd\xc2\xf9', 'value': 0, 'data': '0x010f836e0000000000000000000000000000000000000000000000000000000000000000', 'nonce': 1}
+    # us
+    # {'gas': 2000000, 'gasPrice': 2000000000, 'chainId': 2, 'to': b'\x81\xbd\xf6;\x9an\x87\x1fV\r\xca\x1dU\xe8s+\\\xcd\xc2\xf9', 'value': 0, 'data': '0x010f836e0000000000000000000000000000000000000000000000000000000000000000'}
+
+    hash_to_save = Hash32(32 * b'\x00')
+
+    w3_tx = talamus_contract.functions.saveHash(hash_to_save).buildTransaction(w3_tx_params)
+
+    print(w3_tx)
+
+    # tx = chain.create_and_sign_transaction_for_queue_block(
+    #     gas_price=w3_tx['gasPrice'],
+    #     gas=w3_tx['gas'],
+    #     to=w3_tx['to'],
+    #     value=w3_tx['value'],
+    #     data=decode_hex(w3_tx['data']),
+    #     nonce=1,
+    #     v=0,
+    #     r=0,
+    #     s=0
+    # )
+
+    tx = chain.create_and_sign_transaction_for_queue_block(
+        gas_price=w3_tx['gasPrice'],
+        gas=w3_tx['gas'],
+        to=w3_tx['to'],
+        value=w3_tx['value'],
+        data=b'0x010f836e0000000000000000000000000000000000000000000000000000000000000000',
+        nonce=1,
+        v=0,
+        r=0,
+        s=0
+    )
+
+    print('ZZZZZZZZZZZZZZZZZZZZZZZZZZZ')
+    print(tx.as_dict())
+
+    # from rpc
+    # {'nonce': 1, 'gas_price': 2000000000, 'gas': 2000000, 'to': b'\x81\xbd\xf6;\x9an\x87\x1fV\r\xca\x1dU\xe8s+\\\xcd\xc2\xf9', 'value': 0, 'data': b'0x010f836e0000000000000000000000000000000000000000000000000000000000000000', 'v': 38, 'r': 77546672203976404837758472880488256719656950035867254665717724200250517648493, 's': 2580236846734574215375389852957773325366136635134534812926657997746477469836}
+    # from us
+    # {'nonce': 1, 'gas_price': 2000000000, 'gas': 2000000, 'to': b'\x81\xbd\xf6;\x9an\x87\x1fV\r\xca\x1dU\xe8s+\\\xcd\xc2\xf9', 'value': 0, 'data': b'\x01\x0f\x83n\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'v': 39, 'r': 39349908228946674104603389597151977495442914775500474614266302539829498168651, 's': 23552581665426625568029915589486661695498739587988697017071052606525926751079}
+
+    chain.import_current_queue_block()
+
+    contract_chain = TestnetChain(ReadOnlyDB(testdb), talamus_contract_address, private_keys[0])
+
+    receivable_transactions = contract_chain.get_vm().state.account_db.get_receivable_transactions(talamus_contract_address)
+    print('receivable_transactions before imported into contract chain')
+    print(receivable_transactions)
+
+    contract_chain.populate_queue_block_with_receive_tx()
+    contract_block = contract_chain.import_current_queue_block()
+
+
+
+    contract_chain = TestnetChain(testdb, talamus_contract_address, private_keys[0])
+    contract_chain.import_block(contract_block)
+
+    contract_chain = TestnetChain(testdb, talamus_contract_address, private_keys[0])
+
+    receivable_transactions = contract_chain.get_vm().state.account_db.get_receivable_transactions(talamus_contract_address)
+    print('receivable_transactions after imported into contract chain')
+    print(receivable_transactions)
+
+
+
+# test_talamus_contract()
+# exit()
+
+
+def test_talamus_contract_2():
+    absolute_dir = os.path.dirname(os.path.realpath(__file__))
+    testdb = LevelDB(absolute_dir + "/predefined_databases/talamus_test_save_hash")
+
+    testdb = ReadOnlyDB(testdb)
+    talamus_contract_address = decode_hex('0x81bdf63b9a6e871f560dca1d55e8732b5ccdc2f9')
+
+    chain = TestnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    receivable_transactions = chain.get_vm().state.account_db.get_receivable_transactions(talamus_contract_address)
+    print('receivable_transactions before imported into contract chain')
+    print(receivable_transactions)
+
+
+# test_talamus_contract_2()
+# exit()
 
 
 
@@ -524,5 +643,3 @@ def _test_airdrop_calling_erc_20():
     print("Refunded gas is the expected amount.")
 
 # test_airdrop_calling_erc_20()
-
-

@@ -34,7 +34,7 @@ from hvm.exceptions import (
     HeaderNotFound,
     TransactionNotFound,
 )
-from hvm.utils.blocks import does_block_meet_min_gas_price
+from hvm.utils.blocks import does_block_meet_min_gas_price, get_block_average_transaction_gas_price
 
 from hvm.types import Timestamp
 
@@ -383,6 +383,9 @@ class Hls(RPCModule):
 
         micro_block = rlp.decode(encoded_micro_block, sedes=chain.get_vm().micro_block_class)
 
+        print('XXXXXXXXXXXXXXXXXXXXXXX')
+        print(micro_block.transactions[0].as_dict())
+
         block_class = self._chain_class.get_vm_class_for_block_timestamp(timestamp = micro_block.header.timestamp).get_block_class()
 
         full_block = block_class.from_micro_block(micro_block)
@@ -416,7 +419,8 @@ class Hls(RPCModule):
         if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
             raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
 
-
+        print('ZZZZZZZZZZZZZZZZZZZZZZZZZZZ')
+        print(full_block.transactions[0].as_dict())
 
         if not does_block_meet_min_gas_price(full_block, chain):
             required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price()

@@ -112,7 +112,7 @@ class ChainConfig:
         self.keystore_path = keystore_path
         self.network_startup_node = network_startup_node
         self._disable_smart_contract_chain_manager = disable_smart_contract_chain_manager
-        self.network_id = network_id
+        self._network_id = network_id
         self.max_peers = max_peers
         self.sync_mode = sync_mode
         self.port = port
@@ -163,12 +163,21 @@ class ChainConfig:
     def num_chain_processes(self, val):
         self._num_chain_processes = val
 
+
+
     @property
     def is_dev_test_node(self):
         if "INSTANCE_NUMBER" in os.environ:
             return True
         else:
             return False
+
+    @property
+    def network_id(self):
+        if self.is_dev_test_node:
+            return 2
+        else:
+            return self._network_id
 
     @property
     def preferred_nodes(self):

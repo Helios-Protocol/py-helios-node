@@ -22,7 +22,7 @@ from eth_utils import (
 )
 
 import rlp_cython as rlp
-
+from hvm.utils.hexadecimal import pad_hex
 from helios.chains.coro import (
     AsyncChain
 )
@@ -129,6 +129,7 @@ def receipt_to_dict(receipt: Receipt, tx_hash: Hash32, chain: AsyncChain) -> Dic
         dict_to_return['logs'][i]['transactionHash'] = to_hex(tx_hash)
         dict_to_return['logs'][i]['blockHash'] = to_hex(block_hash)
         dict_to_return['logs'][i]['blockNumber'] = to_hex(block_header.block_number)
+        dict_to_return['logs'][i]['topics'] = [pad_hex(value, 32) for value in dict_to_return['logs'][i]['topics']]
 
     transaction = chain.get_canonical_transaction(tx_hash)
 

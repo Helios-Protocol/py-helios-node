@@ -171,6 +171,8 @@ class SmartContractChainManager(BaseService, PeerSubscriber):
 
                     chain.populate_queue_block_with_receive_tx()
 
+
+
                     self.logger.debug("Importing new block on smart contract chain {}".format(encode_hex(chain_address)))
 
                     new_block = await chain.coro_import_current_queue_block()

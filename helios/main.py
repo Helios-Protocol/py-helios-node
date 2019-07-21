@@ -13,6 +13,7 @@ from typing import (
 )
 
 from cancel_token import CancelToken
+from hvm.db.read_only import ReadOnlyDB
 from lahja import (
     EventBus,
     Endpoint,
@@ -497,7 +498,7 @@ def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> N
         base_db = db_class(db_path=chain_config.database_dir)
 
         # TODO:remove
-        #base_db = JournalDB(base_db)
+        # base_db = ReadOnlyDB(base_db)
 
         manager = get_chaindb_manager(chain_config, base_db)
         server = manager.get_server()  # type: ignore

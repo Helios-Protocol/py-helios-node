@@ -14,6 +14,7 @@ from typing import (  # noqa: F401
     Union,
 )
 
+from hvm.constants import CREATE_CONTRACT_ADDRESS
 import time
 
 import rlp_cython as rlp
@@ -778,7 +779,25 @@ class VM(BaseVM):
             self.logger.debug("signing block")
             block = block.as_complete_block(private_key, self.network_id)
             
+        # Delete all receivable transactions that have been received in this block
+        # Moved this from within the computation executor because it can revert memory on error, which will put the transactions back even though they were received already.
 
+        for tx in block.receive_transactions:
+            self.state.account_db.delete_receivable_transaction(block.header.chain_address, tx.send_transaction_hash)
+            # if tx.is_refund:
+            #     self.state.account_db.delete_receivable_transaction(block.header.chain_address, tx.send_transaction_hash)
+            # else:
+            #     # block_hash, index, is_receive = self.chaindb.get_transaction_index(tx.send_transaction_hash)
+            #     #
+            #     # send_transaction = self.chaindb.get_transaction_by_index_and_block_hash(
+            #     #     block_hash,
+            #     #     index,
+            #     #     self.get_transaction_class(),
+            #     # )
+            #
+            #     self.state.account_db.delete_receivable_transaction(block.header.chain_address, tx.send_transaction_hash)
+
+        
         #save all send transactions in the state as receivable
         #we have to do this at the end here because the block hash is still changing when transactions are being processed.
         self.save_recievable_transactions(block.header.hash, send_computations, processed_receive_transactions)

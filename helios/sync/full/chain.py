@@ -1318,12 +1318,18 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             #                                    wallet_address = chain_address,
             #                                    allow_replacement = replacing_block_permitted)
 
-            #todo: make this async
             imported_block = await self.chains[0].coro_import_block(new_block,
                                                 wallet_address=chain_address,
                                                 allow_replacement=replacing_block_permitted,
                                                 ensure_block_unchanged=True,
                                                microblock_origin = microblock_origin)
+
+            # imported_block = await chain.coro_import_block(new_block,
+            #                                                 wallet_address=chain_address,
+            #                                                 allow_replacement=replacing_block_permitted,
+            #                                                 ensure_block_unchanged=True,
+            #                                                 microblock_origin=microblock_origin)
+
             # else:
             #     imported_block = chain.import_block_with_profiler(new_block,
             #                                         wallet_address = chain_address,
