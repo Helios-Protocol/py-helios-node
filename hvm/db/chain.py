@@ -1474,7 +1474,7 @@ class ChainDB(BaseChainDB):
     @functools.lru_cache(maxsize=32)
     def _get_block_transaction_count(self, transaction_root: Hash32):
         '''
-        Returns iterable of the encoded transactions for the given block header
+        Returns the transaction count
         '''
         count = 0
         transaction_db = HexaryTrie(self.db, root_hash=transaction_root)

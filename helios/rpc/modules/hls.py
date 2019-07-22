@@ -69,36 +69,21 @@ from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStag
 from hvm.rlp.consensus import StakeRewardBundle
 from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock
 
-
-# def get_header(chain, at_block):
-#     if at_block == 'pending':
-#         at_header = chain.header
-#     elif at_block == 'latest':
-#         at_header = chain.get_canonical_head()
-#     elif at_block == 'earliest':
-#         # TODO find if genesis block can be non-zero. Why does 'earliest' option even exist?
-#         at_header = chain.get_canonical_block_by_number(0).header
-#     elif is_integer(at_block) and at_block >= 0:
-#         at_header = chain.get_canonical_block_by_number(at_block).header
-#     else:
-#         raise TypeError("Unrecognized block reference: %r" % at_block)
-#
-#     return at_header
+def account_db_at_block(chain, chain_address, at_block):
+    if at_block == 'latest':
+        header = chain.chaindb.get_canonical_head(chain_address=chain_address)
+        account_hash = header.account_hash
+        vm = chain.get_vm(header=header)
+        return vm.state.account_db
+    else:
+        header = chain.chaindb.get_canonical_block_header_by_number(chain_address=chain_address, block_number=at_block)
+        account_hash = header.account_hash
+        vm = chain.get_vm(header=header)
+        vm.state.account_db.revert_to_account_from_hash(account_hash, chain_address)
+        return vm.state.account_db
 
 
-# def account_db_at_block(chain, at_block, read_only=True):
-#     at_header = get_header(chain, at_block)
-#     vm = chain.get_vm(at_header)
-#     return vm.state.account_db
 
-
-# def get_block_at_number(chain, at_block):
-#     if is_integer(at_block) and at_block >= 0:
-#         # optimization to avoid requesting block, then header, then block again
-#         return chain.get_canonical_block_by_number(at_block)
-#     else:
-#         at_header = get_header(chain, at_block)
-#         return chain.get_block_by_header(at_header)
 
 class Hls(RPCModule):
     '''
@@ -116,13 +101,10 @@ class Hls(RPCModule):
         """
         return True
 
-    async def chainId(self):
-        chain = self.get_new_chain()
-        return hex(chain.network_id)
-
     async def accounts(self):
-        raise NotImplementedError()
+        raise DeprecationWarning("This method has been moved to personal_listAccounts")
 
+    @format_params(decode_hex)
     async def blockNumber(self, chain_address):
         num = self._chain.get_canonical_head(chain_address).block_number
         return hex(num)
@@ -156,45 +138,67 @@ class Hls(RPCModule):
         return hex(balance)
 
 
-
-
-
     @format_params(decode_hex)
     async def getBlockTransactionCountByHash(self, block_hash):
-        block = self._chain.get_block_by_hash(block_hash)
-        return hex(len(block.transactions))
+        chain = self.get_new_chain()
+        try:
+            tx_count = chain.chaindb.get_number_of_total_tx_in_block(block_hash)
+        except HeaderNotFound:
+            raise BaseRPCError('No block found with the given block hash')
+        return hex(tx_count)
 
-    @format_params(to_int_if_hex)
-    async def getBlockTransactionCountByNumber(self, at_block):
-        block = get_block_at_number(self._chain, at_block)
-        return hex(len(block.transactions))
+    @format_params(to_int_if_hex, decode_hex)
+    async def getBlockTransactionCountByNumber(self, at_block, chain_address):
+        chain = self.get_new_chain()
+        try:
+            block_hash = chain.chaindb.get_canonical_block_hash(chain_address=chain_address, block_number=at_block)
+            tx_count = chain.chaindb.get_number_of_total_tx_in_block(block_hash)
+        except HeaderNotFound:
+            raise BaseRPCError('No block found with the given wallet address and block number')
+
+        return hex(tx_count)
 
     @format_params(decode_hex, to_int_if_hex)
-    async def getCode(self, address, at_block):
-        account_db = account_db_at_block(self._chain, at_block)
-        code = account_db.get_code(address)
+    async def getCode(self, chain_address, at_block):
+        account_db = account_db_at_block(self._chain, chain_address, at_block)
+        code = account_db.get_code(chain_address)
         return encode_hex(code)
 
     @format_params(decode_hex, to_int_if_hex, to_int_if_hex)
-    async def getStorageAt(self, address, position, at_block):
+    async def getStorageAt(self, chain_address, position, at_block):
         if not is_integer(position) or position < 0:
             raise TypeError("Position of storage must be a whole number, but was: %r" % position)
 
-        account_db = account_db_at_block(self._chain, at_block)
-        stored_val = account_db.get_storage(address, position)
+        account_db = account_db_at_block(self._chain, chain_address, at_block)
+        stored_val = account_db.get_storage(chain_address, position)
         return encode_hex(int_to_big_endian(stored_val))
 
     @format_params(decode_hex, to_int_if_hex)
     async def getTransactionByBlockHashAndIndex(self, block_hash, index):
-        block = self._chain.get_block_by_hash(block_hash)
-        transaction = block.transactions[index]
-        return transaction_to_dict(transaction)
+        try:
+            tx = self._chain.get_transaction_by_block_hash_and_index(block_hash, index)
+        except HeaderNotFound:
+            raise BaseRPCError('No block found with the given block hash')
+        if isinstance(tx, BaseReceiveTransaction):
+            # receive tx
+            return receive_transaction_to_dict(tx, self._chain)
+        else:
+            # send tx
+            return transaction_to_dict(tx, self._chain)
 
-    @format_params(to_int_if_hex, to_int_if_hex)
-    async def getTransactionByBlockNumberAndIndex(self, at_block, index):
-        block = get_block_at_number(self._chain, at_block)
-        transaction = block.transactions[index]
-        return transaction_to_dict(transaction)
+    @format_params(to_int_if_hex, to_int_if_hex, decode_hex)
+    async def getTransactionByBlockNumberAndIndex(self, at_block, index, chain_address):
+        try:
+            block_hash = self._chain.chaindb.get_canonical_block_hash(chain_address=chain_address, block_number=at_block)
+        except HeaderNotFound:
+            raise BaseRPCError('No block found with the given chain address and block number')
+        tx = self._chain.get_transaction_by_block_hash_and_index(block_hash, index)
+        if isinstance(tx, BaseReceiveTransaction):
+            # receive tx
+            return receive_transaction_to_dict(tx, self._chain)
+        else:
+            # send tx
+            return transaction_to_dict(tx, self._chain)
 
     @format_params(decode_hex, to_int_if_hex)
     async def getTransactionCount(self, address, at_block):
@@ -383,7 +387,6 @@ class Hls(RPCModule):
 
         micro_block = rlp.decode(encoded_micro_block, sedes=chain.get_vm().micro_block_class)
 
-        print('XXXXXXXXXXXXXXXXXXXXXXX')
         print(micro_block.transactions[0].as_dict())
 
         block_class = self._chain_class.get_vm_class_for_block_timestamp(timestamp = micro_block.header.timestamp).get_block_class()
@@ -419,8 +422,6 @@ class Hls(RPCModule):
         if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
             raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
 
-        print('ZZZZZZZZZZZZZZZZZZZZZZZZZZZ')
-        print(full_block.transactions[0].as_dict())
 
         if not does_block_meet_min_gas_price(full_block, chain):
             required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price()

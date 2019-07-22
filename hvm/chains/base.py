@@ -2,6 +2,8 @@ from __future__ import absolute_import
 import operator
 from collections import deque
 
+import functools
+
 from abc import (
     ABCMeta,
     abstractmethod
@@ -354,6 +356,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     #
     # Transaction API
     #
+    @abstractmethod
+    def get_transaction_by_block_hash_and_index(self, block_hash: Hash32, transaction_index: int) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        raise NotImplementedError("Chain classes must implement this method")
+
     @abstractmethod
     def create_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         raise NotImplementedError("Chain classes must implement this method")
@@ -1080,6 +1086,26 @@ class Chain(BaseChain):
                 index,
             ))
 
+    @functools.lru_cache(maxsize=32)
+    def get_transaction_by_block_hash_and_index(self, block_hash: Hash32, transaction_index: int) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        num_send_transactions = self.chaindb.get_number_of_send_tx_in_block(block_hash)
+        header = self.chaindb.get_block_header_by_hash(block_hash)
+        vm = self.get_vm(header=header)
+        if transaction_index >= num_send_transactions:
+            # receive transaction
+            transaction_index = transaction_index - num_send_transactions
+            tx = self.chaindb.get_receive_transaction_by_index_and_block_hash(block_hash=block_hash,
+                                                                              transaction_index=transaction_index,
+                                                                              transaction_class=vm.get_receive_transaction_class())
+        else:
+            # send transaction
+            tx = self.chaindb.get_transaction_by_index_and_block_hash(block_hash=block_hash,
+                                                                      transaction_index=transaction_index,
+                                                                      transaction_class=vm.get_transaction_class())
+
+        return tx
+
+
     def create_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         """
         Passthrough helper to the current VM class.
@@ -1180,7 +1206,17 @@ class Chain(BaseChain):
 
         return None
 
+    def get_transaction_by_index_and_block_hash(self, block_hash: Hash32, transaction_index: int) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        header = self.chaindb.get_block_header_by_hash(block_hash)
+        vm = self.get_vm(header=header)
 
+        self.chaindb.get_transaction_by_index_and_block_hash()
+
+        self.chaindb.get_transaction_by_index_and_block_hash(
+            block_hash,
+            transaction_index,
+            vm.get_transaction_class(),
+        )
     #
     # Chronological Chain api
     #

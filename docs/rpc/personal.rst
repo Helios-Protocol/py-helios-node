@@ -22,6 +22,13 @@ by copying them into the py-helios-node/helios/keystore/ directory. You can use 
 RPC Functions
 -------------
 
+All RPC calls must also include parameters jsonrpc and id. jsonrpc is the version of the rpc, which is currently "2.0", and id should be a unique number for each call you make.
+
+Example:
+::
+
+    {"jsonrpc": "2.0", "method": "personal_listAccounts", "params": [], "id":1337}
+
 personal_importRawKey
 ~~~~~~~~~~~~~~~~~~~~~
 
