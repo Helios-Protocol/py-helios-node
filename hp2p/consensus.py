@@ -331,6 +331,7 @@ class Consensus(BaseService, PeerSubscriber):
         Returns the current sync stage id
         '''
 
+
         if self._last_check_if_syncing_time < (int(time.time()) - SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD):
             if not self.coro_is_ready.is_set():
                 self._current_sync_stage = 0
@@ -643,7 +644,7 @@ class Consensus(BaseService, PeerSubscriber):
                 self.logger.debug("done syncing consensus. These are the statistics for root_hashes: {}".format(
                                    sorted_root_hash_timestamps_statistics[-10:]))
 
-                
+                sync_stage = await self.current_sync_stage
                 #todo: re-enable these Actually need to re-enable
                 #todo: these will cause statistics problems because the statistics subtracts previous stake then adds new stake.
                 #if the previous stake was deleted, it will just add the new stake and double the stake.

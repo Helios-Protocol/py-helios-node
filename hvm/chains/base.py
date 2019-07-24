@@ -1800,6 +1800,10 @@ class Chain(BaseChain):
 
         self.logger.debug("importing block {} with number {}".format(block.__repr__(), block.number))
 
+        for tx in block.transactions:
+            if tx.data != b'':
+                raise ValidationError("Transaction data must be blank until smart contracts have been enabled in Q3 2019.")
+
         self.validate_time_from_genesis_block(block)
 
         if isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()):
