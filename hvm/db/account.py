@@ -575,7 +575,7 @@ class AccountDB(BaseAccountDB):
         db_changeset = changeset
         self._journaldb.commit(db_changeset)
 
-    def persist(self, save_account_hash = True, wallet_address = None) -> None:
+    def persist(self, save_account_hash = False, wallet_address = None) -> None:
         self.logger.debug('Persisting account db. save_account_hash {} | wallet_address {}'.format(save_account_hash, wallet_address))
         self._journaldb.persist()
         self._batchdb.commit(apply_deletes=True)

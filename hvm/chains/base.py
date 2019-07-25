@@ -1194,15 +1194,15 @@ class Chain(BaseChain):
 
         send_transaction = self.get_canonical_transaction(tx_hash)
         block_children = self.chaindb.get_block_children(block_hash)
+        if block_children is not None:
+            block_children_on_correct_chain = [child_hash for child_hash in block_children
+                                               if self.chaindb.get_chain_wallet_address_for_block_hash(child_hash) == send_transaction.to]
 
-        block_children_on_correct_chain = [child_hash for child_hash in block_children
-                                           if self.chaindb.get_chain_wallet_address_for_block_hash(child_hash) == send_transaction.to]
-
-        for block_hash in block_children_on_correct_chain:
-            receive_transactions = self.get_block_receive_transactions_by_hash(block_hash)
-            for receive_tx in receive_transactions:
-                if receive_tx.send_transaction_hash == tx_hash:
-                    return receive_tx
+            for block_hash in block_children_on_correct_chain:
+                receive_transactions = self.get_block_receive_transactions_by_hash(block_hash)
+                for receive_tx in receive_transactions:
+                    if receive_tx.send_transaction_hash == tx_hash:
+                        return receive_tx
 
         return None
 

@@ -173,6 +173,28 @@ class Hls(RPCModule):
         stored_val = account_db.get_storage(chain_address, position)
         return encode_hex(int_to_big_endian(stored_val))
 
+
+
+
+    async def protocolVersion(self):
+        return hex(63)
+
+    async def syncing(self):
+        # Check our current syncing stage. If not sync stage 4, then we are syncing
+        current_sync_stage_response = await self._event_bus.request(
+            CurrentSyncStageRequest()
+        )
+        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
+            return True
+        else:
+            return False
+
+
+
+    #
+    # Transactions
+    #
+
     @format_params(decode_hex, to_int_if_hex)
     async def getTransactionByBlockHashAndIndex(self, block_hash, index):
         try:
@@ -189,7 +211,8 @@ class Hls(RPCModule):
     @format_params(to_int_if_hex, to_int_if_hex, decode_hex)
     async def getTransactionByBlockNumberAndIndex(self, at_block, index, chain_address):
         try:
-            block_hash = self._chain.chaindb.get_canonical_block_hash(chain_address=chain_address, block_number=at_block)
+            block_hash = self._chain.chaindb.get_canonical_block_hash(chain_address=chain_address,
+                                                                      block_number=at_block)
         except HeaderNotFound:
             raise BaseRPCError('No block found with the given chain address and block number')
         tx = self._chain.get_transaction_by_block_hash_and_index(block_hash, index)
@@ -201,43 +224,11 @@ class Hls(RPCModule):
             return transaction_to_dict(tx, self._chain)
 
     @format_params(decode_hex, to_int_if_hex)
-    async def getTransactionCount(self, address, at_block):
-        account_db = account_db_at_block(self._chain, at_block)
-        nonce = account_db.get_nonce(address)
+    async def getTransactionCount(self, chain_address, at_block):
+        account_db = account_db_at_block(self._chain, chain_address, at_block)
+        nonce = account_db.get_nonce(chain_address)
         return hex(nonce)
 
-    @format_params(decode_hex)
-    async def getUncleCountByBlockHash(self, block_hash):
-        block = self._chain.get_block_by_hash(block_hash)
-        return hex(len(block.uncles))
-
-    @format_params(to_int_if_hex)
-    async def getUncleCountByBlockNumber(self, at_block):
-        block = get_block_at_number(self._chain, at_block)
-        return hex(len(block.uncles))
-
-    @format_params(decode_hex, to_int_if_hex)
-    async def getUncleByBlockHashAndIndex(self, block_hash, index):
-        block = self._chain.get_block_by_hash(block_hash)
-        uncle = block.uncles[index]
-        return header_to_dict(uncle)
-
-    @format_params(to_int_if_hex, to_int_if_hex)
-    async def getUncleByBlockNumberAndIndex(self, at_block, index):
-        block = get_block_at_number(self._chain, at_block)
-        uncle = block.uncles[index]
-        return header_to_dict(uncle)
-
-    async def protocolVersion(self):
-        return "63"
-
-    async def syncing(self):
-        raise NotImplementedError()
-
-
-    #
-    # Transactions
-    #
     @format_params(decode_hex)
     async def getTransactionByHash(self, tx_hash):
         chain = self.get_new_chain()
@@ -326,18 +317,17 @@ class Hls(RPCModule):
     @format_params(decode_hex, to_int_if_hex)
     async def getBlockNumber(self, chain_address, before_timestamp = None):
         chain = self.get_new_chain(chain_address)
-        if before_timestamp is not None:
-            #it will raise HeaderNotFound error if there isnt one before the timestamp. This is on purpose.
-            block_number = chain.chaindb.get_canonical_block_number_before_timestamp(before_timestamp, chain_address)
-        else:
+        if before_timestamp is None or before_timestamp == 'latest':
             canonical_header = chain.chaindb.get_canonical_head(chain_address)
             block_number = canonical_header.block_number
+        else:
+            # it will raise HeaderNotFound error if there isnt one before the timestamp. This is on purpose.
+            block_number = chain.chaindb.get_canonical_block_number_before_timestamp(before_timestamp, chain_address)
         return hex(block_number)
 
 
     @format_params(decode_hex)
     async def getBlockCreationParams(self, chain_address):
-        print("GOT BLOCK CREATION PARAMS")
         #create new chain for all requests
         chain = self.get_new_chain(chain_address)
 
@@ -360,7 +350,6 @@ class Hls(RPCModule):
 
         reward_bundle = chain.get_consensus_db().create_reward_bundle_for_block(chain_address)
         amount = reward_bundle.reward_type_1.amount + reward_bundle.reward_type_2.amount
-        print("SENDING BLOCK CREATION PARAMS REWARD BUNDLE WITH AMOUNT", amount)
         to_return['reward_bundle'] = encode_hex(rlp.encode(reward_bundle, sedes = StakeRewardBundle))
 
         return to_return
@@ -387,13 +376,10 @@ class Hls(RPCModule):
 
         micro_block = rlp.decode(encoded_micro_block, sedes=chain.get_vm().micro_block_class)
 
-        print(micro_block.transactions[0].as_dict())
-
         block_class = self._chain_class.get_vm_class_for_block_timestamp(timestamp = micro_block.header.timestamp).get_block_class()
 
         full_block = block_class.from_micro_block(micro_block)
 
-        print(full_block.header.as_dict())
         min_time_between_blocks = chain.get_vm(header=full_block.header).min_time_between_blocks
 
         # Validate the block here
@@ -461,7 +447,6 @@ class Hls(RPCModule):
                 start = canonical_header.block_number-start_idx
                 if start >= 0:
                     end = max([-1, start-num_to_return])
-                    print(end)
                     for i in range(start, end, -1):
                         block = chain.get_block_by_number(i, chain_address)
                         if block.hash == after_hash:
@@ -539,80 +524,80 @@ class Hls(RPCModule):
             return sync_parameters.__dict__
 
 
-    async def getBlockchainDBDetails(self):
-        chain = self.get_new_chain()
-        head_block_hashes = chain.chain_head_db.get_head_block_hashes()
+    # async def getBlockchainDBDetails(self):
+    #     chain = self.get_new_chain()
+    #     head_block_hashes = chain.chain_head_db.get_head_block_hashes()
+    #
+    #     return [encode_hex(head_block_hash) for head_block_hash in head_block_hashes]
 
-        return [encode_hex(head_block_hash) for head_block_hash in head_block_hashes]
+    # async def getCurrentStakeFromBootnodeList(self):
+    #     '''
+    #     Returns the current list of node stakes that this node has already retrieved.
+    #     For debugging purposes
+    #     :return:
+    #     '''
+    #     stake_from_bootnode_response = await self._event_bus.request(
+    #         StakeFromBootnodeRequest()
+    #     )
+    #     return [(encode_hex(address), stake) for address, stake in stake_from_bootnode_response.peer_stake_from_bootstrap_node.items()]
 
-    async def getCurrentStakeFromBootnodeList(self):
-        '''
-        Returns the current list of node stakes that this node has already retrieved.
-        For debugging purposes
-        :return:
-        '''
-        stake_from_bootnode_response = await self._event_bus.request(
-            StakeFromBootnodeRequest()
-        )
-        return [(encode_hex(address), stake) for address, stake in stake_from_bootnode_response.peer_stake_from_bootstrap_node.items()]
+    # async def getAccountBalances(self):
+    #     chain = self.get_new_chain()
+    #     next_head_hashes = chain.chain_head_db.get_head_block_hashes_list()
+    #
+    #     wallet_addresses = []
+    #     for next_head_hash in next_head_hashes:
+    #         chain_address = chain.chaindb.get_chain_wallet_address_for_block_hash(next_head_hash)
+    #         wallet_addresses.append(chain_address)
+    #
+    #     out = {}
+    #     for wallet_address in wallet_addresses:
+    #         out[encode_hex(wallet_address)] = chain.get_vm().state.account_db.get_balance(wallet_address)
+    #
+    #     return out
 
-    async def getAccountBalances(self):
-        chain = self.get_new_chain()
-        next_head_hashes = chain.chain_head_db.get_head_block_hashes_list()
+    # async def getBlockchainDatabase(self):
+    #     chain_object = self.get_new_chain()
+    #
+    #     chain_head_hashes = chain_object.chain_head_db.get_head_block_hashes_list()
+    #
+    #     chains_dict = []
+    #     for head_hash in chain_head_hashes:
+    #         chain = chain_object.get_all_blocks_on_chain_by_head_block_hash(head_hash)
+    #
+    #         blocks_dict = []
+    #         for block in chain:
+    #             blocks_dict.append(block_to_dict(block, True, chain_object))
+    #
+    #         chains_dict.append(blocks_dict)
+    #
+    #     return chains_dict
 
-        wallet_addresses = []
-        for next_head_hash in next_head_hashes:
-            chain_address = chain.chaindb.get_chain_wallet_address_for_block_hash(next_head_hash)
-            wallet_addresses.append(chain_address)
-
-        out = {}
-        for wallet_address in wallet_addresses:
-            out[encode_hex(wallet_address)] = chain.get_vm().state.account_db.get_balance(wallet_address)
-
-        return out
-
-    async def getBlockchainDatabase(self):
-        chain_object = self.get_new_chain()
-
-        chain_head_hashes = chain_object.chain_head_db.get_head_block_hashes_list()
-
-        chains_dict = []
-        for head_hash in chain_head_hashes:
-            chain = chain_object.get_all_blocks_on_chain_by_head_block_hash(head_hash)
-
-            blocks_dict = []
-            for block in chain:
-                blocks_dict.append(block_to_dict(block, True, chain_object))
-
-            chains_dict.append(blocks_dict)
-
-        return chains_dict
-
-    @format_params(decode_hex)
-    async def getFaucet(self, chain_address):
-        current_sync_stage_response = await self._event_bus.request(
-            CurrentSyncStageRequest()
-        )
-        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
-
-        chain_object = self.get_new_chain(self._chain_class.faucet_private_key.public_key.to_canonical_address(), private_key= self._chain_class.faucet_private_key)
-        receivable_transactions, _ = chain_object.get_receivable_transactions(chain_address)
-        total_receivable = 0
-        for tx in receivable_transactions:
-            total_receivable += tx.value
-
-        if (chain_object.get_vm().state.account_db.get_balance(chain_address) + total_receivable) < 5*10**18:
-            gas_price = int(to_wei(int(chain_object.chaindb.get_required_block_min_gas_price()+5), 'gwei'))
-            chain_object.create_and_sign_transaction_for_queue_block(
-                gas_price=gas_price,
-                gas=0x0c3500,
-                to=chain_address,
-                value=int(1*10**18),
-                data=b"",
-                v=0,
-                r=0,
-                s=0
-            )
-
-            chain_object.import_current_queue_block()
+    # @format_params(decode_hex)
+    # async def getFaucet(self, chain_address):
+    #     current_sync_stage_response = await self._event_bus.request(
+    #         CurrentSyncStageRequest()
+    #     )
+    #     if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
+    #         raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
+    #
+    #     chain_object = self.get_new_chain(self._chain_class.faucet_private_key.public_key.to_canonical_address(), private_key= self._chain_class.faucet_private_key)
+    #     receivable_transactions, _ = chain_object.get_receivable_transactions(chain_address)
+    #     total_receivable = 0
+    #     for tx in receivable_transactions:
+    #         total_receivable += tx.value
+    #
+    #     if (chain_object.get_vm().state.account_db.get_balance(chain_address) + total_receivable) < 5*10**18:
+    #         gas_price = int(to_wei(int(chain_object.chaindb.get_required_block_min_gas_price()+5), 'gwei'))
+    #         chain_object.create_and_sign_transaction_for_queue_block(
+    #             gas_price=gas_price,
+    #             gas=0x0c3500,
+    #             to=chain_address,
+    #             value=int(1*10**18),
+    #             data=b"",
+    #             v=0,
+    #             r=0,
+    #             s=0
+    #         )
+    #
+    #         chain_object.import_current_queue_block()
