@@ -10,19 +10,22 @@ from helios.db.consensus import AsyncConsensusDB
 from helios.nodes.full import FullNode
 from helios.protocol.common.datastructures import SyncParameters
 from hp2p.consensus import Consensus, BlockConflictInfo, BlockConflictChoice
-from hvm import MainnetChain
+
+
+from hvm import TestnetChain
+from hvm.chains.testnet import (
+    TESTNET_GENESIS_PARAMS,
+    TESTNET_GENESIS_STATE,
+    TESTNET_GENESIS_PRIVATE_KEY,
+    TESTNET_NETWORK_ID,
+)
+
 from hvm.db.backends.level import LevelDB
 from hvm.db.backends.memory import MemoryDB
 from hvm.db.atomic import AtomicDB
 
 from helios.db.base import AsyncBaseDB
 from helios.db.chain import AsyncChainDB
-from hvm.chains.mainnet import (
-    MAINNET_GENESIS_PARAMS,
-    MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY_FOR_TESTNET,
-    MAINNET_NETWORK_ID,
-)
 
 from helios.dev_tools import create_dev_test_random_blockchain_database, \
     create_blockchain_database_for_exceeding_tpc_cap, create_predefined_blockchain_database, \
@@ -82,6 +85,8 @@ class FakeAsyncChainDB(AsyncChainDB):
     coro_save_historical_network_tpc_capability = async_passthrough('save_historical_network_tpc_capability')
     coro_get_mature_stake = async_passthrough('get_mature_stake')
     coro_get_unprocessed_block_header_by_block_number = async_passthrough('get_unprocessed_block_header_by_block_number')
+    coro_propogate_historical_min_gas_price_parameters_to_present = async_passthrough('propogate_historical_min_gas_price_parameters_to_present')
+
 
 class FakeAsyncChainHeadDB(AsyncChainHeadDB):
     coro_get_dense_historical_root_hashes = async_passthrough('get_dense_historical_root_hashes')
@@ -99,15 +104,14 @@ class FakeAsyncConsensusDB(AsyncConsensusDB):
     #coro_get_signed_peer_score_string_private_key = async_passthrough('get_signed_peer_score_string_private_key')
 
 
-
-async def coro_import_block(chain, block, perform_validation=True):
+async def coro_import_block(chain, *args, **kwargs):
     # Be nice and yield control to give other coroutines a chance to run before us as
     # importing a block is a very expensive operation.
     await asyncio.sleep(0)
-    return chain.import_block(block, perform_validation=perform_validation)
+    return chain.import_block(*args, **kwargs)
 
 
-class FakeAsyncMainnetChain(MainnetChain):
+class FakeAsyncTestnetChain(TestnetChain):
     chaindb_class = FakeAsyncChainDB
     coro_import_block = coro_import_block
     coro_validate_chain = async_passthrough('validate_chain')
@@ -128,8 +132,12 @@ class FakeAsyncMainnetChain(MainnetChain):
     coro_get_mature_stake = async_passthrough('get_mature_stake')
 
     coro_try_to_rebuild_chronological_chain_from_historical_root_hashes = async_passthrough('try_to_rebuild_chronological_chain_from_historical_root_hashes')
-class FakeMainnetFullNode():
-    chain_class = FakeAsyncMainnetChain
+
+    coro_initialize_historical_root_hashes_and_chronological_blocks = async_passthrough('initialize_historical_root_hashes_and_chronological_blocks')
+
+
+class FakeTestnetFullNode():
+    chain_class = FakeAsyncTestnetChain
     chain = None
 
     def __init__(self, base_db, priv_key):
@@ -157,7 +165,7 @@ class FakeMainnetFullNode():
 
 def get_fresh_db():
     testdb1 = MemoryDB()
-    MainnetChain.from_genesis(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    TestnetChain.from_genesis(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE)
     return testdb1
 
 def get_random_blockchain_db():

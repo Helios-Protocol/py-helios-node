@@ -331,6 +331,10 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
     @classmethod
     def from_micro_header(cls, micro_header:MicroBlockHeader):
         return convert_rlp_to_correct_class(cls, micro_header)
+
+
+    def to_micro_header(self):
+        return convert_rlp_to_correct_class(MicroBlockHeader, self)
         
 
 

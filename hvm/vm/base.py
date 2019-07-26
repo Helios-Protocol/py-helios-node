@@ -14,6 +14,7 @@ from typing import (  # noqa: F401
     Union,
 )
 
+from hvm.constants import CREATE_CONTRACT_ADDRESS
 import time
 
 import rlp_cython as rlp
@@ -426,6 +427,15 @@ class VM(BaseVM):
         receivable_tx_key = self.state.account_db.get_receivable_transaction(caller_chain_address,
                                                                              receive_transaction.send_transaction_hash)
 
+        # Very first thing, check to see if this transaction has been received before:
+        try:
+            block_hash, index, is_receive = self.chaindb.get_transaction_index(receive_transaction.hash)
+            if self.chaindb.is_in_canonical_chain(block_hash):
+                raise ValidationError(
+                    'Tried to import a receive transaction that has already been received in the canonical chain')
+        except TransactionNotFound:
+            pass
+
         if receivable_tx_key is None:
             # There is no receivable transaction that matches this one.
             # now check to see if the block is in the canonical chain, but didnt have the transaction in it
@@ -769,7 +779,25 @@ class VM(BaseVM):
             self.logger.debug("signing block")
             block = block.as_complete_block(private_key, self.network_id)
             
+        # Delete all receivable transactions that have been received in this block
+        # Moved this from within the computation executor because it can revert memory on error, which will put the transactions back even though they were received already.
 
+        for tx in block.receive_transactions:
+            self.state.account_db.delete_receivable_transaction(block.header.chain_address, tx.send_transaction_hash)
+            # if tx.is_refund:
+            #     self.state.account_db.delete_receivable_transaction(block.header.chain_address, tx.send_transaction_hash)
+            # else:
+            #     # block_hash, index, is_receive = self.chaindb.get_transaction_index(tx.send_transaction_hash)
+            #     #
+            #     # send_transaction = self.chaindb.get_transaction_by_index_and_block_hash(
+            #     #     block_hash,
+            #     #     index,
+            #     #     self.get_transaction_class(),
+            #     # )
+            #
+            #     self.state.account_db.delete_receivable_transaction(block.header.chain_address, tx.send_transaction_hash)
+
+        
         #save all send transactions in the state as receivable
         #we have to do this at the end here because the block hash is still changing when transactions are being processed.
         self.save_recievable_transactions(block.header.hash, send_computations, processed_receive_transactions)
@@ -838,9 +866,12 @@ class VM(BaseVM):
         for receive_transaction in receive_transactions:
             if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:
                 sender_chain_address = self.chaindb.get_chain_wallet_address_for_block_hash(receive_transaction.sender_block_hash)
+                self.logger.debug("SAVING RECEIVABLE REFUND TX WITH HASH {} ON CHAIN {}: {}".format(encode_hex(receive_transaction.hash), encode_hex(sender_chain_address), receive_transaction.as_dict()))
+
                 self.state.account_db.add_receivable_transaction(sender_chain_address,
                                                                  receive_transaction.hash,
                                                                  block_header_hash)
+
 
             
     def delete_transaction_as_receivable(self, wallet_address, transaction_hash):

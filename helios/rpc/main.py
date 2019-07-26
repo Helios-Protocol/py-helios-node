@@ -27,7 +27,9 @@ from helios.rpc.modules import (
     Net,
     RPCModule,
     Web3,
+    Personal,
 )
+from pathlib import Path
 
 REQUIRED_REQUEST_KEYS = {
     'id',
@@ -58,6 +60,12 @@ def generate_response(request: Dict[str, Any], result: Any, error: Union[Excepti
 
     return json.dumps(response)
 
+class RPCContext:
+    def __init__(self,
+                 enable_private_modules: bool = False,
+                 keystore_dir: Path = None):
+        self.enable_private_modules = enable_private_modules
+        self.keystore_dir = keystore_dir
 
 class RPCServer:
     '''
@@ -77,13 +85,29 @@ class RPCServer:
         Web3,
     )
 
-    def __init__(self, chain: AsyncChain=None, event_bus: Endpoint=None, chain_class: Type[AsyncChain]= None) -> None:
+    private_module_classes = (
+        Personal,
+    )
+
+    def __init__(self, chain: AsyncChain, rpc_context: RPCContext, event_bus: Endpoint=None, chain_class: Type[AsyncChain]= None) -> None:
         self.modules: Dict[str, RPCModule] = {}
         self.chain = chain
         self.chain_class = chain_class
+        self.rpc_context = rpc_context
+
+        if rpc_context.enable_private_modules:
+            for M in self.private_module_classes:
+                self.modules[M.__name__.lower()] = M(chain, event_bus, rpc_context, chain_class)
+
+        if 'personal' in self.modules:
+            personal_module = self.modules['personal']
+        else:
+            personal_module = None
+
         for M in self.module_classes:
-            self.modules[M.__name__.lower()] = M(chain, event_bus, chain_class)
-        if len(self.modules) != len(self.module_classes):
+            self.modules[M.__name__.lower()] = M(chain, event_bus, rpc_context, chain_class, personal_module)
+
+        if (len(self.modules) != len(self.module_classes)) and (len(self.modules) != (len(self.module_classes) + len(self.private_module_classes))):
             raise ValueError("apparent name conflict in RPC module_classes", self.module_classes)
 
     def _lookup_method(self, rpc_method: str) -> Any:

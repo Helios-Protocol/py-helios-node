@@ -81,11 +81,11 @@ class HeliosTestnetComputation(BaseComputation):
         if self.msg.should_transfer_value:
             if self.transaction_context.is_refund:
                 #this is a refund receive transaction
-                try:
-                    self.state.account_db.delete_receivable_transaction(self.msg.sender, self.transaction_context.receive_tx_hash)
-                except ReceivableTransactionNotFound as e:
-                    if validate:
-                        raise e
+                # try:
+                #     self.state.account_db.delete_receivable_transaction(self.msg.sender, self.transaction_context.receive_tx_hash)
+                # except ReceivableTransactionNotFound as e:
+                #     if validate:
+                #         raise e
 
                 self.state.account_db.delta_balance(self.msg.sender, self.msg.refund_amount)
                 self.logger.debug(
@@ -96,11 +96,11 @@ class HeliosTestnetComputation(BaseComputation):
 
             elif self.transaction_context.is_receive:
                 #this is a receive transaction
-                try:
-                    self.state.account_db.delete_receivable_transaction(self.msg.storage_address, self.transaction_context.send_tx_hash, is_contract_deploy=self.msg.is_create)
-                except ReceivableTransactionNotFound as e:
-                    if validate:
-                        raise e
+                # try:
+                #     self.state.account_db.delete_receivable_transaction(self.msg.storage_address, self.transaction_context.send_tx_hash, is_contract_deploy=self.msg.is_create)
+                # except ReceivableTransactionNotFound as e:
+                #     if validate:
+                #         raise e
 
                 if self.msg.value:
                     self.state.account_db.delta_balance(self.msg.storage_address, self.msg.value)

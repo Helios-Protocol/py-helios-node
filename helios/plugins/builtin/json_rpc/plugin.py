@@ -21,6 +21,7 @@ from helios.utils.shutdown import (
     exit_with_service_and_endpoint,
 )
 from .websocket_server import Server as rpc_websocket_server
+from helios.rpc.main import RPCContext
 
 class JsonRpcServerPlugin(BaseIsolatedPlugin):
 
@@ -42,6 +43,11 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
             action="store_true",
             help="Should we disable the RPC websocket proxy server?",
         )
+        arg_parser.add_argument(
+            '--enable_private_rpc',
+            action="store_true",
+            help="This enables the private rpc modules, such as Personal that is used for keystore management and signing.",
+        )
 
     def start(self) -> None:
         self.logger.info('JSON-RPC Server started')
@@ -55,7 +61,10 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
         db = db_manager.get_db()  # type: ignore
         chain = chain_class(db, wallet_address = self.context.chain_config.node_wallet_address)
 
-        rpc = RPCServer(chain, self.context.event_bus, chain_class)
+        rpc_context = RPCContext(enable_private_modules=self.context.args.enable_private_rpc,
+                                 keystore_dir=self.context.chain_config.keystore_dir)
+
+        rpc = RPCServer(chain, rpc_context, self.context.event_bus, chain_class)
         ipc_server = IPCServer(rpc, self.context.chain_config.jsonrpc_ipc_path)
 
 

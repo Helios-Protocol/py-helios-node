@@ -2,6 +2,8 @@ from __future__ import absolute_import
 import operator
 from collections import deque
 
+import functools
+
 from abc import (
     ABCMeta,
     abstractmethod
@@ -23,6 +25,7 @@ from typing import (  # noqa: F401
     TYPE_CHECKING,
     Union,
     List,
+    Iterable,
 )
 
 import logging
@@ -53,6 +56,8 @@ from hvm.db.chain import (
 from hvm.db.journal import (
     JournalDB,
 )
+
+from hvm.db.read_only import ReadOnlyDB
 from hvm.constants import (
     BLOCK_GAS_LIMIT,
     BLANK_ROOT_HASH,
@@ -182,6 +187,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     vm_configuration = None  # type: Tuple[Tuple[int, Type[BaseVM]], ...]
     genesis_wallet_address: Address = None
     genesis_block_timestamp: Timestamp = None
+    min_time_between_blocks: int = None
 
     #
     # Helpers
@@ -193,6 +199,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
 
     @abstractmethod
     def get_consensus_db(self, header: BlockHeader = None, timestamp: Timestamp = None) -> ConsensusDB:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def enable_read_only_db(self) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
     #
@@ -347,6 +357,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     # Transaction API
     #
     @abstractmethod
+    def get_transaction_by_block_hash_and_index(self, block_hash: Hash32, transaction_index: int) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
     def create_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         raise NotImplementedError("Chain classes must implement this method")
 
@@ -359,6 +373,15 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def populate_queue_block_with_receive_tx(self) -> List[BaseReceiveTransaction]:
         raise NotImplementedError("Chain classes must implement this method")
 
+    @abstractmethod
+    def get_block_receive_transactions_by_hash(
+            self,
+            block_hash: Hash32) -> List['BaseReceiveTransaction']:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_receive_tx_from_send_tx(self, tx_hash: Hash32) -> Optional['BaseReceiveTransaction']:
+        raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
     def create_receivable_transactions(self) -> List[BaseReceiveTransaction]:
@@ -427,11 +450,19 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     # Validation API
     #
     @abstractmethod
+    def get_allowed_time_of_next_block(self, chain_address: Address = None) -> Timestamp:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
     def validate_block(self, block: BaseBlock) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
     def validate_gaslimit(self, header: BlockHeader) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def validate_block_specification(self, block) -> bool:
         raise NotImplementedError("Chain classes must implement this method")
 
     #
@@ -569,6 +600,12 @@ class Chain(BaseChain):
     def queue_block(self,val:BaseQueueBlock):
         self._queue_block = val
 
+    @property
+    def min_time_between_blocks(self):
+        vm = self.get_vm(timestamp=Timestamp(int(time.time())))
+        min_allowed_time_between_blocks = vm.min_time_between_blocks
+        return min_allowed_time_between_blocks
+
     # @property
     # def consensus_db(self, header: BlockHeader = None, timestamp: Timestamp = None):
     #     # gets the consensus db corresponding to the block timestamp
@@ -583,6 +620,14 @@ class Chain(BaseChain):
     #
     # Global Record and discard API
     #
+
+    def enable_read_only_db(self) -> None:
+        if not isinstance(self.db, ReadOnlyDB):
+            self.base_db = self.db
+            self.db = ReadOnlyDB(self.base_db)
+            self.reinitialize()
+
+
     def enable_journal_db(self):
         if self._journaldb is None:
             self.base_db = self.db
@@ -1041,6 +1086,26 @@ class Chain(BaseChain):
                 index,
             ))
 
+    @functools.lru_cache(maxsize=32)
+    def get_transaction_by_block_hash_and_index(self, block_hash: Hash32, transaction_index: int) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        num_send_transactions = self.chaindb.get_number_of_send_tx_in_block(block_hash)
+        header = self.chaindb.get_block_header_by_hash(block_hash)
+        vm = self.get_vm(header=header)
+        if transaction_index >= num_send_transactions:
+            # receive transaction
+            transaction_index = transaction_index - num_send_transactions
+            tx = self.chaindb.get_receive_transaction_by_index_and_block_hash(block_hash=block_hash,
+                                                                              transaction_index=transaction_index,
+                                                                              transaction_class=vm.get_receive_transaction_class())
+        else:
+            # send transaction
+            tx = self.chaindb.get_transaction_by_index_and_block_hash(block_hash=block_hash,
+                                                                      transaction_index=transaction_index,
+                                                                      transaction_class=vm.get_transaction_class())
+
+        return tx
+
+
     def create_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         """
         Passthrough helper to the current VM class.
@@ -1056,9 +1121,10 @@ class Chain(BaseChain):
         return signed_transaction
 
     def create_and_sign_transaction_for_queue_block(self, *args: Any, **kwargs: Any) -> BaseTransaction:
-        tx_nonce = self.get_current_queue_block_nonce()
+        if 'nonce' not in kwargs or kwargs['nonce'] is None:
+            kwargs['nonce'] = self.get_current_queue_block_nonce()
 
-        transaction = self.create_and_sign_transaction(nonce = tx_nonce, *args, **kwargs)
+        transaction = self.create_and_sign_transaction(*args, **kwargs)
 
         self.add_transactions_to_queue_block(transaction)
         return transaction
@@ -1111,14 +1177,46 @@ class Chain(BaseChain):
         self.add_transactions_to_queue_block(receive_tx)
         return receive_tx
 
-    # def get_receive_transactions(self, wallet_address: Address):
-    #     validate_canonical_address(wallet_address, title="wallet_address")
-    #     vm = self.get_vm()
-    #     account_db = vm.state.account_db
-    #     receivable_tx_keys = account_db.get_receivable_transactions(wallet_address)
-    #     #todo: finish this function
-    #     #print(receivable_tx_hashes)
+    def get_block_receive_transactions_by_hash(
+            self,
+            block_hash: Hash32) -> List['BaseReceiveTransaction']:
 
+        block_header = self.get_block_header_by_hash(block_hash)
+        vm = self.get_vm(header = block_header)
+        receive_transaction_class = vm.get_block_class().receive_transaction_class
+        receive_transactions = self.chaindb.get_block_receive_transactions(header = block_header, transaction_class = receive_transaction_class)
+        return receive_transactions
+
+    def get_receive_tx_from_send_tx(self, tx_hash: Hash32) -> Optional['BaseReceiveTransaction']:
+        block_hash, index, is_receive = self.chaindb.get_transaction_index(tx_hash)
+        if is_receive:
+            raise ValidationError("The provided tx hash is not for a send transaction")
+
+        send_transaction = self.get_canonical_transaction(tx_hash)
+        block_children = self.chaindb.get_block_children(block_hash)
+        if block_children is not None:
+            block_children_on_correct_chain = [child_hash for child_hash in block_children
+                                               if self.chaindb.get_chain_wallet_address_for_block_hash(child_hash) == send_transaction.to]
+
+            for block_hash in block_children_on_correct_chain:
+                receive_transactions = self.get_block_receive_transactions_by_hash(block_hash)
+                for receive_tx in receive_transactions:
+                    if receive_tx.send_transaction_hash == tx_hash:
+                        return receive_tx
+
+        return None
+
+    def get_transaction_by_index_and_block_hash(self, block_hash: Hash32, transaction_index: int) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        header = self.chaindb.get_block_header_by_hash(block_hash)
+        vm = self.get_vm(header=header)
+
+        self.chaindb.get_transaction_by_index_and_block_hash()
+
+        self.chaindb.get_transaction_by_index_and_block_hash(
+            block_hash,
+            transaction_index,
+            vm.get_transaction_class(),
+        )
     #
     # Chronological Chain api
     #
@@ -1598,7 +1696,8 @@ class Chain(BaseChain):
                      wallet_address = None,
                      allow_unprocessed = True,
                      allow_replacement = True,
-                     ensure_block_unchanged:bool = True) -> BaseBlock:
+                     ensure_block_unchanged:bool = True,
+                     microblock_origin: bool = False) -> BaseBlock:
 
         #we handle replacing blocks here
         #this includes deleting any blocks that it might be replacing
@@ -1763,7 +1862,8 @@ class Chain(BaseChain):
                                               perform_validation = perform_validation,
                                               save_block_head_hash_timestamp = save_block_head_hash_timestamp,
                                               allow_unprocessed = allow_unprocessed,
-                                              ensure_block_unchanged= ensure_block_unchanged)
+                                              ensure_block_unchanged= ensure_block_unchanged,
+                                              microblock_origin = microblock_origin)
 
             # handle importing unprocessed blocks here because doing it recursively results in maximum recursion depth exceeded error
             if not self.chaindb.is_block_unprocessed(return_block.hash):
@@ -1793,7 +1893,8 @@ class Chain(BaseChain):
                       perform_validation: bool=True,
                       save_block_head_hash_timestamp = True,
                       allow_unprocessed = True,
-                      ensure_block_unchanged: bool = True) -> BaseBlock:
+                      ensure_block_unchanged: bool = True,
+                      microblock_origin: bool = False) -> BaseBlock:
         """
         Imports a complete block.
         """
@@ -1828,8 +1929,22 @@ class Chain(BaseChain):
 
                 # Validate the imported block.
                 if ensure_block_unchanged:
-                    self.logger.debug('ensuring block unchanged')
-                    ensure_imported_block_unchanged(imported_block, block)
+                    if microblock_origin:
+                        # this started out as a microblock. So we only ensure the microblock fields are unchanged.
+                        self.logger.debug('ensuring block unchanged. microblock correction')
+                        corrected_micro_block = block.copy(header = block.header.copy(
+                            receipt_root = imported_block.header.receipt_root,
+                            bloom = imported_block.header.bloom,
+                            gas_limit = imported_block.header.gas_limit,
+                            gas_used = imported_block.header.gas_used,
+                            account_hash = imported_block.header.account_hash,
+                            account_balance = imported_block.header.account_balance,
+                        ))
+
+                        ensure_imported_block_unchanged(imported_block, corrected_micro_block)
+                    else:
+                        self.logger.debug('ensuring block unchanged')
+                        ensure_imported_block_unchanged(imported_block, block)
                 else:
                     self.logger.debug('Not checking block for changes.')
                 if perform_validation:
@@ -2055,6 +2170,21 @@ class Chain(BaseChain):
     #
     # Validation API
     #
+
+    def get_allowed_time_of_next_block(self, chain_address: Address = None) -> Timestamp:
+        if chain_address is None:
+            chain_address = self.wallet_address
+
+        try:
+            canonical_head = self.chaindb.get_canonical_head(chain_address=chain_address)
+        except CanonicalHeadNotFound:
+            return Timestamp(0)
+        vm = self.get_vm(timestamp=Timestamp(int(time.time())))
+        min_allowed_time_between_blocks = vm.min_time_between_blocks
+        return Timestamp(canonical_head.timestamp + min_allowed_time_between_blocks)
+
+
+
     def validate_block(self, block: BaseBlock) -> None:
         """
         Performs validation on a block that is either being mined or imported.
@@ -2081,7 +2211,7 @@ class Chain(BaseChain):
                 "The gas limit on block {0} is too high: {1}. It must be at most {2}".format(
                     encode_hex(header.hash), header.gas_limit, BLOCK_GAS_LIMIT))
 
-    def validate_block_specification(self, block):
+    def validate_block_specification(self, block) -> bool:
         '''
         This validates everything we can without looking at the blockchain database. It doesnt need to assume
         that we have the block that sent the transactions.

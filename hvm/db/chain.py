@@ -322,6 +322,11 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
+    def get_receipts_by_block_hash(self,
+                                   hash: Hash32) -> Tuple[Receipt]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
     def get_transaction_receipt(self, tx_hash: Hash32) -> Receipt:
         raise NotImplementedError("ChainDB classes must implement this method")
 
@@ -1222,7 +1227,7 @@ class ChainDB(BaseChainDB):
     def get_block_receive_transactions(
             self,
             header: BlockHeader,
-            transaction_class: Type['BaseReceiveTransaction']) -> Iterable['BaseReceiveTransaction']:
+            transaction_class: Type['BaseReceiveTransaction']) -> List['BaseReceiveTransaction']:
         """
         Returns an iterable of transactions for the block speficied by the
         given block header.
@@ -1290,7 +1295,7 @@ class ChainDB(BaseChainDB):
     @to_tuple
     def get_receipts(self,
                      header: BlockHeader,
-                     receipt_class: Type[Receipt] = Receipt) -> Iterable[Receipt]:
+                     receipt_class: Type[Receipt] = Receipt) -> Tuple[Receipt]:
         """
         Returns an iterable of receipts for the block specified by the given
         block header.
@@ -1303,6 +1308,11 @@ class ChainDB(BaseChainDB):
                 yield rlp.decode(receipt_data, sedes=receipt_class)
             else:
                 break
+
+    def get_receipts_by_block_hash(self,
+                                   hash: Hash32) -> Tuple[Receipt]:
+        block_header = self.get_block_header_by_hash(hash)
+        return self.get_receipts(block_header)
 
     # def get_transaction_by_index(
     #         self,
@@ -1464,7 +1474,7 @@ class ChainDB(BaseChainDB):
     @functools.lru_cache(maxsize=32)
     def _get_block_transaction_count(self, transaction_root: Hash32):
         '''
-        Returns iterable of the encoded transactions for the given block header
+        Returns the transaction count
         '''
         count = 0
         transaction_db = HexaryTrie(self.db, root_hash=transaction_root)
@@ -1481,7 +1491,7 @@ class ChainDB(BaseChainDB):
     def _get_block_transactions(
             self,
             transaction_root: Hash32,
-            transaction_class: Union[Type['BaseTransaction'], Type['BaseReceiveTransaction']]) -> Iterable[Union['BaseTransaction', 'BaseReceiveTransaction']]:
+            transaction_class: Union[Type['BaseTransaction'], Type['BaseReceiveTransaction']]) -> List[Union['BaseTransaction', 'BaseReceiveTransaction']]:
         """
         Memoizable version of `get_block_transactions`
         """

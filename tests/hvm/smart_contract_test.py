@@ -4,17 +4,17 @@ import random
 import time
 import sys
 from pprint import pprint
-
+from hvm.db.read_only import ReadOnlyDB
 
 from hvm import constants
-
-from hvm import MainnetChain
-from hvm.chains.mainnet import (
-    MAINNET_GENESIS_PARAMS,
-    MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY_FOR_TESTNET,
-    MAINNET_NETWORK_ID,
+from hvm import TestnetChain
+from hvm.chains.testnet import (
+    TESTNET_GENESIS_PARAMS,
+    TESTNET_GENESIS_STATE,
+    TESTNET_GENESIS_PRIVATE_KEY,
+    TESTNET_NETWORK_ID,
 )
+
 
 from hvm.types import Timestamp
 
@@ -36,7 +36,8 @@ import rlp as rlp
 
 from eth_utils import (
     encode_hex,
-    decode_hex,        
+    decode_hex,
+    to_wei
 )
 from helios.dev_tools import create_dev_test_random_blockchain_database, \
     create_dev_test_blockchain_database_with_given_transactions, create_new_genesis_params_and_state
@@ -56,6 +57,7 @@ from eth_utils import (
 )
 from eth_keys import keys
 
+from eth_typing import Hash32
 from eth_keys.datatypes import(
         BaseKey,
         PublicKey,
@@ -113,7 +115,7 @@ for i in range(10):
     private_keys.append(get_primary_node_private_helios_key(i))
 
 
-SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
+SENDER = TESTNET_GENESIS_PRIVATE_KEY
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -150,7 +152,7 @@ def test_erc_20_smart_contract_deploy_system():
     # testdb = LevelDB('/home/tommy/.local/share/helios/instance_test/mainnet/chain/full/')
     # testdb = JournalDB(testdb)
     testdb = MemoryDB()
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
     coin_mature_time = chain.get_vm(timestamp = Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
 
     now = int(time.time())
@@ -161,7 +163,7 @@ def test_erc_20_smart_contract_deploy_system():
     }
     create_dev_fixed_blockchain_database(testdb, key_balance_dict)
 
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     min_time_between_blocks = chain.get_vm(timestamp = Timestamp(int(time.time()))).min_time_between_blocks
     for private_key, balance_time in key_balance_dict.items():
@@ -203,14 +205,14 @@ def test_erc_20_smart_contract_deploy_system():
     #time.sleep(1)
     print("deploying smart contract")
 
-    initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    initial_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     imported_block = chain.import_current_queue_block()
-    final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    final_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     gas_used = to_int(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].gas_used)
     assert ((initial_balance - final_balance) == gas_used)
 
-    print(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
-    print(generate_contract_address(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), imported_block.transactions[0].nonce))
+    print(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    print(generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), imported_block.transactions[0].nonce))
     print(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].logs[0].address)
 
     #contractAddress
@@ -222,7 +224,7 @@ def test_erc_20_smart_contract_deploy_system():
     deployed_contract_address = list_of_smart_contracts[0]
     print(list_of_smart_contracts)
 
-    chain = MainnetChain(testdb, deployed_contract_address, private_keys[0])
+    chain = TestnetChain(testdb, deployed_contract_address, private_keys[0])
 
     chain.populate_queue_block_with_receive_tx()
     imported_block = chain.import_current_queue_block()
@@ -231,7 +233,7 @@ def test_erc_20_smart_contract_deploy_system():
     print(list_of_smart_contracts)
 
     #lets make sure it didn't create a refund transaction for the initial sender.
-    print(chain.get_vm().state.account_db.has_receivable_transactions(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address()))
+    print(chain.get_vm().state.account_db.has_receivable_transactions(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address()))
 
     # print('ASDASD')
     # print(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].logs[0].data)
@@ -239,7 +241,7 @@ def test_erc_20_smart_contract_deploy_system():
     #
     # Interacting with deployed smart contract step 1) add send transaction
     #
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     simple_token = w3.eth.contract(
         address=Web3.toChecksumAddress(deployed_contract_address),
@@ -261,20 +263,24 @@ def test_erc_20_smart_contract_deploy_system():
     )
 
     #lets make sure it subtracts the entire max gas
-    initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    initial_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
     print("waiting {} seconds before importing next block".format(min_time_between_blocks))
     time.sleep(min_time_between_blocks)
     chain.import_current_queue_block()
-    final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    final_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     assert((initial_balance - final_balance) == max_gas)
 
     #
     # Interacting with deployed smart contract step 2) add receive transaction to smart contract chain
     #
 
-    chain = MainnetChain(testdb, deployed_contract_address, private_keys[0])
+    chain = TestnetChain(testdb, deployed_contract_address, private_keys[0])
     chain.populate_queue_block_with_receive_tx()
+
+    receivable_transactions = chain.get_vm().state.account_db.get_receivable_transactions(deployed_contract_address)
+    print('receivable_transactions before imported into contract chain')
+    print(receivable_transactions)
 
     print("waiting {} seconds before importing next block".format(min_time_between_blocks))
     time.sleep(min_time_between_blocks)
@@ -292,21 +298,155 @@ def test_erc_20_smart_contract_deploy_system():
     print("Total supply call gave expected result!")
     gas_used = to_int(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].gas_used)
 
+
+
     #
     # Interacting with deployed smart contract step 3) Receiving refund of extra gas that wasn't used in the computation
     #
-    initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    initial_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    #
+    # Make sure the receive transaction is no longer in the account receivable
+    #
+    receivable_transactions = chain.get_vm().state.account_db.get_receivable_transactions(deployed_contract_address)
+    print('receivable_transactions after imported into contract chain')
+    print(receivable_transactions)
+
     chain.populate_queue_block_with_receive_tx()
 
     print("waiting {} seconds before importing next block".format(min_time_between_blocks))
     time.sleep(min_time_between_blocks)
     imported_block = chain.import_current_queue_block()
-    final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    final_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     assert ((final_balance - initial_balance) == (max_gas - gas_used))
     print("Refunded gas is the expected amount.")
 
 # test_erc_20_smart_contract_deploy_system()
+# exit()
+
+
+
+def test_talamus_contract():
+    absolute_dir = os.path.dirname(os.path.realpath(__file__))
+    testdb = LevelDB(absolute_dir + "/predefined_databases/talamus_test")
+
+    testdb = ReadOnlyDB(testdb)
+    talamus_contract_address = decode_hex('0x81bdf63b9a6e871f560dca1d55e8732b5ccdc2f9')
+
+    print(private_keys[0].public_key.to_checksum_address())
+    chain = TestnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+
+    COMPILED_SOLIDITY_FILE = load_compiled_sol_dict('contract_data/talamus_compiled.pkl')
+    SOLIDITY_SRC_FILE = 'contract/talamus.sol'
+
+    contract_interface = COMPILED_SOLIDITY_FILE['{}:TalamusHealth'.format(SOLIDITY_SRC_FILE)]
+
+    w3 = Web3()
+
+    talamus_contract = w3.eth.contract(
+        abi=contract_interface['abi'],
+        bytecode=contract_interface['bin']
+    )
+
+    max_gas = 2000000
+    w3_tx_params = {
+        'gas': max_gas,
+        'gasPrice': to_wei(2, 'gwei'),
+        'chainId': 2,
+        'to': talamus_contract_address,
+        'value': 0,
+        'nonce': 1
+    }
+
+    # from rpc
+    # {'gasPrice': 2000000000, 'chainId': 2, 'gas': 2000000, 'to': b'\x81\xbd\xf6;\x9an\x87\x1fV\r\xca\x1dU\xe8s+\\\xcd\xc2\xf9', 'value': 0, 'data': '0x010f836e0000000000000000000000000000000000000000000000000000000000000000', 'nonce': 1}
+    # us
+    # {'gas': 2000000, 'gasPrice': 2000000000, 'chainId': 2, 'to': b'\x81\xbd\xf6;\x9an\x87\x1fV\r\xca\x1dU\xe8s+\\\xcd\xc2\xf9', 'value': 0, 'data': '0x010f836e0000000000000000000000000000000000000000000000000000000000000000'}
+
+    hash_to_save = Hash32(32 * b'\x00')
+
+    w3_tx = talamus_contract.functions.saveHash(hash_to_save).buildTransaction(w3_tx_params)
+
+    print(w3_tx)
+
+    # tx = chain.create_and_sign_transaction_for_queue_block(
+    #     gas_price=w3_tx['gasPrice'],
+    #     gas=w3_tx['gas'],
+    #     to=w3_tx['to'],
+    #     value=w3_tx['value'],
+    #     data=decode_hex(w3_tx['data']),
+    #     nonce=1,
+    #     v=0,
+    #     r=0,
+    #     s=0
+    # )
+
+    tx = chain.create_and_sign_transaction_for_queue_block(
+        gas_price=w3_tx['gasPrice'],
+        gas=w3_tx['gas'],
+        to=w3_tx['to'],
+        value=w3_tx['value'],
+        data=b'0x010f836e0000000000000000000000000000000000000000000000000000000000000000',
+        nonce=1,
+        v=0,
+        r=0,
+        s=0
+    )
+
+    print('ZZZZZZZZZZZZZZZZZZZZZZZZZZZ')
+    print(tx.as_dict())
+
+    # from rpc
+    # {'nonce': 1, 'gas_price': 2000000000, 'gas': 2000000, 'to': b'\x81\xbd\xf6;\x9an\x87\x1fV\r\xca\x1dU\xe8s+\\\xcd\xc2\xf9', 'value': 0, 'data': b'0x010f836e0000000000000000000000000000000000000000000000000000000000000000', 'v': 38, 'r': 77546672203976404837758472880488256719656950035867254665717724200250517648493, 's': 2580236846734574215375389852957773325366136635134534812926657997746477469836}
+    # from us
+    # {'nonce': 1, 'gas_price': 2000000000, 'gas': 2000000, 'to': b'\x81\xbd\xf6;\x9an\x87\x1fV\r\xca\x1dU\xe8s+\\\xcd\xc2\xf9', 'value': 0, 'data': b'\x01\x0f\x83n\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'v': 39, 'r': 39349908228946674104603389597151977495442914775500474614266302539829498168651, 's': 23552581665426625568029915589486661695498739587988697017071052606525926751079}
+
+    chain.import_current_queue_block()
+
+    contract_chain = TestnetChain(ReadOnlyDB(testdb), talamus_contract_address, private_keys[0])
+
+    receivable_transactions = contract_chain.get_vm().state.account_db.get_receivable_transactions(talamus_contract_address)
+    print('receivable_transactions before imported into contract chain')
+    print(receivable_transactions)
+
+    contract_chain.populate_queue_block_with_receive_tx()
+    contract_block = contract_chain.import_current_queue_block()
+
+
+
+    contract_chain = TestnetChain(testdb, talamus_contract_address, private_keys[0])
+    contract_chain.import_block(contract_block)
+
+    contract_chain = TestnetChain(testdb, talamus_contract_address, private_keys[0])
+
+    receivable_transactions = contract_chain.get_vm().state.account_db.get_receivable_transactions(talamus_contract_address)
+    print('receivable_transactions after imported into contract chain')
+    print(receivable_transactions)
+
+
+
+# test_talamus_contract()
+# exit()
+
+
+def test_talamus_contract_2():
+    absolute_dir = os.path.dirname(os.path.realpath(__file__))
+    testdb = LevelDB(absolute_dir + "/predefined_databases/talamus_test_save_hash")
+
+    testdb = ReadOnlyDB(testdb)
+    talamus_contract_address = decode_hex('0x81bdf63b9a6e871f560dca1d55e8732b5ccdc2f9')
+
+    chain = TestnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    receivable_transactions = chain.get_vm().state.account_db.get_receivable_transactions(talamus_contract_address)
+    print('receivable_transactions before imported into contract chain')
+    print(receivable_transactions)
+
+
+# test_talamus_contract_2()
 # exit()
 
 
@@ -317,13 +457,13 @@ def _test_airdrop_calling_erc_20():
     # testdb = LevelDB('/home/tommy/.local/share/helios/instance_test/mainnet/chain/full/')
     # testdb = JournalDB(testdb)
     testdb = MemoryDB()
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
     coin_mature_time = chain.get_vm(timestamp = Timestamp(int(time.time()))).consensus_db.coin_mature_time_for_staking
 
-    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY_FOR_TESTNET, 1000000 * 10 ** 18, int(time.time()) - coin_mature_time * 10000)
+    genesis_params, genesis_state = create_new_genesis_params_and_state(TESTNET_GENESIS_PRIVATE_KEY, 1000000 * 10 ** 18, int(time.time()) - coin_mature_time * 10000)
 
     # import genesis block
-    chain = MainnetChain.from_genesis(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), genesis_params, genesis_state, GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    chain = TestnetChain.from_genesis(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state, TESTNET_GENESIS_PRIVATE_KEY)
 
 
     #
@@ -367,7 +507,7 @@ def _test_airdrop_calling_erc_20():
     list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
     erc20_contract_address = list_of_smart_contracts[0]
 
-    chain = MainnetChain(testdb, erc20_contract_address, private_keys[0])
+    chain = TestnetChain(testdb, erc20_contract_address, private_keys[0])
 
     chain.populate_queue_block_with_receive_tx()
     imported_block = chain.import_current_queue_block()
@@ -390,7 +530,7 @@ def _test_airdrop_calling_erc_20():
     # Build transaction to deploy the contract
     w3_airdrop_tx = Airdrop.constructor().buildTransaction(W3_TX_DEFAULTS)
 
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     chain.create_and_sign_transaction_for_queue_block(
         gas_price=0x01,
@@ -410,7 +550,7 @@ def _test_airdrop_calling_erc_20():
     list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
     airdrop_contract_address = list_of_smart_contracts[0]
 
-    chain = MainnetChain(testdb, airdrop_contract_address, private_keys[0])
+    chain = TestnetChain(testdb, airdrop_contract_address, private_keys[0])
 
     chain.populate_queue_block_with_receive_tx()
     imported_block = chain.import_current_queue_block()
@@ -421,7 +561,7 @@ def _test_airdrop_calling_erc_20():
     #
     # Interacting with deployed smart contract step 1) add send transaction
     #
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     print(erc20_contract_interface['abi'])
     simple_token = w3.eth.contract(
@@ -445,7 +585,7 @@ def _test_airdrop_calling_erc_20():
     )
     imported_block = chain.import_current_queue_block()
 
-    chain = MainnetChain(testdb, erc20_contract_address, private_keys[0])
+    chain = TestnetChain(testdb, erc20_contract_address, private_keys[0])
     chain.populate_queue_block_with_receive_tx()
     imported_block = chain.import_current_queue_block()
 
@@ -461,7 +601,7 @@ def _test_airdrop_calling_erc_20():
 
     assert(to_int(chain.chaindb.get_receipts(imported_block.header, Receipt)[0].logs[0].data) == airdrop_token_balance)
 
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     w3_erc20_balance = simple_token.functions.balanceOf(Web3.toChecksumAddress(airdrop_contract_address)).buildTransaction(W3_TX_DEFAULTS)
 
@@ -477,7 +617,7 @@ def _test_airdrop_calling_erc_20():
     )
     imported_block = chain.import_current_queue_block()
 
-    chain = MainnetChain(testdb, erc20_contract_address, private_keys[0])
+    chain = TestnetChain(testdb, erc20_contract_address, private_keys[0])
     chain.populate_queue_block_with_receive_tx()
     imported_block = chain.import_current_queue_block()
 
@@ -494,14 +634,12 @@ def _test_airdrop_calling_erc_20():
     #
     # Interacting with deployed smart contract step 3) Receiving refund of extra gas that wasn't used in the computation
     #
-    initial_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
-    chain = MainnetChain(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    initial_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
     chain.populate_queue_block_with_receive_tx()
     imported_block = chain.import_current_queue_block()
-    final_balance = chain.get_vm().state.account_db.get_balance(GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    final_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     assert ((final_balance - initial_balance) == (max_gas - gas_used))
     print("Refunded gas is the expected amount.")
 
 # test_airdrop_calling_erc_20()
-
-

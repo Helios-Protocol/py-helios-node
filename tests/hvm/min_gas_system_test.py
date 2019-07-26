@@ -8,13 +8,14 @@ from pprint import pprint
 
 from hvm import constants
 
-from hvm import MainnetChain
-from hvm.chains.mainnet import (
-    MAINNET_GENESIS_PARAMS,
-    MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY_FOR_TESTNET,
-    MAINNET_NETWORK_ID,
+from hvm import TestnetChain
+from hvm.chains.testnet import (
+    TESTNET_GENESIS_PARAMS,
+    TESTNET_GENESIS_STATE,
+    TESTNET_GENESIS_PRIVATE_KEY,
+    TESTNET_NETWORK_ID,
 )
+
 
 from hvm.constants import (
     BLANK_ROOT_HASH,
@@ -90,7 +91,7 @@ from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock, HeliosTestnetBl
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 
-SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
+SENDER = TESTNET_GENESIS_PRIVATE_KEY
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -114,7 +115,7 @@ def test_min_allowed_gas_system():
 
     # testdb1 = JournalDB(testdb1)
 
-    node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    node_1 = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     # Follow the process that consensus will be using to sync the min gas system
 
@@ -165,7 +166,7 @@ def test_min_allowed_gas_system():
 
     # testdb1 = JournalDB(testdb1)
 
-    node_1 = MainnetChain(testdb1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    node_1 = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     # Follow the process that consensus will be using to sync the min gas system
 

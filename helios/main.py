@@ -13,6 +13,7 @@ from typing import (
 )
 
 from cancel_token import CancelToken
+from hvm.db.read_only import ReadOnlyDB
 from lahja import (
     EventBus,
     Endpoint,
@@ -20,6 +21,9 @@ from lahja import (
 
 from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
+)
+from hvm.chains.testnet import (
+    TESTNET_NETWORK_ID,
 )
 from hvm.db.backends.base import BaseDB
 from hvm.db.backends.level import LevelDB
@@ -92,7 +96,7 @@ from helios.utils.version import (
 from hvm.tools.logging import TRACE_LEVEL_NUM
 from helios.utils.db_proxy import create_db_manager
 
-PRECONFIGURED_NETWORKS = {MAINNET_NETWORK_ID}
+PRECONFIGURED_NETWORKS = {MAINNET_NETWORK_ID, TESTNET_NETWORK_ID}
 
 HELIOS_HEADER = (
     "\n"    
@@ -167,7 +171,7 @@ def main() -> None:
 
     if args.network_id not in PRECONFIGURED_NETWORKS:
         raise NotImplementedError(
-            "Unsupported network id: {0}.  Only the ropsten and mainnet "
+            "Unsupported network id: {0}.  Only the testnet and mainnet "
             "networks are supported.".format(args.network_id)
         )
 
@@ -494,7 +498,7 @@ def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> N
         base_db = db_class(db_path=chain_config.database_dir)
 
         # TODO:remove
-        #base_db = JournalDB(base_db)
+        # base_db = ReadOnlyDB(base_db)
 
         manager = get_chaindb_manager(chain_config, base_db)
         server = manager.get_server()  # type: ignore

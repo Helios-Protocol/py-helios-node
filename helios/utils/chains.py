@@ -18,6 +18,9 @@ from eth_keys.datatypes import PrivateKey
 from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
+from hvm.chains.testnet import (
+    TESTNET_NETWORK_ID,
+)
 
 from hp2p.constants import DEFAULT_MAX_PEERS
 
@@ -26,6 +29,7 @@ from helios.constants import SYNC_LIGHT
 
 DEFAULT_DATA_DIRS = {
     MAINNET_NETWORK_ID: 'mainnet',
+    TESTNET_NETWORK_ID: 'testnet'
 }
 
 

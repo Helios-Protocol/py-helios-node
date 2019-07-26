@@ -158,9 +158,10 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
 
             self.vm_state.logger.debug(
                 (
-                    "RECEIVE TRANSACTION: sender: %s | to: %s | value: %s | gas: %s | "
+                    "RECEIVE TRANSACTION: hash: %s | sender: %s | to: %s | value: %s | gas: %s | "
                     "gas-price: %s | s: %s | r: %s | v: %s | data-hash: %s"
                 ),
+                encode_hex(send_transaction.hash),
                 encode_hex(send_transaction.sender),
                 encode_hex(send_transaction.to),
                 send_transaction.value,

@@ -288,6 +288,10 @@ class Consensus(BaseService, PeerSubscriber):
     #TODO. check to make sure the peers also have stake that is not equal to None
     @property
     def has_enough_peers(self):
+        if self.is_network_startup_node:
+            self.logger.debug("Has enough peers because we are a network startup node")
+            return True
+
         if len(self.peer_pool.connected_nodes) >= MIN_SAFE_PEERS:
             self.logger.debug("Has enough peers. connected peers: {}".format(self.peer_pool.connected_nodes.keys()))
         else:
@@ -1504,7 +1508,7 @@ class Consensus(BaseService, PeerSubscriber):
         '''
 
         timestamp = round_down_to_nearest_historical_window(timestamp)
-        
+
         try:
             root_hash_stakes = self.root_hash_timestamps_statistics[timestamp]
             peer_root_hash, peer_stake_for_peer_root_hash = self.determine_stake_winner(root_hash_stakes)
@@ -1521,8 +1525,7 @@ class Consensus(BaseService, PeerSubscriber):
                 local_root_hash = None
         else:
             local_root_hash = None
-       
-            
+
         if peer_root_hash == local_root_hash or local_root_hash is None:
             return peer_root_hash
         else:
@@ -1565,6 +1568,9 @@ class Consensus(BaseService, PeerSubscriber):
         disagreement_found = False
         local_root_hash_timestamps = self.local_root_hash_timestamps
 
+        if debug:
+            pass
+            #print('AAAAAAAAAAAAAAAAAA')
 
         if local_root_hash_timestamps is not None:
             #we run the loop from newest to oldest because the db is most often going to be close to syncing. This will be more effecient

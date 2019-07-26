@@ -131,7 +131,9 @@ def make_mutable(value, force_deep_check = False):
     
 def convert_rlp_to_correct_class(wanted_class, given_object):
 
-    parameter_names = list(dict(given_object._meta.fields).keys())
+    given_object_parameter_names = set(dict(given_object._meta.fields).keys())
+    wanted_class_parameter_names = set(dict(wanted_class._meta.fields).keys())
+    parameter_names = list(given_object_parameter_names.intersection(wanted_class_parameter_names))
 
     dict_params = {}
     for parameter_name in parameter_names:

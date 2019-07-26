@@ -1,0 +1,404 @@
+from eth_utils import (
+    decode_hex,
+    encode_hex,
+    int_to_big_endian,
+    is_integer,
+    big_endian_to_int,
+    to_wei,
+    from_wei,
+    to_checksum_address,
+    to_normalized_address,
+    keccak,
+    to_hex,
+)
+from eth_utils.curried import (
+    to_bytes,
+)
+from helios.exceptions import BaseRPCError
+from helios.rpc.format import (
+    format_params,
+    dummy,
+    to_int_if_hex,)
+
+# Tell mypy to ignore this import as a workaround for https://github.com/python/mypy/issues/4049
+from helios.rpc.modules import (  # type: ignore
+    RPCModule,
+)
+from typing import (
+    cast,
+    Dict,
+    List
+)
+from helios.rlp_templates.hls import P2PBlock
+from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStageRequest, \
+    CurrentSyncingParametersRequest, GetConnectedNodesRequest
+
+from eth_keys import keys
+from helios_web3 import HeliosWeb3 as Web3
+import os
+import json
+import asyncio
+from eth_account.messages import (
+    SignableMessage,
+)
+from eth_typing import Address
+from hvm.constants import GAS_TX
+from hvm.db.read_only import ReadOnlyDB
+import time
+
+
+def encode_defunct(
+        primitive: bytes = None,
+        *,
+        hexstr: str = None,
+        text: str = None) -> SignableMessage:
+    """
+    Encoded as defined here: https://github.com/ethereum/eth-account/blob/master/eth_account/messages.py
+    Except with Helios in the message instead of Ethereum
+    """
+    message_bytes = to_bytes(primitive, hexstr=hexstr, text=text)
+    msg_length = str(len(message_bytes)).encode('utf-8')
+
+    # Encoding version E defined by EIP-191
+    return SignableMessage(
+        b'H',
+        b'elios Signed Message:\n' + msg_length,
+        message_bytes,
+    )
+
+class Personal(RPCModule):
+    '''
+    All the methods defined by JSON-RPC API, starting with "personal_"...
+
+    Any attribute without an underscore is publicly accessible.
+    '''
+
+    _unlocked_accounts = {}
+    _account_lock_cancel_events = {}
+
+    # Dict of asyncio queues. The keys are the wallet addresses for each queue.
+    _tx_queues: Dict[str, asyncio.Queue] = {}
+    _send_delayed_block_locks: Dict[str, asyncio.Lock] = {}
+
+    _newest_block_times_sent_to_event_bus = {}
+    _current_tx_nonce = {}
+
+    _importing_block_lock = asyncio.Lock()
+
+    # def __init__(self):
+    #
+    #     self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(absolute_keystore_path + KEYSTORE_FILENAME_TO_USE, self.keystore_password))
+
+    def _save_account(self, account, password):
+        w3 = Web3()
+        new_account_json_encrypted = w3.hls.account.encrypt(account.privateKey, password)
+        keyfile_name = "HLS_account_{}".format(account.address)
+        keyfile_path = self.rpc_context.keystore_dir / keyfile_name
+
+        f = open(str(keyfile_path), "w")
+        f.write(json.dumps(new_account_json_encrypted))
+        f.close()
+
+    def _get_keystore_for_address(self, wallet_address):
+        normalized_wallet_address = to_normalized_address(wallet_address)
+        file_glob = self.rpc_context.keystore_dir.glob('**/*')
+        files = [x for x in file_glob if x.is_file()]
+        for json_keystore in files:
+            try:
+                with open(str(json_keystore)) as json_file:
+                    keystore = json.load(json_file)
+                    if 'address' in keystore:
+                        if normalized_wallet_address == to_normalized_address(keystore['address']):
+                            return keystore
+            except Exception as e:
+                # Not a json file
+                pass
+
+        raise BaseRPCError("No saved keystore for wallet address {}".format(normalized_wallet_address))
+
+    #
+    # Account Locking and Unlocking Functions
+    #
+
+    async def _unlock_account(self, wallet_address: bytes, password: str):
+        normalized_wallet_address = to_normalized_address(wallet_address)
+        print("Unlocking account {}".format(normalized_wallet_address))
+        w3 = Web3()
+        keystore = self._get_keystore_for_address(normalized_wallet_address)
+
+        private_key = w3.hls.account.decrypt(keystore, password)
+        account = w3.hls.account.privateKeyToAccount(private_key)
+        return account
+
+    async def _unlock_account_with_duration(self, wallet_address: bytes, password: str, duration: int = 300):
+        normalized_wallet_address = to_normalized_address(wallet_address)
+        account = await self._unlock_account(wallet_address, password)
+
+        self._unlocked_accounts[normalized_wallet_address] = account
+
+        if duration == 0:
+            if normalized_wallet_address in self._account_lock_cancel_events:
+                print("Cancelling previous lock event")
+                self._account_lock_cancel_events[normalized_wallet_address].set()
+                del (self._account_lock_cancel_events[normalized_wallet_address])
+
+        else:
+            asyncio.ensure_future(self._lock_account_after_time(account.address, duration))
+
+    async def _lock_account_after_time(self, wallet_address, duration):
+        normalized_wallet_address = to_normalized_address(wallet_address)
+
+        # first check to see if there is already another thread waiting to lock it. If so, cancel that one first.
+        if normalized_wallet_address in self._account_lock_cancel_events:
+            print("Cancelling previous lock event")
+            self._account_lock_cancel_events[normalized_wallet_address].set()
+
+        cancel_event = asyncio.Event()
+
+        self._account_lock_cancel_events[normalized_wallet_address] = cancel_event
+        await asyncio.wait([asyncio.sleep(duration), cancel_event.wait()], return_when=asyncio.FIRST_COMPLETED)
+
+        if not cancel_event.is_set():
+            print("Locking account {}".format(normalized_wallet_address))
+            try:
+                del (self._unlocked_accounts[normalized_wallet_address])
+            except KeyError:
+                pass
+
+            try:
+                if self._account_lock_cancel_events[normalized_wallet_address] is cancel_event:
+                    del (self._account_lock_cancel_events[normalized_wallet_address])
+            except KeyError:
+                pass
+
+    async def _get_unlocked_account_or_unlock_now(self, wallet_address: bytes, password: str = None):
+        normalized_wallet_address = to_normalized_address(wallet_address)
+        if password is None or password == '':
+            try:
+                account = self._unlocked_accounts[normalized_wallet_address]
+            except KeyError:
+                raise BaseRPCError("No unlocked account found with wallet address {}".format(normalized_wallet_address))
+        else:
+            account = await self._unlock_account(wallet_address, password)
+        return account
+
+    #
+    # Transaction Queue Functions
+    #
+
+    async def _add_transaction_to_queue(self, tx) -> None:
+        print("Adding transaction to Queue")
+        normalized_wallet_address = to_normalized_address(tx['from'])
+        if normalized_wallet_address not in self._tx_queues:
+            self._tx_queues[normalized_wallet_address] = asyncio.Queue()
+
+        self._tx_queues[normalized_wallet_address].put_nowait(tx)
+
+    async def _get_transactions_from_queue(self, wallet_address: Address, limit = 50) -> List:
+        normalized_wallet_address = to_normalized_address(wallet_address)
+        if normalized_wallet_address not in self._tx_queues:
+            return []
+
+        transactions = []
+        while not self._tx_queues[normalized_wallet_address].empty():
+            tx = self._tx_queues[normalized_wallet_address].get_nowait()
+            transactions.append(tx)
+            if len(transactions) >= limit:
+                break
+
+        return transactions
+
+    async def _import_delayed_block_with_queue(self, account, seconds_from_now: int, min_time_between_blocks: int):
+        normalized_address = to_normalized_address(account.address)
+        if normalized_address not in self._send_delayed_block_locks:
+            self._send_delayed_block_locks[normalized_address] = asyncio.Lock()
+        else:
+            # There is already a lock. check if it is locked. if so, there is already another delayed block import occuring
+            if self._send_delayed_block_locks[normalized_address].locked():
+                return
+
+        async with self._send_delayed_block_locks[normalized_address]:
+            print("Waiting {} seconds to import new block".format(seconds_from_now))
+            await asyncio.sleep(seconds_from_now)
+            transactions = await self._get_transactions_from_queue(normalized_address)
+            print("Importing delayed block")
+            await self._send_transactions(transactions, account)
+            if not self._tx_queues[normalized_address].empty():
+                # If we didn't empty the queue, lets run this again in min_time_between_blocks
+                asyncio.ensure_future(self._import_delayed_block_with_queue(account, min_time_between_blocks, min_time_between_blocks))
+
+    #
+    # Transaction and Block Creation Functions
+    #
+
+    async def _send_transactions(self, transactions, account):
+        async with self._importing_block_lock:
+            print("Importing block")
+            normalized_wallet_address = to_normalized_address(account.address)
+
+            wallet_address_hex = account.address
+
+            wallet_address = decode_hex(wallet_address_hex)
+
+            chain = self.get_new_chain(Address(wallet_address), account._key_obj)
+
+            # make the chain read only for creating the block. We don't want to actually import it here.
+            chain.enable_read_only_db()
+
+            signed_transactions = []
+            for i in range(len(transactions)):
+                tx = transactions[i]
+                if to_normalized_address(tx['from']) != normalized_wallet_address:
+                    raise BaseRPCError("When sending multiple transactions at once, they must all be from the same address")
+
+                if 'gasPrice' in tx:
+                    gas_price = tx['gasPrice']
+                else:
+                    gas_price = to_wei(chain.chaindb.get_required_block_min_gas_price()+1, 'gwei')
+
+                if 'gas' in tx:
+                    gas = tx['gas']
+                else:
+                    gas = GAS_TX
+
+                if 'data' in tx:
+                    data = tx['data']
+                else:
+                    data = b''
+
+                if 'nonce' in tx:
+                    nonce = tx['nonce']
+                else:
+                    if normalized_wallet_address in self._current_tx_nonce:
+                        nonce_from_state = chain.get_vm().state.account_db.get_nonce(wallet_address)
+
+                    nonce = chain.get_vm().state.account_db.get_nonce(wallet_address)
+
+                transactions[i]['nonce'] = nonce
+                signed_tx = chain.create_and_sign_transaction_for_queue_block(
+                    gas_price=gas_price,
+                    gas=GAS_TX,
+                    to=decode_hex(tx['to']),
+                    value=to_int_if_hex(tx['value']),
+                    data=data,
+                    v=0,
+                    r=0,
+                    s=0
+                )
+                signed_transactions.append(signed_tx)
+
+            # We put this part down here because we have to return the hashes of all the transactions.
+            # Check when the next block can be. If we are early, queue up the tx.
+            allowed_time_of_next_block = chain.get_allowed_time_of_next_block()
+            min_time_between_blocks = chain.min_time_between_blocks
+            now = int(time.time())
+
+            # Or, we may have just sent a block and it hasn't been imported yet. Lets check. Then send to queue if that is the case.
+            if normalized_wallet_address in self._newest_block_times_sent_to_event_bus:
+                if self._newest_block_times_sent_to_event_bus[normalized_wallet_address] >= allowed_time_of_next_block:
+                    allowed_time_of_next_block = self._newest_block_times_sent_to_event_bus[normalized_wallet_address] + min_time_between_blocks
+
+            if now < allowed_time_of_next_block:
+                for tx in transactions:
+                    await self._add_transaction_to_queue(tx)
+
+                asyncio.ensure_future(self._import_delayed_block_with_queue(account, allowed_time_of_next_block-now, min_time_between_blocks))
+            else:
+                block = chain.import_current_queue_block()
+
+                self._event_bus.broadcast(
+                    NewBlockEvent(block=cast(P2PBlock, block), from_rpc=True)
+                )
+
+                self._newest_block_times_sent_to_event_bus[normalized_wallet_address] = block.header.timestamp
+
+            if len(signed_transactions) == 1:
+                return encode_hex(signed_transactions[0].hash)
+            else:
+                return [encode_hex(tx.hash) for tx in signed_transactions]
+
+    #
+    # Public Personal RPC functions
+    #
+
+    @format_params(decode_hex, dummy)
+    async def importRawKey(self, keydata: bytes, password: str):
+        w3 = Web3()
+        new_account = w3.hls.account.privateKeyToAccount(keydata)
+        self._save_account(new_account, password)
+
+        return to_checksum_address(new_account.address)
+
+    async def listAccounts(self):
+        file_glob = self.rpc_context.keystore_dir.glob('**/*')
+        files = [x for x in file_glob if x.is_file()]
+        account_wallet_addresses = []
+        for json_keystore in files:
+            try:
+                with open(str(json_keystore)) as json_file:
+                    keystore = json.load(json_file)
+                    if 'address' in keystore:
+                        account_wallet_addresses.append(to_checksum_address(keystore['address']))
+            except Exception as e:
+                # Not a json file
+                pass
+
+        return account_wallet_addresses
+
+    @format_params(decode_hex)
+    async def lockAccount(self, wallet_address: bytes):
+        await self._lock_account_after_time(wallet_address, 0)
+
+    async def newAccount(self, password: str):
+        w3 = Web3()
+        new_account = w3.hls.account.create()
+        self._save_account(new_account, password)
+
+        return to_checksum_address(new_account.address)
+
+    @format_params(decode_hex, dummy, to_int_if_hex)
+    async def unlockAccount(self, wallet_address: bytes, password: str, duration: int = 300):
+        await self._unlock_account_with_duration(wallet_address, password, duration)
+
+
+    async def sendTransaction(self, tx, password: str = None):
+        # implement this here, and have hls.sendtransaction call this
+        # TODO: add tx queue for more than 1 tx per block
+        '''
+
+        :param tx: {'from', 'to', 'value', 'gas', 'gasPrice', 'data', 'nonce'}
+        :param password:
+        :return:
+        '''
+        wallet_address_hex = tx['from']
+
+        print(tx)
+
+        wallet_address = decode_hex(wallet_address_hex)
+
+        account = await self._get_unlocked_account_or_unlock_now(wallet_address_hex, password)
+        return await self._send_transactions([tx], account)
+
+
+    @format_params(dummy, decode_hex, dummy)
+    async def sign(self, message: str, wallet_address: bytes, password: str = None):
+        # using EIP 191 https://github.com/ethereum/eth-account/blob/master/eth_account/messages.py
+        normalized_wallet_address = to_normalized_address(wallet_address)
+        account = self._get_unlocked_account_or_unlock_now(wallet_address, password)
+
+        signable_message = encode_defunct(text = message)
+        w3 = Web3()
+
+        signed_message = w3.hls.account.sign_message(signable_message, account.privateKey)
+        return signed_message['signature'].hex()
+
+    @format_params(dummy, decode_hex)
+    async def ecRecover(self, message: str, signature: bytes):
+
+        w3 = Web3()
+        signable_message = encode_defunct(text=message)
+        checksum_address = w3.hls.account.recover_message(signable_message, signature = signature)
+        return checksum_address
+
+
+

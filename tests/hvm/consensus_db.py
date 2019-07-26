@@ -8,12 +8,12 @@ from pprint import pprint
 
 from hvm import constants
 
-from hvm import MainnetChain
-from hvm.chains.mainnet import (
-    MAINNET_GENESIS_PARAMS,
-    MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY_FOR_TESTNET,
-    MAINNET_NETWORK_ID,
+from hvm import TestnetChain
+from hvm.chains.testnet import (
+    TESTNET_GENESIS_PARAMS,
+    TESTNET_GENESIS_STATE,
+    TESTNET_GENESIS_PRIVATE_KEY,
+    TESTNET_NETWORK_ID,
 )
 
 from hvm.constants import (
@@ -91,7 +91,7 @@ from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock, HeliosTestnetBl
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 
-SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
+SENDER = TESTNET_GENESIS_PRIVATE_KEY
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -102,10 +102,10 @@ def test_boson_vm_calculate_node_staking_score():
     from hvm.vm.forks.boson.consensus import TIME_BETWEEN_PEER_NODE_HEALTH_CHECK
 
     testdb = MemoryDB()
-    sender_chain = MainnetChain.from_genesis(testdb, SENDER.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS,MAINNET_GENESIS_STATE)
+    sender_chain = TestnetChain.from_genesis(testdb, SENDER.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS,TESTNET_GENESIS_STATE)
 
     boson_fork_timestamp = 0
-    for timestamp_vm_config in MainnetChain.vm_configuration:
+    for timestamp_vm_config in TestnetChain.vm_configuration:
         if timestamp_vm_config[1].fork == 'boson':
             boson_fork_timestamp = timestamp_vm_config[0]
 
@@ -199,14 +199,14 @@ def test_boson_vm_calculate_reward_based_on_fractional_interest():
     masternode_level_1_multiplier = MASTERNODE_LEVEL_1_REWARD_TYPE_2_MULTIPLIER
 
     genesis_block_time = int(time.time())-10000000
-    genesis_params, genesis_state = create_new_genesis_params_and_state(GENESIS_PRIVATE_KEY_FOR_TESTNET, masternode_level_3_required_balance * 2, genesis_block_time)
+    genesis_params, genesis_state = create_new_genesis_params_and_state(TESTNET_GENESIS_PRIVATE_KEY, masternode_level_3_required_balance * 2, genesis_block_time)
 
     time_between_blocks = max(MIN_TIME_BETWEEN_BLOCKS, 1)
     # import genesis block
-    MainnetChain.from_genesis(testdb, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), genesis_params, genesis_state)
+    TestnetChain.from_genesis(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
 
     stake_start = genesis_block_time+time_between_blocks
-    tx_list = [[GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, masternode_level_3_required_balance, stake_start],
+    tx_list = [[TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, masternode_level_3_required_balance, stake_start],
                [RECEIVER, RECEIVER2, (masternode_level_3_required_balance-masternode_level_2_required_balance-GAS_TX), stake_start+100000],
                [RECEIVER, RECEIVER2, (masternode_level_2_required_balance-masternode_level_1_required_balance-GAS_TX), stake_start+200000],
                [RECEIVER, RECEIVER2, (masternode_level_1_required_balance-1000000-GAS_TX), stake_start+300000]]
@@ -214,12 +214,12 @@ def test_boson_vm_calculate_reward_based_on_fractional_interest():
     add_transactions_to_blockchain_db(testdb, tx_list)
 
 
-    receiver_chain = MainnetChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+    receiver_chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
 
     fractional_interest = REWARD_TYPE_2_AMOUNT_FACTOR
 
     boson_fork_timestamp = 0
-    for timestamp_vm_config in MainnetChain.vm_configuration:
+    for timestamp_vm_config in TestnetChain.vm_configuration:
         if timestamp_vm_config[1].fork == 'boson':
             boson_fork_timestamp = timestamp_vm_config[0]
 

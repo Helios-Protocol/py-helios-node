@@ -844,7 +844,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             # This will only happen if we have chains that they need,
             # but they have no chains that we need.
 
-            self.logger.debug('ZZZZZZZZZZZZZZZ {}, {}'.format(len(hash_positions_of_ours_that_they_need),len(hash_positions_of_theirs_that_we_need)))
+            #self.logger.debug('ZZZZZZZZZZZZZZZ {}, {}'.format(len(hash_positions_of_ours_that_they_need),len(hash_positions_of_theirs_that_we_need)))
             if len(hash_positions_of_ours_that_they_need) > 0 and len(hash_positions_of_theirs_that_we_need) == 0:
                 self.logger.debug("Fast sync: deleting chains we have that are not in consensus.")
                 for idx in hash_positions_of_ours_that_they_need:
@@ -1202,6 +1202,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
         self.logger.debug("handling new block with timestamp {}".format(new_block.header.timestamp))
         chain = self.node.get_new_chain()
+        #async_chain = self.chains[0]
 
         #we only check the min gas requirements for sync stage 3, 4
         if not allow_low_gas_block and get_sync_stage_for_block_timestamp(new_block.header.timestamp) >= ADDITIVE_SYNC_STAGE_ID and len(new_block.transactions) != 0:
@@ -1306,24 +1307,29 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 return False
 
 
-
-
         if from_rpc:
             # blocks from RPC will be missing fields such as receipts. So they will fail a validation check.
-            ensure_block_unchanged = False
+            microblock_origin = True
         else:
-            ensure_block_unchanged = True
+            microblock_origin = False
         try:
             # if new_block.header.block_number < 200:
             # imported_block = await chain.coro_import_block(new_block,
             #                                    wallet_address = chain_address,
             #                                    allow_replacement = replacing_block_permitted)
 
-            #todo: make this async
-            imported_block = chain.import_block(new_block,
+            imported_block = await self.chains[0].coro_import_block(new_block,
                                                 wallet_address=chain_address,
                                                 allow_replacement=replacing_block_permitted,
-                                                ensure_block_unchanged=ensure_block_unchanged)
+                                                ensure_block_unchanged=True,
+                                               microblock_origin = microblock_origin)
+
+            # imported_block = await chain.coro_import_block(new_block,
+            #                                                 wallet_address=chain_address,
+            #                                                 allow_replacement=replacing_block_permitted,
+            #                                                 ensure_block_unchanged=True,
+            #                                                 microblock_origin=microblock_origin)
+
             # else:
             #     imported_block = chain.import_block_with_profiler(new_block,
             #                                         wallet_address = chain_address,

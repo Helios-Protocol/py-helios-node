@@ -16,6 +16,7 @@ from eth_keys.datatypes import PrivateKey
 from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
+from hvm.chains.testnet import TESTNET_NETWORK_ID
 
 from hp2p.kademlia import Node as KademliaNode
 
@@ -111,7 +112,7 @@ class ChainConfig:
         self.keystore_path = keystore_path
         self.network_startup_node = network_startup_node
         self._disable_smart_contract_chain_manager = disable_smart_contract_chain_manager
-        self.network_id = network_id
+        self._network_id = network_id
         self.max_peers = max_peers
         self.sync_mode = sync_mode
         self.port = port
@@ -162,12 +163,21 @@ class ChainConfig:
     def num_chain_processes(self, val):
         self._num_chain_processes = val
 
+
+
     @property
     def is_dev_test_node(self):
         if "INSTANCE_NUMBER" in os.environ:
             return True
         else:
             return False
+
+    @property
+    def network_id(self):
+        if self.is_dev_test_node:
+            return 2
+        else:
+            return self._network_id
 
     @property
     def preferred_nodes(self):
@@ -251,9 +261,8 @@ class ChainConfig:
                     if self.keystore_path is not None:
                         self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(self.keystore_path, self.keystore_password))
                     else:
-                        absolute_dir = os.path.dirname(os.path.realpath(__file__))
-                        absolute_keystore_path = absolute_dir + '/keystore/'
-                        self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(absolute_keystore_path + KEYSTORE_FILENAME_TO_USE, self.keystore_password))
+                        absolute_keystore_path = self.keystore_dir / KEYSTORE_FILENAME_TO_USE
+                        self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(str(absolute_keystore_path), self.keystore_password))
                 except ValueError:
                     raise ValueError(
                         "An error occured when decoding your keyfile. This can be caused by an incorrect password, or damaged keyfile.")
@@ -330,6 +339,12 @@ class ChainConfig:
             return self._data_dir
         else:
             return get_data_dir_for_network_id(self.network_id, self.helios_root_dir)
+
+    @property
+    def keystore_dir(self) -> Path:
+        absolute_dir = os.path.dirname(os.path.realpath(__file__))
+        absolute_keystore_path = Path(absolute_dir) / 'keystore'
+        return absolute_keystore_path
 
     @data_dir.setter
     def data_dir(self, value: str) -> None:
@@ -483,26 +498,21 @@ class ChainConfig:
     def node_class(self) -> Type['Node']:
         from helios.nodes.mainnet import (
             MainnetFullNode,
-            #MainnetLightNode,
         )
-        if self.sync_mode == SYNC_LIGHT:
-            if self.network_id == MAINNET_NETWORK_ID:
-                #return MainnetLightNode
-                return False
-            else:
-                raise NotImplementedError(
-                    "Only the mainnet and ropsten chains are currently supported"
-                )
-        elif self.sync_mode == SYNC_FULL:
+        from helios.nodes.testnet import TestnetFullNode
+
+        if self.sync_mode == SYNC_FULL:
             if self.network_id == MAINNET_NETWORK_ID:
                 return MainnetFullNode
+            elif self.network_id == TESTNET_NETWORK_ID:
+                return TestnetFullNode
             else:
                 raise NotImplementedError(
-                    "Only the mainnet and ropsten chains are currently supported"
+                    "Only the mainnet and testnet chains are currently supported"
                 )
         else:
             raise NotImplementedError(
-                "Only full and light sync modes are supported"
+                "Only full sync mode is supported"
             )
 
     @contextmanager
