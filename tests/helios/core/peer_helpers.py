@@ -26,7 +26,7 @@ from hvm import MainnetChain
 from tests.helios.core.integration_test_helpers import (
     FakeAsyncChainDB,
     get_fresh_db,
-    FakeAsyncMainnetChain,
+    FakeAsyncTestnetChain,
     FakeAsyncChainHeadDB,
     FakeAsyncConsensusDB
 )
@@ -35,8 +35,9 @@ from helios.config import (
     ChainConfig,
 )
 
-from hvm.chains.mainnet import (
-    MAINNET_NETWORK_ID,
+
+from hvm.chains.testnet import (
+    TESTNET_NETWORK_ID,
 )
 
 from eth_account import Account
@@ -48,16 +49,16 @@ def generate_random_private_key():
     return keys.PrivateKey(priv_key_bytes)
 
 def get_chain_context(base_db, privkey):
-    chain = FakeAsyncMainnetChain(base_db, privkey.public_key.to_canonical_address(), privkey)
+    chain = FakeAsyncTestnetChain(base_db, privkey.public_key.to_canonical_address(), privkey)
     chaindb = FakeAsyncChainDB(base_db)
     chain_head_db = FakeAsyncChainHeadDB.load_from_saved_root_hash(base_db)
     consensus_db = FakeAsyncConsensusDB(chaindb)
 
-    chain_config = ChainConfig(network_id=MAINNET_NETWORK_ID)
+    chain_config = ChainConfig(network_id=TESTNET_NETWORK_ID)
     chain_config._node_private_helios_key = privkey
     chain_config.num_chain_processes = 1
 
-    network_id = MAINNET_NETWORK_ID
+    network_id = TESTNET_NETWORK_ID
     vm_configuration = tuple()
 
     chain_context = ChainContext(
@@ -77,7 +78,7 @@ def get_fresh_chain_context(privkey):
     base_db = get_fresh_db()
     return get_chain_context(base_db, privkey)
 
-def get_fresh_mainnet_chaindb():
+def get_fresh_testnet_chaindb():
     fresh_db = get_fresh_db()
     chaindb = FakeAsyncChainDB(fresh_db)
     return chaindb

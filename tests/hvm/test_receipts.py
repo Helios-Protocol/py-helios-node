@@ -1,8 +1,13 @@
 import time
-from hvm import MainnetChain
-from hvm.chains.mainnet import (
-    GENESIS_PRIVATE_KEY_FOR_TESTNET,
-    MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+
+from hvm import TestnetChain
+from hvm.chains.testnet import (
+    TESTNET_GENESIS_PARAMS,
+    TESTNET_GENESIS_STATE,
+    TESTNET_GENESIS_PRIVATE_KEY,
+    TESTNET_NETWORK_ID,
+)
+
 
 from hvm.constants import (
    GAS_TX)
@@ -22,7 +27,7 @@ from tests.integration_test_helpers import load_compiled_sol_dict
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 
-SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
+SENDER = TESTNET_GENESIS_PRIVATE_KEY
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -35,13 +40,13 @@ from tests.integration_test_helpers import W3_TX_DEFAULTS
 def test_get_receipts():
     testdb2 = MemoryDB()
 
-    MainnetChain.from_genesis(testdb2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+    TestnetChain.from_genesis(testdb2, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE)
 
 
     """
     Create some receive transactions for RECEIVER
     """
-    sender_chain = MainnetChain(testdb2, SENDER.public_key.to_canonical_address(), SENDER)
+    sender_chain = TestnetChain(testdb2, SENDER.public_key.to_canonical_address(), SENDER)
 
     min_time_between_blocks = sender_chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
     for i in range(6):
@@ -58,7 +63,7 @@ def test_get_receipts():
 
 
     sender_chain.import_current_queue_block()
-    receiver_chain = MainnetChain(testdb2, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+    receiver_chain = TestnetChain(testdb2, RECEIVER.public_key.to_canonical_address(), RECEIVER)
     receiver_chain.populate_queue_block_with_receive_tx()
     imported_block_1 = receiver_chain.import_current_queue_block()
 
@@ -66,7 +71,7 @@ def test_get_receipts():
     """
     Create some send transactions for RECEIVER
     """
-    receiver_chain = MainnetChain(testdb2, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+    receiver_chain = TestnetChain(testdb2, RECEIVER.public_key.to_canonical_address(), RECEIVER)
     for i in range(6):
         receiver_chain.create_and_sign_transaction_for_queue_block(
             gas_price=i+1,

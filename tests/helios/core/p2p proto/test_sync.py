@@ -12,18 +12,18 @@ from helios.dev_tools import add_transactions_to_blockchain_db, add_random_trans
 from hp2p.consensus import Consensus
 from hp2p.constants import ADDITIVE_SYNC_MODE_CUTOFF
 from hvm import constants
-from hvm import MainnetChain
+
 from hvm.constants import TIME_BETWEEN_HEAD_HASH_SAVE
 from hvm.vm.forks.helios_testnet import HeliosTestnetVM
 
 from helios.sync.full.chain import RegularChainSyncer, NewBlockQueueItem
 
 from tests.helios.core.integration_test_helpers import (
-    FakeAsyncMainnetChain,
+    FakeAsyncTestnetChain,
     FakeAsyncChainDB,
     FakeAsyncAtomicDB,
     get_random_blockchain_db, get_fresh_db,
-    FakeMainnetFullNode,
+    FakeTestnetFullNode,
     MockConsensusService,
     get_random_long_time_blockchain_db, get_random_blockchain_to_time)
 from tests.helios.core.peer_helpers import (
@@ -44,8 +44,14 @@ from tests.integration_test_helpers import (
     ensure_blockchain_databases_identical,
     ensure_chronological_block_hashes_are_identical
 )
-from hvm.chains.mainnet import (
-    GENESIS_PRIVATE_KEY_FOR_TESTNET,
+
+
+from hvm import TestnetChain
+from hvm.chains.testnet import (
+    TESTNET_GENESIS_PARAMS,
+    TESTNET_GENESIS_STATE,
+    TESTNET_GENESIS_PRIVATE_KEY,
+    TESTNET_NETWORK_ID,
 )
 
 logger = logging.getLogger('helios')
@@ -66,7 +72,7 @@ async def _test_sync_with_fixed_sync_parameters(request,
         alice_db=client_db,
         bob_db=server_db)
 
-    client_node = FakeMainnetFullNode(
+    client_node = FakeTestnetFullNode(
         base_db = client_peer.context.base_db,
         priv_key = client_peer.context.chains[0].private_key,
     )
@@ -93,7 +99,7 @@ async def _test_sync_with_fixed_sync_parameters(request,
         node = client_node,
     )
 
-    server_node = FakeMainnetFullNode(
+    server_node = FakeTestnetFullNode(
         base_db=server_peer.context.base_db,
         priv_key=server_peer.context.chains[0].private_key,
     )
@@ -157,7 +163,7 @@ async def _test_sync_with_variable_sync_parameters(request,
         bob_db=server_db)
 
 
-    client_node = FakeMainnetFullNode(
+    client_node = FakeTestnetFullNode(
         base_db = client_peer.context.base_db,
         priv_key = client_peer.context.chains[0].private_key,
     )
@@ -181,7 +187,7 @@ async def _test_sync_with_variable_sync_parameters(request,
 
     #client.logger = logging.getLogger('dummy')
 
-    server_node = FakeMainnetFullNode(
+    server_node = FakeTestnetFullNode(
         base_db=server_peer.context.base_db,
         priv_key=server_peer.context.chains[0].private_key,
     )
@@ -248,7 +254,7 @@ async def test_fast_sync_1(request, event_loop):
 
     add_random_transactions_to_db_for_time_window(server_db, equal_to_time, equal_to_time + 1000 * 5)
 
-    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical, FAST_SYNC_STAGE_ID)
@@ -263,7 +269,7 @@ async def test_fast_sync_2(request, event_loop):
 
     add_random_transactions_to_db_for_time_window(client_db, equal_to_time, equal_to_time + 1000 * 5)
 
-    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db,
@@ -272,7 +278,7 @@ async def test_fast_sync_2(request, event_loop):
 # @pytest.mark.asyncio
 # async def test_fast_sync_3(request, event_loop):
 #     client_db, server_db = get_random_long_time_blockchain_db(25), get_random_long_time_blockchain_db(25)
-#     node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+#     node_1 = TestnetChain(server_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 #     newest_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1][0]
 #     await _test_sync_with_fixed_sync_parameters(request, event_loop, client_db, server_db, newest_timestamp, FAST_SYNC_STAGE_ID, ensure_blockchain_databases_identical)
 
@@ -299,7 +305,7 @@ async def test_fast_sync_4(request, event_loop):
 
     add_random_transactions_to_db_for_time_window(server_db, new_blocks_start_time, new_blocks_end_time)
 
-    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
@@ -326,7 +332,7 @@ async def test_fast_sync_5(request, event_loop):
 
         add_random_transactions_to_db_for_time_window(client_db, new_blocks_start_time, new_blocks_end_time)
 
-        client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+        client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
         client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
 
         await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
@@ -337,7 +343,7 @@ async def test_fast_sync_5(request, event_loop):
 async def test_consensus_match_sync_1(request, event_loop):
     #client_db, server_db = db_fresh, db_random_long_time
     client_db, server_db = get_fresh_db(), get_random_long_time_blockchain_db(25)
-    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical,  CONSENSUS_MATCH_SYNC_STAGE_ID)
@@ -346,7 +352,7 @@ async def test_consensus_match_sync_1(request, event_loop):
 @pytest.mark.asyncio
 async def test_consensus_match_sync_2(request, event_loop):
     server_db, client_db = get_fresh_db(), get_random_long_time_blockchain_db(25)
-    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical,  CONSENSUS_MATCH_SYNC_STAGE_ID)
 
@@ -356,7 +362,7 @@ async def test_consensus_match_sync_2(request, event_loop):
 @pytest.mark.asyncio
 async def test_consensus_match_sync_3(request, event_loop):
     client_db, server_db = get_random_long_time_blockchain_db(25), get_random_long_time_blockchain_db(25)
-    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical,  CONSENSUS_MATCH_SYNC_STAGE_ID)
 
@@ -382,7 +388,7 @@ async def test_consensus_match_sync_4(request, event_loop):
 
     add_random_transactions_to_db_for_time_window(server_db, new_blocks_start_time, new_blocks_end_time)
 
-    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
@@ -394,14 +400,14 @@ async def test_consensus_match_sync_4(request, event_loop):
 @pytest.mark.asyncio
 async def test_additive_sync_1(request, event_loop):
     client_db, server_db = get_fresh_db(), get_random_long_time_blockchain_db(10)
-    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical,  ADDITIVE_SYNC_STAGE_ID)
 
 @pytest.mark.asyncio
 async def test_additive_sync_2(request, event_loop):
     client_db, server_db = get_random_long_time_blockchain_db(10), get_fresh_db()
-    node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_1 = TestnetChain(server_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical, ADDITIVE_SYNC_STAGE_ID)
 
@@ -414,9 +420,9 @@ async def test_additive_sync_2(request, event_loop):
 @pytest.mark.asyncio
 async def test_additive_sync_3(request, event_loop):
     client_db, server_db = get_random_long_time_blockchain_db(10), get_random_long_time_blockchain_db(10)
-    node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_1 = TestnetChain(server_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
-    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical, ADDITIVE_SYNC_STAGE_ID)
 
@@ -437,15 +443,15 @@ async def test_additive_sync_4(request, event_loop):
     server_db = get_random_blockchain_to_time(genesis_time, equal_to_time)
     client_db = MemoryDB(kv_store = server_db.kv_store.copy())
 
-    tx_list = [[GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() - 2000)],
-               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() - 1500)],
-               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() - 1000)]]
+    tx_list = [[TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() - 2000)],
+               [TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() - 1500)],
+               [TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() - 1000)]]
 
     add_transactions_to_blockchain_db(server_db, tx_list)
 
-    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
-    server_node = MainnetChain(server_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    server_node = TestnetChain(server_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     server_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
@@ -469,15 +475,15 @@ async def test_sparse_sync_1(request, event_loop):
 
     add_random_transactions_to_db_for_time_window(server_db, equal_to_time, equal_to_time+1000*5)
 
-    tx_list = [[GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 800],
-               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 700],
-               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 100],
-               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 5],
-               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 1]]
+    tx_list = [[TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 800],
+               [TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 700],
+               [TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 100],
+               [TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 5],
+               [TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 1]]
 
     add_transactions_to_blockchain_db(server_db, tx_list)
 
-    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
@@ -501,15 +507,15 @@ async def test_sparse_sync_2(request, event_loop):
 
     add_random_transactions_to_db_for_time_window(server_db, equal_to_time, equal_to_time+1000*5)
 
-    tx_list = [[GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 800],
-               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 700],
-               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 100],
-               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 5],
-               [GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 1]]
+    tx_list = [[TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 800],
+               [TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 700],
+               [TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 100],
+               [TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 5],
+               [TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, int(time.time() / 1000) * 1000 - 1000 * 1]]
 
     add_transactions_to_blockchain_db(client_db, tx_list)
 
-    client_node = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
@@ -528,9 +534,9 @@ async def _setup_test_import_blocks(request,
                                     expect_blocks_to_import,
                                     node_min_gas_price = 1):
     client_db, server_db, fresh_db = get_fresh_db(), get_fresh_db(), get_fresh_db()
-    node_1 = MainnetChain(server_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_1 = TestnetChain(server_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=node_min_gas_price, net_tpc_cap=100, tpc=1)
-    node_2 = MainnetChain(client_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=node_min_gas_price, net_tpc_cap=100, tpc=1)
 
     if expect_blocks_to_import:
@@ -575,13 +581,13 @@ async def test_import_valid_block(request, event_loop):
     # Blocks with timestamps before time.time() - ADDITIVE_SYNC_MODE_CUTOFF should be rejected.
     new_tx_time = int(time.time() - ADDITIVE_SYNC_MODE_CUTOFF/2)
 
-    tx_list = [[GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, new_tx_time]]
+    tx_list = [[TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, new_tx_time]]
     new_blocks_db = get_fresh_db()
     add_transactions_to_blockchain_db(new_blocks_db, tx_list)
 
     expect_blocks_to_import = True
 
-    node_new_blocks = MainnetChain(new_blocks_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_new_blocks = TestnetChain(new_blocks_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
     new_blocks = node_new_blocks.get_all_chronological_blocks_for_window(int((new_tx_time)/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE)
 
@@ -599,13 +605,13 @@ async def test_import_block_with_expired_timestamp(request, event_loop):
     # Blocks with timestamps before time.time() - ADDITIVE_SYNC_MODE_CUTOFF-TIME_BETWEEN_HEAD_HASH_SAVE should be rejected.
     new_tx_time = int(time.time() - ADDITIVE_SYNC_MODE_CUTOFF-TIME_BETWEEN_HEAD_HASH_SAVE-5)
 
-    tx_list = [[GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, new_tx_time]]
+    tx_list = [[TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, new_tx_time]]
     new_blocks_db = get_fresh_db()
     add_transactions_to_blockchain_db(new_blocks_db, tx_list)
 
     expect_blocks_to_import = False
 
-    node_new_blocks = MainnetChain(new_blocks_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_new_blocks = TestnetChain(new_blocks_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
     new_blocks = node_new_blocks.get_all_chronological_blocks_for_window(int((new_tx_time)/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE)
 
@@ -623,13 +629,13 @@ async def test_import_block_with_low_gas(request, event_loop):
     # Blocks with timestamps before time.time() - ADDITIVE_SYNC_MODE_CUTOFF-TIME_BETWEEN_HEAD_HASH_SAVE should be rejected.
     new_tx_time = int(time.time() - ADDITIVE_SYNC_MODE_CUTOFF/2)
 
-    tx_list = [[GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, new_tx_time]]
+    tx_list = [[TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, new_tx_time]]
     new_blocks_db = get_fresh_db()
     add_transactions_to_blockchain_db(new_blocks_db, tx_list)
 
     expect_blocks_to_import = False
 
-    node_new_blocks = MainnetChain(new_blocks_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_new_blocks = TestnetChain(new_blocks_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
     new_blocks = node_new_blocks.get_all_chronological_blocks_for_window(int((new_tx_time)/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE)
 
@@ -648,13 +654,13 @@ async def test_import_block_with_high_gas(request, event_loop):
     # Blocks with timestamps before time.time() - ADDITIVE_SYNC_MODE_CUTOFF-TIME_BETWEEN_HEAD_HASH_SAVE should be rejected.
     new_tx_time = int(time.time() - ADDITIVE_SYNC_MODE_CUTOFF/2)
 
-    tx_list = [[GENESIS_PRIVATE_KEY_FOR_TESTNET, RECEIVER, 100, new_tx_time, 101]]
+    tx_list = [[TESTNET_GENESIS_PRIVATE_KEY, RECEIVER, 100, new_tx_time, 101]]
     new_blocks_db = get_fresh_db()
     add_transactions_to_blockchain_db(new_blocks_db, tx_list)
 
     expect_blocks_to_import = True
 
-    node_new_blocks = MainnetChain(new_blocks_db, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address())
+    node_new_blocks = TestnetChain(new_blocks_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
     new_blocks = node_new_blocks.get_all_chronological_blocks_for_window(int((new_tx_time)/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE)
 
@@ -710,7 +716,7 @@ GENESIS_STATE = {
 }
 
 
-class HeliosTestnetVMChain(FakeAsyncMainnetChain):
+class HeliosTestnetVMChain(FakeAsyncTestnetChain):
     vm_configuration = ((0, HeliosTestnetVM),)
     chaindb_class = FakeAsyncChainDB
     network_id = 1
