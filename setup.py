@@ -47,7 +47,7 @@ deps = {
         "coincurve>=8.0.0,<9.0.0",
         "ipython>=6.2.1,<7.0.0",
         "plyvel==1.0.5",
-        "helios-web3>=5.0.2",
+        "helios-web3>=5.0.6",
         "lahja==0.8.0",
         "uvloop==0.11.2;platform_system=='Linux' or platform_system=='Darwin'",
         "websockets>=3.0.0",
@@ -74,7 +74,6 @@ deps = {
     ],
     'benchmark': [
         "termcolor>=1.1.0,<2.0.0",
-        "helios-web3>=5.0.2",
     ],
     'doc': [
         "py-evm>=0.2.0-alpha.14",
@@ -112,7 +111,7 @@ install_requires =  deps['hp2p'] + deps['helios'] + deps['hvm']
 setup(
     name='py-helios-node',
     # *IMPORTANT*: Don't manually change the version here. Use the 'bumpversion' utility.
-    version='0.3.0',
+    version='0.4.0',
     description='Python implementation of the Helios Protocol Node',
     long_description_markdown_filename='README.rst',
     author='Tommy Mckinnon',
