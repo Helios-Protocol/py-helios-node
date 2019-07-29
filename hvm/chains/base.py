@@ -1368,6 +1368,9 @@ class Chain(BaseChain):
 
             head_block_hashes = self.chain_head_db.get_head_block_hashes_list()
 
+            # Delete any existing chronological blocks
+            self.chain_head_db.delete_chronological_block_window(current_timestamp)
+
             # iterate over all chains
             for head_block_hash in head_block_hashes:
                 current_block_hash = head_block_hash

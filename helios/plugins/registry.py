@@ -12,6 +12,7 @@ from helios.plugins.builtin.fix_unclean_shutdown.plugin import (
 from helios.plugins.builtin.json_rpc.plugin import (
     JsonRpcServerPlugin,
 )
+from helios.plugins.builtin.rebuild_historical_chain.plugin import RebuildHistoricalChainPlugin
 from helios.plugins.builtin.rpc_http_proxy.plugin import (
     RpcHTTPProxyPlugin,
 )
@@ -42,6 +43,7 @@ ENABLED_PLUGINS = [
     #EthstatsPlugin(),
     FixUncleanShutdownPlugin(),
     JsonRpcServerPlugin(),
+    RebuildHistoricalChainPlugin(),
     #RpcHTTPProxyPlugin(),
     #RpcWebsocketProxyPlugin(),
     #LightPeerChainBridgePlugin(),
