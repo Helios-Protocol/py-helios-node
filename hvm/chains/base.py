@@ -361,6 +361,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
+    def get_transaction_by_hash(self, tx_hash: Hash32) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
     def create_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         raise NotImplementedError("Chain classes must implement this method")
 
@@ -1105,6 +1109,13 @@ class Chain(BaseChain):
 
         return tx
 
+    @functools.lru_cache(maxsize=32)
+    def get_transaction_by_hash(self, tx_hash: Hash32) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        block_hash, index, is_receive = self.chaindb.get_transaction_index(tx_hash)
+        header = self.chaindb.get_block_header_by_hash(block_hash)
+        vm = self.get_vm(header=header)
+        transaction = self.chaindb.get_transaction_by_hash(tx_hash, vm.get_transaction_class(), vm.get_receive_transaction_class())
+        return transaction
 
     def create_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         """
@@ -1367,6 +1378,9 @@ class Chain(BaseChain):
                 break
 
             head_block_hashes = self.chain_head_db.get_head_block_hashes_list()
+
+            # Delete any existing chronological blocks
+            self.chain_head_db.delete_chronological_block_window(current_timestamp)
 
             # iterate over all chains
             for head_block_hash in head_block_hashes:
