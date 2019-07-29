@@ -395,7 +395,12 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                          block_number_end: int,
                                                          peer: HLSPeer,
                                                          additional_candidate_peers: List[HLSPeer] = [],
-                                                         force_replace_existing_blocks = False) -> HLSPeer:
+                                                         force_replace_existing_blocks = False,
+                                                         allow_import_for_expired_timestamp: bool = False,
+                                                         resolving_block_conflict: bool = False,
+                                                         allow_low_gas_block: bool = False) -> HLSPeer:
+
+
         '''
         Request missing chain segment then import.
         :param block_hash_list:
@@ -424,7 +429,10 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                             peer=peer,
                                             propogate_to_network=False,
                                             from_rpc=False,
-                                            force_replace_existing_blocks = force_replace_existing_blocks)
+                                            force_replace_existing_blocks = force_replace_existing_blocks,
+                                            allow_import_for_expired_timestamp = allow_import_for_expired_timestamp,
+                                            resolving_block_conflict = resolving_block_conflict,
+                                            allow_low_gas_block = allow_low_gas_block)
 
         return peer
 
@@ -1297,12 +1305,17 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                     block_number_start = 0
                 else:
                     block_number_start = canonical_head.block_number + 1
-                self.logger.debug('asking peer for the rest of missing chian')
+
+                self.logger.debug('asking peer for the rest of missing chain')
                 asyncio.ensure_future(self.request_chain_segment_then_priority_import(chain_address,
                                                                                         block_number_start,
                                                                                         new_block.header.block_number,
                                                                                         peer_to_request_from,
-                                                                                        additional_candidate_peers=additional_candidate_peers))
+                                                                                        additional_candidate_peers=additional_candidate_peers,
+                                                                                        force_replace_existing_blocks = force_replace_existing_blocks,
+                                                                                        allow_import_for_expired_timestamp = allow_import_for_expired_timestamp,
+                                                                                        resolving_block_conflict = resolving_block_conflict,
+                                                                                        allow_low_gas_block=allow_low_gas_block))
 
                 return False
 
