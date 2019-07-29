@@ -7,7 +7,8 @@ Helios Protocol Node
     :alt: Python3.6
 
 
-This is the  HeliosProtocol node software.
+
+This is the Helios Protocol node software.
 
 Install
 -------
