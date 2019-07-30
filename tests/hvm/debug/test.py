@@ -128,50 +128,144 @@ logger.setLevel(logging.DEBUG)
 logger.addHandler(handler_stream)
 
 
+
+# test = [['a',1],['b',2],['c',3], ['a', 9]]
+
+# test = set(test)
+# print(test)
+# exit()
+# test_dict = dict(test)
+# print(test_dict)
+# # test_dict['b'] = 5
+# # test = list(test_dict.items())
+# # print(test[:-1])
+# exit()
+
 def debug_test_1():
+    testdb = LevelDB("/home/tommy/.local/share/helios/mainnet/chain/full/")
+
+    testdb = JournalDB(testdb)
+    testdb = ReadOnlyDB(testdb)
+
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    block = chain.get_block_by_hash(decode_hex('0x6a8d49885e5f07ea66f722e4ec9ba9630a86f1189257317461196726bee7ea0c'))
+
+    new_chain = chain.get_blocks_on_chain(0, 3, decode_hex('0x1d1a2266a15CcB2e70baeB4b75b2c59Da95498ac'))
+
+    print('blocks on chain')
+    for cur_block in new_chain:
+        print(encode_hex(cur_block.header.hash))
+
+    print()
+
+    newest_root_hash = chain.chain_head_db.get_historical_root_hashes()[-1][1]
+    chain.chain_head_db.root_hash = newest_root_hash
+    chain_head_hash = chain.chain_head_db.get_chain_head_hash(decode_hex('0x1d1a2266a15CcB2e70baeB4b75b2c59Da95498ac'))
+    print("chain_head_hash {}".format(encode_hex(chain_head_hash)))
+
+
+    #
+    # now lets delete all but the first block
+    #
+    print("Deleting all blocks but first")
+    chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    chain.purge_block_and_all_children_and_set_parent_as_chain_head(block.header, save_block_head_hash_timestamp = True)
+
+    newest_root_hash = chain.chain_head_db.get_historical_root_hashes()[-1][1]
+    chain.chain_head_db.root_hash = newest_root_hash
+    chain_head_hash = chain.chain_head_db.get_chain_head_hash(decode_hex('0x1d1a2266a15CcB2e70baeB4b75b2c59Da95498ac'))
+    print("chain_head_hash {}".format(encode_hex(chain_head_hash)))
+
+
+    #
+    # Now lets import the second block again
+    #
+
+    print("Importing second block")
+    chain.import_block(block,
+                       allow_replacement = False,
+                       ensure_block_unchanged = True,
+                       )
+
+    newest_root_hash = chain.chain_head_db.get_historical_root_hashes()[-1][1]
+    chain.chain_head_db.root_hash = newest_root_hash
+    chain_head_hash = chain.chain_head_db.get_chain_head_hash(decode_hex('0x1d1a2266a15CcB2e70baeB4b75b2c59Da95498ac'))
+    print("chain_head_hash {}".format(encode_hex(chain_head_hash)))
+
+
+# debug_test_1()
+# exit()
+
+
+def debug_test_2():
     testdb = LevelDB("/home/tommy/.local/share/helios/mainnet/chain/full/")
 
     testdb = ReadOnlyDB(testdb)
 
     chain = MainnetChain(testdb, private_keys[0].public_key.to_canonical_address(), private_keys[0])
 
-    block = chain.get_block_by_hash(decode_hex('0x1ead4a268b8817863e0ea4eec874d616a463f181f05c257f68ce339964c92653'))
+    chronological_blocks = chain.chain_head_db.load_chronological_block_window(1564233000)
 
-    print(encode_hex(block.header.hash))
+    print([encode_hex(x[1]) for x in chronological_blocks])
 
-    chronological_window = chain.chain_head_db.load_chronological_block_window(1564242000)
-    print([[x[0], encode_hex(x[1])] for x in chronological_window])
+#
+# debug_test_2()
+# exit()
 
-    new_chain = chain.get_blocks_on_chain(0,3, decode_hex('0x1d1a2266a15CcB2e70baeB4b75b2c59Da95498ac'))
+def _print_chronological_blocks_and_actual_head_hash_diff(chain, historical_root_hash_time_1, historical_root_hash_time_2):
+    chronological_blocks = chain.chain_head_db.load_chronological_block_window(historical_root_hash_time_1)
 
-    print('blocks on chain')
-    for block in new_chain:
+    print("These are supposed to be the blocks that bring from one to the next. ie. the diff")
+    print([encode_hex(x[1]) for x in chronological_blocks])
 
-        print(encode_hex(block.header.hash))
-
-    print('done')
     historical_root_hashes = chain.chain_head_db.get_historical_root_hashes()
     historical_root_hashes_dict = dict(historical_root_hashes)
 
-    #
-    # This historical root hash should have the whole chain historical_root_hashes_dict[1564242000]
-    #
-    chain.chain_head_db.root_hash = historical_root_hashes_dict[1564242000]
+    chain_head_hash_1_set = set(chain.chain_head_db.get_head_block_hashes(historical_root_hashes_dict[historical_root_hash_time_1]))
+    chain_head_hash_2_set = set(chain.chain_head_db.get_head_block_hashes(historical_root_hashes_dict[historical_root_hash_time_2]))
 
-    print(encode_hex(chain.chain_head_db.get_chain_head_hash(decode_hex('0x1d1a2266a15CcB2e70baeB4b75b2c59Da95498ac'))))
+    diff = chain_head_hash_1_set ^ chain_head_hash_2_set
 
+    print("Printing the actual chain head hashes that differ:")
+    print([encode_hex(x) for x in diff])
+    
+    
+def debug_find_diff_chain_head_hash_between_historical_root_hashes():
+    # this is from bootnode 1
+    historical_root_hash_time_1 = 1564233000
+    historical_root_hash_time_2 = 1564234000
+    
+
+    testdb_before = LevelDB("/home/tommy/.local/share/helios/mainnet/chain/full_before_rebuild/")
+    testdb_after = LevelDB("/home/tommy/.local/share/helios/mainnet/chain/full/")
+    #testdb = LevelDB("/home/tommy/.local/share/helios/bootnode_1_july_30/mainnet/chain/full/")
+
+    testdb_before = JournalDB(testdb_before)
+    testdb_after = JournalDB(testdb_after)
+    #testdb = ReadOnlyDB(testdb)
+
+    chain_before = MainnetChain(testdb_before, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+    chain_after = MainnetChain(testdb_after, private_keys[0].public_key.to_canonical_address(), private_keys[0])
+
+    historical_root_hashes_before = chain_before.chain_head_db.get_historical_root_hashes()
+    historical_root_hashes_after = chain_after.chain_head_db.get_historical_root_hashes()
+
+    print(historical_root_hashes_before)
+    print(historical_root_hashes_after)
+
+    _print_chronological_blocks_and_actual_head_hash_diff(chain_before, historical_root_hash_time_1, historical_root_hash_time_2)
+
+    # # There are obviously different. Rebuilding didnt work. Try again.
+    # print("Rebuilding chronological chain")
+    # #chain.initialize_historical_root_hashes_and_chronological_blocks(historical_root_hash_time_2+10000, historical_root_hash_time_1-10000)
     # chain.initialize_historical_root_hashes_and_chronological_blocks()
+    # _print_chronological_blocks_and_actual_head_hash_diff(chain, historical_root_hash_time_1, historical_root_hash_time_2)
     #
-    # historical_root_hashes = chain.chain_head_db.get_historical_root_hashes()
-    # historical_root_hashes_dict = dict(historical_root_hashes)
-    #
-    # #
-    # # This historical root hash should have the whole chain historical_root_hashes_dict[1564242000]
-    # #
-    # chain.chain_head_db.root_hash = historical_root_hashes_dict[1564242000]
-    #
-    # print(encode_hex(chain.chain_head_db.get_chain_head_hash(decode_hex('0x1d1a2266a15CcB2e70baeB4b75b2c59Da95498ac'))))
 
 
-debug_test_1()
+
+
+
+debug_find_diff_chain_head_hash_between_historical_root_hashes()
 exit()

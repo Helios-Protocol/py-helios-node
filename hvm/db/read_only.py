@@ -14,12 +14,11 @@ class ReadOnlyDB(BaseDB):
         self.temp_db[key] = value
 
     def delete(self, key: bytes) -> None:
-        try:
-            del(self.temp_db[key])
-        except KeyError:
-            pass
+        self.set(key, 'deleted')
 
     def __getitem__(self, key: bytes) -> bytes:
+        if key in self.temp_db and self.temp_db[key] == 'deleted':
+            raise KeyError()
         try:
             return self.temp_db[key]
         except KeyError:
@@ -29,6 +28,9 @@ class ReadOnlyDB(BaseDB):
         self.set(key, value)
 
     def _exists(self, key: bytes) -> bool:
+        if key in self.temp_db and self.temp_db[key] == 'deleted':
+            return False
+
         return key in self.wrapped_db or key in self.temp_db
 
     def __delitem__(self, key: bytes) -> None:

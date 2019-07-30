@@ -67,6 +67,7 @@ deps = {
         "matplotlib",
         # only needed for hp2p
         "pytest-asyncio-network-simulator==0.1.0a2;python_version>='3.6'",
+        "PyUserInput>=0.1.11"
     ],
     'lint': [
         "flake8==3.5.0",

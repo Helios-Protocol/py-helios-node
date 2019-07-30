@@ -91,6 +91,10 @@ from hvm.rlp.sedes import(
     hash32,
 
 )
+
+import math
+from hvm.utils.pid import PID
+
 from rlp_cython.sedes import(
     big_endian_int,
     CountableList,
@@ -512,6 +516,10 @@ class BaseChainDB(metaclass=ABCMeta):
 
     @abstractmethod
     def load_historical_network_tpc_capability(self, sort: bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
+        raise NotImplementedError("ChainDB classes must implement this method")
+
+    @abstractmethod
+    def _calculate_next_min_gas_price_pid(self, historical_txpd: List[int], last_min_gas_price: int, wanted_txpd: int) -> int:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -1887,6 +1895,24 @@ class ChainDB(BaseChainDB):
             return data
         except KeyError:
             return None
+
+    def _calculate_next_min_gas_price_pid(self, historical_txpd: List[int], last_min_gas_price: int, wanted_txpd: int) -> int:
+        print("calculating next_min_gas_price_pid with inputs {}, {}, {}".format(historical_txpd, last_min_gas_price, wanted_txpd))
+        num_seconds_between_points = 10
+        if len(historical_txpd) < 2:
+            self.logger.debug("Not enough historical txpd to calculate next min gas price. Returning previous min gas price.")
+            return last_min_gas_price
+
+        pid = PID(0.1, 0.1, 0.005, setpoint=wanted_txpd, output_limits=(None, -1))
+        pid.set_last_input_and_output(historical_txpd[-2], last_min_gas_price)
+
+        pid_res = pid(historical_txpd[-1], num_seconds_between_points)*-1
+
+        to_return = math.exp(pid_res / 100)
+
+        return to_return
+
+
 
 
     def _calculate_next_centisecond_minimum_gas_price(self, historical_minimum_allowed_gas: List[List[int]], historical_tx_per_centisecond: List[List[int]], goal_tx_per_centisecond: int) -> int:

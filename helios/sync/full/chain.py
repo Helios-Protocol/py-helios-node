@@ -611,6 +611,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         self.logger.debug("Syncing loop at sync stage {}".format(sync_stage))
 
         additional_candidate_peers = list(sync_parameters.peers_to_sync_with)
+        additional_candidate_peers = self.peer_pool.sort_peers_by_stake(additional_candidate_peers)
         peer_to_sync_with = additional_candidate_peers.pop()
         chronological_window_timestamp = sync_parameters.timestamp_for_chronoligcal_block_window
 

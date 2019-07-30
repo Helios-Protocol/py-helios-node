@@ -1370,7 +1370,7 @@ class Chain(BaseChain):
         # A historical root hash is the root hash at the given timestamp, so it includes all blocks earlier than that timestamp.
         self.logger.debug("Rebuilding chronological block windows")
         # us a journaldb so that it doesnt write changes to the database.
-        temp_chain_head_db = self.get_chain_head_db_class()(MemoryDB())
+        #temp_chain_head_db = self.get_chain_head_db_class()(MemoryDB())
         #temp_chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(JournalDB(self.db))
         for current_timestamp in range(current_window, earliest_root_hash-TIME_BETWEEN_HEAD_HASH_SAVE, -TIME_BETWEEN_HEAD_HASH_SAVE):
 

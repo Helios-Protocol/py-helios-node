@@ -73,6 +73,8 @@ from eth_keys.datatypes import(
         PrivateKey
 )
 
+import matplotlib.pyplot as plt
+
 # try:
 #     import matplotlib.pyplot as plt
 # except ModuleNotFoundError:
@@ -208,3 +210,57 @@ def test_min_allowed_gas_system():
 
 # test_min_allowed_gas_system()
 # exit()
+
+
+def test_aggressive_min_gas_price_pid():
+
+    wanted_txpc = 3000
+    wanted_txpd = wanted_txpc/10
+    historical_min_gas_price = [1]
+    historical_txpd = [0]
+
+    from pymouse import PyMouseEvent
+
+    class event(PyMouseEvent):
+        mouse_y = 0
+
+        def __init__(self):
+            super(event, self).__init__()
+
+        def move(self, x, y):
+            self.mouse_y = y
+
+
+    e = event()
+    e.capture = False
+    e.daemon = False
+    e.start()
+
+    testdb1 = MemoryDB()
+
+    chain = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),TESTNET_GENESIS_PRIVATE_KEY)
+
+    # assume we have a system we want to control in controlled_system
+    limit = 10
+    x = range(limit)
+
+    for i in range(limit - 1):
+        historical_txpd.append(e.mouse_y)
+        # compute new ouput from the PID according to the systems current value
+        min_gas_price = chain.chaindb._calculate_next_min_gas_price_pid(historical_txpd, historical_min_gas_price[-1], wanted_txpd)
+
+        historical_min_gas_price.append(min_gas_price)
+
+        print('v {}'.format(historical_txpd[-1]))
+        print('min_gas_price {}'.format(min_gas_price))
+
+
+        time.sleep(1)
+
+    fig, axs = plt.subplots(2)
+    axs[0].plot(x, historical_txpd)
+    axs[1].plot(x, historical_min_gas_price)
+    plt.show()
+
+
+test_aggressive_min_gas_price_pid()
