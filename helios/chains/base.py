@@ -20,7 +20,7 @@ class ChainProxy(BaseProxy):
 
 
     coro_get_all_chronological_blocks_for_window = async_method('get_all_chronological_blocks_for_window')
-    coro_import_chronological_block_window = async_method('import_chronological_block_window')
+    #coro_import_chronological_block_window = async_method('import_chronological_block_window')
     coro_update_current_network_tpc_capability = async_method('update_current_network_tpc_capability')
     coro_get_local_tpc_cap = async_method('get_local_tpc_cap')
     coro_re_initialize_historical_minimum_gas_price_at_genesis = async_method('re_initialize_historical_minimum_gas_price_at_genesis')
@@ -48,7 +48,7 @@ class ChainProxy(BaseProxy):
 
     get_vm = sync_method('get_vm')
     get_all_chronological_blocks_for_window = sync_method('get_all_chronological_blocks_for_window')
-    import_chronological_block_window = sync_method('import_chronological_block_window')
+    #import_chronological_block_window = sync_method('import_chronological_block_window')
     update_current_network_tpc_capability = sync_method('update_current_network_tpc_capability')
     get_local_tpc_cap = sync_method('get_local_tpc_cap')
     validate_block_specification = sync_method('validate_block_specification')
