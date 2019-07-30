@@ -715,50 +715,50 @@ def test_import_chain():
 #test_import_chain()
 
 
-def import_chronological_block_window(testdb1, testdb2):
-
-    node_1 = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
-    node_2 = TestnetChain(testdb2, RECEIVER.public_key.to_canonical_address(), RECEIVER)
-
-    node_1_historical_root_hashes = node_1.chain_head_db.get_historical_root_hashes()
-
-    for timestamp_root_hash in node_1_historical_root_hashes:
-        print("Importing chronological block window for timestamp {}".format(timestamp_root_hash[0]))
-        # timestamp of chronological that we are importing: node_1_historical_root_hashes[-2][0]
-        chronological_blocks = node_1.get_all_chronological_blocks_for_window(timestamp_root_hash[0])
-
-        # make sure propogate_block_head_hash_timestamp_to_present = True and False works
-        node_2.import_chronological_block_window(chronological_blocks, timestamp_root_hash[0])
-
-    ensure_blockchain_databases_identical(testdb1, testdb2)
-    ensure_chronological_block_hashes_are_identical(testdb1, testdb2)
-
-
-def test_import_chronolgical_block_windows():
-    # Where node 2 has no blocks other than genesis block on genesis chain
-    testdb1 = MemoryDB()
-    testdb2 = MemoryDB()
-
-    create_dev_test_random_blockchain_database(testdb1)
-    chain_1 = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
-
-    chain_2 = TestnetChain.from_genesis(testdb2, RECEIVER.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE)
-
-    # print('AAAAAAAAAAAAAAA')
-    # print(encode_hex(chain_1.genesis_wallet_address))
-    # print(chain_1.chaindb.get_canonical_block_header_by_number(0, chain_1.genesis_wallet_address))
-    # print(chain_2.chaindb.get_canonical_block_header_by_number(0, chain_2.genesis_wallet_address))
-    import_chronological_block_window(testdb1, testdb2)
-
-    # Where node 2 has a different blockchain database. This requires overwriting.
-    testdb1 = MemoryDB()
-    testdb2 = MemoryDB()
-
-    create_dev_test_random_blockchain_database(testdb1)
-    create_dev_test_random_blockchain_database(testdb2)
+# def import_chronological_block_window(testdb1, testdb2):
+#
+#     node_1 = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+#     node_2 = TestnetChain(testdb2, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+#
+#     node_1_historical_root_hashes = node_1.chain_head_db.get_historical_root_hashes()
+#
+#     for timestamp_root_hash in node_1_historical_root_hashes:
+#         print("Importing chronological block window for timestamp {}".format(timestamp_root_hash[0]))
+#         # timestamp of chronological that we are importing: node_1_historical_root_hashes[-2][0]
+#         chronological_blocks = node_1.get_all_chronological_blocks_for_window(timestamp_root_hash[0])
+#
+#         # make sure propogate_block_head_hash_timestamp_to_present = True and False works
+#         node_2.import_chronological_block_window(chronological_blocks, timestamp_root_hash[0])
+#
+#     ensure_blockchain_databases_identical(testdb1, testdb2)
+#     ensure_chronological_block_hashes_are_identical(testdb1, testdb2)
 
 
-    import_chronological_block_window(testdb1, testdb2)
+# def test_import_chronolgical_block_windows():
+#     # Where node 2 has no blocks other than genesis block on genesis chain
+#     testdb1 = MemoryDB()
+#     testdb2 = MemoryDB()
+#
+#     create_dev_test_random_blockchain_database(testdb1)
+#     chain_1 = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+#
+#     chain_2 = TestnetChain.from_genesis(testdb2, RECEIVER.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE)
+#
+#     # print('AAAAAAAAAAAAAAA')
+#     # print(encode_hex(chain_1.genesis_wallet_address))
+#     # print(chain_1.chaindb.get_canonical_block_header_by_number(0, chain_1.genesis_wallet_address))
+#     # print(chain_2.chaindb.get_canonical_block_header_by_number(0, chain_2.genesis_wallet_address))
+#     import_chronological_block_window(testdb1, testdb2)
+#
+#     # Where node 2 has a different blockchain database. This requires overwriting.
+#     testdb1 = MemoryDB()
+#     testdb2 = MemoryDB()
+#
+#     create_dev_test_random_blockchain_database(testdb1)
+#     create_dev_test_random_blockchain_database(testdb2)
+#
+#
+#     import_chronological_block_window(testdb1, testdb2)
 
 # test_import_chronolgical_block_windows()
 

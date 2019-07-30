@@ -415,7 +415,7 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
-    def initialize_historical_root_hashes_and_chronological_blocks(self) -> None:
+    def initialize_historical_root_hashes_and_chronological_blocks(self, current_window = None, earliest_root_hash = None) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
     #
@@ -438,11 +438,11 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     def import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
-    @abstractmethod
-    def import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp,
-                                          save_block_head_hash_timestamp: bool = True,
-                                          allow_unprocessed: bool = False) -> None:
-        raise NotImplementedError("Chain classes must implement this method")
+    # @abstractmethod
+    # def import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp,
+    #                                       save_block_head_hash_timestamp: bool = True,
+    #                                       allow_unprocessed: bool = False) -> None:
+    #     raise NotImplementedError("Chain classes must implement this method")
 
 
 
@@ -1275,67 +1275,8 @@ class Chain(BaseChain):
         chronological_block_hash_timestamps.sort()
         return chronological_block_hash_timestamps
 
-    # def initialize_historical_root_hashes_and_chronological_blocks(self) -> None:
-    #     '''
-    #     This function rebuilds all historical root hashes, and chronological blocks, from the blockchain database. It starts with the saved root hash and works backwards.
-    #     This function needs to be run from chain because it requires chain_head_db and chaindb.
-    #     :return:
-    #     '''
-    #
-    #     self.chain_head_db.load_saved_root_hash()
-    #     current_window = self.chain_head_db.current_window
-    #     earliest_root_hash = self.chain_head_db.earliest_window
-    #     #TIME_BETWEEN_HEAD_HASH_SAVE
-    #
-    #     # 1) iterate down the root hash times
-    #     # 2) create new chain_head_db with memorydb
-    #     # 3) go through each chain and any blocks newer than the timestamp, save to chronological window.
-    #     # 4) when you reach a block less than the timestamp, set it as chain head in the new memory based chain_head_db
-    #     # 5) get the root hash
-    #     # 6) set this root hash in the real chain_head_db at the correct timestamp.
-    #
-    #     # A chronological block window holds all of the blocks starting at its timestamp, going to timestamp + TIME_BETWEEN_HEAD_HASH_SAVE
-    #     # A historical root hash is the root hash at the given timestamp, so it includes all blocks earlier than that timestamp.
-    #
-    #     # us a journaldb so that it doesnt write changes to the database.
-    #     temp_chain_head_db = self.get_chain_head_db_class()(MemoryDB())
-    #     #temp_chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(JournalDB(self.db))
-    #     for current_timestamp in range(current_window, earliest_root_hash-TIME_BETWEEN_HEAD_HASH_SAVE, -TIME_BETWEEN_HEAD_HASH_SAVE):
-    #         self.logger.debug("Rebuilding chronological block window {}".format(current_timestamp))
-    #         if current_timestamp < self.genesis_block_timestamp:
-    #             break
-    #
-    #         if current_timestamp == current_window:
-    #             head_block_hashes = self.chain_head_db.get_head_block_hashes_list()
-    #         else:
-    #             head_block_hashes = temp_chain_head_db.get_head_block_hashes_list()
-    #
-    #         # iterate over all chains
-    #         for head_block_hash in head_block_hashes:
-    #             current_block_hash = head_block_hash
-    #             # now iterate over blocks in chain
-    #             while True:
-    #                 current_header = self.chaindb.get_block_header_by_hash(current_block_hash)
-    #                 if current_header.timestamp >= current_timestamp:
-    #                     # add it to chronological block window in the real chain head db
-    #                     self.chain_head_db.add_block_hash_to_chronological_window(current_header.hash, current_header.timestamp)
-    #                 else:
-    #                     # The block is older than the timestamp. Set it as the chain head block hash in our temp chain head db
-    #                     temp_chain_head_db.set_chain_head_hash(current_header.chain_address, current_header.hash)
-    #                     break
-    #                 if current_header.parent_hash == GENESIS_PARENT_HASH:
-    #                     # we reached the end of the chain
-    #                     temp_chain_head_db.delete_chain_head_hash(current_header.chain_address)
-    #                     break
-    #                 # set the current block to the parent so we move down the chain
-    #                 current_block_hash = current_header.parent_hash
-    #
-    #         # Now that we have gone through all chains, and removed any blocks newer than this timestamp, the root hash in the
-    #         # temp chain head db is the correct one for this historical root hash timestamp.
-    #         self.chain_head_db.save_single_historical_root_hash(temp_chain_head_db.root_hash, Timestamp(current_timestamp))
 
-
-    def initialize_historical_root_hashes_and_chronological_blocks(self) -> None:
+    def initialize_historical_root_hashes_and_chronological_blocks(self, current_window = None, earliest_root_hash = None) -> None:
         '''
         This function rebuilds all historical root hashes, and chronological blocks, from the blockchain database. It starts with the saved root hash and works backwards.
         This function needs to be run from chain because it requires chain_head_db and chaindb.
@@ -1343,8 +1284,10 @@ class Chain(BaseChain):
         '''
 
         self.chain_head_db.load_saved_root_hash()
-        current_window = self.chain_head_db.current_window
-        earliest_root_hash = self.chain_head_db.earliest_window
+        if current_window is None:
+            current_window = self.chain_head_db.current_window
+        if earliest_root_hash is None:
+            earliest_root_hash = self.chain_head_db.earliest_window
         #TIME_BETWEEN_HEAD_HASH_SAVE
 
         # the saved
@@ -1359,17 +1302,21 @@ class Chain(BaseChain):
         # A historical root hash is the root hash at the given timestamp, so it includes all blocks earlier than that timestamp.
         self.logger.debug("Rebuilding chronological block windows")
         # us a journaldb so that it doesnt write changes to the database.
-        temp_chain_head_db = self.get_chain_head_db_class()(MemoryDB())
+        #temp_chain_head_db = self.get_chain_head_db_class()(MemoryDB())
         #temp_chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(JournalDB(self.db))
-        for current_timestamp in range(current_window, earliest_root_hash-TIME_BETWEEN_HEAD_HASH_SAVE, -TIME_BETWEEN_HEAD_HASH_SAVE):
 
-            if current_timestamp < self.genesis_block_timestamp:
+        # Delete all historical root hashes first to make sure we dont have any stragglers
+        self.chain_head_db.delete_historical_root_hashes()
+
+        # We are iterating over historical root hash times. Chronological block hash times are one behind this
+        for current_historical_root_hash_timestamp in range(current_window, earliest_root_hash-TIME_BETWEEN_HEAD_HASH_SAVE, -TIME_BETWEEN_HEAD_HASH_SAVE):
+            if current_historical_root_hash_timestamp < self.genesis_block_timestamp:
                 break
 
             head_block_hashes = self.chain_head_db.get_head_block_hashes_list()
 
             # Delete any existing chronological blocks
-            self.chain_head_db.delete_chronological_block_window(current_timestamp)
+            self.chain_head_db.delete_chronological_block_window(current_historical_root_hash_timestamp)
 
             # iterate over all chains
             for head_block_hash in head_block_hashes:
@@ -1377,7 +1324,7 @@ class Chain(BaseChain):
                 # now iterate over blocks in chain
                 while True:
                     current_header = self.chaindb.get_block_header_by_hash(current_block_hash)
-                    if current_header.timestamp >= current_timestamp:
+                    if current_header.timestamp >= current_historical_root_hash_timestamp:
                         # add it to chronological block window in the real chain head db
                         self.chain_head_db.add_block_hash_to_chronological_window(current_header.hash, current_header.timestamp)
                     else:
@@ -1393,7 +1340,7 @@ class Chain(BaseChain):
 
             # Now that we have gone through all chains, and removed any blocks newer than this timestamp, the root hash in the
             # temp chain head db is the correct one for this historical root hash timestamp.
-            self.chain_head_db.save_single_historical_root_hash(self.chain_head_db.root_hash, Timestamp(current_timestamp))
+            self.chain_head_db.save_single_historical_root_hash(self.chain_head_db.root_hash, Timestamp(current_historical_root_hash_timestamp))
 
         self.chain_head_db.persist()
 
@@ -1573,75 +1520,72 @@ class Chain(BaseChain):
 
 
 
-
-
-
-
-    def import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp, save_block_head_hash_timestamp:bool = True, allow_unprocessed:bool =False) -> None:
-        validate_uint256(window_start_timestamp, title='timestamp')
-
-        if block_list is None or len(block_list) == 0:
-            return
-
-        #if we are given a block that is not one of the two allowed classes, try converting it.
-        if len(block_list) > 0 and not isinstance(block_list[0], self.get_vm(timestamp = block_list[0].header.timestamp).get_block_class()):
-            self.logger.debug("converting chain to correct class")
-            corrected_block_list = []
-            for block in block_list:
-                corrected_block = self.get_vm(timestamp = block.header.timestamp).convert_block_to_correct_class(block)
-                corrected_block_list.append(corrected_block)
-            block_list = corrected_block_list
-
-
-        #first we delete any blocks we have in the same window that are not in the new block list
-        local_chronological_timestamp_block_window = self.chain_head_db.load_chronological_block_window(window_start_timestamp)
-
-        if local_chronological_timestamp_block_window is not None:
-            local_block_hash_list = [x[1] for x in local_chronological_timestamp_block_window]
-
-            new_block_hash_list = [block.hash for block in block_list]
-
-            block_hashes_to_delete = effecient_diff(new_block_hash_list, local_block_hash_list)
-            if len(block_hashes_to_delete) > 0:
-                self.logger.debug("deleting existing blocks in chronological window {}".format(block_hashes_to_delete))
-
-            for block_hash_to_delete in block_hashes_to_delete:
-                self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(block_hash_to_delete)
-
-        if len(block_list) > 0:
-            self.logger.debug("starting block import for chronological block window")
-            #if block list is empty, load the local historical root hashes and delete them all
-            for i in range(len(block_list)):
-                # Reset this after each block imports
-                blocks_that_have_been_reorganized = set()
-                wallet_address = block_list[i].header.chain_address
-                while True:
-                    try:
-                        self.import_block(block_list[i], wallet_address = wallet_address, save_block_head_hash_timestamp = save_block_head_hash_timestamp, allow_unprocessed=allow_unprocessed)
-                        break
-                    except (UnprocessedBlockNotAllowed, ParentNotFound) as e:
-                        # Because of the timestamps being in seconds, there may be multiple blocks that depend on each other
-                        # with the same timestamp, and they could be out of order.  So we attempt to reorganize the blocks
-                        # and import again. If it fails again we will raise the exception.
-                        if block_list[i].header.hash in blocks_that_have_been_reorganized:
-                            self.logger.debug("Already tried reorganizing this block.")
-                            raise e
-                        self.logger.debug("Attempting to reorganize chronological window for import")
-                        blocks_that_have_been_reorganized.add(block_list[i].header.hash)
-                        block_list = reorganize_chronological_block_list_for_correct_chronological_order_at_index(block_list, i, self.logger)
-
-
-        else:
-            self.logger.debug("importing an empty chronological window. going to make sure we have a saved historical root hash")
-            historical_root_hashes = self.chain_head_db.get_historical_root_hashes()
-            if historical_root_hashes is not None:
-                #historical_root_hashes_dict = dict(historical_root_hashes)
-                #if it does exist, make sure it is the same as the last one. if not, then delete all newer
-                try:
-                    self.chain_head_db.propogate_previous_historical_root_hash_to_timestamp(window_start_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE)
-                except AppendHistoricalRootHashTooOld:
-                    self.logger.debug("Tried to propogate the previous historical root hash but there was none. This shouldn't happen")
-        #self.logger.debug("historical root hashes after chronological block import {}".format(self.chain_head_db.get_historical_root_hashes()))
+    #
+    # def import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp, save_block_head_hash_timestamp:bool = True, allow_unprocessed:bool =False) -> None:
+    #     validate_uint256(window_start_timestamp, title='timestamp')
+    #
+    #     if block_list is None or len(block_list) == 0:
+    #         return
+    #
+    #     #if we are given a block that is not one of the two allowed classes, try converting it.
+    #     if len(block_list) > 0 and not isinstance(block_list[0], self.get_vm(timestamp = block_list[0].header.timestamp).get_block_class()):
+    #         self.logger.debug("converting chain to correct class")
+    #         corrected_block_list = []
+    #         for block in block_list:
+    #             corrected_block = self.get_vm(timestamp = block.header.timestamp).convert_block_to_correct_class(block)
+    #             corrected_block_list.append(corrected_block)
+    #         block_list = corrected_block_list
+    #
+    #
+    #     #first we delete any blocks we have in the same window that are not in the new block list
+    #     local_chronological_timestamp_block_window = self.chain_head_db.load_chronological_block_window(window_start_timestamp)
+    #
+    #     if local_chronological_timestamp_block_window is not None:
+    #         local_block_hash_list = [x[1] for x in local_chronological_timestamp_block_window]
+    #
+    #         new_block_hash_list = [block.hash for block in block_list]
+    #
+    #         block_hashes_to_delete = effecient_diff(new_block_hash_list, local_block_hash_list)
+    #         if len(block_hashes_to_delete) > 0:
+    #             self.logger.debug("deleting existing blocks in chronological window {}".format(block_hashes_to_delete))
+    #
+    #         for block_hash_to_delete in block_hashes_to_delete:
+    #             self.purge_block_and_all_children_and_set_parent_as_chain_head_by_hash(block_hash_to_delete)
+    #
+    #     if len(block_list) > 0:
+    #         self.logger.debug("starting block import for chronological block window")
+    #         #if block list is empty, load the local historical root hashes and delete them all
+    #         for i in range(len(block_list)):
+    #             # Reset this after each block imports
+    #             blocks_that_have_been_reorganized = set()
+    #             wallet_address = block_list[i].header.chain_address
+    #             while True:
+    #                 try:
+    #                     self.import_block(block_list[i], wallet_address = wallet_address, save_block_head_hash_timestamp = save_block_head_hash_timestamp, allow_unprocessed=allow_unprocessed)
+    #                     break
+    #                 except (UnprocessedBlockNotAllowed, ParentNotFound) as e:
+    #                     # Because of the timestamps being in seconds, there may be multiple blocks that depend on each other
+    #                     # with the same timestamp, and they could be out of order.  So we attempt to reorganize the blocks
+    #                     # and import again. If it fails again we will raise the exception.
+    #                     if block_list[i].header.hash in blocks_that_have_been_reorganized:
+    #                         self.logger.debug("Already tried reorganizing this block.")
+    #                         raise e
+    #                     self.logger.debug("Attempting to reorganize chronological window for import")
+    #                     blocks_that_have_been_reorganized.add(block_list[i].header.hash)
+    #                     block_list = reorganize_chronological_block_list_for_correct_chronological_order_at_index(block_list, i, self.logger)
+    #
+    #
+    #     else:
+    #         self.logger.debug("importing an empty chronological window. going to make sure we have a saved historical root hash")
+    #         historical_root_hashes = self.chain_head_db.get_historical_root_hashes()
+    #         if historical_root_hashes is not None:
+    #             #historical_root_hashes_dict = dict(historical_root_hashes)
+    #             #if it does exist, make sure it is the same as the last one. if not, then delete all newer
+    #             try:
+    #                 self.chain_head_db.propogate_previous_historical_root_hash_to_timestamp(window_start_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE)
+    #             except AppendHistoricalRootHashTooOld:
+    #                 self.logger.debug("Tried to propogate the previous historical root hash but there was none. This shouldn't happen")
+    #     #self.logger.debug("historical root hashes after chronological block import {}".format(self.chain_head_db.get_historical_root_hashes()))
 
     def import_chain(self, block_list: List[BaseBlock], perform_validation: bool=True, save_block_head_hash_timestamp: bool = True, allow_replacement: bool = True) -> None:
         if len(block_list) > 0:

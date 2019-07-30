@@ -36,10 +36,10 @@ class AsyncChain(BaseChain):
     async def coro_get_all_chronological_blocks_for_window(self, window_timestamp: Timestamp) -> List[BaseBlock]:
         raise NotImplementedError()
 
-    async def coro_import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp,
-                                          save_block_head_hash_timestamp: bool = True,
-                                          allow_unprocessed: bool = False) -> None:
-        raise NotImplementedError()
+    # async def coro_import_chronological_block_window(self, block_list: List[BaseBlock], window_start_timestamp: Timestamp,
+    #                                       save_block_head_hash_timestamp: bool = True,
+    #                                       allow_unprocessed: bool = False) -> None:
+    #     raise NotImplementedError()
 
     async def coro_update_current_network_tpc_capability(self, current_network_tpc_cap: int,
                                               update_min_gas_price: bool = True) -> None:
@@ -103,7 +103,7 @@ class AsyncChainMixin(AsyncChain):
     coro_get_block_by_header = async_method('get_block_by_header')
     coro_import_block = async_method('import_block')
     coro_get_all_chronological_blocks_for_window = async_method('get_all_chronological_blocks_for_window')
-    coro_import_chronological_block_window = async_method('import_chronological_block_window')
+    #coro_import_chronological_block_window = async_method('import_chronological_block_window')
     coro_update_current_network_tpc_capability = async_method('update_current_network_tpc_capability')
     coro_get_local_tpc_cap = async_method('get_local_tpc_cap')
     coro_re_initialize_historical_minimum_gas_price_at_genesis = async_method(
