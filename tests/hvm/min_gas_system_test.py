@@ -241,7 +241,7 @@ def test_aggressive_min_gas_price_pid():
     chain = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),TESTNET_GENESIS_PRIVATE_KEY)
 
     # assume we have a system we want to control in controlled_system
-    limit = 10
+    limit = 100
     x = range(limit)
 
     for i in range(limit - 1):
@@ -255,7 +255,7 @@ def test_aggressive_min_gas_price_pid():
         print('min_gas_price {}'.format(min_gas_price))
 
 
-        time.sleep(1)
+        time.sleep(0.5)
 
     fig, axs = plt.subplots(2)
     axs[0].plot(x, historical_txpd)

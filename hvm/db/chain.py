@@ -22,6 +22,7 @@ from typing import (
     Optional,
 )
 
+from hvm.utils.pid import clamp
 from hvm.types import Timestamp
 
 import rlp_cython as rlp
@@ -1897,20 +1898,46 @@ class ChainDB(BaseChainDB):
             return None
 
     def _calculate_next_min_gas_price_pid(self, historical_txpd: List[int], last_min_gas_price: int, wanted_txpd: int) -> int:
-        print("calculating next_min_gas_price_pid with inputs {}, {}, {}".format(historical_txpd, last_min_gas_price, wanted_txpd))
+        #
+        # This uses a simple PID to increase the minimum gas price and throttle transactions. It is very aggressive
+        # so that it can catch dos attacks. It expects historical_txpd to be the transactions per 10 seconds, in 10 second
+        # increments.
+        #
         num_seconds_between_points = 10
         if len(historical_txpd) < 2:
             self.logger.debug("Not enough historical txpd to calculate next min gas price. Returning previous min gas price.")
             return last_min_gas_price
 
-        pid = PID(0.1, 0.1, 0.005, setpoint=wanted_txpd, output_limits=(None, -1))
-        pid.set_last_input_and_output(historical_txpd[-2], last_min_gas_price)
+        #
+        # PID PARAMS
+        #
+        Kp = 0.1
+        Ki = 0.1
+        Kd = 0.005
+        output_limits = (None, -1)
 
-        pid_res = pid(historical_txpd[-1], num_seconds_between_points)*-1
+        # compute error terms
+        error = wanted_txpd - historical_txpd[-1]
+        d_txpd = historical_txpd[-1] - historical_txpd[-2]
 
-        to_return = math.exp(pid_res / 100)
+        # compute the proportional term
+        _proportional = Kp * error
 
-        return to_return
+        # compute integral and derivative terms
+        _last_integral = math.log(last_min_gas_price)*-200
+        _integral = _last_integral + Ki * error * num_seconds_between_points
+        _integral = clamp(_integral, (None, -1))  # avoid integral windup
+
+        _derivative = -Kd * d_txpd / num_seconds_between_points
+
+        # compute final output
+        output = _proportional + _integral + _derivative
+        output = clamp(output, output_limits)
+
+        # This must be the inverse of _last_integral's calculation for it to work.
+        result = math.exp(output/-200)
+
+        return round(result)
 
 
 

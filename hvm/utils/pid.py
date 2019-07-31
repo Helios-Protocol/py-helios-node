@@ -14,7 +14,7 @@ import time
 import warnings
 
 
-def _clamp(value, limits):
+def clamp(value, limits):
     lower, upper = limits
     if value is None:
         return None
