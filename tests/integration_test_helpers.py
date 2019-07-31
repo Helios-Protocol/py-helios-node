@@ -7,12 +7,12 @@ from pprint import pprint
 
 from hvm import constants
 
-from hvm import MainnetChain
-from hvm.chains.mainnet import (
-    MAINNET_GENESIS_PARAMS,
-    MAINNET_GENESIS_STATE,
-    GENESIS_PRIVATE_KEY_FOR_TESTNET,
-    MAINNET_NETWORK_ID,
+from hvm import TestnetChain
+from hvm.chains.testnet import (
+    TESTNET_GENESIS_PARAMS,
+    TESTNET_GENESIS_STATE,
+    TESTNET_GENESIS_PRIVATE_KEY,
+    TESTNET_NETWORK_ID,
 )
 
 from hvm.constants import (
@@ -80,7 +80,7 @@ from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock, HeliosTestnetBl
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
 
-SENDER = GENESIS_PRIVATE_KEY_FOR_TESTNET
+SENDER = TESTNET_GENESIS_PRIVATE_KEY
 RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
@@ -88,16 +88,16 @@ RECEIVER4 = get_primary_node_private_helios_key(4)
 
 
 def ensure_chronological_block_hashes_are_fully_synced(base_db_1, base_db_2):
-    node_1 = MainnetChain(base_db_1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
-    node_2 = MainnetChain(base_db_2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    node_1 = TestnetChain(base_db_1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    node_2 = TestnetChain(base_db_2, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     node_1_chain_head_root_hash_timestamp = node_1.chain_head_db.get_historical_root_hashes()[-1]
     node_2_chain_head_root_hash_timestamp = node_2.chain_head_db.get_historical_root_hashes()[-1]
     assert (node_1_chain_head_root_hash_timestamp == node_2_chain_head_root_hash_timestamp)
 
 def ensure_chronological_block_hashes_are_identical(base_db_1, base_db_2):
-    node_1 = MainnetChain(base_db_1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
-    node_2 = MainnetChain(base_db_2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    node_1 = TestnetChain(base_db_1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    node_2 = TestnetChain(base_db_2, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     node_1_chain_head_root_hash_timestamps = node_1.chain_head_db.get_historical_root_hashes()
     node_2_chain_head_root_hash_timestamps = node_2.chain_head_db.get_historical_root_hashes()
@@ -105,8 +105,8 @@ def ensure_chronological_block_hashes_are_identical(base_db_1, base_db_2):
 
 
 def ensure_blockchain_databases_identical(base_db_1, base_db_2):
-    node_1 = MainnetChain(base_db_1, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
-    node_2 = MainnetChain(base_db_2, GENESIS_PRIVATE_KEY_FOR_TESTNET.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY_FOR_TESTNET)
+    node_1 = TestnetChain(base_db_1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    node_2 = TestnetChain(base_db_2, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     # Get all of the addresses of every chain
     next_head_hashes = node_1.chain_head_db.get_head_block_hashes_list()
@@ -154,3 +154,38 @@ def load_compiled_sol_dict(compiled_file_location):
     return compiled_sol_dict
 
 W3_TX_DEFAULTS = {'gas': 0, 'gasPrice': 0, 'chainId': 0}
+
+def ensure_chronological_chain_matches_canonical(chain):
+    #
+    # This function will be time consuming if we have a full length chronoligical chain
+    #
+
+    dummy_chain = TestnetChain(chain.db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    dummy_chain.enable_read_only_db()
+    dummy_chain.initialize_historical_root_hashes_and_chronological_blocks()
+
+    earliest_window = chain.chain_head_db.earliest_window
+    historical_root_hashes_chain = chain.chain_head_db.get_historical_root_hashes()
+    historical_root_hashes_dummy_chain = dummy_chain.chain_head_db.get_historical_root_hashes()
+    historical_root_hashes_dummy_chain_dict = dict(historical_root_hashes_dummy_chain)
+
+
+    # The dummy one can have more in the past and future. But any that the original chain has must be the same. so lets iter over that one
+    for historical_root_hash_timestamp in historical_root_hashes_chain:
+        timestamp = historical_root_hash_timestamp[0]
+        root_hash = historical_root_hash_timestamp[1]
+        if timestamp <= earliest_window:
+            continue
+
+        assert(historical_root_hashes_dummy_chain_dict[timestamp] == root_hash)
+
+        chronological_blocks_chain = chain.chain_head_db.load_chronological_block_window(timestamp)
+        chronological_blocks_dummy_chain = dummy_chain.chain_head_db.load_chronological_block_window(timestamp)
+
+        assert(chronological_blocks_chain == chronological_blocks_dummy_chain), "{} | {}".format(chronological_blocks_chain, chronological_blocks_dummy_chain)
+
+    # also, the newest historical root hash must be the same
+    assert(historical_root_hashes_chain[-1] == historical_root_hashes_dummy_chain[-1])
+
+
+    

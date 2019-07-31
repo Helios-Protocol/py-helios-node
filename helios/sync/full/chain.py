@@ -82,7 +82,7 @@ from hvm.constants import (
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
     ZERO_HASH32,
-)
+    BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)
 from hvm.rlp.headers import BlockHeader
 from hvm.rlp.receipts import Receipt
 
@@ -1198,18 +1198,24 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         This returns true if the block is imported successfully, False otherwise
         If the block comes from RPC, we need to treat it differently. If it is invalid for any reason whatsoever, we just delete.
         '''
+        self.logger.debug("handling new block with timestamp {}".format(new_block.header.timestamp))
+
         if get_sync_stage_for_block_timestamp(new_block.header.timestamp) <= CONSENSUS_MATCH_SYNC_STAGE_ID:
             # Normally, blocks that are this old are not allowed to be imported. However, we may need to import blocks this old
             # if we are performing a fresh sync, or if this node gets out of sync with the network for too long. In that case,
             # the syncer will know which blocks are required to reach consensus and mark them with allow_import_for_expired_timestamp = True
 
             if not allow_import_for_expired_timestamp:
-                self.logger.debug("Tried importing a block that has an expired timestamp. Not allowing. Block hash {}. block timestamp {}, current time {}".format(encode_hex(new_block.header.hash), new_block.header.timestamp, int(time.time())))
+                self.logger.warning("Tried importing a block that has an expired timestamp. Not allowing. Block hash {}. block timestamp {}, current time {}".format(encode_hex(new_block.header.hash), new_block.header.timestamp, int(time.time())))
                 return False
-
+        
+        if new_block.header.timestamp > int(time.time() + BLOCK_TIMESTAMP_FUTURE_ALLOWANCE):
+            self.logger.warning("Tried importing a block that has a timestamp in the future. Not allowing. Block hash {}. block timestamp {}, current time {}".format(encode_hex(new_block.header.hash), new_block.header.timestamp, int(time.time())))
+            return False
+        
         chain_address = new_block.header.chain_address
 
-        self.logger.debug("handling new block with timestamp {}".format(new_block.header.timestamp))
+
         chain = self.node.get_new_chain()
         #async_chain = self.chains[0]
 

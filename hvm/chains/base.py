@@ -64,7 +64,7 @@ from hvm.constants import (
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
     GENESIS_PARENT_HASH,
-)
+    BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)
 
 from hvm.db.trie import make_trie_root_and_nodes
 
@@ -989,25 +989,6 @@ class Chain(BaseChain):
 
 
     #
-    # Blockchain Database API
-    #
-    def save_chain_head_hash_to_trie_for_time_period(self,block_header):
-        timestamp = block_header.timestamp
-        currently_saving_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE +TIME_BETWEEN_HEAD_HASH_SAVE
-        if timestamp <= currently_saving_window:
-            #we have to go back and put it into the correct window, and update all windows after that
-            #lets only keep the past NUMBER_OF_HEAD_HASH_TO_SAVE block_head_root_hash
-            window_for_this_block = int(timestamp / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE + TIME_BETWEEN_HEAD_HASH_SAVE
-            #window_for_this_block = math.ceil((timestamp + 1)/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
-#            if propogate_to_present:
-            self.chain_head_db.add_block_hash_to_timestamp(block_header.chain_address, block_header.hash, window_for_this_block)
-#            else:
-#                self.chain_head_db.add_block_hash_to_timestamp_without_propogating_to_present(self.wallet_address, block_header.hash, window_for_this_block)
-
-
-
-
-    #
     # Queueblock API
     #
     def add_transaction_to_queue_block(self, transaction) -> None:
@@ -1286,8 +1267,14 @@ class Chain(BaseChain):
         self.chain_head_db.load_saved_root_hash()
         if current_window is None:
             current_window = self.chain_head_db.current_window
+            historical_root_hashes = self.chain_head_db.get_historical_root_hashes()
+            newest_historical_root_hash_timestamp = historical_root_hashes[-1][0]
+            if newest_historical_root_hash_timestamp > current_window:
+                current_window = newest_historical_root_hash_timestamp
+
         if earliest_root_hash is None:
             earliest_root_hash = self.chain_head_db.earliest_window
+
         #TIME_BETWEEN_HEAD_HASH_SAVE
 
         # the saved
@@ -1389,7 +1376,7 @@ class Chain(BaseChain):
         self.logger.debug("Setting new block as canonical head after reverting blocks. Chain address {}, header hash {}".format(encode_hex(existing_block_header.chain_address), encode_hex(block_parent_header.hash)))
 
         if save_block_head_hash_timestamp:
-            self.save_chain_head_hash_to_trie_for_time_period(block_parent_header)
+            self.chain_head_db.add_block_hash_to_timestamp(block_parent_header.chain_address, block_parent_header.hash, block_parent_header.timestamp)
 
         self.chain_head_db.set_chain_head_hash(block_parent_header.chain_address, block_parent_header.hash)
         self.chaindb._set_as_canonical_chain_head(block_parent_header)
@@ -1852,6 +1839,9 @@ class Chain(BaseChain):
             if tx.data != b'':
                 raise ValidationError("Transaction data must be blank until smart contracts have been enabled in Q3 2019.")
 
+        if block.header.timestamp > int(time.time() + BLOCK_TIMESTAMP_FUTURE_ALLOWANCE):
+            raise ValidationError("The block header timestamp is to far into the future to be allowed. Block header timestamp {}. Max allowed timestamp {}".format(block.header.timestamp,int(time.time() + BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)))
+
         self.validate_time_from_genesis_block(block)
 
         if isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()):
@@ -1902,7 +1892,8 @@ class Chain(BaseChain):
 
                 if save_block_head_hash_timestamp:
                     self.chain_head_db.add_block_hash_to_chronological_window(imported_block.header.hash, imported_block.header.timestamp)
-                    self.save_chain_head_hash_to_trie_for_time_period(imported_block.header)
+                    self.chain_head_db.add_block_hash_to_timestamp(imported_block.header.chain_address, imported_block.hash, imported_block.header.timestamp)
+
 
                 self.chain_head_db.set_chain_head_hash(imported_block.header.chain_address, imported_block.header.hash)
                 self.chain_head_db.persist(True)

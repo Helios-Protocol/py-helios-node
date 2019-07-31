@@ -390,24 +390,15 @@ class ChainHeadDB():
     
     #going to need to optimize this with c code.
     #@profile(sortby='cumulative')
-    def add_block_hash_to_timestamp(self, address, head_hash, timestamp):
+    def add_block_hash_to_timestamp(self, address, head_hash, block_timestamp):
 
         self.logger.debug("add_block_hash_to_timestamp")
 
         validate_canonical_address(address, title="Wallet Address")
         validate_is_bytes(head_hash, title='Head Hash')
-        validate_uint256(timestamp, title='timestamp')
+        validate_uint256(block_timestamp, title='timestamp')
 
-
-        currently_saving_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE +TIME_BETWEEN_HEAD_HASH_SAVE
-        #make sure it isnt in the future
-        if timestamp > currently_saving_window:
-            raise InvalidHeadRootTimestamp()
-        
-        
-        #first make sure the timestamp is correct.
-        if timestamp % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
-            raise InvalidHeadRootTimestamp()
+        timestamp = int(block_timestamp / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE + TIME_BETWEEN_HEAD_HASH_SAVE
         
         starting_timestamp, existing_root_hash = self.get_historical_root_hash(timestamp, return_timestamp = True)
         historical_roots = self.get_historical_root_hashes()
@@ -614,11 +605,6 @@ class ChainHeadDB():
             
     #saved as [[timestamp, hash],[timestamp, hash]...]      
     def save_historical_root_hashes(self, root_hashes):
-        #if root_hashes[-1][0] == 1534567000:
-        #    exit()
-
-        if len(root_hashes) > NUMBER_OF_HEAD_HASH_TO_SAVE:
-            root_hashes = root_hashes[-NUMBER_OF_HEAD_HASH_TO_SAVE:]
 
         historical_head_root_lookup_key = SchemaV1.make_historical_head_root_lookup_key()
         data = rlp.encode(root_hashes, sedes=rlp.sedes.FCountableList(rlp.sedes.FList([f_big_endian_int, hash32])))
@@ -672,6 +658,7 @@ class ChainHeadDB():
         try:
             data = rlp.decode(self.db[historical_head_root_lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([f_big_endian_int, hash32])), use_list=True)
             data.sort()
+
         except KeyError:
             return None
 
@@ -685,6 +672,9 @@ class ChainHeadDB():
         if len(to_return) == 0:
             return None
 
+        # Cut them to the limit of length now after they are sorted.
+        if len(to_return) > NUMBER_OF_HEAD_HASH_TO_SAVE:
+            to_return = to_return[-NUMBER_OF_HEAD_HASH_TO_SAVE:]
 
         return to_return
 
