@@ -1,11 +1,12 @@
-from hvm.db.backends.base import BaseDB
+from hvm.db.journal import JournalDB
 
 
-class ReadOnlyDB(BaseDB):
+class ReadOnlyDB(JournalDB):
     """
     Read only db. Stores changes in a temporary dictionary that is not written to the harddrive
     """
 
+<<<<<<< HEAD
     def __init__(self, wrapped_db: BaseDB) -> None:
         self.wrapped_db = wrapped_db
         self.temp_db = {}
@@ -37,8 +38,7 @@ class ReadOnlyDB(BaseDB):
         self.delete(key)
 
     def atomic_batch(self):
+=======
+    def commit(self, changeset_id) -> None:
+>>>>>>> e6535648b79b577ad49c4f68ca4f637fbdb399bf
         pass
-
-    def destroy_db(self):
-        pass
-

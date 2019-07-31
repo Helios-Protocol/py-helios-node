@@ -23,7 +23,7 @@ from hvm.constants import (
     BLANK_ROOT_HASH,
     ZERO_HASH32,
     TIME_BETWEEN_HEAD_HASH_SAVE,
-    GAS_TX,)
+    GAS_TX, BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)
 
 from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
 from hvm.db.backends.level import LevelDB
@@ -89,8 +89,8 @@ from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock, HeliosTestnetBl
 
 from tests.integration_test_helpers import (
     ensure_blockchain_databases_identical,
-    ensure_chronological_block_hashes_are_identical
-)
+    ensure_chronological_block_hashes_are_identical,
+    ensure_chronological_chain_matches_canonical)
 
 from hvm.exceptions import ParentNotFound
 
@@ -1314,6 +1314,105 @@ def test_import_invalid_block_incorrect_reward_hash():
     with pytest.raises(ValidationError):
         chain.import_block(invalid_block)
 
+
+def test_import_valid_block_timestamp_a_little_bit_into_future():
+    #
+    # Make sure chronological chain matches canonical chain
+    #
+    testdb1 = MemoryDB()
+
+    TestnetChain.from_genesis(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE)
+
+    dummy_chain = TestnetChain(JournalDB(testdb1), TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    dummy_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER.public_key.to_canonical_address(),
+        value=1,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    valid_block = dummy_chain.import_current_queue_block()
+
+    # need to give it the correct parent hash
+    invalid_block = valid_block.copy(
+        header = valid_block.header.copy(
+            timestamp=int(time.time()+BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)
+        ).get_signed(TESTNET_GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+
+    chain = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    chain.import_block(invalid_block)
+
+    chronological_window_timestamp = int(int(invalid_block.header.timestamp/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE)
+
+    chronological_window = chain.chain_head_db.load_chronological_block_window(chronological_window_timestamp)
+
+    print("Block hash {}".format(invalid_block.hash))
+    print("Chronological window")
+    print(chronological_window)
+
+    # But check if that block is in the newest historical root hash
+
+    historical_root_hashes = chain.chain_head_db.get_historical_root_hashes()
+    print('historical root hashes:')
+    print(historical_root_hashes)
+
+    head_hash_from_saved_root_hash = chain.chain_head_db.get_chain_head_hash(invalid_block.header.chain_address)
+    print("Chain head hash from saved root hash:")
+    print(head_hash_from_saved_root_hash)
+
+    chain.chain_head_db.root_hash = historical_root_hashes[-1][1]
+    head_hash_from_newest_historical_root = chain.chain_head_db.get_chain_head_hash(invalid_block.header.chain_address)
+    print("Chain head hash from newest historical root hash:")
+    print(head_hash_from_newest_historical_root)
+
+    ensure_chronological_chain_matches_canonical(chain)
+
+
+
+#test_import_valid_block_timestamp_a_little_bit_into_future()
+
+def test_import_invalid_block_timestamp_far_into_future():
+    #
+    # Make sure chronological chain matches canonical chain
+    #
+    testdb1 = MemoryDB()
+
+    TestnetChain.from_genesis(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE)
+
+    dummy_chain = TestnetChain(JournalDB(testdb1), TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    dummy_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER.public_key.to_canonical_address(),
+        value=1,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    valid_block = dummy_chain.import_current_queue_block()
+
+    # need to give it the correct parent hash
+    invalid_block = valid_block.copy(
+        header = valid_block.header.copy(
+            timestamp=int(time.time()+BLOCK_TIMESTAMP_FUTURE_ALLOWANCE*2)
+        ).get_signed(TESTNET_GENESIS_PRIVATE_KEY, dummy_chain.network_id))
+
+    chain = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    with pytest.raises(ValidationError):
+        chain.import_block(invalid_block)
+
+#test_import_invalid_block_timestamp_far_into_future()
+
 def test_import_invalid_block_incorrect_chain_address():
     testdb1 = MemoryDB()
 
@@ -1697,7 +1796,6 @@ def get_first_unprocessed_blocks():
 # test importing duplicate receive transactions
 # try sending a transaction to self.
 # try spending a receive transaction in same block.
-# try importing a transaction with negative gas price or 0 gas price.
 # try importing a block with a receive transaction, but have the timestamp of that block earlier than the send block
 
 

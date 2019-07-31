@@ -49,8 +49,8 @@ from helios.rpc.modules import (  # type: ignore
 
 from hvm.constants import (
     TIME_BETWEEN_HEAD_HASH_SAVE,
-    NUMBER_OF_HEAD_HASH_TO_SAVE
-)
+    NUMBER_OF_HEAD_HASH_TO_SAVE,
+    BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)
 
 from hvm.utils.headers import (
     compute_gas_limit,
@@ -385,6 +385,9 @@ class Hls(RPCModule):
         # Validate the block here
         if(full_block.header.timestamp < (int(time.time()) - MAX_ALLOWED_AGE_OF_NEW_RPC_BLOCK)):
             raise BaseRPCError("The block timestamp is to old. We can only import new blocks over RPC.")
+
+        if(full_block.header.timestamp > int(time.time() + BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)):
+            raise BaseRPCError("The block timestamp is in the future and cannot be accepted. You should check your computer clock.")
 
         try:
             canonical_head = chain.chaindb.get_canonical_head(full_block.header.chain_address)
