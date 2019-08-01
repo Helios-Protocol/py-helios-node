@@ -47,7 +47,7 @@ deps = {
         "coincurve>=8.0.0,<9.0.0",
         "ipython>=6.2.1,<7.0.0",
         "plyvel==1.0.5",
-        "helios-web3>=5.0.6",
+        "helios-web3>=5.0.8",
         "lahja==0.8.0",
         "uvloop==0.11.2;platform_system=='Linux' or platform_system=='Darwin'",
         "websockets>=3.0.0",

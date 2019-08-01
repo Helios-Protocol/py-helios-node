@@ -181,7 +181,7 @@ class Personal(RPCModule):
     # Transaction and Block Creation Functions
     #
 
-    async def _send_transactions(self, transactions, account):
+    async def _send_transactions(self, transactions, account, include_receive: bool = True):
         async with self._importing_block_lock:
             print("Importing block")
             normalized_wallet_address = to_normalized_address(account.address)
@@ -201,6 +201,9 @@ class Personal(RPCModule):
 
             # make the chain read only for creating the block. We don't want to actually import it here.
             chain.enable_read_only_db()
+
+            if include_receive:
+                chain.populate_queue_block_with_receive_tx()
 
             signed_transactions = []
             for i in range(len(transactions)):
@@ -242,16 +245,25 @@ class Personal(RPCModule):
                 )
                 signed_transactions.append(signed_tx)
 
+
             block = chain.import_current_queue_block()
+
+            if len(signed_transactions) == 0 and len(block.receive_transactions) == 0:
+                raise BaseRPCError("Cannot send block if it has no send or receive transactions.")
 
             self._event_bus.broadcast(
                 NewBlockEvent(block=cast(P2PBlock, block), from_rpc=True)
             )
 
-            if len(signed_transactions) == 1:
-                return encode_hex(signed_transactions[0].hash)
+            send_transaction_hashes = [encode_hex(tx.hash) for tx in signed_transactions]
+            receive_transaction_hashes = [encode_hex(tx.hash) for tx in block.receive_transactions]
+            all_transaction_hashes = send_transaction_hashes
+            all_transaction_hashes.extend(receive_transaction_hashes)
+
+            if not include_receive:
+                return all_transaction_hashes[0]
             else:
-                return [encode_hex(tx.hash) for tx in signed_transactions]
+                return all_transaction_hashes
 
     #
     # Public Personal RPC functions
@@ -319,7 +331,7 @@ class Personal(RPCModule):
         print(tx)
 
         account = await self._get_unlocked_account_or_unlock_now(wallet_address_hex, password)
-        return await self._send_transactions([tx], account)
+        return await self._send_transactions([tx], account, False)
 
 
     async def sendTransactions(self, txs, password: str = None):
@@ -341,6 +353,20 @@ class Personal(RPCModule):
 
         account = await self._get_unlocked_account_or_unlock_now(wallet_address_hex, password)
         return await self._send_transactions(txs, account)
+
+    @format_params(decode_hex, dummy)
+    async def receiveTransactions(self, wallet_address: bytes, password: str = None):
+        # Check our current syncing stage. Must be sync stage 4.
+        current_sync_stage_response = await self._event_bus.request(
+            CurrentSyncStageRequest()
+        )
+        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
+            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
+
+        wallet_address_hex = encode_hex(wallet_address)
+
+        account = await self._get_unlocked_account_or_unlock_now(wallet_address_hex, password)
+        return await self._send_transactions([], account)
 
 
     @format_params(dummy, decode_hex, dummy)

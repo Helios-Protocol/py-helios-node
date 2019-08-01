@@ -182,7 +182,7 @@ The hash of the transaction
 personal_sendTransactions
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Identical to personal_sendTransaction, except it takes multiple transactions and adds them all to the same block. This can be used to send many transactions at the same time, up to the max gas of the block. Since these are all going into the same block, they must all be from the same address. If you want to send multiple transactions from different addresses, just call this function once for each address. The minimum time between blocks is for each individual wallet address, but multiple addresses can import blocks in parallel.
+Identical to personal_sendTransaction, except it takes multiple transactions and adds them all to the same block, and it will automatically receive any pending transactions. This can be used to send many transactions at the same time, up to the max gas of the block. Since these are all going into the same block, they must all be from the same address. If you want to send multiple transactions from different addresses, just call this function once for each address. The minimum time between blocks is for each individual wallet address, but multiple addresses can import blocks in parallel.
 
 **Parameters:**
 
@@ -199,7 +199,7 @@ Identical to personal_sendTransaction, except it takes multiple transactions and
 
 **Response:**
 
-A list of the transaction hashes
+A list of the send and receive transaction hashes
 
 **Example:**
 
@@ -210,6 +210,29 @@ A list of the transaction hashes
     >>
     ['0xd98d1d628ea4c93dee20a8b1e691acbb45b3b9aa6997baa1a0006a5f4c86efbb',
     '0x297e7a7443926d6bbc202d81bff3081a9a53caaf64cc5685760aaca439ce1b50']
+
+
+personal_receiveTransactions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Creates and signs a block with all available receive transactions, then sends it to the network. Will raise an exception if there are no receivable transactions.
+
+**Parameters:**
+
+1. Hex encoded wallet address.
+
+2. The password to unlock the account to send the transaction. If this is left blank (as ""), then the transaction will only send if the account is already unlocked.
+
+
+**RPC Call:**
+
+::
+
+    {"method": "personal_receiveTransactions", "params": [string, string]}
+
+**Response:**
+
+A list of hashes of any receive transactions that were added to the block.
 
 
 personal_sign
