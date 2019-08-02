@@ -17,13 +17,13 @@ class RpcHTTPProxyPlugin(BaseIsolatedPlugin):
         return "RPC HTTP Proxy"
 
     def should_start(self) -> bool:
-        return (not self.context.args.disable_rpc_http_proxy) and self.context.chain_config.is_main_instance
+        return (self.context.args.enable_rpc_http_proxy) and self.context.chain_config.is_main_instance
 
     def configure_parser(self, arg_parser: ArgumentParser, subparser: _SubParsersAction) -> None:
         arg_parser.add_argument(
-            '--disable_rpc_http_proxy',
+            '--enable_rpc_http_proxy',
             action="store_true",
-            help="Should we disable the RPC http proxy?",
+            help="Should we enable the RPC http proxy?",
         )
 
 
