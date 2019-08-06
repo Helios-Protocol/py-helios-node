@@ -14,6 +14,10 @@ from typing import (  # noqa: F401
     Union,
 )
 
+from hvm.utils.address import (
+    generate_contract_address,
+)
+
 from hvm.constants import CREATE_CONTRACT_ADDRESS
 import time
 
@@ -22,7 +26,9 @@ import rlp_cython as rlp
 from eth_bloom import (
     BloomFilter,
 )
-
+from hvm.utils.spoof import (
+    SpoofTransaction,
+)
 from eth_utils import (
     to_tuple,
     encode_hex,
@@ -146,6 +152,10 @@ class BaseVM(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("VM classes must implement this method")
 
     @abstractmethod
+    def compute_single_transaction(self, transaction: Union[BaseTransaction, SpoofTransaction]) -> BaseComputation:
+        raise NotImplementedError("VM classes must implement this method")
+
+    @abstractmethod
     def execute_bytecode(self,
                          origin,
                          gas_price,
@@ -155,7 +165,7 @@ class BaseVM(Configurable, metaclass=ABCMeta):
                          value,
                          data,
                          code,
-                         code_address=None):
+                         code_address=None) -> BaseComputation:
         raise NotImplementedError("VM classes must implement this method")
 
     @abstractmethod
@@ -538,6 +548,13 @@ class VM(BaseVM):
         self.state.apply_reward_bundle(reward_bundle, wallet_address)
 
 
+    def compute_single_transaction(self, transaction: Union[BaseTransaction, SpoofTransaction]) -> BaseComputation:
+        '''
+        Passthrough for state. Used only to get the computation result of a single transaction.
+        :param transaction:
+        :return:
+        '''
+        return self.state.compute_single_transaction(transaction)
 
 
     def execute_bytecode(self,
@@ -550,14 +567,24 @@ class VM(BaseVM):
                          data,
                          code,
                          code_address=None,
-                         ):
-        exit("NOT IMPLEMENTED YET")
+                         ) -> BaseComputation:
         """
         Execute raw bytecode in the context of the current state of
         the virtual machine.
         """
         if origin is None:
             origin = sender
+
+        # message = Message(
+        #     gas=message_gas,
+        #     to=send_transaction.to,
+        #     sender=send_transaction.sender,
+        #     value=send_transaction.value,
+        #     data=data,
+        #     code=code,
+        #     create_address=contract_address,
+        #     refund_amount=refund_amount,
+        # )
 
         # Construct a message
         message = Message(
@@ -570,10 +597,22 @@ class VM(BaseVM):
             code_address=code_address,
         )
 
+        # return self.vm_state.get_transaction_context_class()(
+        #     origin=send_transaction.sender,
+        #     gas_price=send_transaction.gas_price,
+        #     send_tx_hash=send_transaction.hash,
+        #     caller_chain_address=caller_chain_address,
+        #     is_receive=is_receive,
+        #     is_refund=is_refund,
+        #     receive_tx_hash=receive_transaction_hash,
+        # )
+
         # Construction a tx context
         transaction_context = self.state.get_transaction_context_class()(
             gas_price=gas_price,
             origin=origin,
+            caller_chain_address=origin,
+            send_tx_hash=ZERO_HASH32
         )
 
         # Execute it in the VM

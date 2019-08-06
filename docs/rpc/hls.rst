@@ -41,6 +41,45 @@ hls_accounts
 This method has been moved to personal_listAccounts.
 
 
+hls_call
+~~~~~~~~
+
+Executes a new message call immediately without creating a transaction on the block chain.
+
+**Parameters:**
+
+1. Object - The transaction call object
+::
+
+    from: DATA, 20 Bytes - The address the transaction is sent from.
+    to: DATA, 20 Bytes - The address the transaction is directed to.
+    gas: QUANTITY - (optional) Integer of the gas provided for the transaction execution. eth_call consumes zero gas, but this parameter may be needed by some executions.
+    gasPrice: QUANTITY - (optional) Integer of the gasPrice used for each paid gas
+    value: QUANTITY - (optional) Integer of the value sent with this transaction
+    data: DATA - (optional) Hash of the method signature and encoded parameters. For details see Ethereum Contract ABI
+
+2. The block at which the call should be made. This is a block on the chain corresponding to the "from" key in parameter 1. This defaults to "latest"
+
+**RPC Call:**
+
+::
+
+    {"method": "hls_call", "params": [object, string]}
+
+**Response:**
+
+The hex encoded result of the computation
+
+**Example:**
+
+::
+
+    <<
+    {"method": "hls_call", "params": [{see above}]}
+    >>
+    "0x5"
+
+
 hls_blockNumber
 ~~~~~~~~~~~~~~~
 

@@ -27,6 +27,9 @@ from typing import (  # noqa: F401
     List,
     Iterable,
 )
+from hvm.utils.spoof import (
+    SpoofTransaction,
+)
 
 import logging
 
@@ -421,9 +424,13 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     #
     # Execution API
     #
-#    @abstractmethod
-#    def apply_transaction(self, transaction):
-#        raise NotImplementedError("Chain classes must implement this method")
+    @abstractmethod
+    def get_transaction_result(
+            self,
+            transaction: Union[BaseTransaction, SpoofTransaction],
+            at_header: BlockHeader = None,
+            at_timestamp: Timestamp = None, ) -> bytes:
+        raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
     def estimate_gas(self, transaction: BaseTransaction, at_header: BlockHeader=None) -> int:
@@ -1093,6 +1100,7 @@ class Chain(BaseChain):
         """
         return self.get_vm().create_transaction(*args, **kwargs)
 
+
     def create_and_sign_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         if self.private_key is None:
             raise ValueError("Cannot sign transaction because private key not provided for chain instantiation")
@@ -1337,6 +1345,22 @@ class Chain(BaseChain):
     #
     # Execution API
     #
+
+    def get_transaction_result(
+            self,
+            transaction: Union[BaseTransaction, SpoofTransaction],
+            at_header: BlockHeader = None,
+            at_timestamp: Timestamp = None,) -> bytes:
+
+        if at_header is not None and at_timestamp is not None:
+            raise ValidationError("Cannot specify at_header and at_timestamp together.")
+
+        vm = self.get_vm(header = at_header, timestamp = at_timestamp)
+        computation = vm.compute_single_transaction(transaction)
+
+        computation.raise_if_error()
+        return computation.output
+
 
     def estimate_gas(self, transaction: BaseTransaction, at_header: BlockHeader=None) -> int:
         """
@@ -1834,10 +1858,6 @@ class Chain(BaseChain):
         """
 
         self.logger.debug("importing block {} with number {}".format(block.__repr__(), block.number))
-
-        for tx in block.transactions:
-            if tx.data != b'':
-                raise ValidationError("Transaction data must be blank until smart contracts have been enabled in Q3 2019.")
 
         if block.header.timestamp > int(time.time() + BLOCK_TIMESTAMP_FUTURE_ALLOWANCE):
             raise ValidationError("The block header timestamp is to far into the future to be allowed. Block header timestamp {}. Max allowed timestamp {}".format(block.header.timestamp,int(time.time() + BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)))

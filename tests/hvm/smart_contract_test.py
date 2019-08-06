@@ -149,7 +149,9 @@ def format_receipt_for_web3_to_extract_events(receipt, tx_hash, chain):
 
 def test_erc_20_smart_contract_deploy_system():
 
-    # testdb = LevelDB('/home/tommy/.local/share/helios/instance_test/mainnet/chain/full/')
+    #absolute_dir = os.path.dirname(os.path.realpath(__file__))
+    #testdb = LevelDB(absolute_dir + "/predefined_databases/simple_token")
+    
     # testdb = JournalDB(testdb)
     testdb = MemoryDB()
     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
@@ -325,7 +327,114 @@ def test_erc_20_smart_contract_deploy_system():
 # test_erc_20_smart_contract_deploy_system()
 # exit()
 
+def test_erc_20_smart_contract_call():
+    from hvm.utils.spoof import (
+        SpoofTransaction,
+    )
 
+    absolute_dir = os.path.dirname(os.path.realpath(__file__))
+    testdb = LevelDB(absolute_dir + "/predefined_databases/simple_token")
+    
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    SOLIDITY_SRC_FILE = 'contract_data/erc20.sol'
+    EXPECTED_TOTAL_SUPPLY = 10000000000000000000000
+    deployed_contract_address = b'%\xf1\xf7[(2\xd5l\xe4DL\x97\xbf+\xe2M[pN\xdc'
+    max_gas = 20000000
+    transaction_sender = TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address()
+
+
+    compiled_sol = load_compiled_sol_dict('contract_data/erc20_compiled.pkl')
+
+    contract_interface = compiled_sol['{}:SimpleToken'.format(SOLIDITY_SRC_FILE)]
+
+    w3 = Web3()
+    simple_token = w3.eth.contract(
+        address=Web3.toChecksumAddress(deployed_contract_address),
+        abi=contract_interface['abi'],
+    )
+
+    w3_tx2 = simple_token.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
+
+    tx_nonce = chain.get_vm().state.account_db.get_nonce(transaction_sender)
+
+    transaction = chain.create_transaction(
+        gas_price=0x01,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=0,
+        nonce=tx_nonce,
+        data=decode_hex(w3_tx2['data']),
+        v=0,
+        r=0,
+        s=0
+    )
+
+    spoof_transaction = SpoofTransaction(transaction, from_=transaction_sender)
+
+    result = chain.get_transaction_result(spoof_transaction)
+
+    print("result")
+    print(result)
+
+    #vm = chain.get_vm(timestamp=Timestamp(int(time.time())))
+
+    #
+    # Execute call
+    #
+
+    # if send_transaction.to == constants.CREATE_CONTRACT_ADDRESS:
+    #     contract_address = generate_contract_address(
+    #         send_transaction.sender,
+    #         self.vm_state.account_db.get_nonce(send_transaction.sender) - 1,
+    #     )
+    #     data = b''
+    #     code = send_transaction.data
+    # else:
+    #     contract_address = None
+    #     data = send_transaction.data
+    #     code = self.vm_state.account_db.get_code(send_transaction.to)
+
+    # computation = vm.execute_bytecode(origin=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+    #                     gas_price=0x01,
+    #                     gas=max_gas,
+    #                     to=deployed_contract_address,
+    #                     sender=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+    #                     value=0,
+    #                     data=decode_hex(w3_tx2['data']),
+    #                     code=vm.state.account_db.get_code(deployed_contract_address)
+    #                     )
+
+    # print("output")
+    # print(computation.output)
+
+
+
+    # chain.create_and_sign_transaction_for_queue_block(
+    #     gas_price=0x01,
+    #     gas=max_gas,
+    #     to=deployed_contract_address,
+    #     value=0,
+    #     data=decode_hex(w3_tx2['data']),
+    #     v=0,
+    #     r=0,
+    #     s=0
+    # )
+
+    # execute_bytecode(self,
+    #                  origin,
+    #                  gas_price,
+    #                  gas,
+    #                  to,
+    #                  sender,
+    #                  value,
+    #                  data,
+    #                  code,
+    #                  code_address=None,
+    #                  )
+    
+test_erc_20_smart_contract_call()
+exit()
 
 def test_talamus_contract():
     absolute_dir = os.path.dirname(os.path.realpath(__file__))

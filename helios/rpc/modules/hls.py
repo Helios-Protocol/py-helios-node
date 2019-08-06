@@ -25,7 +25,9 @@ from helios.rpc.format import (
     receipt_to_dict,
     receive_transactions_to_dict,
     decode_hex_if_str,
-    receive_transaction_to_dict, connected_nodes_to_dict)
+    receive_transaction_to_dict,
+    connected_nodes_to_dict,
+    normalize_transaction_dict,)
 import rlp_cython as rlp
 from helios.sync.common.constants import FULLY_SYNCED_STAGE_ID
 
@@ -61,10 +63,22 @@ from helios.rlp_templates.hls import P2PBlock
 
 import asyncio
 
-from typing import cast
+from typing import (
+    cast,
+    Dict,
+    Any,
+    Union,
+)
+from helios.utils.validation import validate_transaction_call_dict
+from hvm.utils.spoof import (
+    SpoofTransaction,
+)
+from hvm.constants import ZERO_ADDRESS
 
 from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStageRequest, \
     CurrentSyncingParametersRequest, GetConnectedNodesRequest
+
+from eth_typing import Address
 
 from hvm.rlp.consensus import StakeRewardBundle
 from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock
@@ -84,6 +98,55 @@ def account_db_at_block(chain, chain_address, at_block):
 
 
 
+def dict_to_spoof_transaction(
+        chain,
+        header,
+        transaction_dict,
+        ) -> SpoofTransaction:
+    """
+    Convert dicts used in calls & gas estimates into a spoof transaction
+    """
+
+    txn_dict = normalize_transaction_dict(transaction_dict)
+    sender = txn_dict.get('from', ZERO_ADDRESS)
+
+    if 'nonce' in txn_dict:
+        nonce = txn_dict['nonce']
+    else:
+        vm = chain.get_vm(header)
+        nonce = vm.state.account_db.get_nonce(sender)
+
+    gas_price = txn_dict.get('gasPrice', 0)
+    gas = txn_dict.get('gas', header.gas_limit)
+
+    transaction = chain.create_transaction(
+        nonce=nonce,
+        gas_price=gas_price,
+        gas=gas,
+        to=txn_dict['to'],
+        value=txn_dict['value'],
+        data=txn_dict['data'],
+        v=0,
+        r=0,
+        s=0
+    )
+    return SpoofTransaction(transaction, from_=sender)
+
+def get_header(chain, at_block, chain_address):
+    if at_block == 'latest':
+        try:
+            header = chain.chaindb.get_canonical_head(chain_address)
+        except CanonicalHeadNotFound:
+            header = None
+    else:
+        try:
+            header = chain.chaindb.get_canonical_block_header_by_number(at_block, chain_address)
+        except CanonicalHeadNotFound:
+            try:
+                header = chain.chaindb.get_canonical_head(chain_address)
+            except CanonicalHeadNotFound:
+                header = None
+    return header
 
 class Hls(RPCModule):
     '''
@@ -101,8 +164,23 @@ class Hls(RPCModule):
         """
         return True
 
+    async def chainId(self) -> str:
+        return str(self._chain.network_id)
+
     async def accounts(self):
         raise DeprecationWarning("This method has been moved to personal_listAccounts")
+
+    @format_params(identity, to_int_if_hex)
+    async def call(self, txn_dict: Dict[str, Any], at_block: Union[str, int]) -> str:
+        if 'from' not in txn_dict:
+            raise BaseRPCError("hls_call requires from and to dict keys in the transaction dict.")
+        chain_address = decode_hex(txn_dict['from'])
+        chain = self.get_new_chain(chain_address)
+        header = get_header(chain, at_block, chain_address)
+        validate_transaction_call_dict(txn_dict, chain.get_vm(header))
+        transaction = dict_to_spoof_transaction(chain, header, txn_dict)
+        result = chain.get_transaction_result(transaction, header)
+        return encode_hex(result)
 
     @format_params(decode_hex)
     async def blockNumber(self, chain_address):

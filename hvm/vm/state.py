@@ -29,7 +29,9 @@ from typing import Optional, Union  # noqa: F401
 
 from eth_typing import Address, Hash32
 from hvm.vm.message import Message
-
+from hvm.utils.spoof import (
+    SpoofTransaction,
+)
 if TYPE_CHECKING:
     from hvm.computation import (  # noqa: F401
         BaseComputation,
@@ -73,6 +75,24 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
                                                                                             refund_transaction)
 
         return finalized_computation, processed_transaction
+
+    def perform_transaction_computation(self, send_transaction: Union[BaseTransaction, SpoofTransaction]) -> 'BaseComputation':
+        '''
+        This performs the transaction computation regardless of whether it would normally do it on the send or receive transaction.
+        Does not finalize the transaction because that behavior is dependent on the type of transaction.
+        This is to be used to get the result of the transaction computation and nothing else.
+        :param send_transaction:
+        :return:
+        '''
+        transaction_context = self.get_transaction_context(send_transaction, send_transaction.sender)
+        message = self.build_evm_message(send_transaction, transaction_context)
+
+        return self.vm_state.get_computation(message, transaction_context).apply_computation(
+            self.vm_state,
+            message,
+            transaction_context,
+        )
+
 
     @abstractmethod
     def validate_transaction(self,
@@ -144,6 +164,7 @@ class BaseState(Configurable, metaclass=ABCMeta):
     @property
     def logger(self):
         return logging.getLogger('hvm.vm.state.{0}'.format(self.__class__.__name__))
+
 
     #
     # Block Object Properties (in opcodes)
@@ -234,25 +255,6 @@ class BaseState(Configurable, metaclass=ABCMeta):
         checkpoint_id = snapshot
         self.account_db.commit(checkpoint_id)
 
-    #
-    # Access self.prev_hashes (Read-only) - depreciated
-    #
-    # def get_ancestor_hash(self, block_number):
-    #     """
-    #     Return the hash for the ancestor block with number ``block_number``.
-    #     Return the empty bytestring ``b''`` if the block number is outside of the
-    #     range of available block numbers (typically the last 255 blocks).
-    #     """
-    #     ancestor_depth = self.block_number - block_number - 1
-    #     is_ancestor_depth_out_of_range = (
-    #         ancestor_depth >= MAX_PREV_HEADER_DEPTH or
-    #         ancestor_depth < 0 or
-    #         ancestor_depth >= len(self.execution_context.prev_hashes)
-    #     )
-    #     if is_ancestor_depth_out_of_range:
-    #         return b''
-    #     ancestor_hash = self.execution_context.prev_hashes[ancestor_depth]
-    #     return ancestor_hash
 
     #
     # Computation
@@ -320,6 +322,13 @@ class BaseState(Configurable, metaclass=ABCMeta):
         if executor == None:
             raise ValueError("No transaction executor given")
         return executor(send_transaction, caller_chain_address, receive_transaction, refund_transaction, validate = validate)
+
+    def compute_single_transaction(self, transaction: Union[BaseTransaction, SpoofTransaction]) -> 'BaseComputation':
+        executor = self.get_transaction_executor()
+        if executor == None:
+            raise ValueError("No transaction executor given")
+
+        return executor.perform_transaction_computation(transaction)
 
 
 
