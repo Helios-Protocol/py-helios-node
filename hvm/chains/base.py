@@ -2291,8 +2291,68 @@ class Chain(BaseChain):
                 self.chaindb._recalculate_historical_mimimum_gas_price(current_centisecond)
 
 
+    #
+    # new PID min gas system stuff
+    #
+    def update_PID_min_gas_price(self):
+        #
+        # This system requires transactions per 10 seconds, instead of transactions per 100 seconds
+        #
+        self.logger.debug("Updating min gas price using PID system")
+        # Get the required parameters
+        # def _calculate_next_min_gas_price_pid(self, historical_txpd: List[int], last_min_gas_price: int, wanted_txpd: int) -> int:
+        tpd_tail = self.get_tpd_tail()
+        historical_min_gas_price = self.chaindb.load_historical_minimum_gas_price()
+        if historical_min_gas_price is None:
+            last_min_gas_price = 1
+        else:
+            last_min_gas_price = historical_min_gas_price[-1]
+
+        historical_network_tpc_cap = self.chaindb.load_historical_tx_per_centisecond()
+        if historical_network_tpc_cap is None:
+            self.logger.warning("Cannot update PID min gas price because we have no saved historical tx per centisecond")
+            return
+        else:
+            # we loaded transactions per 100 seconds, but want transactions per 10 seconds. so divide by 10
+            wanted_tpd = historical_network_tpc_cap/10
+
+        new_min_gas_price = self.chaindb._calculate_next_min_gas_price_pid(tpd_tail, last_min_gas_price, wanted_tpd)
+
+        #Need to add timestamps to historical min gas price so that we know what timestamp we are on
 
 
+
+    def get_tpd_tail(self) -> List:
+        #
+        # Returns the transactions per 10 seconds for the past 20 seconds.
+        #
+        current_historical_window = int(time.time() / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+        
+        tpd_tail = [0,0]
+        now = int(time.time())
+        
+        for historical_window_timestamp in range(current_historical_window,
+                                                 current_historical_window-2*TIME_BETWEEN_HEAD_HASH_SAVE,
+                                                 -TIME_BETWEEN_HEAD_HASH_SAVE):
+            chronological_block_window = self.chain_head_db.load_chronological_block_window(historical_window_timestamp)
+            
+            if chronological_block_window is not None:
+                for timestamp_block_hash in chronological_block_window:
+                    #first count up the tx in the block
+                    #if it is 0, then set to 1? in case block is all receive
+                    num_tx_in_block = self.chaindb.get_number_of_total_tx_in_block(timestamp_block_hash[1])
+                    if num_tx_in_block == 0:
+                        num_tx_in_block = 1
+                    
+                    if (timestamp_block_hash[0] < now) and (timestamp_block_hash[0] > now - 10):
+                        tpd_tail[1] += num_tx_in_block
+                    elif (timestamp_block_hash[0] < now - 10) and (timestamp_block_hash[0] > now - 20):
+                        tpd_tail[0] += num_tx_in_block
+                    elif(timestamp_block_hash[0] < now - 20):
+                        return tpd_tail
+
+        return tpd_tail
+                        
     def update_tpc_from_chronological(self, update_min_gas_price: bool = True):
         #start at the newest window, if the same tps stop. but if different tps keep going back
         self.logger.debug("Updating tpc from chronological")

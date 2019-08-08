@@ -1808,6 +1808,8 @@ class ChainDB(BaseChainDB):
         )
 
 
+
+
     def load_historical_minimum_gas_price(self, sort:bool = True) -> Optional[List[List[Union[Timestamp, int]]]]:
         '''
         saved as timestamp, min gas price
@@ -1823,6 +1825,18 @@ class ChainDB(BaseChainDB):
         except KeyError:
             return None
 
+    # def append_historical_min_gas_price_now(self, min_gas_price: int) -> None:
+    #
+    #     current_centisecond_window = int(time.time() / 100) * 100
+    #
+    #     hist_min_gas_price = self.load_historical_minimum_gas_price()
+    #
+    #     if hist_min_gas_price is None:
+    #         new_hist_min_gas_price = [[current_centisecond_window, min_gas_price]]
+    #     else:
+    #         # cycle backwards through the existing and delete any newer or equal timestamps, then append our new one.
+    #         for i in range(len(hist_min_gas_price), -1, -1):
+    #             if hist_min_gas_price[i][0] >= current_centisecond_window
 
     def save_historical_tx_per_centisecond(self, historical_tx_per_centisecond: List[List[int]], de_sparse = True) -> None:
         '''
@@ -1856,7 +1870,7 @@ class ChainDB(BaseChainDB):
 
     def save_historical_network_tpc_capability(self, historical_tpc_capability: List[List[Union[Timestamp, int]]], de_sparse: bool = False) -> None:
         '''
-        This takes list of timestamp, historical_tpc_capability. The timestamps are every minute, historical_tpc_capability must be an intiger
+        This takes list of timestamp, historical_tpc_capability. The timestamps are 100 seconds, historical_tpc_capability must be an intiger
         '''
         if de_sparse:
             historical_tpc_capability = de_sparse_timestamp_item_list(historical_tpc_capability, 100, filler = None)
@@ -1897,6 +1911,9 @@ class ChainDB(BaseChainDB):
         except KeyError:
             return None
 
+    #
+    # New PID min gas price stuff.
+    #
     def _calculate_next_min_gas_price_pid(self, historical_txpd: List[int], last_min_gas_price: int, wanted_txpd: int) -> int:
         #
         # This uses a simple PID to increase the minimum gas price and throttle transactions. It is very aggressive

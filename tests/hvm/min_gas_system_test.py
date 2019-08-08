@@ -247,7 +247,7 @@ def test_aggressive_min_gas_price_pid():
     for i in range(limit - 1):
         historical_txpd.append(e.mouse_y)
         # compute new ouput from the PID according to the systems current value
-        min_gas_price = chain.chaindb._calculate_next_min_gas_price_pid(historical_txpd, historical_min_gas_price[-1], wanted_txpd)
+        min_gas_price = chain.chaindb._calculate_next_min_gas_price_pid(historical_txpd[-2:], historical_min_gas_price[-1], wanted_txpd)
 
         historical_min_gas_price.append(min_gas_price)
 
