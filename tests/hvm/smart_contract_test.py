@@ -93,7 +93,7 @@ except Exception:
 
 import pickle
 
-from web3 import Web3
+from helios_web3 import HeliosWeb3 as Web3
 
 
 from tests.integration_test_helpers import W3_TX_DEFAULTS
@@ -125,6 +125,7 @@ from tests.integration_test_helpers import (
     compile_sol_and_save_to_file,
     load_compiled_sol_dict
 )
+SIMPLE_TOKEN_SOLIDITY_SRC_FILE = 'contract_data/erc20.sol'
 
 # compile_sol_and_save_to_file('contract_data/erc20.sol', 'contract_data/erc20_compiled.pkl')
 # exit()
@@ -146,6 +147,19 @@ def format_receipt_for_web3_to_extract_events(receipt, tx_hash, chain):
 
         receipt_dict['logs'][i]['topics'] = list(map(hex_to_32_bit_int_bytes, receipt_dict['logs'][i]['topics']))
     return receipt_dict
+
+def import_all_pending_smart_contract_blocks(database):
+    chain = TestnetChain(database, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                         TESTNET_GENESIS_PRIVATE_KEY)
+
+    # now we need to add the block to the smart contract
+    list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
+    for airdrop_contract_address in list_of_smart_contracts:
+        chain = TestnetChain(database, airdrop_contract_address, private_keys[0])
+
+        chain.populate_queue_block_with_receive_tx()
+        imported_block = chain.import_current_queue_block()
+    return list_of_smart_contracts
 
 def test_erc_20_smart_contract_deploy_system():
 
@@ -171,18 +185,18 @@ def test_erc_20_smart_contract_deploy_system():
     for private_key, balance_time in key_balance_dict.items():
         assert(chain.get_vm().state.account_db.get_balance(private_key.public_key.to_canonical_address()) == balance_time[0])
 
-    SOLIDITY_SRC_FILE = 'contract_data/erc20.sol'
+
     EXPECTED_TOTAL_SUPPLY = 10000000000000000000000
 
-    #compiled_sol = compile_files([SOLIDITY_SRC_FILE])
+    #compiled_sol = compile_files([SIMPLE_TOKEN_SOLIDITY_SRC_FILE])
 
     compiled_sol = load_compiled_sol_dict('contract_data/erc20_compiled.pkl')
 
-    contract_interface = compiled_sol['{}:SimpleToken'.format(SOLIDITY_SRC_FILE)]
+    contract_interface = compiled_sol['{}:SimpleToken'.format(SIMPLE_TOKEN_SOLIDITY_SRC_FILE)]
 
     w3 = Web3()
 
-    SimpleToken = w3.eth.contract(
+    SimpleToken = w3.hls.contract(
         abi=contract_interface['abi'],
         bytecode=contract_interface['bin']
     )
@@ -221,15 +235,8 @@ def test_erc_20_smart_contract_deploy_system():
 
     print("Used the correct amount of gas.")
 
-    #now we need to add the block to the smart contract
-    list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
+    list_of_smart_contracts = import_all_pending_smart_contract_blocks(testdb)
     deployed_contract_address = list_of_smart_contracts[0]
-    print(list_of_smart_contracts)
-
-    chain = TestnetChain(testdb, deployed_contract_address, private_keys[0])
-
-    chain.populate_queue_block_with_receive_tx()
-    imported_block = chain.import_current_queue_block()
 
     list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
     print(list_of_smart_contracts)
@@ -245,7 +252,7 @@ def test_erc_20_smart_contract_deploy_system():
     #
     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
-    simple_token = w3.eth.contract(
+    simple_token = w3.hls.contract(
         address=Web3.toChecksumAddress(deployed_contract_address),
         abi=contract_interface['abi'],
     )
@@ -324,6 +331,10 @@ def test_erc_20_smart_contract_deploy_system():
     assert ((final_balance - initial_balance) == (max_gas - gas_used))
     print("Refunded gas is the expected amount.")
 
+
+
+
+
 # test_erc_20_smart_contract_deploy_system()
 # exit()
 
@@ -337,7 +348,6 @@ def test_erc_20_smart_contract_call():
     
     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
-    SOLIDITY_SRC_FILE = 'contract_data/erc20.sol'
     EXPECTED_TOTAL_SUPPLY = 10000000000000000000000
     deployed_contract_address = b'%\xf1\xf7[(2\xd5l\xe4DL\x97\xbf+\xe2M[pN\xdc'
     max_gas = 20000000
@@ -346,10 +356,10 @@ def test_erc_20_smart_contract_call():
 
     compiled_sol = load_compiled_sol_dict('contract_data/erc20_compiled.pkl')
 
-    contract_interface = compiled_sol['{}:SimpleToken'.format(SOLIDITY_SRC_FILE)]
+    contract_interface = compiled_sol['{}:SimpleToken'.format(SIMPLE_TOKEN_SOLIDITY_SRC_FILE)]
 
     w3 = Web3()
-    simple_token = w3.eth.contract(
+    simple_token = w3.hls.contract(
         address=Web3.toChecksumAddress(deployed_contract_address),
         abi=contract_interface['abi'],
     )
@@ -374,67 +384,236 @@ def test_erc_20_smart_contract_call():
 
     result = chain.get_transaction_result(spoof_transaction)
 
-    print("result")
-    print(result)
-
-    #vm = chain.get_vm(timestamp=Timestamp(int(time.time())))
+    assert(big_endian_to_int(result) == EXPECTED_TOTAL_SUPPLY)
 
     #
-    # Execute call
+    # Make sure # TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address() has the total supply of tokens
     #
 
-    # if send_transaction.to == constants.CREATE_CONTRACT_ADDRESS:
-    #     contract_address = generate_contract_address(
-    #         send_transaction.sender,
-    #         self.vm_state.account_db.get_nonce(send_transaction.sender) - 1,
-    #     )
-    #     data = b''
-    #     code = send_transaction.data
-    # else:
-    #     contract_address = None
-    #     data = send_transaction.data
-    #     code = self.vm_state.account_db.get_code(send_transaction.to)
+    w3_tx2 = simple_token.functions.balanceOf(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address()).buildTransaction(W3_TX_DEFAULTS)
 
-    # computation = vm.execute_bytecode(origin=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-    #                     gas_price=0x01,
-    #                     gas=max_gas,
-    #                     to=deployed_contract_address,
-    #                     sender=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-    #                     value=0,
-    #                     data=decode_hex(w3_tx2['data']),
-    #                     code=vm.state.account_db.get_code(deployed_contract_address)
-    #                     )
+    tx_nonce = chain.get_vm().state.account_db.get_nonce(transaction_sender)
 
-    # print("output")
-    # print(computation.output)
+    transaction = chain.create_transaction(
+        gas_price=0x01,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=0,
+        nonce=tx_nonce,
+        data=decode_hex(w3_tx2['data']),
+        v=0,
+        r=0,
+        s=0
+    )
+
+    spoof_transaction = SpoofTransaction(transaction, from_=transaction_sender)
+
+    result = chain.get_transaction_result(spoof_transaction)
+
+    assert(big_endian_to_int(result) == EXPECTED_TOTAL_SUPPLY)
+
+    #
+    # Make sure other addresses have no balance
+    #
+
+    w3_tx2 = simple_token.functions.balanceOf(private_keys[5].public_key.to_canonical_address()).buildTransaction(W3_TX_DEFAULTS)
+
+    tx_nonce = chain.get_vm().state.account_db.get_nonce(transaction_sender)
+
+    transaction = chain.create_transaction(
+        gas_price=0x01,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=0,
+        nonce=tx_nonce,
+        data=decode_hex(w3_tx2['data']),
+        v=0,
+        r=0,
+        s=0
+    )
+
+    spoof_transaction = SpoofTransaction(transaction, from_=transaction_sender)
+
+    result = chain.get_transaction_result(spoof_transaction)
+
+    assert (big_endian_to_int(result) == 0)
+
+
+# test_erc_20_smart_contract_call()
+# exit()
+
+
+def test_airdrop_simple_token_contract_call():
+    from hvm.utils.spoof import (
+        SpoofTransaction,
+    )
+
+    simple_token_contract_address = b'%\xf1\xf7[(2\xd5l\xe4DL\x97\xbf+\xe2M[pN\xdc'
+
+    absolute_dir = os.path.dirname(os.path.realpath(__file__))
+    testdb = LevelDB(absolute_dir + "/predefined_databases/simple_token")
+    testdb = ReadOnlyDB(testdb)
+
+    max_gas = 20000000
+
+    #
+    # airdrop contract deploy
+    #
+    compiled_airdrop_sol = load_compiled_sol_dict('contract_data/airdrop_compiled.pkl')
+
+    EXPECTED_TOTAL_SUPPLY = 10000000000000000000000
+
+    airdrop_contract_interface = compiled_airdrop_sol['contract_data/airdrop.sol:Airdrop']
+
+    w3 = Web3()
+
+    airdrop = w3.hls.contract(
+        abi=airdrop_contract_interface['abi'],
+        bytecode=airdrop_contract_interface['bin']
+    )
+
+    # Build transaction to deploy the contract
+    w3_airdrop_tx = airdrop.constructor().buildTransaction(W3_TX_DEFAULTS)
+
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                         TESTNET_GENESIS_PRIVATE_KEY)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=CREATE_CONTRACT_ADDRESS,
+        value=0,
+        data=decode_hex(w3_airdrop_tx['data']),
+        v=0,
+        r=0,
+        s=0
+    )
+
+    print("deploying airdrop smart contract")
+    chain.import_current_queue_block()
+
+    list_of_smart_contracts = import_all_pending_smart_contract_blocks(testdb)
+    airdrop_contract_address = list_of_smart_contracts[0]
+
+
+    #
+    # Now send tokens to the airdrop contract address
+    #
+    # TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address() has the total supply of tokens
+
+    balance_for_airdrop_contract = 100000000000000
+
+    simple_token_compiled_sol = load_compiled_sol_dict('contract_data/erc20_compiled.pkl')
+
+    simple_token_contract_interface = simple_token_compiled_sol['{}:SimpleToken'.format(SIMPLE_TOKEN_SOLIDITY_SRC_FILE)]
+
+    simple_token = w3.hls.contract(
+        address=Web3.toChecksumAddress(simple_token_contract_address),
+        abi=simple_token_contract_interface['abi'],
+    )
+
+    # Build transaction to deploy the contract
+    w3_send_tx = simple_token.functions.transfer(
+        airdrop_contract_address,
+        balance_for_airdrop_contract
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                         TESTNET_GENESIS_PRIVATE_KEY)
+
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=simple_token_contract_address,
+        value=0,
+        data=decode_hex(w3_send_tx['data']),
+        v=0,
+        r=0,
+        s=0
+    )
+
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+
+    print("sending tokens to smart contract address")
+    chain.import_current_queue_block()
+
+    import_all_pending_smart_contract_blocks(testdb)
+
+
+    #
+    # Make sure the airdrop contract has the correct balance
+    #
+
+    print("now checking balance")
+
+    w3_balance_tx = simple_token.functions.balanceOf(airdrop_contract_address).buildTransaction(W3_TX_DEFAULTS)
+
+    tx_nonce = chain.get_vm().state.account_db.get_nonce(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+    transaction = chain.create_transaction(
+        gas_price=0x01,
+        gas=max_gas,
+        to=simple_token_contract_address,
+        value=0,
+        nonce=tx_nonce,
+        data=decode_hex(w3_balance_tx['data']),
+        v=0,
+        r=0,
+        s=0
+    )
+
+    spoof_transaction = SpoofTransaction(transaction, from_=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+    result = chain.get_transaction_result(spoof_transaction)
+
+    assert(big_endian_to_int(result) == balance_for_airdrop_contract)
+
+    #
+    # Tell the airdrop smart contract to call the other contract.
+    #
+
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+
+    w3_tx_params = W3_TX_DEFAULTS
+    w3_tx_params['to'] = airdrop_contract_address
+
+    # Build transaction to deploy the contract
+    w3_airdrop_tx = airdrop.functions.drop(
+        simple_token_contract_address,
+        [private_keys[1].public_key.to_canonical_address()],
+        [1000]
+    ).buildTransaction(w3_tx_params)
+
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                         TESTNET_GENESIS_PRIVATE_KEY)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=airdrop_contract_address,
+        value=0,
+        data=decode_hex(w3_airdrop_tx['data']),
+        v=0,
+        r=0,
+        s=0
+    )
+
+    print("Sending out airdrop")
+    chain.import_current_queue_block()
+
+    import_all_pending_smart_contract_blocks(testdb)
 
 
 
-    # chain.create_and_sign_transaction_for_queue_block(
-    #     gas_price=0x01,
-    #     gas=max_gas,
-    #     to=deployed_contract_address,
-    #     value=0,
-    #     data=decode_hex(w3_tx2['data']),
-    #     v=0,
-    #     r=0,
-    #     s=0
-    # )
 
-    # execute_bytecode(self,
-    #                  origin,
-    #                  gas_price,
-    #                  gas,
-    #                  to,
-    #                  sender,
-    #                  value,
-    #                  data,
-    #                  code,
-    #                  code_address=None,
-    #                  )
-    
-test_erc_20_smart_contract_call()
-exit()
+
+
+# test_airdrop_simple_token_contract_call()
+# exit()
 
 def test_talamus_contract():
     absolute_dir = os.path.dirname(os.path.realpath(__file__))
@@ -455,7 +634,7 @@ def test_talamus_contract():
 
     w3 = Web3()
 
-    talamus_contract = w3.eth.contract(
+    talamus_contract = w3.hls.contract(
         abi=contract_interface['abi'],
         bytecode=contract_interface['bin']
     )
@@ -587,7 +766,7 @@ def _test_airdrop_calling_erc_20():
 
     w3 = Web3()
 
-    SimpleToken = w3.eth.contract(
+    SimpleToken = w3.hls.contract(
         abi=erc20_contract_interface['abi'],
         bytecode=erc20_contract_interface['bin']
     )
@@ -631,7 +810,7 @@ def _test_airdrop_calling_erc_20():
 
     airdrop_contract_interface = compiled_airdrop_sol['contract_data/airdrop.sol:Airdrop']
 
-    Airdrop = w3.eth.contract(
+    Airdrop = w3.hls.contract(
         abi=airdrop_contract_interface['abi'],
         bytecode=airdrop_contract_interface['bin']
     )
@@ -673,7 +852,7 @@ def _test_airdrop_calling_erc_20():
     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     print(erc20_contract_interface['abi'])
-    simple_token = w3.eth.contract(
+    simple_token = w3.hls.contract(
         address=Web3.toChecksumAddress(erc20_contract_address),
         abi=erc20_contract_interface['abi'],
     )
