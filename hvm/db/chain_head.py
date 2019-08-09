@@ -823,7 +823,7 @@ class ChainHeadDB():
             encoded_data,
         )
     
-    def load_chronological_block_window(self, timestamp: Timestamp) -> Optional[List[Union[int, Hash32]]]:
+    def load_chronological_block_window(self, timestamp: Timestamp) -> Optional[List[Tuple[int, Hash32]]]:
         validate_uint256(timestamp, title='timestamp')
         if timestamp % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
             raise InvalidHeadRootTimestamp("Can only save or load chronological block for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))

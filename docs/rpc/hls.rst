@@ -501,17 +501,18 @@ Returns a list of receivable transactions
 hls_filterAddressesWithReceivableTransactions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Takes a list of chain addresses (wallet addresses or smart contract addresses), and filters them and returns only the ones that have pending receive transactions
+Takes a list of chain addresses (wallet addresses or smart contract addresses), and filters them and returns only the ones that have pending receive transactions. This function can take a significant amount of time if there are a huge number of addresses to check.
 
 **Parameters:**
 
 1. List of hex encoded chain addresses.
+2. A hex encoded timestamp. Only look for receivable transactions past this timestamp. Set to 0 to return all receivable transactions. This function will return much more quickly if it only has to check a small time window. For example, if this timestamp is set to 10 minues ago, it will return much more quickly then if it was set to 0.
 
 **RPC Call:**
 
 ::
 
-    {"method": "hls_filterAddressesWithReceivableTransactions", "params": [[list of strings]]}
+    {"method": "hls_filterAddressesWithReceivableTransactions", "params": [[list of strings], string]}
 
 **Response:**
 
@@ -522,7 +523,7 @@ Returns a list of addresses with receivable transactions
 ::
 
     <<
-    {"method": "hls_filterAddressesWithReceivableTransactions", "params": [['0x6c11508dA9957c747242EcAd6cf5f93162203D6A', '0x7cB6Ff697d0f7aC22A3CB8056314F5F1a72CC15e', '0x0D1630cb77c00D95F7FA32bCcfe80043639681Be', '0x3C91902221adAa1f94F5451272aA72E869F4565a', '0xD91Edc2384491C5d16c939A011D28cEC11d77851', '0x9c8b20E830c0Db83862892Fc141808eA6a51FEa2']]}
+    {"method": "hls_filterAddressesWithReceivableTransactions", "params": [['0x6c11508dA9957c747242EcAd6cf5f93162203D6A', '0x7cB6Ff697d0f7aC22A3CB8056314F5F1a72CC15e', '0x0D1630cb77c00D95F7FA32bCcfe80043639681Be', '0x3C91902221adAa1f94F5451272aA72E869F4565a', '0xD91Edc2384491C5d16c939A011D28cEC11d77851', '0x9c8b20E830c0Db83862892Fc141808eA6a51FEa2'], '0x0']}
     >>
     ['0x0d1630cb77c00d95f7fa32bccfe80043639681be', '0x9c8b20e830c0db83862892fc141808ea6a51fea2']
 

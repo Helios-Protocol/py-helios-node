@@ -28,6 +28,7 @@ from helios.rpc.modules import (
     RPCModule,
     Web3,
     Personal,
+    Dev,
 )
 from pathlib import Path
 
@@ -85,6 +86,7 @@ class RPCServer:
         EVM,
         Net,
         Web3,
+        Dev,
     )
 
     private_module_classes = (

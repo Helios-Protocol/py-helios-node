@@ -419,17 +419,10 @@ class Personal(RPCModule):
         checksum_address = w3.hls.account.recover_message(signable_message, signature = signature)
         return checksum_address
 
-
-    async def getAccountsWithReceivableTransactions(self):
-        start_time = time.time()
+    @format_params(to_int_if_hex)
+    async def getAccountsWithReceivableTransactions(self, after_timestamp):
         hex_encoded_accounts = await self.listAccounts()
-        end_time_1 = time.time()
-        addresses = await self._rpc_context.modules['hls'].filterAddressesWithReceivableTransactions(hex_encoded_accounts)
-        end_time_2 = time.time()
-        duration_1 = end_time_1 - start_time
-        duration_2 = end_time_2 - end_time_1
-        print("ZZZZZZZZZZZZZZZZZZ")
-        print("took {} and {} seconds for 60 addresses".format(duration_1, duration_2))
+        addresses = await self._rpc_context.modules['hls'].filterAddressesWithReceivableTransactions(hex_encoded_accounts, after_timestamp)
         return addresses
 
 

@@ -23,7 +23,8 @@ from hvm.constants import (
     BLANK_ROOT_HASH,
     ZERO_HASH32,
     TIME_BETWEEN_HEAD_HASH_SAVE,
-    GAS_TX, BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)
+    GAS_TX, BLOCK_TIMESTAMP_FUTURE_ALLOWANCE,
+    NUMBER_OF_HEAD_HASH_TO_SAVE)
 
 from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
 from hvm.db.backends.level import LevelDB
@@ -1762,6 +1763,120 @@ def get_first_unprocessed_blocks():
 # get_first_unprocessed_blocks()
 # exit()
 
+
+def test_get_receivable_transactions_from_chronological_blocks():
+    testdb1 = MemoryDB()
+
+    chain = TestnetChain.from_genesis(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+
+    receivable_1 = chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER.public_key.to_canonical_address(),
+        value=1,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    receivable_2 = chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER2.public_key.to_canonical_address(),
+        value=1,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    receivable_3 = chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER2.public_key.to_canonical_address(),
+        value=2,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER3.public_key.to_canonical_address(),
+        value=100000000000000000,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    chain.import_current_queue_block()
+
+    chain = TestnetChain(testdb1, RECEIVER3.public_key.to_canonical_address(), RECEIVER3)
+    chain.populate_queue_block_with_receive_tx()
+    chain.import_current_queue_block()
+
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    print("waiting {} seconds before we can import the next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+
+    receivable_4 = chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        value=100,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    chain.import_current_queue_block()
+
+    start_time = int(time.time() - TIME_BETWEEN_HEAD_HASH_SAVE*100)
+    receivable_tx_hashes, addresses_with_receivable = chain.get_receivable_transaction_hashes_from_chronological(Timestamp(start_time))
+    # print(receivable_tx_hashes)
+
+    assert (receivable_1.hash in receivable_tx_hashes)
+    assert (receivable_2.hash in receivable_tx_hashes)
+    assert (receivable_3.hash in receivable_tx_hashes)
+    assert (receivable_4.hash in receivable_tx_hashes)
+    assert (len(receivable_tx_hashes) == 4)
+
+    assert (TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address() in addresses_with_receivable)
+    assert (RECEIVER.public_key.to_canonical_address() in addresses_with_receivable)
+    assert (RECEIVER2.public_key.to_canonical_address() in addresses_with_receivable)
+    assert (len(addresses_with_receivable) == 3)
+    
+    
+    receivable_tx_hashes, addresses_with_receivable = chain.get_receivable_transaction_hashes_from_chronological(Timestamp(start_time), only_these_addresses=[RECEIVER2.public_key.to_canonical_address()])
+
+    assert (receivable_2.hash in receivable_tx_hashes)
+    assert (receivable_3.hash in receivable_tx_hashes)
+    assert (len(receivable_tx_hashes) == 2)
+
+    assert (RECEIVER2.public_key.to_canonical_address() in addresses_with_receivable)
+    assert (len(addresses_with_receivable) == 1)
+
+    with pytest.raises(ValidationError):
+        chain.get_receivable_transaction_hashes_from_chronological(Timestamp(int(time.time()-TIME_BETWEEN_HEAD_HASH_SAVE*NUMBER_OF_HEAD_HASH_TO_SAVE)))
+        
+    receivable_tx_hashes, addresses_with_receivable = chain.get_receivable_transaction_hashes_from_chronological(Timestamp(int(time.time()) + 1))
+
+    assert (len(receivable_tx_hashes) == 0)
+    assert (len(addresses_with_receivable) == 0)
+
+    
+
+test_get_receivable_transactions_from_chronological_blocks()
+exit()
+
+        
+        
 #
 # def test_chronological_block_initialization_2():
 #     '''
