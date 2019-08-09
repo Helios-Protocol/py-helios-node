@@ -61,11 +61,13 @@ def generate_response(request: Dict[str, Any], result: Any, error: Union[Excepti
     return json.dumps(response)
 
 class RPCContext:
+    modules: Dict[str, RPCModule] = {}
     def __init__(self,
                  enable_private_modules: bool = False,
                  keystore_dir: Path = None):
         self.enable_private_modules = enable_private_modules
         self.keystore_dir = keystore_dir
+
 
 class RPCServer:
     '''
@@ -99,13 +101,10 @@ class RPCServer:
             for M in self.private_module_classes:
                 self.modules[M.__name__.lower()] = M(chain, event_bus, rpc_context, chain_class)
 
-        if 'personal' in self.modules:
-            personal_module = self.modules['personal']
-        else:
-            personal_module = None
-
         for M in self.module_classes:
-            self.modules[M.__name__.lower()] = M(chain, event_bus, rpc_context, chain_class, personal_module)
+            self.modules[M.__name__.lower()] = M(chain, event_bus, rpc_context, chain_class)
+
+        self.rpc_context.modules = self.modules
 
         if (len(self.modules) != len(self.module_classes)) and (len(self.modules) != (len(self.module_classes) + len(self.private_module_classes))):
             raise ValueError("apparent name conflict in RPC module_classes", self.module_classes)

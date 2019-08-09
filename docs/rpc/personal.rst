@@ -311,3 +311,32 @@ Hex encoded checksum wallet address of the signer
     {"method": "personal_ecRecover", "params": [personal_ecRecover, "0xb2278880267630871b87626005500ca5728b96b5e798a2b9ffa0a87ab44e53ef7d9ae6c2a7bd54da55ddbc45faca477c047a72650370b6ad8cdacd85eabbd9931c"]}
     >>
     "0xd9107f501d15E07E75D281dCe80C96F09151B657"
+
+
+personal_getAccountsWithReceivableTransactions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Fetches wallet addresses of all saved accounts that have pending receive transactions. Same as hls_filterAddressesWithReceivableTransactions except it only looks at saved accounts.
+
+**Parameters:**
+
+None
+
+**RPC Call:**
+
+::
+
+    {"method": "personal_getAccountsWithReceivableTransactions", "params": []}
+
+**Response:**
+
+Returns a list of addresses with receivable transactions.
+
+**Example:**
+
+::
+
+    <<
+    {"method": "personal_getAccountsWithReceivableTransactions", "params":[]}
+    >>
+    ['0x0d1630cb77c00d95f7fa32bccfe80043639681be', '0x9c8b20e830c0db83862892fc141808ea6a51fea2']

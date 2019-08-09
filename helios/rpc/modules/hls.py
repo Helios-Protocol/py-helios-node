@@ -260,6 +260,36 @@ class Hls(RPCModule):
 
         return receivable_transactions_dict
 
+    @format_params(identity, to_int_if_hex)
+    async def filterAddressesWithReceivableTransactions(self, chain_addresses, after_timestamp):
+        #
+        # Checks all of the given chain_addresses for receivable transactions, and returns a list of chain addresses that have any.
+        #
+        if len(chain_addresses) < 1:
+            raise BaseRPCError("Must provide at least one chain address when calling getAddressesWithReceivableTransactions")
+
+        from hvm.constants import TIME_BETWEEN_HEAD_HASH_SAVE, NUMBER_OF_HEAD_HASH_TO_SAVE
+
+        earliest_chronological_timestamp = int(int(time.time())-TIME_BETWEEN_HEAD_HASH_SAVE*NUMBER_OF_HEAD_HASH_TO_SAVE*0.95)
+
+        if isinstance(after_timestamp, int) and after_timestamp > earliest_chronological_timestamp:
+            # cycle through all chronological windows
+            #use chain.get_receivable_transactions_from_chronological
+            #TODO: FINISH
+        else:
+
+            chain_addresses = [decode_hex(x) for x in chain_addresses]
+
+            # create new chain for all requests
+            chain = self.get_new_chain()
+
+            addresses_with_receivable_transactions = chain.get_vm().state.filter_accounts_with_receivable_transactions(chain_addresses)
+
+            addresses_with_receivable_transactions = [encode_hex(x) for x in addresses_with_receivable_transactions]
+
+            return addresses_with_receivable_transactions
+
+
     @format_params(decode_hex)
     async def getReceiveTransactionOfSendTransaction(self, tx_hash):
         '''

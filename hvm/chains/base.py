@@ -26,6 +26,7 @@ from typing import (  # noqa: F401
     Union,
     List,
     Iterable,
+    Set,
 )
 
 import logging
@@ -381,6 +382,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
 
     @abstractmethod
     def get_receive_tx_from_send_tx(self, tx_hash: Hash32) -> Optional['BaseReceiveTransaction']:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_block_send_transactions_by_block_hash(self, block_hash: Hash32) -> List[BaseTransaction]:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -879,6 +884,9 @@ class Chain(BaseChain):
 
         return self.get_block_by_header(block_header)
 
+
+
+
     def get_block_by_header(self, block_header: BlockHeader) -> BaseBlock:
         """
         Returns the requested block as specified by the block header.
@@ -1042,20 +1050,12 @@ class Chain(BaseChain):
 
         block_header = self.get_block_header_by_hash(block_hash)
 
-        VM = self.get_vm_class_for_block_timestamp(block_header.timestamp)
+        vm = self.get_vm_class_for_block_timestamp(block_header.timestamp)
 
-        if is_receive == False:
-            transaction = self.chaindb.get_transaction_by_index_and_block_hash(
-                block_hash,
-                index,
-                VM.get_transaction_class(),
-            )
-        else:
-            transaction = self.chaindb.get_receive_transaction_by_index_and_block_hash(
-                block_hash,
-                index,
-                VM.get_receive_transaction_class(),
-            )
+        transaction = self.chaindb.get_transaction_by_hash(transaction_hash,
+                                                            vm.get_transaction_class(),
+                                                            vm.get_receive_transaction_class())
+
 
         if transaction.hash == transaction_hash:
             return transaction
@@ -1198,6 +1198,13 @@ class Chain(BaseChain):
             transaction_index,
             vm.get_transaction_class(),
         )
+
+    def get_block_send_transactions_by_block_hash(self, block_hash: Hash32) -> List[BaseTransaction]:
+        header = self.chaindb.get_block_header_by_hash(block_hash)
+
+        block_class = self.get_vm_class_for_block_timestamp(header.timestamp).get_block_class()
+
+        return self.chaindb.get_block_transactions(header, block_class.transaction_class)
     #
     # Chronological Chain api
     #
@@ -1256,7 +1263,42 @@ class Chain(BaseChain):
         chronological_block_hash_timestamps.sort()
         return chronological_block_hash_timestamps
 
+    # TODO: TEST
+    def get_receivable_transaction_hashes_from_chronological(self, start_timestamp: Timestamp) -> Tuple[List[Hash32], Set[Address]]:
+        # return list of transactions, and set of accounts with receivable transactions
+        self.chain_head_db.load_saved_root_hash()
+        earliest_root_hash = self.chain_head_db.earliest_window + TIME_BETWEEN_HEAD_HASH_SAVE
+        start_timestamp = int(start_timestamp/TIME_BETWEEN_HEAD_HASH_SAVE)*TIME_BETWEEN_HEAD_HASH_SAVE
+        
+        if start_timestamp < earliest_root_hash:
+            raise ValidationError("get_receivable_transactions_from_chronological start_timestamp is older than the oldest chronological window")
 
+        current_window = self.chain_head_db.current_window
+
+        receivable_transactions = []
+        wallet_addresses = set()
+
+        vm_now = self.get_vm()
+
+        for chronological_block_window_timestamp in range(start_timestamp, current_window+TIME_BETWEEN_HEAD_HASH_SAVE, TIME_BETWEEN_HEAD_HASH_SAVE):
+            chronological_block_hashes = self.chain_head_db.load_chronological_block_window(Timestamp(chronological_block_window_timestamp))
+
+            for block_hash in chronological_block_hashes:
+                block_send_transactions = self.get_block_send_transactions_by_block_hash(block_hash)
+
+                for send_transaction in block_send_transactions:
+                    if send_transaction.to not in wallet_addresses:
+                        receivable_transaction_keys_for_this_account = vm_now.state.account_db.get_receivable_transactions(send_transaction.to)
+                        if len(receivable_transaction_keys_for_this_account) > 0:
+                            receivable_transactions.extend([key.transaction_hash for key in receivable_transaction_keys_for_this_account])
+                            wallet_addresses.append(send_transaction.to)
+
+        return receivable_transactions, wallet_addresses
+
+        
+        
+        
+    
     def initialize_historical_root_hashes_and_chronological_blocks(self, current_window = None, earliest_root_hash = None) -> None:
         '''
         This function rebuilds all historical root hashes, and chronological blocks, from the blockchain database. It starts with the saved root hash and works backwards.

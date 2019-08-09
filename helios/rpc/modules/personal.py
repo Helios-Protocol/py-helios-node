@@ -79,23 +79,32 @@ class Personal(RPCModule):
 
     _importing_block_lock = asyncio.Lock()
 
-    # def __init__(self):
-    #
-    #     self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(absolute_keystore_path + KEYSTORE_FILENAME_TO_USE, self.keystore_password))
+    _account_address_cache = set()
+    _account_address_cache_ready = asyncio.Event()
+
+    def __init__(self, *args, **kwargs) -> None:
+        # Create the account address cache
+        asyncio.ensure_future(self._init_account_address_cache())
+        super().__init__(*args, **kwargs)
 
     def _save_account(self, account, password):
+        if not self._account_address_cache_ready.is_set():
+            raise BaseRPCError("Account cache is still building. Please wait and try again in a moment.")
+
         w3 = Web3()
         new_account_json_encrypted = w3.hls.account.encrypt(account.privateKey, password)
         keyfile_name = "HLS_account_{}".format(account.address)
-        keyfile_path = self.rpc_context.keystore_dir / keyfile_name
+        keyfile_path = self._rpc_context.keystore_dir / keyfile_name
 
         f = open(str(keyfile_path), "w")
         f.write(json.dumps(new_account_json_encrypted))
         f.close()
 
+        self._account_address_cache.add(account.address)
+
     def _get_keystore_for_address(self, wallet_address):
         normalized_wallet_address = to_normalized_address(wallet_address)
-        file_glob = self.rpc_context.keystore_dir.glob('**/*')
+        file_glob = self._rpc_context.keystore_dir.glob('**/*')
         files = [x for x in file_glob if x.is_file()]
         for json_keystore in files:
             try:
@@ -176,6 +185,38 @@ class Personal(RPCModule):
             account = await self._unlock_account(wallet_address, password)
         return account
 
+
+
+
+    async def _get_all_account_addresses_set(self):
+        file_glob = self._rpc_context.keystore_dir.glob('**/*')
+        files = [x for x in file_glob if x.is_file()]
+        account_wallet_addresses = set()
+        for json_keystore_filename in files:
+            # pieces = str(json_keystore_filename).split('HLS_account_')
+            # if len(pieces) == 2:
+            #     if len(pieces[1]) == 42:
+            #         account_wallet_addresses.add(pieces[1])
+            #         continue
+            try:
+                with open(str(json_keystore_filename)) as json_file:
+                    keystore = json.load(json_file)
+                    if 'address' in keystore:
+                        account_wallet_addresses.add(keystore['address'])
+            except Exception as e:
+                # Not a json file
+                pass
+
+        return account_wallet_addresses
+
+    async def _init_account_address_cache(self):
+        self._account_address_cache = await self._get_all_account_addresses_set()
+        self._account_address_cache_ready.set()
+
+    async def _get_all_account_addresses_set_from_cache(self):
+        if not self._account_address_cache_ready.is_set():
+            raise BaseRPCError("Account cache is still building. Please wait and try again in a moment.")
+        return self._account_address_cache
 
     #
     # Transaction and Block Creation Functions
@@ -278,18 +319,7 @@ class Personal(RPCModule):
         return to_checksum_address(new_account.address)
 
     async def listAccounts(self):
-        file_glob = self.rpc_context.keystore_dir.glob('**/*')
-        files = [x for x in file_glob if x.is_file()]
-        account_wallet_addresses = []
-        for json_keystore in files:
-            try:
-                with open(str(json_keystore)) as json_file:
-                    keystore = json.load(json_file)
-                    if 'address' in keystore:
-                        account_wallet_addresses.append(to_checksum_address(keystore['address']))
-            except Exception as e:
-                # Not a json file
-                pass
+        account_wallet_addresses = list(await self._get_all_account_addresses_set_from_cache())
 
         return account_wallet_addresses
 
@@ -388,6 +418,20 @@ class Personal(RPCModule):
         signable_message = encode_defunct(text=message)
         checksum_address = w3.hls.account.recover_message(signable_message, signature = signature)
         return checksum_address
+
+
+    async def getAccountsWithReceivableTransactions(self):
+        start_time = time.time()
+        hex_encoded_accounts = await self.listAccounts()
+        end_time_1 = time.time()
+        addresses = await self._rpc_context.modules['hls'].filterAddressesWithReceivableTransactions(hex_encoded_accounts)
+        end_time_2 = time.time()
+        duration_1 = end_time_1 - start_time
+        duration_2 = end_time_2 - end_time_1
+        print("ZZZZZZZZZZZZZZZZZZ")
+        print("took {} and {} seconds for 60 addresses".format(duration_1, duration_2))
+        return addresses
+
 
 
 

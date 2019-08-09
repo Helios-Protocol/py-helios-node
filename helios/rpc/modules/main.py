@@ -17,16 +17,14 @@ if TYPE_CHECKING:
 class RPCModule:
     _chain: AsyncChain = None
     _chain_class: Type[AsyncChain] = None
-    personal_module: "Personal" = None
-    rpc_context: "RPCContext" = None
+    _rpc_context: "RPCContext" = None
 
 
-    def __init__(self, chain: AsyncChain, event_bus: Endpoint, rpc_context: "RPCContext", chain_class: Type[AsyncChain] = None, personal_module: "Personal" = None) -> None:
+    def __init__(self, chain: AsyncChain, event_bus: Endpoint, rpc_context: "RPCContext", chain_class: Type[AsyncChain] = None) -> None:
         self._chain = chain
         self._chain_class: Type[AsyncChain] = chain_class
         self._event_bus = event_bus
-        self.personal_module = personal_module
-        self.rpc_context = rpc_context
+        self._rpc_context = rpc_context
 
     def set_chain(self, chain: AsyncChain) -> None:
         self._chain = chain
