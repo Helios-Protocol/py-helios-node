@@ -41,6 +41,7 @@ deps = {
         "upnpclient>=0.0.8,<1",
     ],
     'helios': [
+        "aiohttp>=2.3.1,<4.0.0",
         "async-generator==1.10",
         "bloom-filter==1.3",
         "cachetools>=2.1.0,<3.0.0",
