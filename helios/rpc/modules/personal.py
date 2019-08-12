@@ -46,7 +46,7 @@ from eth_typing import Address
 from hvm.constants import GAS_TX
 from hvm.db.read_only import ReadOnlyDB
 import time
-
+from hvm.utils.blocks import does_block_meet_min_gas_price, get_block_average_transaction_gas_price
 
 def encode_defunct(
         primitive: bytes = None,
@@ -247,18 +247,20 @@ class Personal(RPCModule):
                 chain.populate_queue_block_with_receive_tx()
 
             signed_transactions = []
+            min_gas_price = to_wei(chain.chaindb.get_required_block_min_gas_price(), 'gwei')
+            safe_min_gas_price = to_wei(chain.chaindb.get_required_block_min_gas_price()+5, 'gwei')
             for i in range(len(transactions)):
                 tx = transactions[i]
                 if to_normalized_address(tx['from']) != normalized_wallet_address:
                     raise BaseRPCError("When sending multiple transactions at once, they must all be from the same address")
 
                 if 'gasPrice' in tx:
-                    gas_price = tx['gasPrice']
+                    gas_price = to_int_if_hex(tx['gasPrice'])
                 else:
-                    gas_price = to_wei(chain.chaindb.get_required_block_min_gas_price()+1, 'gwei')
+                    gas_price = safe_min_gas_price
 
                 if 'gas' in tx:
-                    gas = tx['gas']
+                    gas = to_int_if_hex(tx['gas'])
                 else:
                     gas = GAS_TX
 
@@ -268,14 +270,14 @@ class Personal(RPCModule):
                     data = b''
 
                 if 'nonce' in tx:
-                    nonce = tx['nonce']
+                    nonce = to_int_if_hex(tx['nonce'])
                 else:
                     nonce = None
 
                 transactions[i]['nonce'] = nonce
                 signed_tx = chain.create_and_sign_transaction_for_queue_block(
                     gas_price=gas_price,
-                    gas=GAS_TX,
+                    gas=gas,
                     to=decode_hex(tx['to']),
                     value=to_int_if_hex(tx['value']),
                     data=data,
@@ -288,6 +290,11 @@ class Personal(RPCModule):
 
 
             block = chain.import_current_queue_block()
+
+            if not does_block_meet_min_gas_price(block, chain):
+                raise Exception("The average gas price of all transactions in your block does not meet the required minimum gas price. Your average block gas price: {}. Min gas price: {}".format(
+                    get_block_average_transaction_gas_price(block),
+                    min_gas_price))
 
             if len(signed_transactions) == 0 and len(block.receive_transactions) == 0:
                 raise BaseRPCError("Cannot send block if it has no send or receive transactions.")
