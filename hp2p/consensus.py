@@ -65,7 +65,7 @@ from hvm.constants import (
     BLANK_ROOT_HASH,
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
-)
+    TIME_BETWEEN_CHAIN_HEAD_ROOT_HASH_BACKUPS)
 
 from helios.chains.coro import AsyncChain
 from helios.db.chain import AsyncChainDB
@@ -619,6 +619,8 @@ class Consensus(BaseService, PeerSubscriber):
             self.run_daemon_task(self.receive_peer_block_choices_loop())
             self.run_daemon_task(self.receive_peer_chain_head_root_hash_timestamps_loop())
             self.run_daemon_task(self.send_get_consensus_statistics_loop())
+            self.run_daemon_task(self.chain_head_root_hash_backup_loop())
+
             if self.event_bus is not None:
                 self.run_daemon_task(self.handle_event_bus_events())
 
@@ -682,6 +684,16 @@ class Consensus(BaseService, PeerSubscriber):
     ###
     ###Core functionality
     ###
+    async def chain_head_root_hash_backup_loop(self):
+        await self.coro_is_ready.wait()
+
+        while self.is_operational:
+            self.logger.debug("Running chain_head_root_hash_backup_loop")
+            chain = self.node.get_new_chain()
+            chain.chain_head_db.save_current_root_hash_to_backup()
+            await asyncio.sleep(TIME_BETWEEN_CHAIN_HEAD_ROOT_HASH_BACKUPS)
+
+
     async def staking_reward_loop(self) -> None:
         # TODO: Look at all the peers we are connected to, check the score that we have for them, and require that we get
         # responses from those node. If we have a high score for them, they should have a high score for us.

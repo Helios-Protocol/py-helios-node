@@ -7,8 +7,7 @@ from helios.extensibility import (
     BaseIsolatedPlugin,
 )
 
-from helios.rpc.http_server import Proxy as http_rpc_proxy
-
+from helios.plugins.builtin.rpc_http_proxy.http_proxy_server import Proxy as rpc_http_proxy
 
 class RpcHTTPProxyPlugin(BaseIsolatedPlugin):
 
@@ -17,13 +16,13 @@ class RpcHTTPProxyPlugin(BaseIsolatedPlugin):
         return "RPC HTTP Proxy"
 
     def should_start(self) -> bool:
-        return (not self.context.args.disable_rpc_http_proxy) and self.context.chain_config.is_main_instance
+        return (self.context.args.enable_rpc_http_proxy) and self.context.chain_config.is_main_instance
 
     def configure_parser(self, arg_parser: ArgumentParser, subparser: _SubParsersAction) -> None:
         arg_parser.add_argument(
-            '--disable_rpc_http_proxy',
+            '--enable_rpc_http_proxy',
             action="store_true",
-            help="Should we disable the RPC http proxy?",
+            help="Should we enable the RPC http proxy?",
         )
 
 
@@ -32,6 +31,6 @@ class RpcHTTPProxyPlugin(BaseIsolatedPlugin):
         self.context.event_bus.connect()
 
         proxy_url = "http://0.0.0.0:" + str(self.context.chain_config.rpc_port)
-        http_rpc_proxy_service = http_rpc_proxy(proxy_url, self.context.chain_config.jsonrpc_ipc_path)
-        http_rpc_proxy_service.run()
+        rpc_websocket_proxy_service = rpc_http_proxy(proxy_url, self.context.chain_config.jsonrpc_ipc_path)
+        rpc_websocket_proxy_service.run()
 

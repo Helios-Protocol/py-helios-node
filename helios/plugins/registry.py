@@ -44,7 +44,7 @@ ENABLED_PLUGINS = [
     FixUncleanShutdownPlugin(),
     JsonRpcServerPlugin(),
     RebuildHistoricalChainPlugin(),
-    #RpcHTTPProxyPlugin(),
+    RpcHTTPProxyPlugin(),
     #RpcWebsocketProxyPlugin(),
     #LightPeerChainBridgePlugin(),
     #TxPlugin(),

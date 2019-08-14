@@ -11,6 +11,8 @@ which is all valid for our RPC as well. We will also provide some documentation 
 
 To use the personal RPC on your node, you must start it with the --enable_private_rpc flag.
 
+Note, when the node starts, it will build a cache of all saved encrypted keystore files for speed. This may take a moment depending on the number of accounts you have saved. Some RPC methods will return an exception if they are called before this cache is finished building.
+
 ::
 
     python ~/py-helios-node/helios/main.py --enable_private_rpc
@@ -182,7 +184,7 @@ The hash of the transaction
 personal_sendTransactions
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Identical to personal_sendTransaction, except it takes multiple transactions and adds them all to the same block. This can be used to send many transactions at the same time, up to the max gas of the block. Since these are all going into the same block, they must all be from the same address. If you want to send multiple transactions from different addresses, just call this function once for each address. The minimum time between blocks is for each individual wallet address, but multiple addresses can import blocks in parallel.
+Identical to personal_sendTransaction, except it takes multiple transactions and adds them all to the same block, and it will automatically receive any pending transactions. This can be used to send many transactions at the same time, up to the max gas of the block. Since these are all going into the same block, they must all be from the same address. If you want to send multiple transactions from different addresses, just call this function once for each address. The minimum time between blocks is for each individual wallet address, but multiple addresses can import blocks in parallel.
 
 **Parameters:**
 
@@ -199,7 +201,7 @@ Identical to personal_sendTransaction, except it takes multiple transactions and
 
 **Response:**
 
-A list of the transaction hashes
+A list of the send and receive transaction hashes
 
 **Example:**
 
@@ -210,6 +212,29 @@ A list of the transaction hashes
     >>
     ['0xd98d1d628ea4c93dee20a8b1e691acbb45b3b9aa6997baa1a0006a5f4c86efbb',
     '0x297e7a7443926d6bbc202d81bff3081a9a53caaf64cc5685760aaca439ce1b50']
+
+
+personal_receiveTransactions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Creates and signs a block with all available receive transactions, then sends it to the network. Will raise an exception if there are no receivable transactions.
+
+**Parameters:**
+
+1. Hex encoded wallet address.
+
+2. The password to unlock the account to send the transaction. If this is left blank (as ""), then the transaction will only send if the account is already unlocked.
+
+
+**RPC Call:**
+
+::
+
+    {"method": "personal_receiveTransactions", "params": [string, string]}
+
+**Response:**
+
+A list of hashes of any receive transactions that were added to the block.
 
 
 personal_sign
@@ -288,3 +313,32 @@ Hex encoded checksum wallet address of the signer
     {"method": "personal_ecRecover", "params": [personal_ecRecover, "0xb2278880267630871b87626005500ca5728b96b5e798a2b9ffa0a87ab44e53ef7d9ae6c2a7bd54da55ddbc45faca477c047a72650370b6ad8cdacd85eabbd9931c"]}
     >>
     "0xd9107f501d15E07E75D281dCe80C96F09151B657"
+
+
+personal_getAccountsWithReceivableTransactions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Fetches wallet addresses of all saved accounts that have pending receive transactions. Same as hls_filterAddressesWithReceivableTransactions except it only looks at saved accounts.
+
+**Parameters:**
+
+1. A hex encoded timestamp. Only look for receivable transactions past this timestamp. Set to 0 to return all receivable transactions. This function will return much more quickly if it only has to check a small time window. For example, if this timestamp is set to 10 minues ago, it will return much more quickly then if it was set to 0.
+
+**RPC Call:**
+
+::
+
+    {"method": "personal_getAccountsWithReceivableTransactions", "params": [string]}
+
+**Response:**
+
+Returns a list of addresses with receivable transactions.
+
+**Example:**
+
+::
+
+    <<
+    {"method": "personal_getAccountsWithReceivableTransactions", "params":['0x0']}
+    >>
+    ['0x0d1630cb77c00d95f7fa32bccfe80043639681be', '0x9c8b20e830c0db83862892fc141808ea6a51fea2']

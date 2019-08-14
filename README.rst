@@ -176,7 +176,7 @@ This document is still a work in progress. More details will come soon.
 
 
 Node troubleshooting
---------------------
+---------------------
 If your node shuts down unexpectedly, it may leave dangling processes and ipc sockets
 which will give you problems when you try to start
 it again. If this happens, run this command to force close all previous node processes:
