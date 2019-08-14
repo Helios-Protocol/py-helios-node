@@ -1,11 +1,28 @@
 from hvm.utils.hexadecimal import pad_hex
 from eth_utils import remove_0x_prefix
-value = '0x12ff28'
 
-test = [1,2,3,5,6,8,7,2,3,87,3,2]
-test.sort()
+import itertools
+import time
 
-while test[0] < 3:
-    del(test[0])
-
+start = time.time()
+test = []
+for i in range(1000):
+    test.append(1)
+end_time = time.time()
+print("Took {}".format(end_time-start))
 print(test)
+
+start = time.time()
+test = list(itertools.repeat(1,1000))
+end_time = time.time()
+print("Took {}".format(end_time-start))
+print(test)
+
+
+start = time.time()
+test = [1]*1000
+end_time = time.time()
+print("Took {}".format(end_time-start))
+print(test)
+
+

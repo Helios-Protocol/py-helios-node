@@ -299,7 +299,7 @@ async def _build_test_consensus(request, event_loop,
         peer_dbs.append(MemoryDB(competing_base_db.kv_store.copy()))
 
     bootstrap_node = TestnetChain(base_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    bootstrap_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    bootstrap_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
     consensus_root_hash_timestamps = bootstrap_node.chain_head_db.get_historical_root_hashes()
 
 

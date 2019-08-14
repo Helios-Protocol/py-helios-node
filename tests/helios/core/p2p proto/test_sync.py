@@ -255,7 +255,7 @@ async def test_fast_sync_1(request, event_loop):
     add_random_transactions_to_db_for_time_window(server_db, equal_to_time, equal_to_time + 1000 * 5)
 
     node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical, FAST_SYNC_STAGE_ID)
 
@@ -270,7 +270,7 @@ async def test_fast_sync_2(request, event_loop):
     add_random_transactions_to_db_for_time_window(client_db, equal_to_time, equal_to_time + 1000 * 5)
 
     node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db,
                                                    ensure_blockchain_databases_identical, FAST_SYNC_STAGE_ID)
@@ -306,7 +306,7 @@ async def test_fast_sync_4(request, event_loop):
     add_random_transactions_to_db_for_time_window(server_db, new_blocks_start_time, new_blocks_end_time)
 
     client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
 
@@ -333,7 +333,7 @@ async def test_fast_sync_5(request, event_loop):
         add_random_transactions_to_db_for_time_window(client_db, new_blocks_start_time, new_blocks_end_time)
 
         client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-        client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+        client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
 
         await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
 
@@ -344,7 +344,7 @@ async def test_consensus_match_sync_1(request, event_loop):
     #client_db, server_db = db_fresh, db_random_long_time
     client_db, server_db = get_fresh_db(), get_random_long_time_blockchain_db(25)
     node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical,  CONSENSUS_MATCH_SYNC_STAGE_ID)
 
@@ -353,7 +353,7 @@ async def test_consensus_match_sync_1(request, event_loop):
 async def test_consensus_match_sync_2(request, event_loop):
     server_db, client_db = get_fresh_db(), get_random_long_time_blockchain_db(25)
     node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical,  CONSENSUS_MATCH_SYNC_STAGE_ID)
 
 
@@ -363,7 +363,7 @@ async def test_consensus_match_sync_2(request, event_loop):
 async def test_consensus_match_sync_3(request, event_loop):
     client_db, server_db = get_random_long_time_blockchain_db(25), get_random_long_time_blockchain_db(25)
     node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical,  CONSENSUS_MATCH_SYNC_STAGE_ID)
 
 @pytest.mark.asyncio
@@ -389,7 +389,7 @@ async def test_consensus_match_sync_4(request, event_loop):
     add_random_transactions_to_db_for_time_window(server_db, new_blocks_start_time, new_blocks_end_time)
 
     client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
 
@@ -401,14 +401,14 @@ async def test_consensus_match_sync_4(request, event_loop):
 async def test_additive_sync_1(request, event_loop):
     client_db, server_db = get_fresh_db(), get_random_long_time_blockchain_db(10)
     node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical,  ADDITIVE_SYNC_STAGE_ID)
 
 @pytest.mark.asyncio
 async def test_additive_sync_2(request, event_loop):
     client_db, server_db = get_random_long_time_blockchain_db(10), get_fresh_db()
     node_1 = TestnetChain(server_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
+    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical, ADDITIVE_SYNC_STAGE_ID)
 
 # This test has both nodes with conflicting blocks. On additive sync mode, so both nodes will keep sending each other
@@ -421,9 +421,9 @@ async def test_additive_sync_2(request, event_loop):
 async def test_additive_sync_3(request, event_loop):
     client_db, server_db = get_random_long_time_blockchain_db(10), get_random_long_time_blockchain_db(10)
     node_1 = TestnetChain(server_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100, tpc=1)
+    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price = 1, net_tpc_cap=100)
     node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical, ADDITIVE_SYNC_STAGE_ID)
 
 
@@ -450,9 +450,9 @@ async def test_additive_sync_4(request, event_loop):
     add_transactions_to_blockchain_db(server_db, tx_list)
 
     client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
     server_node = TestnetChain(server_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    server_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    server_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
 
@@ -484,7 +484,7 @@ async def test_sparse_sync_1(request, event_loop):
     add_transactions_to_blockchain_db(server_db, tx_list)
 
     client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
 
@@ -516,7 +516,7 @@ async def test_sparse_sync_2(request, event_loop):
     add_transactions_to_blockchain_db(client_db, tx_list)
 
     client_node = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100, tpc=1)
+    client_node.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
 
     await _test_sync_with_variable_sync_parameters(request, event_loop, client_db, server_db, ensure_blockchain_databases_identical)
 
@@ -535,9 +535,9 @@ async def _setup_test_import_blocks(request,
                                     node_min_gas_price = 1):
     client_db, server_db, fresh_db = get_fresh_db(), get_fresh_db(), get_fresh_db()
     node_1 = TestnetChain(server_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=node_min_gas_price, net_tpc_cap=100, tpc=1)
+    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=node_min_gas_price, net_tpc_cap=100)
     node_2 = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=node_min_gas_price, net_tpc_cap=100, tpc=1)
+    node_2.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=node_min_gas_price, net_tpc_cap=100)
 
     if expect_blocks_to_import:
         expected_db = new_blocks_db

@@ -125,31 +125,25 @@ def test_min_allowed_gas_system():
 
     init_min_gas_price = 1
     init_tpc_cap = local_tpc_cap
-    init_tpc = 10
     #initialize the min gas system
-    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(init_min_gas_price, init_tpc_cap, init_tpc)
+    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(init_min_gas_price, init_tpc_cap)
 
     historical_min_gas_price = node_1.chaindb.load_historical_minimum_gas_price()
     historical_network_tpc_capability = node_1.chaindb.load_historical_network_tpc_capability()
-    historical_tpc = node_1.chaindb.load_historical_tx_per_centisecond()
 
     assert(all([x[1] == init_min_gas_price for x in historical_min_gas_price]))
     assert(all([x[1] == init_tpc_cap for x in historical_network_tpc_capability]))
-    assert(all([x[1] == init_tpc for x in historical_tpc]))
 
     # update the newest tpc cap and check that it saved
     node_1.update_current_network_tpc_capability(local_tpc_cap, update_min_gas_price = True)
     historical_min_gas_price = node_1.chaindb.load_historical_minimum_gas_price()
     historical_tpc_cap = node_1.chaindb.load_historical_network_tpc_capability()
-    historical_tpc = node_1.chaindb.load_historical_tx_per_centisecond()
+
     assert(historical_tpc_cap[-1][1] == local_tpc_cap)
     assert(historical_min_gas_price[-1][1] == 1)
 
     # Updating tpc will cause it to see that the initial tpc doesnt match the blockchain database, and correct it.
     # It will only go back at most 60 centiseconds, or at least 50.
-
-    # need to say == True to make pytest happy
-    assert(all([x[1] == tpc_of_blockchain_database*2 for x in historical_tpc[-50:-1]]))
 
     # the given tpc from the database is below the threshold. So min gas should stay at 1
     assert(all([x[1] == 1 for x in historical_min_gas_price[-50:]]))
@@ -175,23 +169,19 @@ def test_min_allowed_gas_system():
 
     init_min_gas_price = 1
     init_tpc_cap = 2
-    init_tpc = 1
     # initialize the min gas system
-    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(init_min_gas_price, init_tpc_cap, init_tpc)
+    node_1.chaindb.initialize_historical_minimum_gas_price_at_genesis(init_min_gas_price, init_tpc_cap)
 
     historical_min_gas_price = node_1.chaindb.load_historical_minimum_gas_price()
     historical_network_tpc_capability = node_1.chaindb.load_historical_network_tpc_capability()
-    historical_tpc = node_1.chaindb.load_historical_tx_per_centisecond()
 
     assert (all([x[1] == init_min_gas_price for x in historical_min_gas_price]))
     assert (all([x[1] == init_tpc_cap for x in historical_network_tpc_capability]))
-    assert (all([x[1] == init_tpc for x in historical_tpc]))
 
     # update the newest tpc cap and check that it saved
     node_1.update_current_network_tpc_capability(init_tpc_cap, update_min_gas_price=True)
     historical_min_gas_price = node_1.chaindb.load_historical_minimum_gas_price()
     historical_tpc_cap = node_1.chaindb.load_historical_network_tpc_capability()
-    historical_tpc = node_1.chaindb.load_historical_tx_per_centisecond()
 
 
     # plt.plot([x[1] for x in historical_min_gas_price])
@@ -203,9 +193,6 @@ def test_min_allowed_gas_system():
     # Updating tpc will cause it to see that the initial tpc doesnt match the blockchain database, and correct it.
     # It will only go back at most 60 centiseconds, or at least 50.
 
-    #need to say == True to make pytest happy
-
-    assert (all([x[1] == tpc_of_blockchain_database*2 for x in historical_tpc[-50:-1]]))
 
 
 # test_min_allowed_gas_system()
@@ -263,4 +250,172 @@ def test_aggressive_min_gas_price_pid():
     plt.show()
 
 
-test_aggressive_min_gas_price_pid()
+#test_aggressive_min_gas_price_pid()
+
+def test_append_historical_min_gas_price_now():
+
+    testdb = MemoryDB()
+    chain = TestnetChain.from_genesis(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS,TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+
+    #
+    # starting with nothing saved
+    #
+    expected = []
+    min_gas_price = 12
+    current_centisecond = int(time.time() / 100) * 100
+    expected.append([current_centisecond, min_gas_price])
+    chain.chaindb.append_historical_min_gas_price_now(min_gas_price)
+
+    saved_min_gas_price = chain.chaindb.load_historical_minimum_gas_price()
+
+    assert(saved_min_gas_price == expected)
+
+    #
+    # Delete ones newer than now
+    #
+    current_centisecond = int(time.time() / 100) * 100
+
+    chain.chaindb.save_historical_minimum_gas_price([[current_centisecond,0],[current_centisecond+100,2]])
+
+    expected = []
+    expected.append([current_centisecond, min_gas_price])
+    chain.chaindb.append_historical_min_gas_price_now(min_gas_price)
+
+    saved_min_gas_price = chain.chaindb.load_historical_minimum_gas_price()
+
+    assert (saved_min_gas_price == expected)
+
+    #
+    # Append to already existing list
+    #
+    current_centisecond = int(time.time() / 100) * 100
+    chain.chaindb.save_historical_minimum_gas_price([[current_centisecond-100, 0], [current_centisecond, 2]])
+
+
+    expected = [[current_centisecond-100, 0], [current_centisecond, min_gas_price]]
+    chain.chaindb.append_historical_min_gas_price_now(min_gas_price)
+    saved_min_gas_price = chain.chaindb.load_historical_minimum_gas_price()
+
+    assert (saved_min_gas_price == expected)
+
+
+# test_append_historical_min_gas_price_now()
+# exit()
+
+
+def test_last_time_PID_ran():
+    testdb = MemoryDB()
+    chain = TestnetChain.from_genesis(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS,TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+
+    chain.chaindb.save_now_as_last_min_gas_price_PID_update()
+
+    time.sleep(1)
+
+    time_since_set = chain.chaindb.get_time_since_last_min_gas_price_PID_update()
+
+    assert(time_since_set == 1)
+
+# test_last_time_PID_ran()
+# exit()
+
+
+def test_append_current_tpd_tail_to_historical_tpc():
+    testdb = MemoryDB()
+    chain = TestnetChain.from_genesis(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS,TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+
+    #
+    # With a fresh db
+    #
+    current_centisecond = int(time.time() / 100) * 100
+    expected = [[current_centisecond, 3]]
+    chain.chaindb.append_current_tpd_tail_to_historical_tx_per_centisecond([1,2])
+    saved_historical_tpc = chain.chaindb.load_historical_tx_per_centisecond()
+
+    assert(saved_historical_tpc == expected)
+
+    #
+    # Update and take sum
+    #
+
+    expected = [[current_centisecond, 8]]
+    chain.chaindb.append_current_tpd_tail_to_historical_tx_per_centisecond([1, 4])
+    saved_historical_tpc = chain.chaindb.load_historical_tx_per_centisecond()
+
+    assert (saved_historical_tpc == expected)
+
+
+    #
+    # Append and take the sum
+    #
+
+    chain.chaindb.save_historical_tx_per_centisecond([[current_centisecond-100,5],[current_centisecond,2]])
+    expected = [[current_centisecond-100,5],[current_centisecond,7]]
+    chain.chaindb.append_current_tpd_tail_to_historical_tx_per_centisecond([4, 1])
+    saved_historical_tpc = chain.chaindb.load_historical_tx_per_centisecond()
+
+    assert (saved_historical_tpc == expected)
+
+
+# test_append_current_tpd_tail_to_historical_tpc()
+# exit()
+
+def test_update_current_network_tpc_capability():
+    testdb = MemoryDB()
+    chain = TestnetChain.from_genesis(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS,TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER.public_key.to_canonical_address(),
+        value=1,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    chain.import_current_queue_block()
+
+    #
+    # On a fresh db
+    #
+    current_centisecond = int(time.time() / 100) * 100
+    net_tpc_cap = 10
+    chain.update_current_network_tpc_capability(net_tpc_cap, True)
+
+    # Make sure it adds to 1) hist net tpc cap, 2) hist tpc, 3) hist min_gas_price
+    hist_net_tpc_cap = chain.chaindb.load_historical_network_tpc_capability()
+    hist_tpc = chain.chaindb.load_historical_tx_per_centisecond()
+    hist_gas_price = chain.chaindb.load_historical_minimum_gas_price()
+
+    assert(hist_net_tpc_cap == [[current_centisecond, net_tpc_cap]])
+    assert(hist_tpc == [[current_centisecond, 1]])
+    assert(hist_gas_price == [[current_centisecond, 1]])
+
+    #
+    # On a normal db
+    #
+    time.sleep(1)
+
+    data = [[current_centisecond-100, 10],[current_centisecond, 20]]
+    chain.chaindb.save_historical_minimum_gas_price(data)
+    chain.chaindb.save_historical_network_tpc_capability(data)
+    chain.chaindb.save_historical_tx_per_centisecond(data)
+
+    current_centisecond = int(time.time() / 100) * 100
+
+    chain.update_current_network_tpc_capability(net_tpc_cap, True)
+
+    # Make sure it adds to 1) hist net tpc cap, 2) hist tpc, 3) hist min_gas_price
+    hist_net_tpc_cap = chain.chaindb.load_historical_network_tpc_capability()
+    hist_tpc = chain.chaindb.load_historical_tx_per_centisecond()
+    hist_gas_price = chain.chaindb.load_historical_minimum_gas_price()
+
+    assert (hist_net_tpc_cap == [[current_centisecond-100, 10],[current_centisecond, net_tpc_cap]])
+    assert (hist_tpc == [[current_centisecond-100, 10],[current_centisecond, 21]])
+    assert (hist_gas_price == [[current_centisecond-100, 10],[current_centisecond, 20]])
+
+
+test_update_current_network_tpc_capability()
+exit()
+
