@@ -65,7 +65,7 @@ from hvm.constants import (
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
     GENESIS_PARENT_HASH,
-    BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)
+    BLOCK_TIMESTAMP_FUTURE_ALLOWANCE, BLOCK_TRANSACTION_LIMIT)
 
 from hvm.db.trie import make_trie_root_and_nodes
 
@@ -1166,7 +1166,9 @@ class Chain(BaseChain):
 
     def populate_queue_block_with_receive_tx(self) -> List[BaseReceiveTransaction]:
         receive_tx = self.create_receivable_transactions()
-        self.add_transactions_to_queue_block(receive_tx)
+        num_send_transactions = len(self.queue_block.transactions)
+        max_allowed_receive_transactions = BLOCK_TRANSACTION_LIMIT - num_send_transactions - 1
+        self.add_transactions_to_queue_block(receive_tx[:max_allowed_receive_transactions])
         return receive_tx
 
     def get_block_receive_transactions_by_hash(
@@ -1893,6 +1895,9 @@ class Chain(BaseChain):
 
         self.logger.debug("importing block {} with number {}".format(block.__repr__(), block.number))
 
+        #
+        # Some validation
+        #
         for tx in block.transactions:
             if tx.data != b'':
                 raise ValidationError("Transaction data must be blank until smart contracts have been enabled in Q3 2019.")
@@ -1901,6 +1906,16 @@ class Chain(BaseChain):
             raise ValidationError("The block header timestamp is to far into the future to be allowed. Block header timestamp {}. Max allowed timestamp {}".format(block.header.timestamp,int(time.time() + BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)))
 
         self.validate_time_from_genesis_block(block)
+
+        # new transaction count limit:
+        transaction_count = len(block.transactions) + len(block.receive_transactions)
+        if transaction_count > BLOCK_TRANSACTION_LIMIT:
+            raise ValidationError("The block has to many transactions. It has {} transactions, but is only allowed a max of {}".format(transaction_count, BLOCK_TRANSACTION_LIMIT))
+
+
+        #
+        #
+        #
 
         if isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()):
             # If it was a queueblock, then the header will have changed after importing
