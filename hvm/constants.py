@@ -149,6 +149,8 @@ SECPK1_G = (SECPK1_Gx, SECPK1_Gy)
 EMPTY_UNCLE_HASH = Hash32(b'\x1d\xccM\xe8\xde\xc7]z\xab\x85\xb5g\xb6\xcc\xd4\x1a\xd3\x12E\x1b\x94\x8at\x13\xf0\xa1B\xfd@\xd4\x93G')  # noqa: E501
 
 BLOCK_GAS_LIMIT = 31415926
+BLOCK_TRANSACTION_LIMIT = 150
+
 # How far into the future is a block allowed to be
 BLOCK_TIMESTAMP_FUTURE_ALLOWANCE = 60*10
 
