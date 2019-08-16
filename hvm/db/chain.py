@@ -60,7 +60,6 @@ from hvm.exceptions import (
     JournalDbNotActivated,
     HistoricalNetworkTPCMissing,
     HistoricalMinGasPriceError,
-    NotEnoughDataForHistoricalMinGasPriceCalculation,
 )
 from hvm.db.backends.base import (
     BaseDB
@@ -486,67 +485,16 @@ class BaseChainDB(metaclass=ABCMeta):
                          timestamp: Timestamp = None,
                          raise_canonical_head_not_found_error: bool = False) -> int:
          raise NotImplementedError("ChainDB classes must implement this method")
-    #
-    # Historical minimum allowed gas price API for throttling the network
-    #
+
     @abstractmethod
-    def save_historical_minimum_gas_price(self,
-                                          historical_minimum_gas_price: List[List[Union[Timestamp, int]]]) -> None:
+    def save_historical_tx_per_centisecond_from_chain(self, historical_tx_per_centisecond: List[List[int]], de_sparse=True) -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def load_historical_minimum_gas_price(self, sort: bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def append_historical_min_gas_price_now(self, min_gas_price: int) -> None:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def save_now_as_last_min_gas_price_PID_update(self) -> None:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def get_time_since_last_min_gas_price_PID_update(self) -> int:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def save_historical_tx_per_centisecond(self, historical_tx_per_centisecond: List[List[int]], de_sparse=True) -> None:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def load_historical_tx_per_centisecond(self, sort=False) -> Optional[List[List[int]]]:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def save_historical_network_tpc_capability(self, historical_tpc_capability: List[List[Union[Timestamp, int]]],
-                                               de_sparse: bool = False) -> None:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def save_current_historical_network_tpc_capability(self, current_tpc_capability: int) -> None:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def load_historical_network_tpc_capability(self, sort: bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def _calculate_next_min_gas_price_pid(self, historical_txpd: List[int], last_min_gas_price: int, wanted_txpd: int) -> int:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def initialize_historical_minimum_gas_price_at_genesis(self, min_gas_price: int, net_tpc_cap: int) -> None:
+    def load_historical_tx_per_centisecond_from_chain(self, sort=False) -> Optional[List[List[int]]]:
         raise NotImplementedError("ChainDB classes must implement this method")
 
 
-    @abstractmethod
-    def get_required_block_min_gas_price(self, block_timestamp: Timestamp = None) -> int:
-        raise NotImplementedError("ChainDB classes must implement this method")
-
-    @abstractmethod
-    def min_gas_system_initialization_required(self) -> bool:
-        raise NotImplementedError("ChainDB classes must implement this method")
     #
     # Raw Database API
     #
@@ -1801,114 +1749,8 @@ class ChainDB(BaseChainDB):
         return 0
 
 
-    #
-    # Historical minimum allowed gas price API for throttling the network
-    #
-    def save_historical_minimum_gas_price(self, historical_minimum_gas_price: List[List[Union[Timestamp, int]]]) -> None:
-        '''
-        This takes list of timestamp, gas_price. The timestamps are every 100 seconds
-        '''
-        lookup_key = SchemaV1.make_historical_minimum_gas_price_lookup_key()
-        encoded_data = rlp.encode(historical_minimum_gas_price[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
-        self.db.set(
-            lookup_key,
-            encoded_data,
-        )
 
-
-
-
-    def load_historical_minimum_gas_price(self, sort:bool = True) -> Optional[List[List[Union[Timestamp, int]]]]:
-        '''
-        saved as timestamp, min gas price
-        '''
-        lookup_key = SchemaV1.make_historical_minimum_gas_price_lookup_key()
-        try:
-            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])), use_list = True)
-            if sort:
-                if len(data) > 0:
-                    data.sort()
-
-            return data
-        except KeyError:
-            return None
-
-    def append_historical_min_gas_price_now(self, min_gas_price: int) -> None:
-
-        current_centisecond_window = int(time.time() / 100) * 100
-
-        hist_min_gas_price = self.load_historical_minimum_gas_price()
-
-        current_entry = [current_centisecond_window, min_gas_price]
-
-        if hist_min_gas_price is None:
-            new_hist_min_gas_price = [current_entry]
-        else:
-            # cycle backwards through the existing and delete any newer or equal timestamps, then append our new one.
-            for i in range(len(hist_min_gas_price)-1, -1, -1):
-                if hist_min_gas_price[i][0] >= current_centisecond_window:
-                    del(hist_min_gas_price[i])
-            hist_min_gas_price.append(current_entry)
-            new_hist_min_gas_price = hist_min_gas_price
-
-        self.save_historical_minimum_gas_price(new_hist_min_gas_price)
-
-
-    def save_now_as_last_min_gas_price_PID_update(self) -> None:
-        now = int(time.time())
-        lookup_key = SchemaV1.make_min_gas_system_last_pid_time_key()
-        encoded_data = rlp.encode(now,sedes=rlp.sedes.f_big_endian_int)
-        self.db.set(
-            lookup_key,
-            encoded_data,
-        )
-
-    def get_time_since_last_min_gas_price_PID_update(self) -> int:
-        lookup_key = SchemaV1.make_min_gas_system_last_pid_time_key()
-        try:
-            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.f_big_endian_int)
-        except KeyError:
-            data = 0
-
-        time_since = int(time.time()) - data
-        if time_since >= 10:
-            #limit to 10 so that we don't get a crazy huge result from the PID
-            return 10
-        elif time_since <= 0:
-            return 0
-        else:
-            return time_since
-
-    def append_current_tpd_tail_to_historical_tx_per_centisecond(self, tpd_tail: List[int], time_since_last_call = 20) -> None:
-        '''
-        This is going to be approximate by nature. Don't base anything important on this.
-        It will only be close to accurate if it is called exactly once every 10 seconds, which should be the case under normal conditions.
-        We want a cached historical tx per centisecond so that the block explorer can load it without running a very time
-        consuming process. So this function takes already calculated tpd_tail and uses it to append to the historical tx per centisecond
-        '''
-
-        # The tpc should be the total number of txs in the 100 second window. So if the window already exists, add these to it.
-        current_hist_tpc = self.load_historical_tx_per_centisecond()
-        current_hist_tpc_dict = dict(current_hist_tpc)
-
-        current_centisecond = int(int(time.time()/100) * 100)
-
-        if time_since_last_call >= 20:
-            new_tpc = int(sum(tpd_tail))
-        else:
-            new_tpc = tpd_tail[-1]
-
-        if current_centisecond in current_hist_tpc_dict:
-            new_tpc += current_hist_tpc_dict[current_centisecond]
-
-        current_hist_tpc_dict[current_centisecond] = new_tpc
-
-        new_hist_tpc = list(current_hist_tpc_dict.items())
-
-        self.save_historical_tx_per_centisecond(new_hist_tpc)
-
-
-    def save_historical_tx_per_centisecond(self, historical_tx_per_centisecond: List[List[int]], de_sparse = True) -> None:
+    def save_historical_tx_per_centisecond_from_chain(self, historical_tx_per_centisecond: List[List[int]], de_sparse = True) -> None:
         '''
         This takes list of timestamp, tx_per_centisecond.
         this one is naturally a sparse list because some 100 second intervals might have no tx. So we can de_sparse it.
@@ -1922,7 +1764,7 @@ class ChainDB(BaseChainDB):
             encoded_data,
         )
 
-    def load_historical_tx_per_centisecond(self, sort = True) -> List[Tuple[int, int]]:
+    def load_historical_tx_per_centisecond_from_chain(self, sort = True) -> List[Tuple[int, int]]:
         '''
         returns a list of [timestamp, tx/centisecond]
         '''
@@ -1938,147 +1780,6 @@ class ChainDB(BaseChainDB):
         except KeyError:
             return []
 
-    def save_historical_network_tpc_capability(self, historical_tpc_capability: List[List[Union[Timestamp, int]]], de_sparse: bool = False) -> None:
-        '''
-        This takes list of timestamp, historical_tpc_capability. The timestamps are 100 seconds, historical_tpc_capability must be an intiger
-        '''
-        if de_sparse:
-            historical_tpc_capability = de_sparse_timestamp_item_list(historical_tpc_capability, 100, filler = None)
-        lookup_key = SchemaV1.make_historical_network_tpc_capability_lookup_key()
-        encoded_data = rlp.encode(historical_tpc_capability[-MAX_NUM_HISTORICAL_MIN_GAS_PRICE_TO_KEEP:],sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])))
-        self.db.set(
-            lookup_key,
-            encoded_data,
-        )
-
-    def save_current_historical_network_tpc_capability(self, current_tpc_capability: int) -> None:
-        validate_uint256(current_tpc_capability, title="current_tpc_capability")
-        existing = self.load_historical_network_tpc_capability()
-        current_centisecond = int(time.time()/100) * 100
-        if existing is None:
-            existing = [[current_centisecond, current_tpc_capability]]
-        else:
-            existing.append([current_centisecond, current_tpc_capability])
-        self.save_historical_network_tpc_capability(existing, de_sparse = True)
-
-
-
-    def load_historical_network_tpc_capability(self, sort:bool = True) -> Optional[List[List[Union[Timestamp, int]]]]:
-        '''
-        Returns a list of [timestamp, transactions per second]
-        :param mutable:
-        :param sort:
-        :return:
-        '''
-        lookup_key = SchemaV1.make_historical_network_tpc_capability_lookup_key()
-        try:
-            data = rlp.decode(self.db[lookup_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([rlp.sedes.f_big_endian_int, rlp.sedes.f_big_endian_int])), use_list = True)
-            if sort:
-                if len(data) > 0:
-                    data.sort()
-
-            return data
-        except KeyError:
-            return None
-
-    #
-    # New PID min gas price stuff.
-    #
-    def _calculate_next_min_gas_price_pid(self, historical_txpd: List[int], last_min_gas_price: int, wanted_txpd: int, time_since_last_pid_update: int = 10) -> int:
-        #
-        # This uses a simple PID to increase the minimum gas price and throttle transactions. It is very aggressive
-        # so that it can catch dos attacks. It expects historical_txpd to be the transactions per 10 seconds, in 10 second
-        # increments.
-        #
-        num_seconds_between_points =time_since_last_pid_update
-        if len(historical_txpd) < 2:
-            self.logger.debug("Not enough historical txpd to calculate next min gas price. Returning previous min gas price.")
-            return last_min_gas_price
-
-        #
-        # PID PARAMS
-        #
-        Kp = 0.1
-        Ki = 0.1
-        Kd = 0.005
-        output_limits = (None, -1)
-
-        # compute error terms
-        error = wanted_txpd - historical_txpd[-1]
-        d_txpd = historical_txpd[-1] - historical_txpd[-2]
-
-        # compute the proportional term
-        _proportional = Kp * error
-
-        # compute integral and derivative terms
-        _last_integral = math.log(last_min_gas_price)*-200
-        _integral = _last_integral + Ki * error * num_seconds_between_points
-        _integral = clamp(_integral, (None, -1))  # avoid integral windup
-
-        _derivative = -Kd * d_txpd / num_seconds_between_points
-
-        # compute final output
-        output = _proportional + _integral + _derivative
-        output = clamp(output, output_limits)
-
-        # This must be the inverse of _last_integral's calculation for it to work.
-        result = math.exp(output/-200)
-
-        return round(result)
-
-
-    def initialize_historical_minimum_gas_price_at_genesis(self, min_gas_price: int, net_tpc_cap: int) -> None:
-        # we need to initialize the entire additive and fast sync region in time because that is where we check
-        # that blocks have enough gas
-        current_centisecond = int(time.time()/100) * 100
-
-        historical_minimum_gas_price = [[current_centisecond,min_gas_price]]
-        historical_tpc_capability = [[current_centisecond, net_tpc_cap]]
-
-        self.save_historical_minimum_gas_price(historical_minimum_gas_price)
-        self.save_historical_network_tpc_capability(historical_tpc_capability, de_sparse = False)
-
-
-    def get_required_block_min_gas_price(self, block_timestamp: Timestamp = None) -> int:
-        '''
-        it is important that this doesn't run until our blockchain is up to date. If it is run before that,
-        it will give the wrong number.
-        '''
-
-        if block_timestamp is None:
-            block_timestamp = int(time.time())
-
-        centisecond_window = int(block_timestamp/100) * 100
-
-
-        hist_min_gas_price = self.load_historical_minimum_gas_price()
-
-        if hist_min_gas_price is None or len(hist_min_gas_price) == 0:
-            #there is no data for calculating min gas price
-            raise HistoricalMinGasPriceError("tried to get required block minimum gas price but historical minimum gas price has not been initialized")
-
-        dict_hist_min_gas_price = dict(hist_min_gas_price)
-
-        #self.logger.debug('get_required_block_min_gas_price, centisecond_window = {}, dict_hist_min_gas_price = {}'.format(centisecond_window, dict_hist_min_gas_price))
-        try:
-            return dict_hist_min_gas_price[centisecond_window]
-        except KeyError:
-            pass
-
-        sorted_list = list(hist_min_gas_price)
-        sorted_list.sort()
-        #if we don't have this centisecond_window, lets return the previous one.
-        return sorted_list[-1][1]
-
-
-    def min_gas_system_initialization_required(self) -> bool:
-        test_1 = self.load_historical_minimum_gas_price()
-        test_3 = self.load_historical_network_tpc_capability()
-
-        if test_1 is None or test_3 is None:
-            return True
-
-        return False
 
     #
     # Reward bundle persisting

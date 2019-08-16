@@ -24,7 +24,7 @@ from hvm.constants import (
     ZERO_HASH32,
     TIME_BETWEEN_HEAD_HASH_SAVE,
     GAS_TX, BLOCK_TIMESTAMP_FUTURE_ALLOWANCE,
-    NUMBER_OF_HEAD_HASH_TO_SAVE)
+    NUMBER_OF_HEAD_HASH_TO_SAVE, BLOCK_GAS_LIMIT)
 
 from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
 from hvm.db.backends.level import LevelDB
@@ -54,7 +54,7 @@ from helios.dev_tools import (
     create_new_genesis_params_and_state,
     create_blockchain_database_for_exceeding_tpc_cap
 )
-from eth_keys import keys
+
 from sys import exit
 
 from trie import (
@@ -1872,11 +1872,71 @@ def test_get_receivable_transactions_from_chronological_blocks():
 
     
 
-test_get_receivable_transactions_from_chronological_blocks()
-exit()
+# test_get_receivable_transactions_from_chronological_blocks()
+# exit()
 
-        
-        
+# def make_trie_root_and_nodes( items):
+#     return _make_trie_root_and_nodes(tuple(rlp.encode(item) for item in items))
+#
+#
+# def _make_trie_root_and_nodes(items):
+#     kv_store = {}  # type: Dict[bytes, bytes]
+#     trie = HexaryTrie(kv_store, BLANK_ROOT_HASH, prune=True)
+#     memory_trie = trie
+#     for index, item in enumerate(items):
+#         index_key = rlp.encode(index, sedes=rlp.sedes.big_endian_int)
+#         print('ZZZZZZZZZZZZZ')
+#         print(index)
+#         print(index_key)
+#         print(item)
+#
+#         memory_trie[index_key] = item
+#     return trie.root_hash, kv_store
+#
+# def test_trie_root():
+#     from secrets import token_bytes
+#
+#     list_of_bytes = []
+#     for i in range(129):
+#         #random_bytes = token_bytes(1)*999
+#         random_bytes = ZERO_HASH32
+#         list_of_bytes.append(random_bytes)
+#
+#     #print(list_of_bytes)
+#     print(_make_trie_root_and_nodes(list_of_bytes))
+#
+# test_trie_root()
+# exit()
+
+
+def test_full_block():
+    testdb = MemoryDB()
+
+    chain = TestnetChain.from_genesis(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+
+    for i in range(int(400)):
+        print(i)
+        chain.create_and_sign_transaction_for_queue_block(
+            gas_price=1,
+            gas=21000,
+            to=RECEIVER.public_key.to_canonical_address(),
+            value=1,
+            data=b"",
+            v=0,
+            r=0,
+            s=0
+        )
+
+    chain.import_current_queue_block()
+
+    print("Importing max receive transactions now")
+    chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+    chain.populate_queue_block_with_receive_tx()
+    chain.import_current_queue_block()
+
+
+# test_full_block()
+
 #
 # def test_chronological_block_initialization_2():
 #     '''

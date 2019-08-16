@@ -85,18 +85,6 @@ class AsyncChainDB(ChainDB):
                                         headers: Iterable[BlockHeader]) -> Tuple[BlockHeader, ...]:
         raise NotImplementedError("ChainDB classes must implement this method")
 
-    async def coro_load_historical_minimum_gas_price(self, mutable:bool = True, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
-        raise NotImplementedError()
-
-    async def coro_load_historical_network_tpc_capability(self, mutable:bool = True, sort:bool = False) -> Optional[List[List[Union[Timestamp, int]]]]:
-        raise NotImplementedError()
-
-    async def coro_save_historical_minimum_gas_price(self, historical_minimum_gas_price: List[List[Union[Timestamp, int]]]) -> None:
-        raise NotImplementedError()
-
-    async def coro_save_historical_network_tpc_capability(self, historical_tpc_capability: List[List[Union[Timestamp, int]]], de_sparse: bool = False) -> None:
-        raise NotImplementedError()
-
     async def coro_get_latest_reward_block_number(self, wallet_address: Address) -> BlockNumber:
         raise NotImplementedError()
 
@@ -121,9 +109,6 @@ class AsyncChainDB(ChainDB):
         raise NotImplementedError()
 
 
-    async def coro_propogate_historical_min_gas_price_parameters_to_present(self) -> None:
-        raise NotImplementedError()
-
 class ChainDBProxy(BaseProxy):
     coro_get_block_header_by_hash = async_method('get_block_header_by_hash')
     coro_get_canonical_head = async_method('get_canonical_head')
@@ -139,15 +124,6 @@ class ChainDBProxy(BaseProxy):
     coro_get_block_uncles = async_method('get_block_uncles')
     coro_get_receipts = async_method('get_receipts')
     coro_get_chain_wallet_address_for_block_hash = async_method('get_chain_wallet_address_for_block_hash')
-    coro_min_gas_system_initialization_required = async_method('min_gas_system_initialization_required')
-    coro_load_historical_network_tpc_capability = async_method('load_historical_network_tpc_capability')
-    coro_load_historical_minimum_gas_price = async_method('load_historical_minimum_gas_price')
-    coro_save_historical_minimum_gas_price = async_method('save_historical_minimum_gas_price')
-    coro_save_historical_network_tpc_capability = async_method('save_historical_network_tpc_capability')
-    coro_load_historical_tx_per_centisecond = async_method('load_historical_tx_per_centisecond')
-    coro_get_required_block_min_gas_price = async_method('get_required_block_min_gas_price')
-    coro_initialize_historical_minimum_gas_price_at_genesis = async_method(
-        'initialize_historical_minimum_gas_price_at_genesis')
     coro_get_latest_reward_block_number = async_method('get_latest_reward_block_number')
     coro_get_all_block_hashes_on_chain = async_method('get_all_block_hashes_on_chain')
     coro_get_all_block_hashes_on_chain_by_head_block_hash = async_method('get_all_block_hashes_on_chain_by_head_block_hash')
@@ -155,7 +131,6 @@ class ChainDBProxy(BaseProxy):
     coro_get_mature_stake = async_method('get_mature_stake')
     coro_get_unprocessed_block_hash_by_block_number = async_method('get_unprocessed_block_hash_by_block_number')
     coro_get_unprocessed_block_header_by_block_number = async_method('get_unprocessed_block_header_by_block_number')
-    coro_propogate_historical_min_gas_price_parameters_to_present = async_method('propogate_historical_min_gas_price_parameters_to_present')
 
 
 
@@ -169,15 +144,7 @@ class ChainDBProxy(BaseProxy):
     persist_uncles = sync_method('persist_uncles')
     persist_trie_data_dict = sync_method('persist_trie_data_dict')
     get_chain_wallet_address_for_block_hash = sync_method('get_chain_wallet_address_for_block_hash')
-    min_gas_system_initialization_required = sync_method('min_gas_system_initialization_required')
-    load_historical_network_tpc_capability = sync_method('load_historical_network_tpc_capability')
-    load_historical_minimum_gas_price = sync_method('load_historical_minimum_gas_price')
-    save_historical_minimum_gas_price = sync_method('save_historical_minimum_gas_price')
-    save_historical_network_tpc_capability = sync_method('save_historical_network_tpc_capability')
-    load_historical_tx_per_centisecond = sync_method('load_historical_tx_per_centisecond')
-    get_required_block_min_gas_price = sync_method('get_required_block_min_gas_price')
-    initialize_historical_minimum_gas_price_at_genesis = sync_method(
-        'initialize_historical_minimum_gas_price_at_genesis')
+
     get_latest_reward_block_number = sync_method('get_latest_reward_block_number')
     get_canonical_block_header_by_number = sync_method('get_canonical_block_header_by_number')
 

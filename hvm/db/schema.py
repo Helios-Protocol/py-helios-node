@@ -105,7 +105,11 @@ class SchemaV1(BaseSchema):
     @staticmethod
     def make_historical_tx_per_centisecond_lookup_key() -> bytes:
         return b'h_tx_per_centisecond'
-    
+
+    @staticmethod
+    def make_historical_tx_per_decisecond_lookup_key() -> bytes:
+        return b'h_tx_per_decisecond'
+
     @staticmethod
     def make_historical_network_tpc_capability_lookup_key() -> bytes:
         return b'h_net_tpc_cap'

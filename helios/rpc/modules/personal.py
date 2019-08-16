@@ -15,6 +15,7 @@ from eth_utils.curried import (
     to_bytes,
 )
 from helios.exceptions import BaseRPCError
+from helios.rpc.constants import MAX_ALLOWED_LENGTH_BLOCK_IMPORT_QUEUE
 from helios.rpc.format import (
     format_params,
     dummy,
@@ -32,7 +33,8 @@ from typing import (
 )
 from helios.rlp_templates.hls import P2PBlock
 from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStageRequest, \
-    CurrentSyncingParametersRequest, GetConnectedNodesRequest
+    CurrentSyncingParametersRequest, GetConnectedNodesRequest, BlockImportQueueLengthRequest, \
+    AverageNetworkMinGasPriceRequest
 
 from eth_keys import keys
 from helios_web3 import HeliosWeb3 as Web3
@@ -225,6 +227,24 @@ class Personal(RPCModule):
     async def _send_transactions(self, transactions, account, include_receive: bool = True):
         async with self._importing_block_lock:
             print("Importing block")
+
+            # Check our current syncing stage. Must be sync stage 4.
+            current_sync_stage_response = await self._event_bus.request(
+                CurrentSyncStageRequest()
+            )
+            if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
+                raise BaseRPCError(
+                    "This node is still syncing with the network. Please wait until this node has synced.")
+
+            # Check that our block import queue is not deep. It could cause min gas to increase before this block makes it there.
+            current_block_import_queue_length = await self._event_bus.request(
+                BlockImportQueueLengthRequest()
+            )
+            if current_block_import_queue_length.queue_length > MAX_ALLOWED_LENGTH_BLOCK_IMPORT_QUEUE:
+                raise BaseRPCError(
+                    "This node is currently at it's maximum capacity of new blocks. Please wait a moment while we process them, and try again.")
+
+
             normalized_wallet_address = to_normalized_address(account.address)
 
             wallet_address_hex = account.address
@@ -247,8 +267,18 @@ class Personal(RPCModule):
                 chain.populate_queue_block_with_receive_tx()
 
             signed_transactions = []
-            min_gas_price = to_wei(chain.chaindb.get_required_block_min_gas_price(), 'gwei')
-            safe_min_gas_price = to_wei(chain.chaindb.get_required_block_min_gas_price()+5, 'gwei')
+
+            # Make sure it meets the average min gas price of the network. If it doesnt, then it won't reach consensus.
+            current_network_min_gas_price_response = await self._event_bus.request(
+                AverageNetworkMinGasPriceRequest()
+            )
+
+            network_min_gas_price = current_network_min_gas_price_response.min_gas_price
+            local_min_gas_price = chain.min_gas_db.get_required_block_min_gas_price()
+            actual_min_gas_price = max([network_min_gas_price, local_min_gas_price])
+
+            min_gas_price = to_wei(actual_min_gas_price, 'gwei')
+            safe_min_gas_price = to_wei(actual_min_gas_price+5, 'gwei')
             for i in range(len(transactions)):
                 tx = transactions[i]
                 if to_normalized_address(tx['from']) != normalized_wallet_address:
@@ -291,9 +321,11 @@ class Personal(RPCModule):
 
             block = chain.import_current_queue_block()
 
-            if not does_block_meet_min_gas_price(block, chain):
+            average_block_gas_price = get_block_average_transaction_gas_price(block)
+
+            if average_block_gas_price < min_gas_price:
                 raise Exception("The average gas price of all transactions in your block does not meet the required minimum gas price. Your average block gas price: {}. Min gas price: {}".format(
-                    get_block_average_transaction_gas_price(block),
+                    average_block_gas_price,
                     min_gas_price))
 
             if len(signed_transactions) == 0 and len(block.receive_transactions) == 0:
@@ -355,13 +387,6 @@ class Personal(RPCModule):
         :return:
         '''
 
-        # Check our current syncing stage. Must be sync stage 4.
-        current_sync_stage_response = await self._event_bus.request(
-            CurrentSyncStageRequest()
-        )
-        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
-
 
         wallet_address_hex = tx['from']
 
@@ -379,13 +404,6 @@ class Personal(RPCModule):
         :return:
         '''
 
-        # Check our current syncing stage. Must be sync stage 4.
-        current_sync_stage_response = await self._event_bus.request(
-            CurrentSyncStageRequest()
-        )
-        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
-
         wallet_address_hex = txs[0]['from']
 
         account = await self._get_unlocked_account_or_unlock_now(wallet_address_hex, password)
@@ -393,12 +411,6 @@ class Personal(RPCModule):
 
     @format_params(decode_hex, dummy)
     async def receiveTransactions(self, wallet_address: bytes, password: str = None):
-        # Check our current syncing stage. Must be sync stage 4.
-        current_sync_stage_response = await self._event_bus.request(
-            CurrentSyncStageRequest()
-        )
-        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
 
         wallet_address_hex = encode_hex(wallet_address)
 

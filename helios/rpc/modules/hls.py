@@ -16,7 +16,7 @@ from eth_utils import (
 import time
 from hvm.rlp.transactions import BaseReceiveTransaction
 from helios.exceptions import BaseRPCError
-from helios.rpc.constants import MAX_ALLOWED_AGE_OF_NEW_RPC_BLOCK
+from helios.rpc.constants import MAX_ALLOWED_AGE_OF_NEW_RPC_BLOCK, MAX_ALLOWED_LENGTH_BLOCK_IMPORT_QUEUE
 from helios.rpc.format import (
     block_to_dict,
     header_to_dict,
@@ -65,7 +65,8 @@ import asyncio
 from typing import cast
 
 from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStageRequest, \
-    CurrentSyncingParametersRequest, GetConnectedNodesRequest
+    CurrentSyncingParametersRequest, GetConnectedNodesRequest, BlockImportQueueLengthRequest, \
+    AverageNetworkMinGasPriceRequest, AverageNetworkMinGasPriceResponse
 
 from hvm.rlp.consensus import StakeRewardBundle
 from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock
@@ -111,9 +112,7 @@ class Hls(RPCModule):
         return hex(num)
 
 
-    async def gasPrice(self):
-        required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price()
-        return hex(required_min_gas_price)
+
 
     @format_params(decode_hex, to_int_if_hex)
     async def getBalance(self, address, at_block):
@@ -304,13 +303,22 @@ class Hls(RPCModule):
     #
     # Gas system and network performance
     #
+    async def gasPrice(self):
+        # Make sure it meets the average min gas price of the network. If it doesnt, then it won't reach consensus.
+        current_network_min_gas_price_response = await self._event_bus.request(
+            AverageNetworkMinGasPriceRequest()
+        )
+
+        required_min_gas_price = self._chain.min_gas_db.get_required_block_min_gas_price()
+        return hex(required_min_gas_price)
+
     async def getGasPrice(self):
-        required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price()
+        required_min_gas_price = self._chain.min_gas_db.get_required_block_min_gas_price()
         return hex(required_min_gas_price)
 
     async def getHistoricalGasPrice(self):
 
-        historical_min_gas_price = self._chain.chaindb.load_historical_minimum_gas_price()
+        historical_min_gas_price = self._chain.min_gas_db.load_historical_minimum_gas_price()
 
         encoded = []
         for timestamp_gas_price in historical_min_gas_price:
@@ -320,7 +328,7 @@ class Hls(RPCModule):
 
     async def getApproximateHistoricalNetworkTPCCapability(self):
 
-        historical_tpc_cap = self._chain.chaindb.load_historical_network_tpc_capability()
+        historical_tpc_cap = self._chain.min_gas_db.load_historical_network_tpc_capability()
 
         encoded = []
         for timestamp_tpc_cap in historical_tpc_cap:
@@ -330,7 +338,8 @@ class Hls(RPCModule):
 
     async def getApproximateHistoricalTPC(self):
 
-        historical_tpc = self._chain.chaindb.load_historical_tx_per_centisecond()
+        #historical_tpc = self._chain.chaindb.load_historical_tx_per_centisecond_from_chain()
+        historical_tpc = self._chain.min_gas_db.load_historical_tx_per_decisecond_from_imported()
 
         encoded = []
         for timestamp_tpc in historical_tpc:
@@ -431,18 +440,40 @@ class Hls(RPCModule):
             (not chain.chaindb.is_in_canonical_chain(full_block.header.parent_hash))):
             raise BaseRPCError("Parent block not found on canonical chain.")
 
-        #Check our current syncing stage. Must be sync stage 4.
+
+
+        # Check our current syncing stage. Must be sync stage 4.
         current_sync_stage_response = await self._event_bus.request(
             CurrentSyncStageRequest()
         )
         if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
+            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced and try again.")
 
 
+        # Check that our block import queue is not deep. It could cause min gas to increase before this block makes it there.
+        current_block_import_queue_length = await self._event_bus.request(
+            BlockImportQueueLengthRequest()
+        )
+        if current_block_import_queue_length.queue_length > MAX_ALLOWED_LENGTH_BLOCK_IMPORT_QUEUE:
+            raise BaseRPCError("This node's block import queue is saturated. Please wait a moment and try again.")
+        
+
+        
+        # Make sure it meets the local min gas price
         if not does_block_meet_min_gas_price(full_block, chain):
-            required_min_gas_price = self._chain.chaindb.get_required_block_min_gas_price()
+            required_min_gas_price = self._chain.min_gas_db.get_required_block_min_gas_price()
             raise Exception("Block transactions don't meet the minimum gas price requirement of {}".format(required_min_gas_price))
 
+        # Make sure it meets the average min gas price of the network. If it doesnt, then it won't reach consensus.
+        current_network_min_gas_price_response = await self._event_bus.request(
+            AverageNetworkMinGasPriceRequest()
+        )
+        network_min_gas_price_wei = to_wei(current_network_min_gas_price_response.min_gas_price, 'gwei')
+        if network_min_gas_price_wei > get_block_average_transaction_gas_price(full_block):
+            raise BaseRPCError(
+                "This block doesn't meet the minimum gas requirements to reach consensus on the network. It must have at least {} average gas price on all transactions.".format(current_network_min_gas_price_response.min_gas_price))
+
+                
         self._event_bus.broadcast(
             NewBlockEvent(block=cast(P2PBlock, full_block), from_rpc=True)
         )

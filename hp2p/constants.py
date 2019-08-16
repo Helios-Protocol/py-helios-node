@@ -90,8 +90,7 @@ CONSENSUS_SYNC_TIME_PERIOD = 3 #the amount of time between checking that we are 
 CONSENSUS_CHECK_MIN_GAS_SYSTEM_READY_TIME_PERIOD = 5
 CONSENSUS_CHECK_CURRENT_SYNC_STAGE_PERIOD = 1 #amount of time to cache current sync stage in consensus service
 CONSENSUS_CHECK_LOCAL_TPC_CAP_PERIOD = 60
-MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD = 5 #this should be set to 30 after testing
-MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG = 0 #This might as well be left at 0, which will let the node calculate the tpc cap on its own until it connects to more nodes.
+MIN_GAS_PRICE_SYSTEM_UPDATE_PERIOD = 10 #This is also the amount of time between each min gas update with the PID system
 
 #This is the amount of time we allow the network to additively sync root hashes. Any root hashes older than this
 # amount of time from now will be synced via the consensus match method. Blocks can be up to 1000 seconds older than this

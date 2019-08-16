@@ -133,7 +133,7 @@ def get_block_average_transaction_gas_price(block):
 
 def does_block_meet_min_gas_price(block, chain):
     average_gas_price_in_wei = get_block_average_transaction_gas_price(block) #in wei
-    required_min_gas_price_in_gwei = chain.chaindb.get_required_block_min_gas_price(block.header.timestamp) #in gwei
+    required_min_gas_price_in_gwei = chain.min_gas_db.get_required_block_min_gas_price() #in gwei
 
     if average_gas_price_in_wei == float('inf'):
         return True

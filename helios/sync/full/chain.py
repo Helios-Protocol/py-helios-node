@@ -19,7 +19,7 @@ from helios.sync.common.constants import CHRONOLOGICAL_BLOCK_HASH_FRAGMENT_TYPE_
     CHAIN_HEAD_BLOCK_HASH_FRAGMENT_TYPE_ID, CONSENSUS_MATCH_SYNC_STAGE_ID, ADDITIVE_SYNC_STAGE_ID, \
     FULLY_SYNCED_STAGE_ID, FAST_SYNC_STAGE_ID, SYNCER_CACHE_TO_PREVENT_MULTIPLE_IMPORTS_OF_SAME_BLOCKS_EXPIRE_TIME, \
     SYNCER_RECENTLY_IMPORTED_BLOCK_MEMORY_EXPIRE_CHECK_LOOP_PERIOD
-from hp2p.events import NewBlockEvent
+from hp2p.events import NewBlockEvent, BlockImportQueueLengthRequest, BlockImportQueueLengthResponse
 
 from hvm.utils.blocks import get_block_average_transaction_gas_price, does_block_meet_min_gas_price
 
@@ -150,6 +150,16 @@ BlockBodyBundle = Tuple[
 # How big should the pending request queue get, as a multiple of the largest request size
 REQUEST_BUFFER_MULTIPLIER = 8
 
+class NewBlockQueueItem:
+    def __init__(self, new_block: P2PBlock, peer: Union[BasePeer, None] = None,
+                 propogate_to_network: bool = True, from_rpc: bool = False):
+        self.new_block = new_block
+        self.peer = peer
+        self.propogate_to_network = propogate_to_network
+        self.from_rpc = from_rpc
+
+
+# NewBlockQueueItem = namedtuple(NewBlockQueueItem, 'new_block chain_address peer propogate_to_network from_rpc')
 
 class WaitingPeers:
     """
@@ -275,7 +285,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                     self.run_daemon_task(self._handle_import_block_loop())
                     #self.run_daemon_task(self._recently_imported_block_memory_expire_loop())
                     if self.event_bus is not None:
-                        self.run_daemon_task(self.handle_new_block_events())
+                        self.run_daemon_task(self.handle_event_bus_events())
 
                     # this runs forever
                     self.run_daemon_task(self.sync_with_consensus_loop())
@@ -510,10 +520,12 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 # later we will add multiprocessing with multiple instances of this object to import in parallel.
                 try:
                     async with self.importing_blocks_lock:
+                        self.logger.debug('XXXXXXXXXXXXXXXXXXX {}'.format(new_block_queue_item.new_block.header.block_number))
                         await self.handle_new_block(new_block=new_block_queue_item.new_block,
                                                     peer=new_block_queue_item.peer,
                                                     propogate_to_network=new_block_queue_item.propogate_to_network,
                                                     from_rpc=new_block_queue_item.from_rpc)
+                        self.logger.debug('YYYYYYYYYYYYYYYYYYY {}'.format(new_block_queue_item.new_block.header.block_number))
                 except OperationCancelled:
                     # Silently swallow OperationCancelled exceptions because we run unsupervised (i.e.
                     # with ensure_future()). Our caller will also get an OperationCancelled anyway, and
@@ -593,7 +605,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             await self.sync_block_conflict_with_consensus()
             await asyncio.sleep(CONSENSUS_SYNC_TIME_PERIOD)
 
+    def add_block_queue_item_to_queue(self, queue_item: NewBlockQueueItem) -> None:
 
+        self._new_blocks_to_import.put_nowait(queue_item)
 
     #
     # Core functionality. Methods for performing sync
@@ -1176,6 +1190,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
 
 
 
+
+
     async def _handle_new_block(self, peer: HLSPeer,
                                 msg: Dict[str, Any]) -> None:
 
@@ -1183,9 +1199,9 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
         new_block = msg['block']
 
         queue_item = NewBlockQueueItem(new_block=new_block, peer=peer)
-        self._new_blocks_to_import.put_nowait(queue_item)
 
-        # await self.handle_new_block(new_block, chain_address, peer = peer)
+        self.add_block_queue_item_to_queue(queue_item)
+
 
     async def handle_new_block(self, new_block: P2PBlock, peer: HLSPeer = None,
                                propogate_to_network: bool = True, from_rpc: bool = False,
@@ -1227,18 +1243,16 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                     if block_gas_price == float("inf"):
                         self.logger.debug(
                             "New block didn't have high enough gas price. block_gas_price = infinity, required_min_gas_price = {}".format(
-                                self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)))
+                                chain.min_gas_db.get_required_block_min_gas_price()))
                     else:
                         self.logger.debug(
                             "New block didn't have high enough gas price. block_gas_price = {}, required_min_gas_price = {}".format(
-                                from_wei(int(get_block_average_transaction_gas_price(new_block)), 'gwei'), self.chaindb.get_required_block_min_gas_price(new_block.header.timestamp)))
+                                from_wei(int(get_block_average_transaction_gas_price(new_block)), 'gwei'), chain.min_gas_db.get_required_block_min_gas_price()))
                     return False
             except HistoricalMinGasPriceError:
                 self.logger.error("Cannot import new block because the minimum gas price system has not been initialized.")
                 return False
 
-        else:
-            pass
 
         # Get the head of the chain that we have in the database
         # need this to see if we are replacing a block
@@ -1284,7 +1298,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                                                                                       chain_address = new_block.header.chain_address,
                                                                                       )
                                     peer.sub_proto.send_new_block(cast(P2PBlock, conflict_block))
-
+                            else:
+                                self.logger.debug("Received a conflict block from the RPC. Doing nothing.")
                             return False
 
         except CanonicalHeadNotFound:
@@ -1379,9 +1394,18 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             return False
         except Exception as e:
             self.logger.error('tried to import a block and got error {}'.format(e))
+            raise e
             return False
 
         self.logger.debug('successfully imported block')
+
+        # Only save transactions to throttling system after block has successfully imported. This ensures that if we are bombarded
+        # with a bunch of invalid blocks, the min gas system won't go crazy.
+
+        tx_count = len(imported_block.transactions) + len(imported_block.receive_transactions)
+        self.logger.debug("Saving block {} transaction count of {} to min gas system".format(imported_block, tx_count))
+        chain.min_gas_db.append_transaction_count_to_historical_tx_per_decisecond_from_imported(tx_count)
+
 
         #if we replaced our own block because it was a block conflict, then we need to remove the entry from consensus now
         if resolving_block_conflict:
@@ -1518,8 +1542,8 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
     #
     # Event bus functions
     #
-    async def handle_new_block_events(self) -> None:
-        async def f() -> None:
+    async def handle_event_bus_events(self) -> None:
+        async def new_block_event_loop() -> None:
             # FIXME: There must be a way to cancel event_bus.stream() when our token is triggered,
             # but for the time being we just wrap everything in self.wait().
             async for req in self.event_bus.stream(NewBlockEvent):
@@ -1527,7 +1551,7 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 # `PeerCountResponse` to the callsite that made the request.  We do that by
                 # retrieving a `BroadcastConfig` from the request via the
                 # `event.broadcast_config()` API.
-                #self.event_bus.broadcast(PeerCountResponse(len(self)), req.broadcast_config())
+                # self.event_bus.broadcast(PeerCountResponse(len(self)), req.broadcast_config())
                 self.logger.debug("Got a new block from the event bus.")
                 block = req.block
                 only_propogate_to_network = req.only_propogate_to_network
@@ -1539,9 +1563,14 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 else:
                     self.logger.debug("Adding new block to queue")
                     new_block_queue_item = NewBlockQueueItem(block, from_rpc=req.from_rpc)
-                    self._new_blocks_to_import.put_nowait(new_block_queue_item)
+                    self.add_block_queue_item_to_queue(new_block_queue_item)
 
-        await self.wait(f())
+        async def current_new_block_queue_length_loop() -> None:
+            async for req in self.event_bus.stream(BlockImportQueueLengthRequest):
+                self.event_bus.broadcast(BlockImportQueueLengthResponse(self._new_blocks_to_import.qsize()),req.broadcast_config())
+
+
+        await self.wait_first(new_block_event_loop(),current_new_block_queue_length_loop())
 
 
     def propogate_block_to_network(self, block: P2PBlock):
@@ -1550,21 +1579,13 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             peer.sub_proto.send_new_block(block)
 
 
+
 class DownloadedBlockPart(NamedTuple):
     part: Union[commands.BlockBody, List[Receipt]]
     unique_key: Union[bytes, Tuple[bytes, bytes]]
 
 
-class NewBlockQueueItem:
-    def __init__(self, new_block: P2PBlock, peer: Union[BasePeer, None] = None,
-                 propogate_to_network: bool = True, from_rpc: bool = False):
-        self.new_block = new_block
-        self.peer = peer
-        self.propogate_to_network = propogate_to_network
-        self.from_rpc = from_rpc
 
-
-# NewBlockQueueItem = namedtuple(NewBlockQueueItem, 'new_block chain_address peer propogate_to_network from_rpc')
 
 def _body_key(header: BlockHeader) -> Tuple[bytes, bytes]:
     """Return the unique key of the body for the given header.
