@@ -37,7 +37,7 @@ from helios.utils.chains import (
     get_nodekey_path,
     load_nodekey,
     get_local_peer_pool_path,
-    get_chain_socket_path)
+    get_chain_socket_path, get_rpc_login_config_path)
 from helios.utils.filesystem import (
     PidFile,
 )
@@ -393,6 +393,9 @@ class ChainConfig:
             self._local_peer_pool_path = get_local_peer_pool_path(self.helios_root_dir)
         return self._local_peer_pool_path
 
+    @property
+    def rpc_login_config_path(self) -> Path:
+        return get_rpc_login_config_path(self.data_dir)
 
     #save as [public_key,ip,udp_port,tcp_port]
     def save_node_address_to_local_peer_pool_file(self):

@@ -422,7 +422,7 @@ class Personal(RPCModule):
     async def sign(self, message: str, wallet_address: bytes, password: str = None):
         # using EIP 191 https://github.com/ethereum/eth-account/blob/master/eth_account/messages.py
         normalized_wallet_address = to_normalized_address(wallet_address)
-        account = self._get_unlocked_account_or_unlock_now(wallet_address, password)
+        account = await self._get_unlocked_account_or_unlock_now(wallet_address, password)
 
         signable_message = encode_defunct(text = message)
         w3 = Web3()

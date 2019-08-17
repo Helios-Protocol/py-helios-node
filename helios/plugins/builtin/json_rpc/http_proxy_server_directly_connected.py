@@ -21,10 +21,11 @@ except ImportError:
 from aiohttp import web
 
 from helios.rpc.proxy import BaseProxy
+import json
 
 class Proxy(BaseProxy):
 
-    def __init__(self, http_url, ipc_path):
+    def __init__(self, http_url, rpc_execute):
         self.http_url = http_url
 
         url = urlparse(http_url)
@@ -33,15 +34,19 @@ class Proxy(BaseProxy):
 
         self.keepalive_timeout = 30
 
-        super().__init__(ipc_path)
+        self.rpc_execute = rpc_execute
+
+    async def process(self, raw_request):
+        # Connect directly to rpc
+        request = json.loads(raw_request)
+        return await self.rpc_execute(request)
 
     async def handle_post(self, request):
         text = await request.text()
-        bytes = await request.read()
         print("HTTP request: {}".format(text))
-        response = self.process(bytes)
+        response = await self.process(text)
         print("HTTP response: {}".format(response))
-        return web.Response(text=response.decode('utf-8'), content_type='application/json')
+        return web.Response(text=response, content_type='application/json')
 
     async def handle_get(self, request):
         return web.Response(text="Helios Protocol JSON RPC HTTP REST proxy online. Use POST to call RPC methods | {}:{}".format(self.hostname, self.port))

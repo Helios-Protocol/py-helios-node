@@ -1914,7 +1914,7 @@ def test_full_block():
 
     chain = TestnetChain.from_genesis(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
 
-    for i in range(int(400)):
+    for i in range(int(150)):
         print(i)
         chain.create_and_sign_transaction_for_queue_block(
             gas_price=1,
@@ -1937,6 +1937,28 @@ def test_full_block():
 
 # test_full_block()
 
+def test_over_full_block():
+    testdb = MemoryDB()
+
+    chain = TestnetChain.from_genesis(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+
+    for i in range(int(151)):
+        print(i)
+        chain.create_and_sign_transaction_for_queue_block(
+            gas_price=1,
+            gas=21000,
+            to=RECEIVER.public_key.to_canonical_address(),
+            value=1,
+            data=b"",
+            v=0,
+            r=0,
+            s=0
+        )
+    with pytest.raises(Exception):
+        chain.import_current_queue_block()
+
+
+# test_over_full_block()
 
 #
 # def test_chronological_block_initialization_2():

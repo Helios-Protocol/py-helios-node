@@ -1,5 +1,7 @@
 
 import time
+
+from helios.utils.xdg import get_xdg_helios_root
 from helios_web3 import HeliosWeb3 as Web3
 from web3 import WebsocketProvider, IPCProvider
 
@@ -7,8 +9,9 @@ from web3 import WebsocketProvider, IPCProvider
 # You must manually start the node before running this test
 #
 
-url = 'http://127.0.0.1:30304'
-ipc_path = '/home/tommy/.local/share/helios/instance_0/jsonrpc.ipc'
+helios_home_dir = get_xdg_helios_root()
+ipc_path = helios_home_dir / 'instance_0' / 'jsonrpc.ipc'
+ipc_path_instance_1 = helios_home_dir / 'instance_1' / 'jsonrpc.ipc'
 
 
 from hvm.constants import GAS_TX, BLOCK_GAS_LIMIT
@@ -70,12 +73,13 @@ def _test_DOS_with_many_transactions_on_rpc():
 
     # w3 = web3.Web3(web3.IPCProvider(ipc_path))
     w3 = Web3(IPCProvider(ipc_path))
+    w3_instance_1 = Web3(IPCProvider(ipc_path))
 
     start_time = time.time()
     num_transactions = 0
 
     while True:
-        for instance_num in range(16):
+        for instance_num in range(10):
             to_account = w3.hls.account.create()
             print("Sending 100 tx from instance {}".format(instance_num))
             txs = []
@@ -90,12 +94,17 @@ def _test_DOS_with_many_transactions_on_rpc():
             signed_block, header_dict, transactions = prepare_and_sign_block(w3, txs, get_primary_node_private_helios_key(instance_num))
 
             response = w3.hls.sendRawBlock(signed_block['rawBlock'])
-            time.sleep(0.9)
+            time.sleep(1.1)
 
         tx_per_second = (num_transactions/(time.time()-start_time))
         print("Transactions per second = {}".format(tx_per_second))
+        gas_price_instance_0 = w3.hls.gasPrice
+        print('gas_price_instance_0 {}'.format(gas_price_instance_0))
 
-        time.sleep(0)
+        gas_price_instance_1 = w3_instance_1.hls.gasPrice
+        print('gas_price_instance_1 {}'.format(gas_price_instance_1))
+
+        time.sleep(4)
 
 
 _test_DOS_with_many_transactions_on_rpc()

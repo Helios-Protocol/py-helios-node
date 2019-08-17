@@ -131,6 +131,9 @@ class FakeAsyncTestnetChain(TestnetChain):
 
     coro_initialize_historical_root_hashes_and_chronological_blocks = async_passthrough('initialize_historical_root_hashes_and_chronological_blocks')
 
+    coro_update_tpc_from_chronological = async_passthrough('update_tpc_from_chronological')
+
+    coro_re_initialize_historical_minimum_gas_price_at_genesis = async_passthrough('update_tpc_from_chronological')
 
 class FakeTestnetFullNode():
     chain_class = FakeAsyncTestnetChain

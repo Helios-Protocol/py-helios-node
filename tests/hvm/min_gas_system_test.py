@@ -199,7 +199,7 @@ RECEIVER4 = get_primary_node_private_helios_key(4)
 # exit()
 
 
-def test_aggressive_min_gas_price_pid():
+def _test_aggressive_min_gas_price_pid():
 
     wanted_txpc = 3000
     wanted_txpd = wanted_txpc/10
@@ -377,7 +377,7 @@ def test_update_current_network_tpc_capability():
 # test_update_current_network_tpc_capability()
 # exit()
 
-def test_update_current_network_tpc_capability_2():
+def _test_update_current_network_tpc_capability_2():
     testdb = MemoryDB()
     chain = TestnetChain.from_genesis(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS,TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
 
@@ -388,8 +388,8 @@ def test_update_current_network_tpc_capability_2():
         time.sleep(10)
 
 
-test_update_current_network_tpc_capability_2()
-exit()
+# test_update_current_network_tpc_capability_2()
+# exit()
 
 def test_save_min_gas_price():
     testdb = MemoryDB()

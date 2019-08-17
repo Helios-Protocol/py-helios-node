@@ -471,8 +471,11 @@ class MinGasDB(BaseMinGasDB):
         # that blocks have enough gas
         current_centisecond = int(time.time()/100) * 100
 
-        historical_minimum_gas_price = [[current_centisecond,min_gas_price]]
-        historical_tpc_capability = [[current_centisecond, net_tpc_cap]]
+        historical_minimum_gas_price = []
+        historical_tpc_capability = []
+        for timestamp in range(current_centisecond-100*50, current_centisecond+100, 100):
+            historical_minimum_gas_price.append([timestamp,min_gas_price])
+            historical_tpc_capability.append([timestamp,net_tpc_cap])
 
         self.save_historical_minimum_gas_price(historical_minimum_gas_price)
         self.save_historical_network_tpc_capability(historical_tpc_capability, de_sparse = False)

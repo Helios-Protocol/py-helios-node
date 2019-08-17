@@ -2,7 +2,6 @@ from cytoolz import (
     identity,
 )
 from eth_typing import Hash32, Address
-
 from eth_utils import (
     decode_hex,
     encode_hex,
@@ -260,6 +259,7 @@ class Hls(RPCModule):
 
         return receivable_transactions_dict
 
+
     @format_params(identity, to_int_if_hex)
     async def filterAddressesWithReceivableTransactions(self, chain_addresses, after_timestamp = 0):
         #
@@ -281,7 +281,7 @@ class Hls(RPCModule):
         else:
             addresses_with_receivable_transactions = await chain.coro_filter_accounts_with_receivable_transactions(chain_addresses)
 
-        addresses_with_receivable_transactions = [encode_hex(x) for x in addresses_with_receivable_transactions]
+        addresses_with_receivable_transactions = [to_checksum_address(x) for x in addresses_with_receivable_transactions]
 
         return addresses_with_receivable_transactions
 
@@ -308,13 +308,12 @@ class Hls(RPCModule):
         current_network_min_gas_price_response = await self._event_bus.request(
             AverageNetworkMinGasPriceRequest()
         )
-
-        required_min_gas_price = self._chain.min_gas_db.get_required_block_min_gas_price()
-        return hex(required_min_gas_price)
+        network_min_gas_price = current_network_min_gas_price_response.min_gas_price
+        local_min_gas_price = self._chain.min_gas_db.get_required_block_min_gas_price()
+        return hex(max([network_min_gas_price, local_min_gas_price]))
 
     async def getGasPrice(self):
-        required_min_gas_price = self._chain.min_gas_db.get_required_block_min_gas_price()
-        return hex(required_min_gas_price)
+        return await self.gasPrice()
 
     async def getHistoricalGasPrice(self):
 
@@ -338,8 +337,8 @@ class Hls(RPCModule):
 
     async def getApproximateHistoricalTPC(self):
 
-        #historical_tpc = self._chain.chaindb.load_historical_tx_per_centisecond_from_chain()
-        historical_tpc = self._chain.min_gas_db.load_historical_tx_per_decisecond_from_imported()
+        historical_tpc = self._chain.chaindb.load_historical_tx_per_centisecond_from_chain()
+        #historical_tpc = self._chain.min_gas_db.load_historical_tx_per_decisecond_from_imported()
 
         encoded = []
         for timestamp_tpc in historical_tpc:

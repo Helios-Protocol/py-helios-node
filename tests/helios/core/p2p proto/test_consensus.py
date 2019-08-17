@@ -121,7 +121,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
 
 
 
-    node_index_to_listen_with_logger = 7
+    node_index_to_listen_with_logger = 0
     consensus_services = []
     for i in range(len(dbs_for_linking)):
         if i == 0:
@@ -299,16 +299,21 @@ async def _build_test_consensus(request, event_loop,
         peer_dbs.append(MemoryDB(competing_base_db.kv_store.copy()))
 
     bootstrap_node = TestnetChain(base_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    # print("XXXXXXXXXXXXXXXX")
+    # print(bootstrap_node.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address()))
+    # await asyncio.sleep(1000)
     bootstrap_node.min_gas_db.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=100)
     consensus_root_hash_timestamps = bootstrap_node.chain_head_db.get_historical_root_hashes()
 
+    def print_statistics(consensus, timestamp):
+        print(consensus.coro_get_root_hash_consensus(timestamp, debug = True))
 
     async def validation(consensus_services):
         for i in range(len(consensus_services)):
             client_consensus = consensus_services[i]
             for timestamp, root_hash in consensus_root_hash_timestamps:
                 client_consensus_choice = await client_consensus.coro_get_root_hash_consensus(timestamp)
-                assert (client_consensus_choice == root_hash)
+                assert (client_consensus_choice == root_hash), print_statistics(client_consensus, timestamp)
 
             #consensus_service 0 is bootnode, it is in consensus
             #consensus_service 1 is the client. It only has genesis block and is not in consensus

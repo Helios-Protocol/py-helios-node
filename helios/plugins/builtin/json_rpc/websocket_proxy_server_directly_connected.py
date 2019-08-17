@@ -1,6 +1,7 @@
 import asyncio
 import websockets
 import sys
+import json
 import ssl
 
 from helios.helios_config import (
@@ -17,11 +18,14 @@ except ImportError:
     JSONDecodeError = ValueError
 
 
+
 from helios.rpc.proxy import BaseProxy
 
+# Instead of piping requests through the IPC socket, we are connecting directly with the code. This allows
+# async requests.
 class Proxy(BaseProxy):
 
-    def __init__(self, websocket_url, ipc_path):
+    def __init__(self, websocket_url, rpc_execute):
         self.websocket_url = websocket_url
 
         url = urlparse(websocket_url)
@@ -32,8 +36,13 @@ class Proxy(BaseProxy):
 
         self.server = None
 
-        super().__init__(ipc_path)
+        self.rpc_execute = rpc_execute
 
+
+    async def process(self, raw_request):
+        # Connect directly to rpc
+        request = json.loads(raw_request)
+        return await self.rpc_execute(request)
 
     async def interface(self, websocket, path):
         while websocket.open:
@@ -45,9 +54,9 @@ class Proxy(BaseProxy):
                 continue
 
             print("request: {}".format(request))
-            response = self.process(request.encode('utf-8'))
+            response = await self.process(request)
             print("response: {}".format(response))
-            await websocket.send(response.decode('utf-8'))
+            await websocket.send(response)
 
     def run(self):
 
@@ -56,25 +65,16 @@ class Proxy(BaseProxy):
             ssl_context.load_cert_chain(WEBSOCKET_SSL_CERT_FILE_PATH, WEBSOCKET_SSL_KEY_FILE_PATH)
 
             self.server = websockets.serve(self.interface, self.hostname, self.port, ssl=ssl_context)
-            print("JSON-RPC Secure Websocket Proxy: {} -> {}".format(
-                self.ipc_path, self.websocket_url), file=sys.stderr, flush=True)
+            print("JSON-RPC Secure Websocket Server: {}".format(
+                self.websocket_url), file=sys.stderr, flush=True)
         else:
             self.server = websockets.serve(self.interface, self.hostname, self.port)
 
-            print("JSON-RPC Websocket Proxy: {} -> {}".format(
-                self.ipc_path, self.websocket_url), file=sys.stderr, flush=True)
+            print("JSON-RPC Websocket Server: {}".format(
+                 self.websocket_url), file=sys.stderr, flush=True)
 
-        asyncio.get_event_loop().run_until_complete(self.server)
-        asyncio.get_event_loop().run_forever()
-
+        return(self.server)
 
 
-if __name__ == '__main__':
-    print('starting')
-    backend_path = '/home/tommy/.local/share/helios/mainnet/jsonrpc.ipc'
-    websocket_url = 'ws://0.0.0.0:30304'
-    proxy = Proxy(websocket_url, backend_path)
-    proxy.run()
-    print('finished')
 
 

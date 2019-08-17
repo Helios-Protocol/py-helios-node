@@ -2406,10 +2406,7 @@ class Chain(BaseChain):
         if wanted_tpd < 1:
             wanted_tpd = 1
 
-        print('ZZZZZZZZZZZZZZ')
-        print(tpd_tail, last_min_gas_price, wanted_tpd, time_since_last_pid_update)
         new_min_gas_price = self.min_gas_db._calculate_next_min_gas_price_pid(tpd_tail, last_min_gas_price, wanted_tpd, time_since_last_pid_update)
-        print(new_min_gas_price)
 
         self.min_gas_db.append_historical_min_gas_price_now(new_min_gas_price)
 
