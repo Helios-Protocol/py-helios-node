@@ -426,6 +426,9 @@ class MinGasDB(BaseMinGasDB):
         # so that it can catch dos attacks. It expects historical_txpd to be the transactions per 10 seconds, in 10 second
         # increments.
         #
+        if last_min_gas_price <= 0:
+            last_min_gas_price = 1
+
         num_seconds_between_points =time_since_last_pid_update
         if len(historical_txpd) < 2:
             self.logger.debug("Not enough historical txpd to calculate next min gas price. Returning previous min gas price.")
