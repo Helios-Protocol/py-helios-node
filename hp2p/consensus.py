@@ -194,7 +194,6 @@ class Consensus(BaseService, PeerSubscriber):
         commands.StakeForAddresses,
         commands.GetStakeForAddresses,
         commands.GetMinGasParameters,
-        commands.MinGasParameters,
         commands.GetNodeStakingScore,
     }
 
@@ -280,6 +279,7 @@ class Consensus(BaseService, PeerSubscriber):
         self.coro_min_gas_system_ready = asyncio.Event()
 
         self._write_to_root_hash_timestamps_statistics = asyncio.Lock()
+        self._write_to_min_gas_parameter_statistics_lock = asyncio.Lock()
      
     '''
     Properties and utils
@@ -895,11 +895,11 @@ class Consensus(BaseService, PeerSubscriber):
                 chain.save_health_request(peer.wallet_address)
                 break
             except ValidationError as e:
-                raise e
+                self.logger.debug('Peer health request ValidationError error {}'.format(e))
+                break
             except AlreadyWaiting:
-                #we already have a pending request to this peer. Pause and then try again
-                await asyncio.sleep(ROUND_TRIP_TIMEOUT)
-                continue
+                self.logger.debug('Peer health request AlreadyWaiting error {}')
+                break
             except Exception as e:
                 self.logger.error("Error when syncing peer node health {}".format(e))
                 break
@@ -1087,11 +1087,12 @@ class Consensus(BaseService, PeerSubscriber):
     async def calculate_average_network_min_gas_limit(self) -> int:
         all_candidate_item_stake = []
 
-        for wallet_address, timestamp_min_gas_limit_stake in self._network_min_gas_limit_statistics.copy().items():
-            if timestamp_min_gas_limit_stake[0] >= int(time.time()) - 5 * 60:
-                all_candidate_item_stake.append([timestamp_min_gas_limit_stake[1], timestamp_min_gas_limit_stake[2]])
-            else:
-                del (self._network_min_gas_limit_statistics[wallet_address])
+        async with self._write_to_min_gas_parameter_statistics_lock:
+            for wallet_address, timestamp_min_gas_limit_stake in self._network_min_gas_limit_statistics.copy().items():
+                if timestamp_min_gas_limit_stake[0] >= int(time.time()) - 5 * 60:
+                    all_candidate_item_stake.append([timestamp_min_gas_limit_stake[1], timestamp_min_gas_limit_stake[2]])
+                else:
+                    del (self._network_min_gas_limit_statistics[wallet_address])
 
         
         chain = self.node.get_new_chain()
@@ -1122,11 +1123,12 @@ class Consensus(BaseService, PeerSubscriber):
     async def calculate_average_network_tpc_cap(self):
         all_candidate_item_stake = []
 
-        for wallet_address, timestamp_max_tpc_cap_stake in self._network_tpc_cap_statistics.copy().items():
-            if timestamp_max_tpc_cap_stake[0] >= int(time.time())-5*60:
-                all_candidate_item_stake.append([timestamp_max_tpc_cap_stake[1], timestamp_max_tpc_cap_stake[2]])
-            else:
-                del(self._network_tpc_cap_statistics[wallet_address])
+        async with self._write_to_min_gas_parameter_statistics_lock:
+            for wallet_address, timestamp_max_tpc_cap_stake in self._network_tpc_cap_statistics.copy().items():
+                if timestamp_max_tpc_cap_stake[0] >= int(time.time())-5*60:
+                    all_candidate_item_stake.append([timestamp_max_tpc_cap_stake[1], timestamp_max_tpc_cap_stake[2]])
+                else:
+                    del(self._network_tpc_cap_statistics[wallet_address])
 
         #add in our local tpc and stake
         local_tpc_cap = await self.local_tpc_cap
@@ -1139,7 +1141,7 @@ class Consensus(BaseService, PeerSubscriber):
             all_candidate_item_stake.append([local_tpc_cap, local_stake])
         
         if len(all_candidate_item_stake) == 0:
-            return None
+            return local_tpc_cap
 
         try:
             average_network_tpc_cap = int(stake_weighted_average(all_candidate_item_stake))
@@ -1148,10 +1150,61 @@ class Consensus(BaseService, PeerSubscriber):
             return average_network_tpc_cap
         except ZeroDivisionError:
             self.logger.debug("Divided by zero when calculating average network tpc cap. all_candidate_item_stake = {}".format(all_candidate_item_stake))
-            return None
+            return local_tpc_cap
 
 
 
+    async def _get_min_gas_parameters_from_peer(self,num_centiseconds_from_now, peer):
+        self.logger.debug("Asing peer {} for min gas parameters with num_centiseconds_from_now = {}".format(encode_hex(peer.wallet_address), num_centiseconds_from_now))
+        while True:
+            try:
+                min_gas_parameters = await peer.requests.get_min_gas_parameters(num_centiseconds_from_now = num_centiseconds_from_now)
+
+                if min_gas_parameters is not None:
+                    self.logger.debug("Received min gas parameters {} from peer {}".format(min_gas_parameters, peer))
+                    await self.save_min_gas_parameters_to_statistics(min_gas_parameters, peer)
+                else:
+                    self.logger.debug("_get_min_gas_parameters_from_peer didn't send anything back")
+                break
+            except PeerConnectionLost:
+                self.logger.debug('_get_min_gas_parameters_from_peer PeerConnectionLost error')
+                break
+            except TimeoutError:
+                self.logger.debug('_get_min_gas_parameters_from_peer TimeoutError error')
+                break
+            except ValidationError as e:
+                self.logger.error('_get_min_gas_parameters_from_peer ValidationError error {}'.format(e))
+                break
+            except AlreadyWaiting:
+                self.logger.debug('_get_min_gas_parameters_from_peer AlreadyWaiting error')
+                break
+            except Exception as e:
+                self.logger.error("Error when receiving min gas parameters from peer. {}".format(e))
+                break
+        
+    async def save_min_gas_parameters_to_statistics(self, min_gas_parameters: Dict[str, Any], peer: HLSPeer):
+        chain = self.node.get_chain()
+        hist_net_tpc_capability = min_gas_parameters['hist_net_tpc_capability']
+        hist_min_allowed_gas_price = min_gas_parameters['hist_min_allowed_gas_price']
+        if len(hist_net_tpc_capability) > 1:
+            #we are receiving an entire list of historical tpc data. This can only come from a bootnode.
+            if peer.remote in self.bootstrap_nodes:
+                self.logger.debug("received min gas initialization parameters from bootnode. Initializing database")
+                if not self.coro_min_gas_system_ready.is_set():
+                    chain.min_gas_db.save_historical_minimum_gas_price(hist_min_allowed_gas_price)
+                    chain.min_gas_db.save_historical_network_tpc_capability(hist_net_tpc_capability)
+                    self.coro_min_gas_system_ready.set()
+
+        # always save statics no matter what
+        try:
+            self.logger.debug("Saving min gas parameters to statistics")
+            stake = await self.get_accurate_stake(peer)
+            async with self._write_to_min_gas_parameter_statistics_lock:
+                self._network_tpc_cap_statistics[peer.wallet_address] = [time.time(),hist_net_tpc_capability[-1][1], stake]
+                self._network_min_gas_limit_statistics[peer.wallet_address] = [time.time(),hist_min_allowed_gas_price[-1][1], stake]
+        except UnknownPeerStake:
+            # If we don't know their stake yet. Don't add it to the statistics.
+            pass
 
 
     async def sync_and_update_min_gas_price_system(self):
@@ -1166,11 +1219,10 @@ class Consensus(BaseService, PeerSubscriber):
         if self.coro_min_gas_system_ready.is_set():
             self.logger.debug("sync_min_gas_price_system, min_gas_system_ready = True")
             average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
-            if average_network_tpc_cap is not None:
-                chain.update_current_network_tpc_capability(average_network_tpc_cap, update_min_gas_price = True)
+            chain.update_current_network_tpc_capability(average_network_tpc_cap, update_min_gas_price = True)
 
             for peer in self.peer_pool.peers:
-                peer.sub_proto.send_get_min_gas_parameters(num_centiseconds_from_now=0)
+                asyncio.ensure_future(self._get_min_gas_parameters_from_peer(0, peer))
 
         else:
             self.logger.debug("sync_min_gas_price_system, min_gas_system_ready = False")
@@ -1203,7 +1255,7 @@ class Consensus(BaseService, PeerSubscriber):
 
                         num_centiseconds_required = int((time.time()-safe_earliest_required_time)/100)+100
 
-                        boot_node_peer.sub_proto.send_get_min_gas_parameters(num_centiseconds_from_now=num_centiseconds_required)
+                        await self._get_min_gas_parameters_from_peer(num_centiseconds_required, boot_node_peer)
                         return
                     except KeyError:
                         pass
@@ -1427,84 +1479,7 @@ class Consensus(BaseService, PeerSubscriber):
             return None
         else:
             return peers_with_block
-        
-    #
-    # async def get_closest_root_hash_consensus(self, timestamp):
-    #     '''
-    #     Returns the closest timestamp that we have a saved root hash for
-    #     '''
-    #     sorted_root_hash_timestamps = reversed(SortedDict(self.root_hash_timestamps_statistics))
-    #     #goes from greatest to smallest
-    #     for available_timestamp in sorted_root_hash_timestamps.keys():
-    #         if available_timestamp <= timestamp:
-    #             to_return =  available_timestamp, await self.coro_get_root_hash_consensus(available_timestamp)
-    #             return to_return
-    #
-    #     if self.is_network_startup_node:
-    #         self.logger.debug("using local root hash timestamps for get_closest_root_hash_consensus because am bootnode")
-    #         local_root_hash_timestamps = self.local_root_hash_timestamps
-    #         sorted_local_root_hash_timestamps = SortedDict(lambda x: int(x)*-1, local_root_hash_timestamps)
-    #         for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
-    #             if available_timestamp <= timestamp:
-    #                 to_return =  available_timestamp, root_hash
-    #                 return to_return
-    #
-    #
-    #     return None, None
-    
-    
-    # def get_next_consensus_root_hash_after_timestamp_that_differs_from_local_at_timestamp(self, timestamp):
-    #     '''
-    #     Returns the next consensus root hash that differs from our local root hash at the given timestamp
-    #     '''
-    #     initial_local_root_hash_at_timestamp = self.local_root_hash_timestamps[timestamp]
-    #     #self.logger.debug("initial root hash = {}".format(initial_local_root_hash_at_timestamp))
-    #     #self.logger.debug("consensus root hash at initial timestamp = {}".format(self.get_root_hash_consensus(timestamp)))
-    #     sorted_root_hash_timestamps = SortedDict(self.root_hash_timestamps_statistics)
-    #     #goes from smallest to greatest
-    #     for available_timestamp in sorted_root_hash_timestamps.keys():
-    #         if available_timestamp > timestamp:
-    #             to_return =  available_timestamp, self.get_root_hash_consensus(available_timestamp)
-    #             if to_return[1] != initial_local_root_hash_at_timestamp:
-    #                 return to_return
-    #
-    #     if self.is_network_startup_node:
-    #         self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
-    #         local_root_hash_timestamps = self.local_root_hash_timestamps
-    #         sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
-    #         for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
-    #             if available_timestamp > timestamp:
-    #                 to_return =  available_timestamp, root_hash
-    #                 if to_return[1] != initial_local_root_hash_at_timestamp:
-    #                     return to_return
-    #
-    #     return None, None
-    
-    # def get_next_consensus_root_hash_after_timestamp(self, timestamp):
-    #     '''
-    #     Returns the next consensus root hash that differs from our local root hash at the given timestamp
-    #     '''
-    #     #initial_local_root_hash_at_timestamp = self.local_root_hash_timestamps[timestamp]
-    #     #self.logger.debug("initial root hash = {}".format(initial_local_root_hash_at_timestamp))
-    #     #self.logger.debug("consensus root hash at initial timestamp = {}".format(self.get_root_hash_consensus(timestamp)))
-    #     sorted_root_hash_timestamps = SortedDict(self.root_hash_timestamps_statistics)
-    #     #goes from smallest to greatest
-    #     for available_timestamp in sorted_root_hash_timestamps.keys():
-    #         if available_timestamp > timestamp:
-    #             to_return =  available_timestamp, self.get_root_hash_consensus(available_timestamp)
-    #             return to_return
-    #
-    #     if self.is_network_startup_node:
-    #         self.logger.debug("using local root hash timestamps for get_next_consensus_root_hash_after_timestamp because am bootnode")
-    #         local_root_hash_timestamps = self.local_root_hash_timestamps
-    #         sorted_local_root_hash_timestamps = SortedDict(local_root_hash_timestamps)
-    #         for available_timestamp, root_hash in sorted_local_root_hash_timestamps.items():
-    #             if available_timestamp > timestamp:
-    #                 to_return =  available_timestamp, root_hash
-    #                 return to_return
-    #
-    #     return None, None
-        
+
         
         
     
@@ -1826,17 +1801,12 @@ class Consensus(BaseService, PeerSubscriber):
             elif isinstance(cmd, GetMinGasParameters):
                 await self._handle_get_min_gas_parameters(peer, cast(Dict[str, Any], msg))
 
-            elif isinstance(cmd, MinGasParameters):
-                await self._handle_min_gas_parameters(peer, cast(Dict[str, Any], msg))
-
             elif isinstance(cmd, GetNodeStakingScore):
                 if await self.current_sync_stage >= 4 or self.chain_config.network_startup_node:
                     await self._handle_get_node_staking_score(peer, cast(NodeStakingScore, msg))
 
 
         
-        
-
 
     async def _handle_block_choices(self, peer: HLSPeer, msg) -> None:
         peer_wallet_address = peer.wallet_address
@@ -1914,47 +1884,43 @@ class Consensus(BaseService, PeerSubscriber):
         if self.coro_min_gas_system_ready.is_set():
             chain = self.node.get_chain()
             hist_min_allowed_gas_price = chain.min_gas_db.load_historical_minimum_gas_price()
-            
             if msg['num_centiseconds_from_now'] == 0:
+                self.logger.debug("received get min gas parameters from peer {}".format(peer))
                 average_network_tpc_cap = await self.calculate_average_network_tpc_cap()
-                if average_network_tpc_cap is not None:
-                    hist_net_tpc_capability = [[0, average_network_tpc_cap]]
-                    hist_min_allowed_gas_price_new = [[0,hist_min_allowed_gas_price[-1][1]]]
-                    peer.sub_proto.send_min_gas_parameters(hist_net_tpc_capability, hist_min_allowed_gas_price_new)
+                hist_net_tpc_capability = [[0, average_network_tpc_cap]]
+                hist_min_allowed_gas_price_new = [[0,hist_min_allowed_gas_price[-1][1]]]
+                peer.sub_proto.send_min_gas_parameters(hist_net_tpc_capability, hist_min_allowed_gas_price_new)
+                self.logger.debug("sent get min gas parameters {} | {} to peer {}".format(hist_net_tpc_capability, hist_min_allowed_gas_price_new, peer))
             else:
+                self.logger.debug("received get min gas initialization parameters from peer {}".format(peer))
                 hist_net_tpc_capability = chain.min_gas_db.load_historical_network_tpc_capability()
-                
                 num_centiseconds_to_send = min([len(hist_net_tpc_capability), len(hist_min_allowed_gas_price), msg['num_centiseconds_from_now']])
-                self.logger.debug("sending {} centiseconds of min gas parameters".format(num_centiseconds_to_send))
                 peer.sub_proto.send_min_gas_parameters(hist_net_tpc_capability[-num_centiseconds_to_send:], hist_min_allowed_gas_price[-num_centiseconds_to_send:])
+                self.logger.debug("sent get min gas initialization parameters {} | {}".format(hist_net_tpc_capability, num_centiseconds_to_send))
                 
-    async def _handle_min_gas_parameters(self, peer: HLSPeer, msg) -> None:
-        chain = self.node.get_chain()
-        hist_net_tpc_capability = msg['hist_net_tpc_capability']
-        hist_min_allowed_gas_price = msg['hist_min_allowed_gas_price']
-        self.logger.debug("received min gas parameters from peer")
-        if len(hist_net_tpc_capability) == 1:
-            #require that the timestamp is set to 0 for the most recent average. Otherwise we shouldn't be receiving just 1.
-            if hist_net_tpc_capability[0][0] == 0:
-                #We are just receiving the last minute. this can be from any node. Lets keep track of it and average it.
-                try:
-                    stake = await self.get_accurate_stake(peer)
-                    self._network_tpc_cap_statistics[peer.wallet_address] = [time.time(),hist_net_tpc_capability[0][1], stake]
-                    self._network_min_gas_limit_statistics[peer.wallet_address] = [time.time(),hist_min_allowed_gas_price[0][1], stake]
-                except UnknownPeerStake:
-                    # If we don't know their stake yet. Don't add it to the statistics.
-                    pass
-
-                
-
-        else:
-            #we are receiving an entire list of historical tpc data. This can only come from a bootnode.
-            if peer.remote in self.bootstrap_nodes:
-                self.logger.debug("received min gas initialization parameters from bootnode")
-                if not self.coro_min_gas_system_ready.is_set():
-                    chain.min_gas_db.save_historical_minimum_gas_price(hist_min_allowed_gas_price)
-                    chain.min_gas_db.save_historical_network_tpc_capability(hist_net_tpc_capability)
-                    self.coro_min_gas_system_ready.set()
+    # async def _handle_min_gas_parameters(self, peer: HLSPeer, msg) -> None:
+    #     chain = self.node.get_chain()
+    #     hist_net_tpc_capability = msg['hist_net_tpc_capability']
+    #     hist_min_allowed_gas_price = msg['hist_min_allowed_gas_price']
+    #     self.logger.debug("received min gas parameters {} | {} from peer {}".format(hist_net_tpc_capability, hist_min_allowed_gas_price, peer))
+    #     if len(hist_net_tpc_capability) > 1:
+    #         #we are receiving an entire list of historical tpc data. This can only come from a bootnode.
+    #         if peer.remote in self.bootstrap_nodes:
+    #             self.logger.debug("received min gas initialization parameters from bootnode. Initializing database")
+    #             if not self.coro_min_gas_system_ready.is_set():
+    #                 chain.min_gas_db.save_historical_minimum_gas_price(hist_min_allowed_gas_price)
+    #                 chain.min_gas_db.save_historical_network_tpc_capability(hist_net_tpc_capability)
+    #                 self.coro_min_gas_system_ready.set()
+    # 
+    #     # always save statics no matter what
+    #     try:
+    #         self.logger.debug("Saving min gas parameters to statistics")
+    #         stake = await self.get_accurate_stake(peer)
+    #         self._network_tpc_cap_statistics[peer.wallet_address] = [time.time(),hist_net_tpc_capability[-1][1], stake]
+    #         self._network_min_gas_limit_statistics[peer.wallet_address] = [time.time(),hist_min_allowed_gas_price[-1][1], stake]
+    #     except UnknownPeerStake:
+    #         # If we don't know their stake yet. Don't add it to the statistics.
+    #         pass
 
     async def _handle_get_node_staking_score(self, peer: HLSPeer, msg) -> None:
         self.logger.debug("Received request to send node staking score.")

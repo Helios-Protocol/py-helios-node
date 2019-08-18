@@ -2,16 +2,17 @@ import asyncio
 import logging
 
 import time
+import random
 
 import pytest
 
-from typing import cast
+from typing import cast, List
 
 from eth_keys import keys
 from eth_utils import decode_hex
 
 from helios.dev_tools import create_dev_test_blockchain_database_with_given_transactions, \
-    add_transactions_to_blockchain_db
+    add_transactions_to_blockchain_db, create_dev_test_random_blockchain_database, create_predefined_blockchain_database
 from hp2p.constants import TIME_OFFSET_TO_FAST_SYNC_TO
 from hvm.db.backends.memory import MemoryDB
 from pprint import pprint
@@ -78,9 +79,12 @@ import os
 from hp2p.consensus import Consensus
 logger = logging.getLogger('helios')
 
+private_keys = []
+for i in range(len(random_private_keys)):
+    private_keys.append(keys.PrivateKey(random_private_keys[i]))
 
 @pytest.mark.asyncio
-async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, peer_swarm, validation_function):
+async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, peer_swarm, validation_function, waiting_function = None):
 
     # 0 = bootnode, 1 = client, 2 .... n = peers in swarm
     dbs_for_linking = [bootnode_db, client_db, *peer_swarm]
@@ -121,7 +125,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
 
 
 
-    node_index_to_listen_with_logger = 0
+    node_index_to_listen_with_logger = [0,1]
     consensus_services = []
     for i in range(len(dbs_for_linking)):
         if i == 0:
@@ -143,7 +147,7 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
                              node=node
                              )
 
-        if i != node_index_to_listen_with_logger:
+        if i not in node_index_to_listen_with_logger:
             # disable logger by renaming it to one we arent listening to
             consensus.logger = logging.getLogger('dummy')
             pass
@@ -169,7 +173,10 @@ async def _test_consensus_swarm(request, event_loop, bootnode_db, client_db, pee
 
     asyncio.ensure_future(consensus_services[1].run())
 
-    await wait_for_consensus_all(consensus_services)
+    if waiting_function is None:
+        await wait_for_consensus_all(consensus_services)
+    else:
+        await waiting_function(consensus_services)
 
     print("WAITING FUNCTION FIRED")
 
@@ -206,10 +213,6 @@ async def _build_test_consensus(request, event_loop,
 
     #genesis_block_timestamp = int(time.time()/1000)*1000 - 1000*1000 + 1000
     #genesis_block_timestamp = 1547288000
-
-    private_keys = []
-    for i in range(len(random_private_keys)):
-        private_keys.append(keys.PrivateKey(random_private_keys[i]))
 
     if gap_between_genesis_block_and_first_transaction < MIN_TIME_BETWEEN_BLOCKS:
         gap_between_genesis_block_and_first_transaction = MIN_TIME_BETWEEN_BLOCKS
@@ -427,6 +430,70 @@ async def test_consensus_root_hash_choice_diverging_in_additive_sync_window_4(re
 
 
 
+@pytest.mark.asyncio
+async def test_consensus_avg_network_min_gas(request, event_loop):
+
+    num_peers_in_swarm = 6
+
+    base_db = MemoryDB()
+    create_predefined_blockchain_database(base_db)
+
+    tx_list = [
+        [TESTNET_GENESIS_PRIVATE_KEY, private_keys[1], 1, int(time.time())]
+    ]
+    add_transactions_to_blockchain_db(base_db, tx_list)
+
+    client_db = MemoryDB(kv_store=base_db.kv_store.copy())
+
+    peer_dbs = []
+    for i in range(num_peers_in_swarm):
+        peer_dbs.append(MemoryDB(kv_store=base_db.kv_store.copy()))
+
+    # Set their minimum gas prices
+    bootstrap_chain = TestnetChain(base_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    bootstrap_chain.min_gas_db.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=100, net_tpc_cap = 1)
+
+    client_chain = TestnetChain(client_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    client_chain.min_gas_db.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=100, net_tpc_cap=1)
+
+    for peer_db in peer_dbs:
+        peer_chain = TestnetChain(peer_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+        peer_chain.min_gas_db.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=random.randint(1,1000), net_tpc_cap=1)
+
+    bootstrap_historical_min_gas_price = bootstrap_chain.min_gas_db.load_historical_minimum_gas_price()
+    bootstrap_historical_network_tpc_capability = bootstrap_chain.min_gas_db.load_historical_network_tpc_capability()
+    
+    async def validation(consensus_services: List[Consensus]):
+        # avg_min_gas_limits = [await client_consensus.calculate_average_network_min_gas_limit() for client_consensus in consensus_services]
+        # print(avg_min_gas_limits)
+        # all_equal = all(x == avg_min_gas_limits[0] for x in avg_min_gas_limits)
+        # assert(all_equal)
+        
+        # We also want to make sure that the nodes correctly initialized to the bootstrap node
+        for consensus in consensus_services:
+            chain = consensus.node.get_chain()
+            node_historical_min_gas_price = chain.min_gas_db.load_historical_minimum_gas_price()
+            node_historical_network_tpc_capability = chain.min_gas_db.load_historical_network_tpc_capability()
+            
+            assert(bootstrap_historical_min_gas_price[:-1] == node_historical_min_gas_price[:len(bootstrap_historical_min_gas_price)-1])
+            assert(bootstrap_historical_network_tpc_capability[:-1] == node_historical_network_tpc_capability[:len(bootstrap_historical_network_tpc_capability)-1])
+
+
+    async def wait_for_time(consensus_services):
+        while True:
+            # They should have the same parameters once they have received stats from all other nodes.
+            length_of_stats = [len(consensus._network_min_gas_limit_statistics) for consensus in consensus_services]
+            print('ZZZZZZZZZZZZZZ')
+            print(length_of_stats)
+            if all([x >= (num_peers_in_swarm+1) for x in length_of_stats]):
+                return
+            await asyncio.sleep(1)
+                
+
+    await _test_consensus_swarm(request, event_loop, base_db, client_db, peer_dbs, validation, waiting_function=wait_for_time)
+
+
+
 @pytest.fixture
 def db_fresh():
     return get_fresh_db()
@@ -440,33 +507,6 @@ def db_random_long_time(length_in_centiseconds = 25):
     return get_random_long_time_blockchain_db(length_in_centiseconds)
 
 
-# SENDER = keys.PrivateKey(
-#     decode_hex("49a7b37aa6f6645917e7b807e9d1c00d4fa71f18343b0d4122a4d2df64dd6fee"))
-# RECEIVER = keys.PrivateKey(
-#     decode_hex("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291"))
-# GENESIS_PARAMS = {
-#     'parent_hash': constants.GENESIS_PARENT_HASH,
-#     'uncles_hash': constants.EMPTY_UNCLE_HASH,
-#     'coinbase': constants.ZERO_ADDRESS,
-#     'transaction_root': constants.BLANK_ROOT_HASH,
-#     'receipt_root': constants.BLANK_ROOT_HASH,
-#     'bloom': 0,
-#     'difficulty': 5,
-#     'block_number': constants.GENESIS_BLOCK_NUMBER,
-#     'gas_limit': constants.GENESIS_GAS_LIMIT,
-#     'gas_used': 0,
-#     'timestamp': 1514764800,
-#     'extra_data': constants.GENESIS_EXTRA_DATA,
-#     'nonce': constants.GENESIS_NONCE
-# }
-# GENESIS_STATE = {
-#     SENDER.public_key.to_canonical_address(): {
-#         "balance": 100000000000000000,
-#         "code": b"",
-#         "nonce": 0,
-#         "storage": {}
-#     }
-# }
 
 
 class HeliosTestnetVMChain(FakeAsyncTestnetChain):
@@ -486,12 +526,6 @@ async def wait_for_consensus(server_consensus, client_consensus):
             except Exception:
                 pass
 
-            # server_root_hash = await server_consensus.coro_get_root_hash_consensus(int(time.time()))
-            # client_root_hash = await client_consensus.coro_get_root_hash_consensus(int(time.time()))
-            # print('AAAAAAAAAAAAAA')
-            # print(int(time.time()/1000)*1000)
-            # print(server_root_hash)
-            # print(client_root_hash)
             await asyncio.sleep(1)
 
     await asyncio.wait_for(wait_loop(), SYNC_TIMEOUT)
@@ -507,13 +541,29 @@ async def wait_for_consensus_all(consensus_services):
             except Exception:
                 pass
 
-            # server_root_hash = await server_consensus.coro_get_root_hash_consensus(int(time.time()))
-            # client_root_hash = await client_consensus.coro_get_root_hash_consensus(int(time.time()))
-            #print('AAAAAAAAAAAAAA')
-            #print([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time()), debug=True) for rest in consensus_services])
             await asyncio.sleep(1)
 
     await asyncio.wait_for(wait_loop(), SYNC_TIMEOUT)
+
+
+# async def wait_for_consensus_all(consensus_services):
+#     SYNC_TIMEOUT = 100
+#
+#     async def wait_loop():
+#         while True:
+#             try:
+#                 if all([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time())) and await rest.coro_get_root_hash_consensus(int(time.time())) != None for rest in consensus_services]):
+#                     return
+#             except Exception:
+#                 pass
+#
+#             # server_root_hash = await server_consensus.coro_get_root_hash_consensus(int(time.time()))
+#             # client_root_hash = await client_consensus.coro_get_root_hash_consensus(int(time.time()))
+#             #print('AAAAAAAAAAAAAA')
+#             #print([await consensus_services[0].coro_get_root_hash_consensus(int(time.time())) == await rest.coro_get_root_hash_consensus(int(time.time()), debug=True) for rest in consensus_services])
+#             await asyncio.sleep(1)
+#
+#     await asyncio.wait_for(wait_loop(), SYNC_TIMEOUT)
 
 
 

@@ -89,3 +89,10 @@ class GetChainsNormalizer(BaseNormalizer[Dict[str, Any], Tuple[Tuple[P2PBlock]]]
         result = msg['chains']
         return result
 
+class GetMinGasParametersNormalizer(BaseNormalizer[Dict[str, Any], Dict[str, Any]]):
+    is_normalization_slow = False
+
+    @staticmethod
+    def normalize_result(msg: Dict[str, Any]) -> Dict[str, Any]:
+        return msg
+

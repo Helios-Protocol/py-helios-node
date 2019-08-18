@@ -44,7 +44,7 @@ from .normalizers import (
     GetBlockBodiesNormalizer,
     GetNodeDataNormalizer,
     ReceiptsNormalizer,
-    GetNodeStakingScoreNormalizer, GetHashFragmentsNormalizer, GetChainsNormalizer)
+    GetNodeStakingScoreNormalizer, GetHashFragmentsNormalizer, GetChainsNormalizer, GetMinGasParametersNormalizer)
 from .requests import (
     GetBlockBodiesRequest,
     GetBlockHeadersRequest,
@@ -53,7 +53,7 @@ from .requests import (
     GetBlocksRequest,
     GetNodeStakingScoreRequest,
 
-    GetHashFragmentsRequest, GetChainsRequest, GetChainSegmentRequest)
+    GetHashFragmentsRequest, GetChainsRequest, GetChainSegmentRequest, GetMinGasParametersRequest)
 from .trackers import (
     GetBlockHeadersTracker,
     GetBlockBodiesTracker,
@@ -61,7 +61,7 @@ from .trackers import (
     GetReceiptsTracker,
     GetBlocksTracker,
     GetNodeStakingScoreTracker,
-    GetHashFragmentsTracker, GetChainsTracker, GetChainSegmentTracker)
+    GetHashFragmentsTracker, GetChainsTracker, GetChainSegmentTracker, GetMinGasParametersTracker)
 from .validators import (
     GetBlockBodiesValidator,
     GetBlockHeadersValidator,
@@ -69,7 +69,7 @@ from .validators import (
     ReceiptsValidator,
     GetBlocksValidator,
     GetNodeStakingScoreValidator,
-    get_hash_fragments_payload_validator, GetChainsValidator, GetChainSegmentValidator)
+    get_hash_fragments_payload_validator, GetChainsValidator, GetChainSegmentValidator, GetMinGasParametersValidator)
 
 
 
@@ -342,5 +342,32 @@ class GetHashFragmentsExchange(BaseGetHashFragmentsExchange):
         )
 
 
+BaseGetMinGasParametersExchange = BaseExchange[
+    Dict[str, Any],  #parameter types for request_class
+    Dict[str, Any],  #type that rlp returns
+    Tuple[Tuple[Tuple[int,int]],Tuple[Tuple[int,int]]], #type that the normalizer returns
+]
 
+#hash type ids: 1: chronological block hashes. In this case the timestamp is the timestamp of the chronological block hash window.
+# 2: chain head block hashes. In this case, the timestamp is the chronological chain head root hash timestamp.
+class GetMinGasParametersExchange(BaseGetMinGasParametersExchange):
+    _normalizer = GetMinGasParametersNormalizer()
+    request_class = GetMinGasParametersRequest
+    tracker_class = GetMinGasParametersTracker
+
+    async def __call__(  # type: ignore
+            self,
+            num_centiseconds_from_now: int,
+            timeout: float = None) -> Tuple[Tuple[Tuple[int,int]],Tuple[Tuple[int,int]]]:
+
+        validator = GetMinGasParametersValidator(num_centiseconds_from_now)
+        request = self.request_class(num_centiseconds_from_now)
+
+        return await self.get_result(
+            request,
+            self._normalizer,
+            validator,
+            noop_payload_validator,
+            timeout,
+        )
 
