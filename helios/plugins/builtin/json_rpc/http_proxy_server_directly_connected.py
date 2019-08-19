@@ -23,10 +23,13 @@ from aiohttp import web
 from helios.rpc.proxy import BaseProxy
 import json
 
+
+
 class Proxy(BaseProxy):
 
-    def __init__(self, http_url, rpc_execute):
+    def __init__(self, http_url, rpc_execute, use_async = True):
         self.http_url = http_url
+        self.use_async = use_async
 
         url = urlparse(http_url)
         assert url.scheme == 'http'
@@ -36,10 +39,16 @@ class Proxy(BaseProxy):
 
         self.rpc_execute = rpc_execute
 
+        self.sync_lock = asyncio.Lock()
+
     async def process(self, raw_request):
-        # Connect directly to rpc
         request = json.loads(raw_request)
-        return await self.rpc_execute(request)
+
+        if self.use_async:
+            return await self.rpc_execute(request)
+        else:
+            async with self.sync_lock:
+                return await self.rpc_execute(request)
 
     async def handle_post(self, request):
         text = await request.text()

@@ -37,7 +37,7 @@ def _test_order_of_responses_async():
     ))
     loop.close()
 
-# _test_order_of_responses_async()
+_test_order_of_responses_async()
 
 # This runs for 6 minutes.
 def _test_timeout():

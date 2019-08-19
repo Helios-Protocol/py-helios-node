@@ -25,8 +25,10 @@ from helios.rpc.proxy import BaseProxy
 # async requests.
 class Proxy(BaseProxy):
 
-    def __init__(self, websocket_url, rpc_execute):
+    def __init__(self, websocket_url, rpc_execute, use_async = True):
         self.websocket_url = websocket_url
+
+        self.use_async = use_async
 
         url = urlparse(websocket_url)
         assert url.scheme == 'ws'
@@ -38,11 +40,16 @@ class Proxy(BaseProxy):
 
         self.rpc_execute = rpc_execute
 
+        self.sync_lock = asyncio.Lock()
 
     async def process(self, raw_request):
-        # Connect directly to rpc
         request = json.loads(raw_request)
-        return await self.rpc_execute(request)
+        if self.use_async:
+            return await self.rpc_execute(request)
+        else:
+            async with self.sync_lock:
+                return await self.rpc_execute(request)
+
 
     async def interface(self, websocket, path):
         while websocket.open:

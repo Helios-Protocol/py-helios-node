@@ -70,6 +70,12 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
         )
 
         arg_parser.add_argument(
+            '--use_synchronous_rpc',
+            action="store_true",
+            help="This forces the RPC to be synchronous. It waits for the previous request to finish before processing the next.",
+        )
+
+        arg_parser.add_argument(
             '--enable_admin_rpc',
             action="store_true",
             help="This enables the admin rpc module.",
@@ -124,6 +130,12 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
         asyncio.ensure_future(exit_with_service_and_endpoint(ipc_server, self.context.event_bus))
         asyncio.ensure_future(ipc_server.run())
 
+        if self.context.args.use_synchronous_rpc:
+            use_async = False
+        else:
+            use_async = True
+
+
         if self.context.args.enable_rpc_http_proxy and (not self.context.args.disable_rpc_websocket_proxy):
             raise Exception("Cannot run websocket and http proxy at the same time.")
 
@@ -131,7 +143,7 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
             self.logger.info('RPC Websocket proxy started')
 
             proxy_url = "ws://0.0.0.0:" + str(self.context.chain_config.rpc_port)
-            rpc_websocket_service = rpc_websocket_server(proxy_url, rpc.execute)
+            rpc_websocket_service = rpc_websocket_server(proxy_url, rpc.execute, use_async)
 
             asyncio.ensure_future(rpc_websocket_service.run())
 
@@ -139,7 +151,7 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
             self.logger.info('RPC HTTP REST proxy started')
 
             proxy_url = "http://0.0.0.0:" + str(self.context.chain_config.rpc_port)
-            rpc_websocket_service = rpc_http_server(proxy_url, rpc.execute)
+            rpc_websocket_service = rpc_http_server(proxy_url, rpc.execute, use_async)
 
             asyncio.ensure_future(rpc_websocket_service.run())
 
