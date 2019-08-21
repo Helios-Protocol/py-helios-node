@@ -19,6 +19,7 @@ except ImportError:
     JSONDecodeError = ValueError
 
 from aiohttp import web
+from aiohttp.web import raise_graceful_exit
 
 from helios.rpc.proxy import BaseProxy
 import json
@@ -64,7 +65,14 @@ class Proxy(BaseProxy):
         app = web.Application()
         app.router.add_get('/', self.handle_get)
         app.router.add_post('/', self.handle_post)
-        web.run_app(app, host=self.hostname, port=self.port)
+        try:
+            web.run_app(app, host=self.hostname, port=self.port, handle_signals=True, print=False)
+        except Exception:
+            pass
+        finally:
+            print("Shutting down http proxy")
+            raise_graceful_exit()
+        #web.run_app(app, host=self.hostname, port=self.port)
 
 
 

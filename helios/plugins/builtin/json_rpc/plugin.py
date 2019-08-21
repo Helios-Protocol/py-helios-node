@@ -127,8 +127,12 @@ class JsonRpcServerPlugin(BaseIsolatedPlugin):
         ipc_server = IPCServer(rpc, self.context.chain_config.jsonrpc_ipc_path)
 
         loop = asyncio.get_event_loop()
+
+
         asyncio.ensure_future(exit_with_service_and_endpoint(ipc_server, self.context.event_bus))
         asyncio.ensure_future(ipc_server.run())
+
+
 
         if self.context.args.use_synchronous_rpc:
             use_async = False

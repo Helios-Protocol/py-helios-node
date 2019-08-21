@@ -473,7 +473,10 @@ class MinGasDB(BaseMinGasDB):
         # we need to initialize the entire additive and fast sync region in time because that is where we check
         # that blocks have enough gas
         current_centisecond = int(time.time()/100) * 100
-
+        if min_gas_price < 1:
+            min_gas_price = 1
+        if net_tpc_cap < 1:
+            net_tpc_cap = 1
         historical_minimum_gas_price = []
         historical_tpc_capability = []
         for timestamp in range(current_centisecond-100*50, current_centisecond+100, 100):

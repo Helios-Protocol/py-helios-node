@@ -72,7 +72,7 @@ from helios.plugins.registry import (
 from helios.utils.ipc import (
     wait_for_ipc,
     kill_process_gracefully,
-)
+    fix_unclean_shutdown)
 from helios.utils.logging import (
     enable_warnings_by_default,
     setup_log_levels,
@@ -348,101 +348,103 @@ def helios_boot(args: Namespace,
     # start the listener thread to handle logs produced by other processes in
     # the local logger.
     listener.start()
+    logger.info("Checking for any already running Helios Protocol processes that need shutting down. Remember that you can only run 1 instance at a time.")
+    fix_unclean_shutdown(chain_config, logger)
+    with chain_config.process_id_file('main'):
+        networking_endpoint = event_bus.create_endpoint(NETWORKING_EVENTBUS_ENDPOINT)
+        event_bus.start()
 
-    networking_endpoint = event_bus.create_endpoint(NETWORKING_EVENTBUS_ENDPOINT)
-    event_bus.start()
-
-    # First initialize the database process.
-    database_server_process = ctx.Process(
-        target=run_database_process,
-        args=(
-            chain_config,
-            LevelDB,
-        ),
-        kwargs=extra_kwargs,
-    )
-
-    chain_processes = []
-    for i in range(chain_config.num_chain_processes):
-        chain_process = ctx.Process(
-            target=run_chain_process,
+        # First initialize the database process.
+        database_server_process = ctx.Process(
+            target=run_database_process,
             args=(
                 chain_config,
-                i
+                LevelDB,
             ),
             kwargs=extra_kwargs,
         )
-        chain_processes.append(chain_process)
+
+        chain_processes = []
+        for i in range(chain_config.num_chain_processes):
+            chain_process = ctx.Process(
+                target=run_chain_process,
+                args=(
+                    chain_config,
+                    i
+                ),
+                kwargs=extra_kwargs,
+            )
+            chain_processes.append(chain_process)
 
 
-    networking_process = ctx.Process(
-        target=launch_node,
-        args=(args, chain_config, networking_endpoint,),
-        kwargs=extra_kwargs,
-    )
+        networking_process = ctx.Process(
+            target=launch_node,
+            args=(args, chain_config, networking_endpoint,),
+            kwargs=extra_kwargs,
+        )
 
-    # start the processes
-    database_server_process.start()
-    logger.info("Started DB server process (pid=%d)", database_server_process.pid)
+        # start the processes
+        database_server_process.start()
+        logger.info("Started DB server process (pid=%d)", database_server_process.pid)
 
-    # networking process needs the IPC socket file provided by the database process
-    try:
-        wait_for_ipc(chain_config.database_ipc_path)
-    except TimeoutError as e:
-        logger.error("Timeout waiting for database to start.  Exiting...")
-        kill_process_gracefully(database_server_process, logger)
-        ArgumentParser().error(message="Timed out waiting for database start")
-
-
-    for i in range(chain_config.num_chain_processes):
-        chain_process = chain_processes[i]
-        chain_process.start()
-        logger.info("Started chain instance {} process (pid={})".format(i,database_server_process.pid))
+        # networking process needs the IPC socket file provided by the database process
         try:
-            wait_for_ipc(chain_config.get_chain_ipc_path(i))
+            wait_for_ipc(chain_config.database_ipc_path)
         except TimeoutError as e:
-            logger.error("Timeout waiting for chain instance {} to start.  Exiting...".format(i))
+            logger.error("Timeout waiting for database to start.  Exiting...")
             kill_process_gracefully(database_server_process, logger)
-            for j in range(i+1):
-                kill_process_gracefully(chain_processes[j], logger)
-            ArgumentParser().error(message="Timed out waiting for chain instance {} start".format(i))
+            ArgumentParser().error(message="Timed out waiting for database start")
 
 
-    networking_process.start()
-    logger.info("Started networking process (pid=%d)", networking_process.pid)
+        for i in range(chain_config.num_chain_processes):
+            chain_process = chain_processes[i]
+            chain_process.start()
+            logger.info("Started chain instance {} process (pid={})".format(i,chain_process.pid))
+            try:
+                wait_for_ipc(chain_config.get_chain_ipc_path(i))
+            except TimeoutError as e:
+                logger.error("Timeout waiting for chain instance {} to start.  Exiting...".format(i))
+                kill_process_gracefully(chain_process, logger)
+                for j in range(i+1):
+                    kill_process_gracefully(chain_processes[j], logger)
+                ArgumentParser().error(message="Timed out waiting for chain instance {} start".format(i))
 
-    main_endpoint.subscribe(
-        ShutdownRequest,
-        lambda ev: kill_helios_gracefully(
-            logger,
-            database_server_process,
-            chain_processes,
-            networking_process,
-            plugin_manager,
-            main_endpoint,
-            event_bus
+
+        networking_process.start()
+        logger.info("Started networking process (pid=%d)", networking_process.pid)
+
+        main_endpoint.subscribe(
+            ShutdownRequest,
+            lambda ev: kill_helios_gracefully(
+                logger,
+                database_server_process,
+                chain_processes,
+                networking_process,
+                plugin_manager,
+                main_endpoint,
+                event_bus
+            )
         )
-    )
 
-    plugin_manager.prepare(args, chain_config, extra_kwargs)
-    plugin_manager.broadcast(HeliosStartupEvent(
-        args,
-        chain_config
-    ))
-    try:
-        loop = asyncio.get_event_loop()
-        loop.run_forever()
-        loop.close()
-    except KeyboardInterrupt:
-        kill_helios_gracefully(
-            logger,
-            database_server_process,
-            chain_processes,
-            networking_process,
-            plugin_manager,
-            main_endpoint,
-            event_bus
-        )
+        plugin_manager.prepare(args, chain_config, extra_kwargs)
+        plugin_manager.broadcast(HeliosStartupEvent(
+            args,
+            chain_config
+        ))
+        try:
+            loop = asyncio.get_event_loop()
+            loop.run_forever()
+            loop.close()
+        except KeyboardInterrupt:
+            kill_helios_gracefully(
+                logger,
+                database_server_process,
+                chain_processes,
+                networking_process,
+                plugin_manager,
+                main_endpoint,
+                event_bus
+            )
 
 
 def kill_helios_gracefully(logger: logging.Logger,
@@ -517,7 +519,7 @@ def run_database_process(chain_config: ChainConfig, db_class: Type[BaseDB]) -> N
 @setup_cprofiler('run_chain_process')
 @with_queued_logging
 def run_chain_process(chain_config: ChainConfig, instance = 0) -> None:
-    with chain_config.process_id_file('database_{}'.format(instance)):
+    with chain_config.process_id_file('chain_{}'.format(instance)):
         # connect with database process
         db_manager = create_db_manager(chain_config.database_ipc_path)
         db_manager.connect()
