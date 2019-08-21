@@ -19,7 +19,7 @@ except ImportError:
     JSONDecodeError = ValueError
 
 from aiohttp import web
-from aiohttp.web import raise_graceful_exit, GracefulExit
+from aiohttp.web import  GracefulExit
 
 from helios.rpc.proxy import BaseProxy
 import json
