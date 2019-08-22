@@ -39,10 +39,9 @@ def make_trie_root_and_nodes(
 def _make_trie_root_and_nodes(items: Tuple[bytes, ...]) -> Tuple[bytes, Dict[bytes, bytes]]:
     kv_store = {}  # type: Dict[bytes, bytes]
     trie = HexaryTrie(kv_store, BLANK_ROOT_HASH)
-    with trie.squash_changes() as memory_trie:
-        for index, item in enumerate(items):
-            index_key = rlp.encode(index, sedes=rlp.sedes.big_endian_int)
-            memory_trie[index_key] = item
+    for index, item in enumerate(items):
+        index_key = rlp.encode(index, sedes=rlp.sedes.big_endian_int)
+        trie[index_key] = item
     return trie.root_hash, kv_store
 
 
@@ -50,9 +49,8 @@ def _make_trie_root_and_nodes(items: Tuple[bytes, ...]) -> Tuple[bytes, Dict[byt
 def _make_trie_root_and_nodes_isometric_on_order(items: Tuple[bytes, ...]) -> Tuple[bytes, Dict[bytes, bytes]]:
     kv_store = {}  # type: Dict[bytes, bytes]
     trie = HexaryTrie(kv_store, BLANK_ROOT_HASH)
-    with trie.squash_changes() as memory_trie:
-        for item in items:
-            memory_trie[item] = item
+    for item in items:
+        trie[item] = item
     return trie.root_hash, kv_store
 
 

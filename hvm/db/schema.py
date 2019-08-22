@@ -105,7 +105,11 @@ class SchemaV1(BaseSchema):
     @staticmethod
     def make_historical_tx_per_centisecond_lookup_key() -> bytes:
         return b'h_tx_per_centisecond'
-    
+
+    @staticmethod
+    def make_historical_tx_per_decisecond_lookup_key() -> bytes:
+        return b'h_tx_per_decisecond'
+
     @staticmethod
     def make_historical_network_tpc_capability_lookup_key() -> bytes:
         return b'h_net_tpc_cap'
@@ -136,3 +140,13 @@ class SchemaV1(BaseSchema):
     def make_block_hash_requirement_for_staking_rewards_consistency(chain_address: Address, block_number: BlockNumber) -> bytes:
         key = b'chhrfsrc:%b-%d' % (chain_address, block_number)
         return key
+
+    @staticmethod
+    def make_chain_head_root_hash_backup_key() -> bytes:
+        # require that it is mod of 1000 seconds
+        return b'chain_head_root_hash_backup'
+
+    @staticmethod
+    def make_min_gas_system_last_pid_time_key() -> bytes:
+        # require that it is mod of 1000 seconds
+        return b'make_min_gas_system_last_pid_time_key'

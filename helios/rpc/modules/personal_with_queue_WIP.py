@@ -93,7 +93,7 @@ class Personal(RPCModule):
         w3 = Web3()
         new_account_json_encrypted = w3.hls.account.encrypt(account.privateKey, password)
         keyfile_name = "HLS_account_{}".format(account.address)
-        keyfile_path = self.rpc_context.keystore_dir / keyfile_name
+        keyfile_path = self._rpc_context.keystore_dir / keyfile_name
 
         f = open(str(keyfile_path), "w")
         f.write(json.dumps(new_account_json_encrypted))
@@ -101,7 +101,7 @@ class Personal(RPCModule):
 
     def _get_keystore_for_address(self, wallet_address):
         normalized_wallet_address = to_normalized_address(wallet_address)
-        file_glob = self.rpc_context.keystore_dir.glob('**/*')
+        file_glob = self._rpc_context.keystore_dir.glob('**/*')
         files = [x for x in file_glob if x.is_file()]
         for json_keystore in files:
             try:
@@ -330,7 +330,7 @@ class Personal(RPCModule):
         return to_checksum_address(new_account.address)
 
     async def listAccounts(self):
-        file_glob = self.rpc_context.keystore_dir.glob('**/*')
+        file_glob = self._rpc_context.keystore_dir.glob('**/*')
         files = [x for x in file_glob if x.is_file()]
         account_wallet_addresses = []
         for json_keystore in files:

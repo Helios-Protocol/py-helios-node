@@ -149,6 +149,8 @@ SECPK1_G = (SECPK1_Gx, SECPK1_Gy)
 EMPTY_UNCLE_HASH = Hash32(b'\x1d\xccM\xe8\xde\xc7]z\xab\x85\xb5g\xb6\xcc\xd4\x1a\xd3\x12E\x1b\x94\x8at\x13\xf0\xa1B\xfd@\xd4\x93G')  # noqa: E501
 
 BLOCK_GAS_LIMIT = 31415926
+BLOCK_TRANSACTION_LIMIT = 150
+
 # How far into the future is a block allowed to be
 BLOCK_TIMESTAMP_FUTURE_ALLOWANCE = 60*10
 
@@ -223,3 +225,11 @@ MIN_GAS_PRICE_CALCULATION_GOAL_TX_PER_CENTISECOND_MUTIPLIER = 0.5 # Start taking
 BLANK_REWARD_HASH = ZERO_HASH32
 
 TESTNET_FAUCET_PRIVATE_KEY = b'\xb9\x00\xe1N\xf2\xf6\x10r\x8aK\x9b\x19\x87L\x80\x858*<_\t"\xd9\xba4i>\x00A\xc6c('
+
+
+#
+# Backup parameters
+#
+
+AMOUNT_OF_TIME_TO_KEEP_CHAIN_HEAD_ROOT_HASH_BACKUP = 60*60*24*30 # 30 days
+TIME_BETWEEN_CHAIN_HEAD_ROOT_HASH_BACKUPS = 60*60 # 1 hour

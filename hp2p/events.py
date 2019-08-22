@@ -17,6 +17,30 @@ from helios.rlp_templates.hls import P2PBlock
 if TYPE_CHECKING:
     from helios.protocol.common.datastructures import ConnectedNodesInfo
 
+class AverageNetworkMinGasPriceResponse(BaseEvent):
+
+    def __init__(self, min_gas_price: int) -> None:
+        self.min_gas_price = min_gas_price
+
+
+class AverageNetworkMinGasPriceRequest(BaseRequestResponseEvent[AverageNetworkMinGasPriceResponse]):
+
+    @staticmethod
+    def expected_response_type() -> Type[AverageNetworkMinGasPriceResponse]:
+        return AverageNetworkMinGasPriceResponse
+
+class BlockImportQueueLengthResponse(BaseEvent):
+
+    def __init__(self, queue_length: int) -> None:
+        self.queue_length = queue_length
+
+
+class BlockImportQueueLengthRequest(BaseRequestResponseEvent[BlockImportQueueLengthResponse]):
+
+    @staticmethod
+    def expected_response_type() -> Type[BlockImportQueueLengthResponse]:
+        return BlockImportQueueLengthResponse
+
 class PeerCountResponse(BaseEvent):
 
     def __init__(self, peer_count: int) -> None:

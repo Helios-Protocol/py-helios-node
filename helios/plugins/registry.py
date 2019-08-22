@@ -13,7 +13,7 @@ from helios.plugins.builtin.json_rpc.plugin import (
     JsonRpcServerPlugin,
 )
 from helios.plugins.builtin.rebuild_historical_chain.plugin import RebuildHistoricalChainPlugin
-from helios.plugins.builtin.rpc_http_proxy.plugin import (
+from helios.plugins.builtin.rpc_http_proxy_through_ipc_socket.plugin import (
     RpcHTTPProxyPlugin,
 )
 # from helios.plugins.builtin.tx_pool.plugin import (
@@ -22,7 +22,7 @@ from helios.plugins.builtin.rpc_http_proxy.plugin import (
 # from helios.plugins.builtin.light_peer_chain_bridge.plugin import (
 #     LightPeerChainBridgePlugin
 # )
-from helios.plugins.builtin.rpc_websocket_proxy.plugin import RpcWebsocketProxyPlugin
+from helios.plugins.builtin.rpc_websocket_proxy_through_ipc_socket.plugin import RpcWebsocketProxyPlugin
 
 
 def is_ipython_available() -> bool:
@@ -44,8 +44,7 @@ ENABLED_PLUGINS = [
     FixUncleanShutdownPlugin(),
     JsonRpcServerPlugin(),
     RebuildHistoricalChainPlugin(),
-    RpcHTTPProxyPlugin(),
-    #RpcWebsocketProxyPlugin(),
+    #RpcHTTPProxyPlugin(),
     #LightPeerChainBridgePlugin(),
     #TxPlugin(),
 ]

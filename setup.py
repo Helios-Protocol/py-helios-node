@@ -41,6 +41,7 @@ deps = {
         "upnpclient>=0.0.8,<1",
     ],
     'helios': [
+        "aiohttp>=2.3.1,<4.0.0",
         "async-generator==1.10",
         "bloom-filter==1.3",
         "cachetools>=2.1.0,<3.0.0",
@@ -67,6 +68,7 @@ deps = {
         "matplotlib",
         # only needed for hp2p
         "pytest-asyncio-network-simulator==0.1.0a2;python_version>='3.6'",
+        "PyUserInput>=0.1.11"
     ],
     'lint': [
         "flake8==3.5.0",

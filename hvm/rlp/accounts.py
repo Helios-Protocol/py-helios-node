@@ -2,6 +2,8 @@ import rlp_cython as rlp
 from rlp_cython.sedes import (
     big_endian_int,
     CountableList,
+    FCountableList,
+    f_big_endian_int
 )
 
 from hvm.constants import (
@@ -32,7 +34,7 @@ class TransactionKey(rlp.Serializable):
 class BlockConflictKey(rlp.Serializable):
     fields = [
         ('slash_block_hash', hash32),
-        ('conflict_block_number', big_endian_int),
+        ('conflict_block_number', f_big_endian_int),
     ]  
     
 class Account(rlp.Serializable):
@@ -40,8 +42,8 @@ class Account(rlp.Serializable):
     RLP object for accounts.
     """
     fields = [
-        ('nonce', big_endian_int),
-        ('block_number', big_endian_int),
+        ('nonce', f_big_endian_int),
+        ('block_number', f_big_endian_int),
         ('receivable_transactions', CountableList(TransactionKey)),
         ('block_conflicts', CountableList(BlockConflictKey)),
         ('balance', big_endian_int),

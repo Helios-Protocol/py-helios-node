@@ -45,7 +45,9 @@ COMPLETION_TIMEOUT = 5
 MAINNET_BOOTNODES = (
                      'enode://16a5d307b0152d3e3e49e8b1f2f08c403a7b8b2f27667ae0ef10486019326b71c50fac7b2cfc6c278ca6abc54bf8e81e376a6a82996ffaea599aea85c6f5f831@142.58.49.25:30303',
                     'enode://a8dc7d11801fceb6018df377bc37bad5d4f580d1c36c57b1055595daaed54f7ec15ba1c247b317db1b5d37e439de07e42dbc5ae037dd90f6e77e4c69453c5f0d@142.58.122.209:30303',
-                    'enode://1e95a05d9601763786055cd48e21c883be82981acb1db56e8e5f8e9bae68697e322266b749d3014bf1d21884d90907c6846dab9e0fbe73a56bbeb04e49a486e0@50.68.92.147:30303'
+                    'enode://1e95a05d9601763786055cd48e21c883be82981acb1db56e8e5f8e9bae68697e322266b749d3014bf1d21884d90907c6846dab9e0fbe73a56bbeb04e49a486e0@50.68.92.147:30303',
+                    'enode://23ac1a7e9389d549b05d8c5596478276bc2d840a25a6e890fbb1d25e7c953e1156ddac284983ec85c057ac9f5d13c0992a16ffd9a2d938bc23e4d75ef3d48a69@199.192.28.100:30303',
+                    'enode://23ac1a7e9389d549b05d8c5596478276bc2d840a25a6e890fbb1d25e7c953e1156ddac284983ec85c057ac9f5d13c0992a16ffd9a2d938bc23e4d75ef3d48a69@199.193.6.184:30303'
 )
 ROPSTEN_BOOTNODES = ()
 DISCOVERY_V5_BOOTNODES = ()
@@ -90,8 +92,7 @@ CONSENSUS_SYNC_TIME_PERIOD = 3 #the amount of time between checking that we are 
 CONSENSUS_CHECK_MIN_GAS_SYSTEM_READY_TIME_PERIOD = 5
 CONSENSUS_CHECK_CURRENT_SYNC_STAGE_PERIOD = 1 #amount of time to cache current sync stage in consensus service
 CONSENSUS_CHECK_LOCAL_TPC_CAP_PERIOD = 60
-MIN_GAS_PRICE_SYSTEM_SYNC_WITH_NETWORK_PERIOD = 5 #this should be set to 30 after testing
-MIN_PEERS_TO_CALCULATE_NETWORK_TPC_CAP_AVG = 0 #This might as well be left at 0, which will let the node calculate the tpc cap on its own until it connects to more nodes.
+MIN_GAS_PRICE_SYSTEM_UPDATE_PERIOD = 10 #This is also the amount of time between each min gas update with the PID system
 
 #This is the amount of time we allow the network to additively sync root hashes. Any root hashes older than this
 # amount of time from now will be synced via the consensus match method. Blocks can be up to 1000 seconds older than this

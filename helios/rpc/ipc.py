@@ -23,7 +23,7 @@ from helios.rpc.main import (
     RPCServer,
 )
 
-MAXIMUM_REQUEST_BYTES = 100000
+MAXIMUM_REQUEST_BYTES = 1000000
 
 
 @curry
@@ -99,7 +99,7 @@ async def connection_loop(execute_rpc: Callable[[Any], Any],
             continue
 
         try:
-            result = await execute_rpc(request)
+            result = await execute_rpc(request, from_ipc=True)
         except Exception as e:
             logger.exception("Unrecognized exception while executing RPC")
             await cancel_token.cancellable_wait(

@@ -9,23 +9,10 @@ from .exchanges import (
     # GetReceiptsExchange,
     GetBlocksExchange,
     GetNodeStakingScoreExchange,
-    GetHashFragmentsExchange, GetChainsExchange, GetChainSegmentExchange)
+    GetHashFragmentsExchange, GetChainsExchange, GetChainSegmentExchange, GetMinGasParametersExchange)
 
 
 class HLSExchangeHandler(BaseExchangeHandler):
-    # _exchange_config = {
-    #     'get_block_bodies': GetBlockBodiesExchange,
-    #     'get_block_headers': GetBlockHeadersExchange,
-    #     'get_node_data': GetNodeDataExchange,
-    #     'get_receipts': GetReceiptsExchange,
-    # }
-    #
-    # # These are needed only to please mypy.
-    # get_block_bodies: GetBlockBodiesExchange
-    # get_block_headers: GetBlockHeadersExchange
-    # get_node_data: GetNodeDataExchange
-    # get_receipts: GetReceiptsExchange
-
 
     _exchange_config = {
         'get_blocks': GetBlocksExchange,
@@ -33,6 +20,7 @@ class HLSExchangeHandler(BaseExchangeHandler):
         'get_hash_fragments': GetHashFragmentsExchange,
         'get_chains': GetChainsExchange,
         'get_chain_segment': GetChainSegmentExchange,
+        'get_min_gas_parameters': GetMinGasParametersExchange,
     }
 
     # These are needed only to please mypy.
@@ -41,3 +29,4 @@ class HLSExchangeHandler(BaseExchangeHandler):
     get_hash_fragments: GetHashFragmentsExchange
     get_chains: GetChainsExchange
     get_chain_segment: GetChainSegmentExchange
+    get_min_gas_parameters: GetMinGasParametersExchange

@@ -26,6 +26,7 @@ from typing import (  # noqa: F401
     Union,
     List,
     Iterable,
+    Set,
 )
 from hvm.utils.spoof import (
     SpoofTransaction,
@@ -67,7 +68,7 @@ from hvm.constants import (
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
     GENESIS_PARENT_HASH,
-    BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)
+    BLOCK_TIMESTAMP_FUTURE_ALLOWANCE, BLOCK_TRANSACTION_LIMIT)
 
 from hvm.db.trie import make_trie_root_and_nodes
 
@@ -178,6 +179,7 @@ import asyncio
 # 'storage' -> Dict[int, int]
 AccountState = Dict[Address, Dict[str, Union[int, bytes, Dict[int, int]]]]
 
+from hvm.db.min_gas import MinGasDB, BaseMinGasDB
 
 class BaseChain(Configurable, metaclass=ABCMeta):
     """
@@ -185,7 +187,9 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     """
     chain_head_db: ChainHeadDB = None
     chaindb: ChainDB = None
+    min_gas_db: MinGasDB = None
 
+    min_gas_db_class = None
     chaindb_class = None  # type: Type[BaseChainDB]
     vm_configuration = None  # type: Tuple[Tuple[int, Type[BaseVM]], ...]
     genesis_wallet_address: Address = None
@@ -198,6 +202,11 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def get_chaindb_class(cls) -> Type[BaseChainDB]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @classmethod
+    @abstractmethod
+    def get_min_gas_db_class(cls) -> Type[BaseMinGasDB]:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -364,9 +373,16 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
+    def get_transaction_by_hash(self, tx_hash: Hash32) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
     def create_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         raise NotImplementedError("Chain classes must implement this method")
 
+    @abstractmethod
+    def filter_accounts_with_receivable_transactions(self, chain_addresses: List[Address]) -> List[Address]:
+        raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
     def get_canonical_transaction(self, transaction_hash: Hash32) -> BaseTransaction:
@@ -384,6 +400,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
 
     @abstractmethod
     def get_receive_tx_from_send_tx(self, tx_hash: Hash32) -> Optional['BaseReceiveTransaction']:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_block_send_transactions_by_block_hash(self, block_hash: Hash32) -> List[BaseTransaction]:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -415,6 +435,10 @@ class BaseChain(Configurable, metaclass=ABCMeta):
 
     @abstractmethod
     def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp(self, historical_root_hash_timestamp: Timestamp) -> List[Tuple[Timestamp, Hash32]]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
+    def get_receivable_transaction_hashes_from_chronological(self, start_timestamp: Timestamp, only_these_addresses = None) -> Tuple[List[Hash32], Set[Address]]:
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
@@ -500,6 +524,12 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("Chain classes must implement this method")
 
     @abstractmethod
+    def update_PID_min_gas_price(self) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
+
+
+    @abstractmethod
     def get_local_tpc_cap(self) -> int:
         raise NotImplementedError("Chain classes must implement this method")
 
@@ -554,6 +584,7 @@ class Chain(BaseChain):
 
     chaindb_class = ChainDB  # type: Type[BaseChainDB]
     chain_head_db_class = ChainHeadDB
+    min_gas_db_class = MinGasDB
 
 
     _queue_block: BaseQueueBlock = None
@@ -575,6 +606,7 @@ class Chain(BaseChain):
         self.wallet_address = wallet_address
         self.chaindb = self.get_chaindb_class()(self.db)
         self.chain_head_db = self.get_chain_head_db_class().load_from_saved_root_hash(self.db)
+        self.min_gas_db = self.get_min_gas_db_class()(self.db)
 
         try:
             self.header = self.create_header_from_parent(self.get_canonical_head())
@@ -687,6 +719,12 @@ class Chain(BaseChain):
         if cls.chaindb_class is None:
             raise AttributeError("`chaindb_class` not set")
         return cls.chaindb_class
+
+    @classmethod
+    def get_min_gas_db_class(cls) -> Type[BaseChainDB]:
+        if cls.min_gas_db_class is None:
+            raise AttributeError("`min_gas_db_class` not set")
+        return cls.min_gas_db_class
 
     @classmethod
     def get_chain_head_db_class(cls) -> Type[ChainHeadDB]:
@@ -886,6 +924,9 @@ class Chain(BaseChain):
 
         return self.get_block_by_header(block_header)
 
+
+
+
     def get_block_by_header(self, block_header: BlockHeader) -> BaseBlock:
         """
         Returns the requested block as specified by the block header.
@@ -1037,6 +1078,10 @@ class Chain(BaseChain):
     #
     # Transaction API
     #
+
+    def filter_accounts_with_receivable_transactions(self, chain_addresses: List[Address]) -> List[Address]:
+        return self.get_vm().state.filter_accounts_with_receivable_transactions(chain_addresses)
+
     def get_canonical_transaction(self, transaction_hash: Hash32) -> BaseTransaction:
         """
         Returns the requested transaction as specified by the transaction hash
@@ -1049,20 +1094,12 @@ class Chain(BaseChain):
 
         block_header = self.get_block_header_by_hash(block_hash)
 
-        VM = self.get_vm_class_for_block_timestamp(block_header.timestamp)
+        vm = self.get_vm_class_for_block_timestamp(block_header.timestamp)
 
-        if is_receive == False:
-            transaction = self.chaindb.get_transaction_by_index_and_block_hash(
-                block_hash,
-                index,
-                VM.get_transaction_class(),
-            )
-        else:
-            transaction = self.chaindb.get_receive_transaction_by_index_and_block_hash(
-                block_hash,
-                index,
-                VM.get_receive_transaction_class(),
-            )
+        transaction = self.chaindb.get_transaction_by_hash(transaction_hash,
+                                                            vm.get_transaction_class(),
+                                                            vm.get_receive_transaction_class())
+
 
         if transaction.hash == transaction_hash:
             return transaction
@@ -1093,6 +1130,13 @@ class Chain(BaseChain):
 
         return tx
 
+    @functools.lru_cache(maxsize=32)
+    def get_transaction_by_hash(self, tx_hash: Hash32) -> Union[BaseTransaction, BaseReceiveTransaction]:
+        block_hash, index, is_receive = self.chaindb.get_transaction_index(tx_hash)
+        header = self.chaindb.get_block_header_by_hash(block_hash)
+        vm = self.get_vm(header=header)
+        transaction = self.chaindb.get_transaction_by_hash(tx_hash, vm.get_transaction_class(), vm.get_receive_transaction_class())
+        return transaction
 
     def create_transaction(self, *args: Any, **kwargs: Any) -> BaseTransaction:
         """
@@ -1163,7 +1207,9 @@ class Chain(BaseChain):
 
     def populate_queue_block_with_receive_tx(self) -> List[BaseReceiveTransaction]:
         receive_tx = self.create_receivable_transactions()
-        self.add_transactions_to_queue_block(receive_tx)
+        num_send_transactions = len(self.queue_block.transactions)
+        max_allowed_receive_transactions = BLOCK_TRANSACTION_LIMIT - num_send_transactions - 1
+        self.add_transactions_to_queue_block(receive_tx[:max_allowed_receive_transactions])
         return receive_tx
 
     def get_block_receive_transactions_by_hash(
@@ -1206,6 +1252,13 @@ class Chain(BaseChain):
             transaction_index,
             vm.get_transaction_class(),
         )
+
+    def get_block_send_transactions_by_block_hash(self, block_hash: Hash32) -> List[BaseTransaction]:
+        header = self.chaindb.get_block_header_by_hash(block_hash)
+
+        block_class = self.get_vm_class_for_block_timestamp(header.timestamp).get_block_class()
+
+        return self.chaindb.get_block_transactions(header, block_class.transaction_class)
     #
     # Chronological Chain api
     #
@@ -1265,6 +1318,46 @@ class Chain(BaseChain):
         return chronological_block_hash_timestamps
 
 
+
+
+    def get_receivable_transaction_hashes_from_chronological(self, start_timestamp: Timestamp, only_these_addresses = None) -> Tuple[List[Hash32], Set[Address]]:
+        # return list of transactions, and set of accounts with receivable transactions
+
+        self.chain_head_db.load_saved_root_hash()
+        earliest_root_hash = self.chain_head_db.earliest_window + TIME_BETWEEN_HEAD_HASH_SAVE
+        window_start_timestamp = int(start_timestamp / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+        
+        if window_start_timestamp < earliest_root_hash:
+            raise ValidationError("get_receivable_transactions_from_chronological start_timestamp is older than the oldest chronological window")
+
+        current_window = self.chain_head_db.current_window
+
+        receivable_transactions = []
+        wallet_addresses = set()
+
+        vm_now = self.get_vm()
+
+        for chronological_block_window_timestamp in range(window_start_timestamp, current_window + TIME_BETWEEN_HEAD_HASH_SAVE, TIME_BETWEEN_HEAD_HASH_SAVE):
+            chronological_block_hash_timestamps = self.chain_head_db.load_chronological_block_window(Timestamp(chronological_block_window_timestamp))
+            if chronological_block_hash_timestamps is not None:
+                for timestamp_block_hash in chronological_block_hash_timestamps:
+                    if timestamp_block_hash[0] >= start_timestamp:
+                        block_send_transactions = self.get_block_send_transactions_by_block_hash(timestamp_block_hash[1])
+
+                        for send_transaction in block_send_transactions:
+                            if send_transaction.to not in wallet_addresses:
+                                if only_these_addresses is None or send_transaction.to in only_these_addresses:
+                                    receivable_transaction_keys_for_this_account = vm_now.state.account_db.get_receivable_transactions(send_transaction.to)
+                                    if len(receivable_transaction_keys_for_this_account) > 0:
+                                        receivable_transactions.extend([key.transaction_hash for key in receivable_transaction_keys_for_this_account])
+                                        wallet_addresses.add(send_transaction.to)
+
+        return receivable_transactions, wallet_addresses
+
+        
+        
+        
+    
     def initialize_historical_root_hashes_and_chronological_blocks(self, current_window = None, earliest_root_hash = None) -> None:
         '''
         This function rebuilds all historical root hashes, and chronological blocks, from the blockchain database. It starts with the saved root hash and works backwards.
@@ -1859,10 +1952,21 @@ class Chain(BaseChain):
 
         self.logger.debug("importing block {} with number {}".format(block.__repr__(), block.number))
 
+
         if block.header.timestamp > int(time.time() + BLOCK_TIMESTAMP_FUTURE_ALLOWANCE):
             raise ValidationError("The block header timestamp is to far into the future to be allowed. Block header timestamp {}. Max allowed timestamp {}".format(block.header.timestamp,int(time.time() + BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)))
 
         self.validate_time_from_genesis_block(block)
+
+        # new transaction count limit:
+        transaction_count = len(block.transactions) + len(block.receive_transactions)
+        if transaction_count > BLOCK_TRANSACTION_LIMIT:
+            raise ValidationError("The block has to many transactions. It has {} transactions, but is only allowed a max of {}".format(transaction_count, BLOCK_TRANSACTION_LIMIT))
+
+
+        #
+        #
+        #
 
         if isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()):
             # If it was a queueblock, then the header will have changed after importing
@@ -2262,9 +2366,8 @@ class Chain(BaseChain):
         '''
         re-initializes system with last set min gas price and net tpc cap
         '''
-        hist_min_gas_price = self.chaindb.load_historical_minimum_gas_price()
-        hist_tpc_cap = self.chaindb.load_historical_network_tpc_capability()
-        hist_tx_per_centisecond = self.chaindb.load_historical_tx_per_centisecond()
+        hist_min_gas_price = self.min_gas_db.load_historical_minimum_gas_price()
+        hist_tpc_cap = self.min_gas_db.load_historical_network_tpc_capability()
 
         if hist_min_gas_price is not None:
             init_min_gas_price = hist_min_gas_price[-1][1]
@@ -2276,44 +2379,100 @@ class Chain(BaseChain):
         else:
             init_tpc_cap = self.get_local_tpc_cap()
 
-        if hist_tx_per_centisecond is not None:
-            init_tpc = hist_tx_per_centisecond[-1][1]
-        else:
-            init_tpc = None
 
-        self.chaindb.initialize_historical_minimum_gas_price_at_genesis(init_min_gas_price, init_tpc_cap, init_tpc)
-
-
-
+        self.min_gas_db.initialize_historical_minimum_gas_price_at_genesis(init_min_gas_price, init_tpc_cap)
 
 
 
     def update_current_network_tpc_capability(self, current_network_tpc_cap: int, update_min_gas_price:bool = True) -> None:
         validate_uint256(current_network_tpc_cap, title="current_network_tpc_cap")
-        self.chaindb.save_current_historical_network_tpc_capability(current_network_tpc_cap)
+        self.min_gas_db.save_current_historical_network_tpc_capability(current_network_tpc_cap)
 
         if update_min_gas_price:
-            current_centisecond = int(time.time()/100) * 100
-            timestamp_min_gas_price_updated = self.update_tpc_from_chronological(update_min_gas_price = True)
-
-            if timestamp_min_gas_price_updated > current_centisecond:
-                self.chaindb._recalculate_historical_mimimum_gas_price(current_centisecond)
+            self.update_PID_min_gas_price()
 
 
+    #
+    # new PID min gas system stuff
+    #
+    def update_PID_min_gas_price(self) -> None:
+        #
+        # This system requires transactions per 10 seconds, instead of transactions per 100 seconds
+        #
+        self.logger.debug("Updating min gas price using PID system")
+        # Get the required parameters
+        time_since_last_pid_update = self.min_gas_db.get_time_since_last_min_gas_price_PID_update()
+        # def _calculate_next_min_gas_price_pid(self, historical_txpd: List[int], last_min_gas_price: int, wanted_txpd: int) -> int:
+        tpd_tail = self.min_gas_db.get_tpd_tail()
+
+        #We always take the newest historical min gas price as the last one calculated. It was calculated using the PID get_time_since_last_min_gas_price_PID_update() seconds ago.
+        historical_min_gas_price = self.min_gas_db.load_historical_minimum_gas_price(return_int = False)
+        if historical_min_gas_price is None:
+            last_min_gas_price = 1
+        else:
+            last_min_gas_price = historical_min_gas_price[-1][1]
+
+        historical_network_tpc_cap = self.min_gas_db.load_historical_network_tpc_capability()
+        if historical_network_tpc_cap is None:
+            self.logger.warning("Cannot update PID min gas price because we have no saved historical tx per centisecond network capability")
+            return
+        else:
+            # we loaded transactions per 100 seconds, but want transactions per 10 seconds. so divide by 10
+            network_tpd_cap = int(historical_network_tpc_cap[-1][1]/10)
+
+        wanted_tpd = int(network_tpd_cap/3)
+        if wanted_tpd < 1:
+            wanted_tpd = 1
+
+        new_min_gas_price = self.min_gas_db._calculate_next_min_gas_price_pid(tpd_tail, last_min_gas_price, wanted_tpd, time_since_last_pid_update)
+
+        self.min_gas_db.append_historical_min_gas_price_now(new_min_gas_price)
+
+        #after everything works, save this as the last time the pid updated
+        self.min_gas_db.save_now_as_last_min_gas_price_PID_update()
 
 
-    def update_tpc_from_chronological(self, update_min_gas_price: bool = True):
-        #start at the newest window, if the same tps stop. but if different tps keep going back
+    # def get_tpd_tail(self) -> List:
+    #     #
+    #     # Returns the transactions per 10 seconds for the past 20 seconds.
+    #     #
+    #     current_historical_window = int(time.time() / TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
+    #
+    #     tpd_tail = [0,0]
+    #     now = int(time.time())
+    #
+    #     for historical_window_timestamp in range(current_historical_window,
+    #                                              current_historical_window-2*TIME_BETWEEN_HEAD_HASH_SAVE,
+    #                                              -TIME_BETWEEN_HEAD_HASH_SAVE):
+    #         chronological_block_window = self.chain_head_db.load_chronological_block_window(historical_window_timestamp)
+    #
+    #
+    #         if chronological_block_window is not None:
+    #             for timestamp_block_hash in reversed(chronological_block_window):
+    #                 #first count up the tx in the block
+    #                 #if it is 0, then set to 1? in case block is all receive
+    #                 num_tx_in_block = self.chaindb.get_number_of_total_tx_in_block(timestamp_block_hash[1])
+    #                 if num_tx_in_block == 0:
+    #                     num_tx_in_block = 1
+    #
+    #                 if (timestamp_block_hash[0] <= now) and (timestamp_block_hash[0] > now - 10):
+    #                     tpd_tail[1] += num_tx_in_block
+    #                 elif (timestamp_block_hash[0] <= now - 10) and (timestamp_block_hash[0] > now - 20):
+    #                     tpd_tail[0] += num_tx_in_block
+    #                 elif(timestamp_block_hash[0] <= now - 20):
+    #                     return tpd_tail
+    #
+    #     return tpd_tail
+
+
+    def update_tpc_from_chronological(self) -> None:
+        # This updates the cached historical tpc from the actual historical blocks. If it finds that there is no difference
+        # then it stops updating.
         self.logger.debug("Updating tpc from chronological")
         current_historical_window = int(time.time()/TIME_BETWEEN_HEAD_HASH_SAVE) * TIME_BETWEEN_HEAD_HASH_SAVE
         current_centisecond = int(time.time()/100) * 100
 
-        #load this once to find out if its None. If it is None, then the node just started, lets only go back 50 steps
-        #hist_tpc = self.chaindb.load_historical_tx_per_centisecond()
-
-
         end_outer = current_historical_window-20*TIME_BETWEEN_HEAD_HASH_SAVE
-
 
         for historical_window_timestamp in range(current_historical_window,
                                                  end_outer,
@@ -2350,11 +2509,6 @@ class Chain(BaseChain):
             if same_as_database == True:
                 break
 
-        if update_min_gas_price:
-            self.chaindb._recalculate_historical_mimimum_gas_price(historical_window_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE)
-
-        return historical_window_timestamp+TIME_BETWEEN_HEAD_HASH_SAVE
-
 
     def _update_tpc_from_chronological(self, new_hist_tpc_dict):
         '''
@@ -2363,7 +2517,7 @@ class Chain(BaseChain):
         if not isinstance(new_hist_tpc_dict, dict):
             raise ValidationError("Expected a dict. Didn't get a dict.")
 
-        hist_tpc = self.chaindb.load_historical_tx_per_centisecond()
+        hist_tpc = self.chaindb.load_historical_tx_per_centisecond_from_chain()
         difference_found = False
 
         if hist_tpc is None:
@@ -2378,12 +2532,10 @@ class Chain(BaseChain):
                 hist_tpc_dict[timestamp] = tpc
             hist_tpc = list(hist_tpc_dict.items())
 
-        #print(hist_tpc)
         #save it to db
-        self.chaindb.save_historical_tx_per_centisecond(hist_tpc, de_sparse = False)
+        self.chaindb.save_historical_tx_per_centisecond_from_chain(hist_tpc, de_sparse = False)
 
         return not difference_found
-
 
     def get_local_tpc_cap(self) -> int:
         #base it on the time it takes to import a block

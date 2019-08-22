@@ -6,6 +6,8 @@ from hvm.rlp.blocks import BaseBlock
 from hvm.rlp.consensus import NodeStakingScore
 from typing import (
     List,
+    Tuple,
+    Set,
 )
 from hvm.types import Timestamp
 from eth_typing import (
@@ -97,6 +99,15 @@ class AsyncChain(BaseChain):
     async def coro_initialize_historical_root_hashes_and_chronological_blocks(self) -> None:
         raise NotImplementedError("Chain classes must implement this method")
 
+    async def coro_get_receivable_transaction_hashes_from_chronological(self, start_timestamp: Timestamp, only_these_addresses = None) -> Tuple[List[Hash32], Set[Address]]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_filter_accounts_with_receivable_transactions(self, chain_addresses: List[Address]) -> List[Address]:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    async def coro_update_tpc_from_chronological(self) -> None:
+        raise NotImplementedError("Chain classes must implement this method")
+
 class AsyncChainMixin(AsyncChain):
 
     coro_get_canonical_block_by_number = async_method('get_canonical_block_by_number')
@@ -132,3 +143,8 @@ class AsyncChainMixin(AsyncChain):
     coro_get_mature_stake = async_method('get_mature_stake')
 
     coro_initialize_historical_root_hashes_and_chronological_blocks = async_method('initialize_historical_root_hashes_and_chronological_blocks')
+
+    coro_get_receivable_transaction_hashes_from_chronological = async_method('get_receivable_transaction_hashes_from_chronological')
+    coro_filter_accounts_with_receivable_transactions = async_method('filter_accounts_with_receivable_transactions')
+
+    coro_update_tpc_from_chronological = async_method('update_tpc_from_chronological')

@@ -23,7 +23,7 @@ from hvm.constants import (
     BLANK_ROOT_HASH,
     ZERO_HASH32,
     TIME_BETWEEN_HEAD_HASH_SAVE,
-    GAS_TX,)
+    GAS_TX, AMOUNT_OF_TIME_TO_KEEP_CHAIN_HEAD_ROOT_HASH_BACKUP)
 
 from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
 from hvm.db.backends.level import LevelDB
@@ -151,5 +151,67 @@ def test_save_single_historical_root_hash():
 
 
 #test_save_single_historical_root_hash()
+
+def test_root_hash_backup():
+    testdb1 = MemoryDB()
+
+    chain = TestnetChain.from_genesis(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                      TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+
+    #
+    # Auto delete old ones
+    #
+    root_hash_backup = [[int(time.time()-AMOUNT_OF_TIME_TO_KEEP_CHAIN_HEAD_ROOT_HASH_BACKUP), ZERO_HASH32]]
+    chain.chain_head_db.save_root_hash_backup(root_hash_backup)
+
+    expected_root_hash_backup = []
+    expected_root_hash_backup.append([int(time.time()),chain.chain_head_db.root_hash])
+    chain.chain_head_db.save_current_root_hash_to_backup()
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER.public_key.to_canonical_address(),
+        value=1,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    chain.import_current_queue_block()
+
+    time.sleep(1)
+
+    expected_root_hash_backup.append([int(time.time()),chain.chain_head_db.root_hash])
+    chain.chain_head_db.save_current_root_hash_to_backup()
+
+    chain = TestnetChain(testdb1, RECEIVER.public_key.to_canonical_address(), RECEIVER3)
+    chain.populate_queue_block_with_receive_tx()
+    chain.import_current_queue_block()
+
+    time.sleep(1)
+
+    expected_root_hash_backup.append([int(time.time()),chain.chain_head_db.root_hash])
+    chain.chain_head_db.save_current_root_hash_to_backup()
+
+    root_hash_backup = chain.chain_head_db.load_root_hash_backup()
+
+    assert(root_hash_backup == expected_root_hash_backup)
+
+
+# test_root_hash_backup()
+# exit()
+
+def _test_consensus_backup_loop():
+    testdb = LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full')
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    root_hash_backup = chain.chain_head_db.load_root_hash_backup()
+    print(root_hash_backup)
+    # Nice.
+
+_test_consensus_backup_loop()
+
+
 
 

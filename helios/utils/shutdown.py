@@ -47,3 +47,5 @@ async def exit_signal(loop: asyncio.AbstractEventLoop) -> AsyncGenerator[None, N
         yield
     finally:
         loop.stop()
+
+

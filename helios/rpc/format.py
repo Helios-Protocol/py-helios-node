@@ -183,18 +183,21 @@ def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: Asyn
 
     dict_to_return['from'] = to_hex(from_address)
 
-    originating_transaction = chain.chaindb.get_transaction_by_hash(transaction.send_transaction_hash,
-                                                             send_tx_class = chain.get_vm().get_transaction_class(),
-                                                             receive_tx_class = chain.get_vm().get_receive_transaction_class())
+    originating_transaction = chain.get_canonical_transaction(transaction.send_transaction_hash)
 
     if transaction.is_refund:
+        send_transaction = chain.get_canonical_transaction(originating_transaction.send_transaction_hash)
         value = originating_transaction.remaining_refund
+        to = send_transaction.sender
     else:
+        send_transaction = originating_transaction
         value = originating_transaction.value
+        to = send_transaction.to
+
 
     dict_to_return['value'] = to_hex(value)
-    dict_to_return['gasPrice'] = to_hex(originating_transaction.gas_price)
-    dict_to_return['to'] = to_hex(originating_transaction.to)
+    dict_to_return['gasPrice'] = to_hex(send_transaction.gas_price)
+    dict_to_return['to'] = to_hex(to)
     try:
         dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction.hash).gas_used)
     except TransactionNotFound:

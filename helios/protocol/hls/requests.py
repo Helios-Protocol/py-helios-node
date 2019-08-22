@@ -32,7 +32,7 @@ from .commands import (
     Blocks,
     GetNodeStakingScore,
     SendNodeStakingScore,
-    GetHashFragments, SendHashFragments, GetChains, Chains, GetChainSegment)
+    GetHashFragments, SendHashFragments, GetChains, Chains, GetChainSegment, GetMinGasParameters, MinGasParameters)
 
 from hvm.types import Timestamp
 
@@ -145,3 +145,11 @@ class GetHashFragmentsRequest(BaseRequest[Dict[str, Any]]):
                                 'entire_window': entire_window,
                                 'only_these_indices': only_these_indices,
                                 'hash_type_id': hash_type_id}
+
+
+class GetMinGasParametersRequest(BaseRequest[Dict[str, Any]]):
+    cmd_type = GetMinGasParameters
+    response_type = MinGasParameters
+
+    def __init__(self, num_centiseconds_from_now: int) -> None:
+        self.command_payload = {'num_centiseconds_from_now': num_centiseconds_from_now}

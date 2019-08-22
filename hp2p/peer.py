@@ -986,7 +986,7 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
 
     # Returns peers sorted by least stake to most stake. pop() will give the peer with highest stake.
     # iterating through this list will start at lowest stake and go to highest. Make sure to reverse if doing that.
-    def sort_peers_by_stake(self, peers=None):
+    def sort_peers_by_stake(self, peers=None) -> List:
         if peers is None:
             if not self.connected_nodes:
                 return []

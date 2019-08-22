@@ -71,6 +71,9 @@ class BaseRPCError(BaseHeliosError):
     """
     pass
 
+class RPCStoppedError(BaseRPCError):
+    pass
+
 class ConsensusError(BaseHeliosError):
     """
     The base class for all Consensus errors.

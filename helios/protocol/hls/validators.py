@@ -227,3 +227,27 @@ def get_hash_fragments_payload_validator(request: Dict[str, Any], response: Dict
         )
 
 
+class GetMinGasParametersValidator(BaseValidator[Dict[str,Any]]):
+    def __init__(self, num_centiseconds_from_now: int) -> None:
+        self.num_centiseconds_from_now = num_centiseconds_from_now
+
+    def validate_result(self, response: Dict[str,Any]) -> None:
+        if not response:
+            # an empty response is always valid
+            return
+
+        if self.num_centiseconds_from_now == 0:
+            # we only expect the newest one.
+            if len(response['hist_net_tpc_capability']) > 1:
+
+                raise ValidationError(
+                    "Response contains more centiseconds than requested. We requested {}, but received {}".format(
+                        self.num_centiseconds_from_now, len(response['hist_net_tpc_capability']))
+                )
+
+            # we only expect the newest one.
+            if len(response['hist_min_allowed_gas_price']) > 1:
+                raise ValidationError(
+                    "Response contains more centiseconds than requested. We requested {}, but received {}".format(
+                        self.num_centiseconds_from_now, len(response['hist_net_tpc_capability']))
+                )

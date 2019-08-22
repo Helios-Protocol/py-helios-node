@@ -24,7 +24,7 @@ from .requests import (
     GetReceiptsRequest,
     GetBlocksRequest,
     GetNodeStakingScoreRequest,
-    GetHashFragmentsRequest, GetChainsRequest, GetChainSegmentRequest)
+    GetHashFragmentsRequest, GetChainsRequest, GetChainSegmentRequest, GetMinGasParametersRequest)
 
 from helios.rlp_templates.hls import P2PBlock
 
@@ -177,3 +177,19 @@ class GetHashFragmentsTracker(BaseGetHashFragmentsTracker):
 
     def _get_result_item_count(self, result: HashFragmentBundle) -> int:
         return len(result.fragments)
+
+
+BaseGetMinGasParametersTracker = BasePerformanceTracker[
+    GetMinGasParametersRequest,
+    Dict[str, Any],
+]
+
+class GetMinGasParametersTracker(BaseGetMinGasParametersTracker):
+    def _get_request_size(self, request) -> Optional[int]:
+        return 1
+
+    def _get_result_size(self, result) -> int:
+        return 1
+
+    def _get_result_item_count(self, result) -> int:
+        return 1

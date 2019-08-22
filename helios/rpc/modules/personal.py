@@ -15,6 +15,7 @@ from eth_utils.curried import (
     to_bytes,
 )
 from helios.exceptions import BaseRPCError
+from helios.rpc.constants import MAX_ALLOWED_LENGTH_BLOCK_IMPORT_QUEUE
 from helios.rpc.format import (
     format_params,
     dummy,
@@ -32,7 +33,8 @@ from typing import (
 )
 from helios.rlp_templates.hls import P2PBlock
 from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStageRequest, \
-    CurrentSyncingParametersRequest, GetConnectedNodesRequest
+    CurrentSyncingParametersRequest, GetConnectedNodesRequest, BlockImportQueueLengthRequest, \
+    AverageNetworkMinGasPriceRequest
 
 from eth_keys import keys
 from helios_web3 import HeliosWeb3 as Web3
@@ -46,7 +48,7 @@ from eth_typing import Address
 from hvm.constants import GAS_TX
 from hvm.db.read_only import ReadOnlyDB
 import time
-
+from hvm.utils.blocks import does_block_meet_min_gas_price, get_block_average_transaction_gas_price
 
 def encode_defunct(
         primitive: bytes = None,
@@ -79,23 +81,32 @@ class Personal(RPCModule):
 
     _importing_block_lock = asyncio.Lock()
 
-    # def __init__(self):
-    #
-    #     self._node_private_helios_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(absolute_keystore_path + KEYSTORE_FILENAME_TO_USE, self.keystore_password))
+    _account_address_cache = set()
+    _account_address_cache_ready = asyncio.Event()
+
+    def __init__(self, *args, **kwargs) -> None:
+        # Create the account address cache
+        asyncio.ensure_future(self._init_account_address_cache())
+        super().__init__(*args, **kwargs)
 
     def _save_account(self, account, password):
+        if not self._account_address_cache_ready.is_set():
+            raise BaseRPCError("Account cache is still building. Please wait and try again in a moment.")
+
         w3 = Web3()
         new_account_json_encrypted = w3.hls.account.encrypt(account.privateKey, password)
         keyfile_name = "HLS_account_{}".format(account.address)
-        keyfile_path = self.rpc_context.keystore_dir / keyfile_name
+        keyfile_path = self._rpc_context.keystore_dir / keyfile_name
 
         f = open(str(keyfile_path), "w")
         f.write(json.dumps(new_account_json_encrypted))
         f.close()
 
+        self._account_address_cache.add(account.address)
+
     def _get_keystore_for_address(self, wallet_address):
         normalized_wallet_address = to_normalized_address(wallet_address)
-        file_glob = self.rpc_context.keystore_dir.glob('**/*')
+        file_glob = self._rpc_context.keystore_dir.glob('**/*')
         files = [x for x in file_glob if x.is_file()]
         for json_keystore in files:
             try:
@@ -177,6 +188,38 @@ class Personal(RPCModule):
         return account
 
 
+
+
+    async def _get_all_account_addresses_set(self):
+        file_glob = self._rpc_context.keystore_dir.glob('**/*')
+        files = [x for x in file_glob if x.is_file()]
+        account_wallet_addresses = set()
+        for json_keystore_filename in files:
+            # pieces = str(json_keystore_filename).split('HLS_account_')
+            # if len(pieces) == 2:
+            #     if len(pieces[1]) == 42:
+            #         account_wallet_addresses.add(pieces[1])
+            #         continue
+            try:
+                with open(str(json_keystore_filename)) as json_file:
+                    keystore = json.load(json_file)
+                    if 'address' in keystore:
+                        account_wallet_addresses.add(keystore['address'])
+            except Exception as e:
+                # Not a json file
+                pass
+
+        return account_wallet_addresses
+
+    async def _init_account_address_cache(self):
+        self._account_address_cache = await self._get_all_account_addresses_set()
+        self._account_address_cache_ready.set()
+
+    async def _get_all_account_addresses_set_from_cache(self):
+        if not self._account_address_cache_ready.is_set():
+            raise BaseRPCError("Account cache is still building. Please wait and try again in a moment.")
+        return self._account_address_cache
+
     #
     # Transaction and Block Creation Functions
     #
@@ -184,6 +227,24 @@ class Personal(RPCModule):
     async def _send_transactions(self, transactions, account, include_receive: bool = True):
         async with self._importing_block_lock:
             print("Importing block")
+
+            # Check our current syncing stage. Must be sync stage 4.
+            current_sync_stage_response = await self._event_bus.request(
+                CurrentSyncStageRequest()
+            )
+            if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
+                raise BaseRPCError(
+                    "This node is still syncing with the network. Please wait until this node has synced.")
+
+            # Check that our block import queue is not deep. It could cause min gas to increase before this block makes it there.
+            current_block_import_queue_length = await self._event_bus.request(
+                BlockImportQueueLengthRequest()
+            )
+            if current_block_import_queue_length.queue_length > MAX_ALLOWED_LENGTH_BLOCK_IMPORT_QUEUE:
+                raise BaseRPCError(
+                    "This node is currently at it's maximum capacity of new blocks. Please wait a moment while we process them, and try again.")
+
+
             normalized_wallet_address = to_normalized_address(account.address)
 
             wallet_address_hex = account.address
@@ -206,18 +267,30 @@ class Personal(RPCModule):
                 chain.populate_queue_block_with_receive_tx()
 
             signed_transactions = []
+
+            # Make sure it meets the average min gas price of the network. If it doesnt, then it won't reach consensus.
+            current_network_min_gas_price_response = await self._event_bus.request(
+                AverageNetworkMinGasPriceRequest()
+            )
+
+            network_min_gas_price = current_network_min_gas_price_response.min_gas_price
+            local_min_gas_price = chain.min_gas_db.get_required_block_min_gas_price()
+            actual_min_gas_price = max([network_min_gas_price, local_min_gas_price])
+
+            min_gas_price = to_wei(actual_min_gas_price, 'gwei')
+            safe_min_gas_price = to_wei(actual_min_gas_price+5, 'gwei')
             for i in range(len(transactions)):
                 tx = transactions[i]
                 if to_normalized_address(tx['from']) != normalized_wallet_address:
                     raise BaseRPCError("When sending multiple transactions at once, they must all be from the same address")
 
                 if 'gasPrice' in tx:
-                    gas_price = tx['gasPrice']
+                    gas_price = to_int_if_hex(tx['gasPrice'])
                 else:
-                    gas_price = to_wei(chain.chaindb.get_required_block_min_gas_price()+1, 'gwei')
+                    gas_price = safe_min_gas_price
 
                 if 'gas' in tx:
-                    gas = tx['gas']
+                    gas = to_int_if_hex(tx['gas'])
                 else:
                     gas = GAS_TX
 
@@ -227,14 +300,14 @@ class Personal(RPCModule):
                     data = b''
 
                 if 'nonce' in tx:
-                    nonce = tx['nonce']
+                    nonce = to_int_if_hex(tx['nonce'])
                 else:
                     nonce = None
 
                 transactions[i]['nonce'] = nonce
                 signed_tx = chain.create_and_sign_transaction_for_queue_block(
                     gas_price=gas_price,
-                    gas=GAS_TX,
+                    gas=gas,
                     to=decode_hex(tx['to']),
                     value=to_int_if_hex(tx['value']),
                     data=data,
@@ -247,6 +320,13 @@ class Personal(RPCModule):
 
 
             block = chain.import_current_queue_block()
+
+            average_block_gas_price = get_block_average_transaction_gas_price(block)
+
+            if average_block_gas_price < min_gas_price:
+                raise Exception("The average gas price of all transactions in your block does not meet the required minimum gas price. Your average block gas price: {}. Min gas price: {}".format(
+                    average_block_gas_price,
+                    min_gas_price))
 
             if len(signed_transactions) == 0 and len(block.receive_transactions) == 0:
                 raise BaseRPCError("Cannot send block if it has no send or receive transactions.")
@@ -278,18 +358,7 @@ class Personal(RPCModule):
         return to_checksum_address(new_account.address)
 
     async def listAccounts(self):
-        file_glob = self.rpc_context.keystore_dir.glob('**/*')
-        files = [x for x in file_glob if x.is_file()]
-        account_wallet_addresses = []
-        for json_keystore in files:
-            try:
-                with open(str(json_keystore)) as json_file:
-                    keystore = json.load(json_file)
-                    if 'address' in keystore:
-                        account_wallet_addresses.append(to_checksum_address(keystore['address']))
-            except Exception as e:
-                # Not a json file
-                pass
+        account_wallet_addresses = list(await self._get_all_account_addresses_set_from_cache())
 
         return account_wallet_addresses
 
@@ -318,13 +387,6 @@ class Personal(RPCModule):
         :return:
         '''
 
-        # Check our current syncing stage. Must be sync stage 4.
-        current_sync_stage_response = await self._event_bus.request(
-            CurrentSyncStageRequest()
-        )
-        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
-
 
         wallet_address_hex = tx['from']
 
@@ -342,13 +404,6 @@ class Personal(RPCModule):
         :return:
         '''
 
-        # Check our current syncing stage. Must be sync stage 4.
-        current_sync_stage_response = await self._event_bus.request(
-            CurrentSyncStageRequest()
-        )
-        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
-
         wallet_address_hex = txs[0]['from']
 
         account = await self._get_unlocked_account_or_unlock_now(wallet_address_hex, password)
@@ -356,12 +411,6 @@ class Personal(RPCModule):
 
     @format_params(decode_hex, dummy)
     async def receiveTransactions(self, wallet_address: bytes, password: str = None):
-        # Check our current syncing stage. Must be sync stage 4.
-        current_sync_stage_response = await self._event_bus.request(
-            CurrentSyncStageRequest()
-        )
-        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
 
         wallet_address_hex = encode_hex(wallet_address)
 
@@ -373,7 +422,7 @@ class Personal(RPCModule):
     async def sign(self, message: str, wallet_address: bytes, password: str = None):
         # using EIP 191 https://github.com/ethereum/eth-account/blob/master/eth_account/messages.py
         normalized_wallet_address = to_normalized_address(wallet_address)
-        account = self._get_unlocked_account_or_unlock_now(wallet_address, password)
+        account = await self._get_unlocked_account_or_unlock_now(wallet_address, password)
 
         signable_message = encode_defunct(text = message)
         w3 = Web3()
@@ -388,6 +437,13 @@ class Personal(RPCModule):
         signable_message = encode_defunct(text=message)
         checksum_address = w3.hls.account.recover_message(signable_message, signature = signature)
         return checksum_address
+
+    @format_params(to_int_if_hex)
+    async def getAccountsWithReceivableTransactions(self, after_timestamp):
+        hex_encoded_accounts = await self.listAccounts()
+        addresses = await self._rpc_context.modules['hls'].filterAddressesWithReceivableTransactions(hex_encoded_accounts, after_timestamp)
+        return addresses
+
 
 
 

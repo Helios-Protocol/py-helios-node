@@ -9,7 +9,10 @@ from helios.extensibility import (
 
 from .websocket_proxy_server import Proxy as rpc_websocket_proxy
 
-
+###
+# This one is not used anymore because it is synchronous. There is a new asynchronous one in the json_rpc folder
+# This one connects through IPC as well. So it wont be stopped by admin_stopRPC.
+###
 class RpcWebsocketProxyPlugin(BaseIsolatedPlugin):
 
     @property
@@ -21,7 +24,7 @@ class RpcWebsocketProxyPlugin(BaseIsolatedPlugin):
 
     def configure_parser(self, arg_parser: ArgumentParser, subparser: _SubParsersAction) -> None:
         arg_parser.add_argument(
-            '--disable_rpc_websocket_proxy',
+            '--disable_rpc_websocket_proxy-NOT_USED',
             action="store_true",
             help="Should we disable the RPC websocket proxy server?",
         )

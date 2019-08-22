@@ -15,6 +15,7 @@ from eth_utils import (
 from helios.chains.coro import (
     AsyncChain,
 )
+from helios.exceptions import BaseRPCError, RPCStoppedError
 
 from lahja import (
     Endpoint
@@ -28,8 +29,11 @@ from helios.rpc.modules import (
     RPCModule,
     Web3,
     Personal,
+    Dev,
+    Admin,
 )
 from pathlib import Path
+import asyncio
 
 REQUIRED_REQUEST_KEYS = {
     'id',
@@ -61,11 +65,19 @@ def generate_response(request: Dict[str, Any], result: Any, error: Union[Excepti
     return json.dumps(response)
 
 class RPCContext:
+    modules: Dict[str, RPCModule] = {}
+    halt_rpc = asyncio.Event()
+
     def __init__(self,
                  enable_private_modules: bool = False,
-                 keystore_dir: Path = None):
+                 enable_admin_module: bool = False,
+                 keystore_dir: Path = None,
+                 admin_rpc_password_config_path: Path = None):
+        self.admin_rpc_password_config_path = admin_rpc_password_config_path
+        self.enable_admin_module = enable_admin_module
         self.enable_private_modules = enable_private_modules
         self.keystore_dir = keystore_dir
+
 
 class RPCServer:
     '''
@@ -83,6 +95,7 @@ class RPCServer:
         EVM,
         Net,
         Web3,
+        Dev,
     )
 
     private_module_classes = (
@@ -99,16 +112,13 @@ class RPCServer:
             for M in self.private_module_classes:
                 self.modules[M.__name__.lower()] = M(chain, event_bus, rpc_context, chain_class)
 
-        if 'personal' in self.modules:
-            personal_module = self.modules['personal']
-        else:
-            personal_module = None
+        if rpc_context.enable_admin_module:
+            self.modules['admin'] = Admin(chain, event_bus, rpc_context, chain_class)
 
         for M in self.module_classes:
-            self.modules[M.__name__.lower()] = M(chain, event_bus, rpc_context, chain_class, personal_module)
+            self.modules[M.__name__.lower()] = M(chain, event_bus, rpc_context, chain_class)
 
-        if (len(self.modules) != len(self.module_classes)) and (len(self.modules) != (len(self.module_classes) + len(self.private_module_classes))):
-            raise ValueError("apparent name conflict in RPC module_classes", self.module_classes)
+        self.rpc_context.modules = self.modules
 
     def _lookup_method(self, rpc_method: str) -> Any:
         method_pieces = rpc_method.split('_')
@@ -163,10 +173,14 @@ class RPCServer:
         else:
             return result, None
 
-    async def execute(self, request: Dict[str, Any]) -> str:
+    async def execute(self, request: Dict[str, Any], from_ipc = False) -> str:
         '''
         The key entry point for all incoming requests
         '''
+        if not from_ipc:
+            if self.rpc_context.halt_rpc.is_set():
+                return generate_response(request, None, 'RPC has been disabled on this node. If you expect this node to be online, then this may just be temporary for mantenance.')
+
         result, error = await self._get_result(request)
         return generate_response(request, result, error)
 

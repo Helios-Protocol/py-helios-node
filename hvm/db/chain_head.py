@@ -51,7 +51,7 @@ from hvm.constants import (
     NUMBER_OF_HEAD_HASH_TO_SAVE,
     TIME_BETWEEN_HEAD_HASH_SAVE,
     ZERO_HASH32,
-)
+    AMOUNT_OF_TIME_TO_KEEP_CHAIN_HEAD_ROOT_HASH_BACKUP)
 from hvm.db.batch import (
     BatchDB,
 )
@@ -823,7 +823,7 @@ class ChainHeadDB():
             encoded_data,
         )
     
-    def load_chronological_block_window(self, timestamp: Timestamp) -> Optional[List[Union[int, Hash32]]]:
+    def load_chronological_block_window(self, timestamp: Timestamp) -> Optional[List[Tuple[int, Hash32]]]:
         validate_uint256(timestamp, title='timestamp')
         if timestamp % TIME_BETWEEN_HEAD_HASH_SAVE != 0:
             raise InvalidHeadRootTimestamp("Can only save or load chronological block for timestamps in increments of {} seconds.".format(TIME_BETWEEN_HEAD_HASH_SAVE))
@@ -849,4 +849,45 @@ class ChainHeadDB():
             del(self.db[chronological_window_lookup_key])
         except KeyError:
             pass
+
+    def load_root_hash_backup(self) -> List[Tuple[int, Hash32]]:
+        db_key = SchemaV1.make_chain_head_root_hash_backup_key()
+
+        try:
+            data = rlp.decode(self.db[db_key], sedes=rlp.sedes.FCountableList(rlp.sedes.FList([f_big_endian_int, hash32])), use_list=True)
+            data.sort()
+            return data
+        except KeyError:
+            return []
+
+
+    def save_root_hash_backup(self, root_hash_backup_timestamps: List[Tuple[int, Hash32]]) -> None:
+        db_key = SchemaV1.make_chain_head_root_hash_backup_key()
+
+        encoded_data = rlp.encode(root_hash_backup_timestamps, sedes=rlp.sedes.FCountableList(rlp.sedes.FList([f_big_endian_int, hash32])))
+        self.db.set(
+            db_key,
+            encoded_data,
+        )
+
+
+    def save_current_root_hash_to_backup(self):
+        self.logger.debug("Saving current chain head root hash to backup")
+        root_hash_backup = self.load_root_hash_backup()
+
+        now = int(time.time())
+
+        if len(root_hash_backup) > 0:
+            while root_hash_backup[0][0] < now - AMOUNT_OF_TIME_TO_KEEP_CHAIN_HEAD_ROOT_HASH_BACKUP:
+                del(root_hash_backup[0])
+
+        root_hash_backup.append([now, self.root_hash])
+
+        self.save_root_hash_backup(root_hash_backup)
+
+
+
+
+
+
 

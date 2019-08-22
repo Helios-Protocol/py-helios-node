@@ -405,7 +405,7 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_gen
         genesis_params, genesis_state = create_new_genesis_params_and_state(TESTNET_GENESIS_PRIVATE_KEY, required_total_supply, earliest_timestamp - 100000)
         sender_chain = TestnetChain.from_genesis(base_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
 
-    sender_chain.chaindb.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=5)
+    sender_chain.min_gas_db.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=5)
 
     prev_timestamp = 0
     for priv_key, balance_timestamp in key_balance_dict.items():
@@ -515,7 +515,7 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
     from hvm.constants import TIME_BETWEEN_HEAD_HASH_SAVE
 
     private_keys = []
-    for i in range(11):
+    for i in range(16):
         private_keys.append(keys.PrivateKey(random_private_keys[i]))
 
     if instance == 0:
@@ -530,6 +530,12 @@ def create_predefined_blockchain_database(db, genesis_block_timestamp = None, in
             private_keys[7]: (40000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*8),
             private_keys[8]: (10000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*9),
             private_keys[9]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
+            private_keys[10]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
+            private_keys[11]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
+            private_keys[12]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
+            private_keys[13]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
+            private_keys[14]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
+            private_keys[15]: (1000*10**18, genesis_block_timestamp + TIME_BETWEEN_HEAD_HASH_SAVE + MIN_TIME_BETWEEN_BLOCKS*10),
 
         }
     elif instance == 1:

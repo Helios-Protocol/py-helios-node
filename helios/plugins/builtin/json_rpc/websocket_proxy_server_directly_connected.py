@@ -1,38 +1,6 @@
-#
-# Parts of this code come from cpp-ethereum
-
-# cpp-ethereum is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-
-# cpp-ethereum is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-
-# See <http://www.gnu.org/licenses/> for a copy of the licence.
-
-#!/usr/bin/env python3
-
-"""
-JSON-RPC Proxy
-This Python script provides HTTP proxy to Unix Socket based JSON-RPC servers.
-Check out --help option for more information.
-Build with cython:
-cython rpcproxy.py --embed
-gcc -O3 -I /usr/include/python3.5m -o rpcproxy rpcproxy.c \
--Wl,-Bstatic -lpython3.5m -lz -lexpat -lutil -Wl,-Bdynamic -lpthread -ldl -lm
-"""
-
 import asyncio
-import threading
-
 import websockets
-import errno
-import socket
 import sys
-import time
 import json
 import ssl
 
@@ -49,34 +17,18 @@ try:
 except ImportError:
     JSONDecodeError = ValueError
 
-from eth_utils import (
-    to_bytes,
-    to_text,
-)
-
-from os import path
-
-if sys.platform == 'win32':
-    import win32file
-    import pywintypes
 
 
+from helios.rpc.proxy import BaseProxy
 
-VERSION = '0.2'
-BUFSIZE = 4096
-DELIMITER = ord('}')
-BACKEND_CONNECTION_TIMEOUT=5
-INFO = """JSON-RPC Proxy
-Version:  {version}
-Proxy:    {proxy_url}
-Backend:  {backend_url} (connected: {connected})
-"""
+# Instead of piping requests through the IPC socket, we are connecting directly with the code. This allows
+# async requests.
+class Proxy(BaseProxy):
 
-
-class Server:
-
-    def __init__(self, websocket_url, rpc_execute):
+    def __init__(self, websocket_url, rpc_execute, use_async = True):
         self.websocket_url = websocket_url
+
+        self.use_async = use_async
 
         url = urlparse(websocket_url)
         assert url.scheme == 'ws'
@@ -88,10 +40,15 @@ class Server:
 
         self.rpc_execute = rpc_execute
 
+        self.sync_lock = asyncio.Lock()
 
     async def process(self, raw_request):
         request = json.loads(raw_request)
-        return await self.rpc_execute(request)
+        if self.use_async:
+            return await self.rpc_execute(request)
+        else:
+            async with self.sync_lock:
+                return await self.rpc_execute(request)
 
 
     async def interface(self, websocket, path):
@@ -124,8 +81,7 @@ class Server:
                  self.websocket_url), file=sys.stderr, flush=True)
 
         return(self.server)
-        # asyncio.get_event_loop().run_until_complete(self.server)
-        # asyncio.get_event_loop().run_forever()
+
 
 
 

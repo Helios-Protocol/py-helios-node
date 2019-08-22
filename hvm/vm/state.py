@@ -5,7 +5,8 @@ from abc import (
 import logging
 from typing import (  # noqa: F401
     Type,
-    TYPE_CHECKING
+    TYPE_CHECKING,
+    List
 )
 
 from hvm.constants import (
@@ -165,6 +166,24 @@ class BaseState(Configurable, metaclass=ABCMeta):
     def logger(self):
         return logging.getLogger('hvm.vm.state.{0}'.format(self.__class__.__name__))
 
+
+    #
+    # Account db helpers
+    #
+
+    def filter_accounts_with_receivable_transactions(self, chain_addresses: List[Address]) -> List[Address]:
+        '''
+        Goes through all provided chain addresses and returns a list of any of the addresses that have receivable transactions
+        :param chain_addresses:
+        :return:
+        '''
+        addresses_with_receivable_transactions = set()
+
+        for chain_address in chain_addresses:
+            if self.account_db.has_receivable_transactions(chain_address):
+                addresses_with_receivable_transactions.add(chain_address)
+
+        return list(addresses_with_receivable_transactions)
 
     #
     # Block Object Properties (in opcodes)

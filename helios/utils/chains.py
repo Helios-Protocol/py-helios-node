@@ -95,6 +95,19 @@ def get_local_peer_pool_path(data_dir: Path) -> Path:
     ))
 
 
+RPC_ADMIN_LOGIN_CONFIG_FILENAME = 'rpc_admin_login_config'
+
+
+def get_rpc_login_config_path(data_dir: Path) -> Path:
+    """
+    Returns the path to the private key used for devp2p connections.
+    """
+    return Path(os.environ.get(
+        'RPC_ADMIN_LOGIN_CONFIG_PATH',
+        str(data_dir / RPC_ADMIN_LOGIN_CONFIG_FILENAME),
+    ))
+
+
 DATABASE_SOCKET_FILENAME = 'db.ipc'
 
 

@@ -114,12 +114,7 @@ class BaseChainPeerPool(BasePeerPool):
 
     @property
     def highest_td_peer(self) -> BaseChainPeer:
-        peers = tuple(self.connected_nodes.values())
-        if not peers:
-            raise NoConnectedPeers()
-        peers_by_td = groupby(operator.attrgetter('head_td'), peers)
-        max_td = max(peers_by_td.keys())
-        return random.choice(peers_by_td[max_td])
+        raise NotImplementedError()
 
     def get_peers(self, min_stake: int = 0) -> List[BaseChainPeer]:
         # TODO: Consider turning this into a method that returns an AsyncIterator, to make it
