@@ -3,9 +3,12 @@ from eth_utils import decode_hex
 
 from hvm.constants import TESTNET_FAUCET_PRIVATE_KEY
 from hvm.vm.forks.boson import BosonVM
+from hvm.vm.forks.photon import PhotonVM
+
 from .constants import (
     HELIOS_TESTNET_TIMESTAMP,
-    BOSON_TIMESTAMP)
+    BOSON_TIMESTAMP,
+    PHOTON_TIMESTAMP,)
 from hvm import constants
 
 from hvm.chains import Chain
@@ -22,18 +25,11 @@ from eth_keys.datatypes import PrivateKey
 from hvm.types import Timestamp
 
 from eth_utils import to_wei
-from eth_utils import encode_hex, decode_hex
-#MAINNET_VM_CONFIGURATION = (
-#    (0, FrontierVM),
-#    (HOMESTEAD_MAINNET_BLOCK, HomesteadVM),
-#    (TANGERINE_WHISTLE_MAINNET_BLOCK, TangerineWhistleVM),
-#    (SPURIOUS_DRAGON_MAINNET_BLOCK, SpuriousDragonVM),
-#    (BYZANTIUM_MAINNET_BLOCK, ByzantiumVM),
-#)
 
 MAINNET_VM_CONFIGURATION = (
     (HELIOS_TESTNET_TIMESTAMP, HeliosTestnetVM),
     (BOSON_TIMESTAMP, BosonVM),
+    (PHOTON_TIMESTAMP, PhotonVM),
 )
 
 

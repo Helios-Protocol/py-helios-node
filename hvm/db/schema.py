@@ -37,6 +37,10 @@ class SchemaV1(BaseSchema):
         return b'account:%s' % wallet_address
 
     @staticmethod
+    def make_photon_account_lookup_key(wallet_address: Address) -> bytes:
+        return b'photon_account:%s' % wallet_address
+
+    @staticmethod
     def make_block_number_to_hash_lookup_key(wallet_address:Address, block_number: BlockNumber) -> bytes:
         number_to_hash_key = b'block-number-to-hash:%b-%d' % (wallet_address, block_number)
         return number_to_hash_key

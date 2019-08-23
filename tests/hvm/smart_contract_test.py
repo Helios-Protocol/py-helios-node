@@ -15,6 +15,9 @@ from hvm.chains.testnet import (
     TESTNET_NETWORK_ID,
 )
 
+from hvm.utils.spoof import (
+    SpoofTransaction,
+)
 
 from hvm.types import Timestamp
 
@@ -40,7 +43,8 @@ from eth_utils import (
     to_wei
 )
 from helios.dev_tools import create_dev_test_random_blockchain_database, \
-    create_dev_test_blockchain_database_with_given_transactions, create_new_genesis_params_and_state
+    create_dev_test_blockchain_database_with_given_transactions, create_new_genesis_params_and_state, \
+    create_predefined_blockchain_database
 from eth_keys import keys
 from sys import exit
 
@@ -114,6 +118,21 @@ private_keys = []
 for i in range(10):
     private_keys.append(get_primary_node_private_helios_key(i))
 
+from helios.utils.logging import (
+    setup_helios_stderr_logging,
+)
+
+log_level = getattr(logging, 'DEBUG')
+logger, _, handler_stream = setup_helios_stderr_logging(log_level)
+logger.propagate = True
+
+logger = logging.getLogger('hp2p')
+logger.setLevel(logging.DEBUG)
+logger.addHandler(handler_stream)
+
+logger = logging.getLogger('hvm')
+logger.setLevel(logging.DEBUG)
+logger.addHandler(handler_stream)
 
 SENDER = TESTNET_GENESIS_PRIVATE_KEY
 RECEIVER = get_primary_node_private_helios_key(1)
@@ -444,9 +463,7 @@ def test_erc_20_smart_contract_call():
 
 
 def test_airdrop_simple_token_contract_call():
-    from hvm.utils.spoof import (
-        SpoofTransaction,
-    )
+
 
     simple_token_contract_address = b'%\xf1\xf7[(2\xd5l\xe4DL\x97\xbf+\xe2M[pN\xdc'
 
@@ -931,3 +948,84 @@ def _test_airdrop_calling_erc_20():
     print("Refunded gas is the expected amount.")
 
 # test_airdrop_calling_erc_20()
+
+HELIOS_DELEGATED_TOKEN_SOLIDITY_SRC_FILE = 'contract_data/helios_delegated_token.sol'
+
+def test_helios_delegated_token():
+    
+    compile_sol_and_save_to_file(HELIOS_DELEGATED_TOKEN_SOLIDITY_SRC_FILE, 'contract_data/helios_delegated_token.pkl')
+    compiled_sol = load_compiled_sol_dict('contract_data/helios_delegated_token.pkl')
+
+    contract_interface = compiled_sol['{}:HeliosDelegatedToken'.format(HELIOS_DELEGATED_TOKEN_SOLIDITY_SRC_FILE)]
+    
+    # deploy the contract
+    w3 = Web3()
+
+    HeliosDelegatedToken = w3.hls.contract(
+        abi=contract_interface['abi'],
+        bytecode=contract_interface['bin']
+    )
+
+    # Build transaction to deploy the contract
+    w3_tx1 = HeliosDelegatedToken.constructor().buildTransaction(W3_TX_DEFAULTS)
+
+    max_gas = 20000000
+
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=CREATE_CONTRACT_ADDRESS,
+        value=0,
+        data=decode_hex(w3_tx1['data']),
+        v=0,
+        r=0,
+        s=0
+    )
+
+    # time.sleep(1)
+    print("deploying smart contract")
+
+    chain.import_current_queue_block()
+
+    list_of_smart_contracts = import_all_pending_smart_contract_blocks(testdb)
+    deployed_contract_address = list_of_smart_contracts[0]
+
+    print(encode_hex(deployed_contract_address))
+    
+    #
+    # Now call it to see what this says
+    #
+    HeliosDelegatedToken = w3.hls.contract(
+        address=Web3.toChecksumAddress(deployed_contract_address),
+        abi=contract_interface['abi']
+    )
+
+    w3_tx2 = HeliosDelegatedToken.functions.getCoinbase().buildTransaction(W3_TX_DEFAULTS)
+
+    tx_sender = TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address()
+
+    tx_nonce = chain.get_vm().state.account_db.get_nonce(tx_sender)
+
+    transaction = chain.create_transaction(
+        gas_price=0x01,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=0,
+        nonce=tx_nonce,
+        data=decode_hex(w3_tx2['data']),
+        v=0,
+        r=0,
+        s=0
+    )
+
+    spoof_transaction = SpoofTransaction(transaction, from_=tx_sender)
+    print("tx sender: {}".format(encode_hex(tx_sender)))
+    result = chain.get_transaction_result(spoof_transaction)
+    print("Result from 'this': {}".format(encode_hex(result)))
+
+test_helios_delegated_token()
+exit()

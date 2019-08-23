@@ -12,7 +12,8 @@ def blockhash(computation):
 
 
 def coinbase(computation):
-    computation.stack_push(computation.state.coinbase)
+    raise NotImplementedError("Blocks on Helios Protocol do not have a coinbase.")
+    #computation.stack_push(computation.state.coinbase)
 
 
 def timestamp(computation):

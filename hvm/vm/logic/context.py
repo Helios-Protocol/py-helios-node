@@ -22,6 +22,7 @@ def origin(computation):
 
 
 def address(computation):
+    print("ASKED FOR ADDRESS")
     computation.stack_push(computation.msg.storage_address)
 
 

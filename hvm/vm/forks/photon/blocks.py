@@ -7,24 +7,24 @@ from hvm.rlp.headers import (
     MicroBlockHeader)
 
 from .transactions import (
-    BosonReceiveTransaction, BosonTransaction)
+    PhotonReceiveTransaction, PhotonTransaction)
 
 from hvm.rlp.receipts import (
     Receipt,
 )
 from hvm.rlp.consensus import StakeRewardBundle
 
-class BosonMicroBlock(HeliosMicroBlock):
+class PhotonMicroBlock(HeliosMicroBlock):
     fields = [
         ('header', MicroBlockHeader),
-        ('transactions', CountableList(BosonTransaction)),
-        ('receive_transactions', CountableList(BosonReceiveTransaction)),
+        ('transactions', CountableList(PhotonTransaction)),
+        ('receive_transactions', CountableList(PhotonReceiveTransaction)),
         ('reward_bundle', StakeRewardBundle),
     ]
 
-class BosonBlock(HeliosTestnetBlock):
-    transaction_class = BosonTransaction
-    receive_transaction_class = BosonReceiveTransaction
+class PhotonBlock(HeliosTestnetBlock):
+    transaction_class = PhotonTransaction
+    receive_transaction_class = PhotonReceiveTransaction
     header_class = BlockHeader
     reward_bundle_class = StakeRewardBundle
     receipt_class = Receipt
@@ -38,9 +38,9 @@ class BosonBlock(HeliosTestnetBlock):
 
 
 
-class BosonQueueBlock(BosonBlock,HeliosTestnetQueueBlock):
-    transaction_class = BosonTransaction
-    receive_transaction_class = BosonReceiveTransaction
+class PhotonQueueBlock(PhotonBlock,HeliosTestnetQueueBlock):
+    transaction_class = PhotonTransaction
+    receive_transaction_class = PhotonReceiveTransaction
     reward_bundle_class = StakeRewardBundle
     receipt_class = Receipt
 
@@ -60,4 +60,4 @@ class BosonQueueBlock(BosonBlock,HeliosTestnetQueueBlock):
 
         signed_header = self.header.get_signed(private_key, chain_id)
 
-        return BosonBlock(signed_header, self.transactions, self.receive_transactions, self.reward_bundle)
+        return PhotonBlock(signed_header, self.transactions, self.receive_transactions, self.reward_bundle)

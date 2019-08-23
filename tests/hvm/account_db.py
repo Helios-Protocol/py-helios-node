@@ -1,0 +1,195 @@
+import logging
+import os
+import random
+import time
+import sys
+from pprint import pprint
+
+
+from hvm import constants
+
+from hvm import TestnetChain
+from hvm.chains.testnet import (
+    TESTNET_GENESIS_PARAMS,
+    TESTNET_GENESIS_STATE,
+    TESTNET_GENESIS_PRIVATE_KEY,
+    TESTNET_NETWORK_ID,
+)
+
+from hvm.constants import (
+    GAS_TX)
+
+from hvm.vm.forks.boson.constants import MIN_TIME_BETWEEN_BLOCKS
+from hvm.db.backends.level import LevelDB
+from hvm.db.backends.memory import MemoryDB
+from hvm.db.journal import (
+    JournalDB,
+)
+
+from hvm.db.chain import ChainDB
+from hvm.db.trie import make_trie_root_and_nodes
+from hvm.rlp.headers import MicroBlockHeader
+from hvm.rlp.transactions import BaseTransaction
+
+import rlp as rlp
+
+
+from eth_utils import (
+    encode_hex,
+    decode_hex,
+)
+from helios.dev_tools import create_dev_test_random_blockchain_database, \
+    create_dev_test_blockchain_database_with_given_transactions, create_new_genesis_params_and_state, \
+    add_transactions_to_blockchain_db
+from eth_keys import keys
+from sys import exit
+
+from trie import (
+    HexaryTrie,
+)
+from hvm.db.hash_trie import HashTrie
+
+import matplotlib.pyplot as plt
+
+from hvm.db.chain_head import ChainHeadDB
+
+from eth_utils import (
+    int_to_big_endian,
+    big_endian_to_int,
+)
+from eth_keys import keys
+
+from hvm.constants import random_private_keys
+
+def get_primary_node_private_helios_key(instance_number = 0):
+    return keys.PrivateKey(random_private_keys[instance_number])
+
+from hvm.vm.forks.photon.account import PhotonAccountDB, PhotonAccount
+from hvm.db.account import AccountDB
+from hvm.rlp.accounts import Account
+
+from hvm.constants import BLANK_ROOT_HASH, EMPTY_SHA3
+from hvm.utils.rlp import ensure_rlp_objects_are_equal
+
+def ensure_accounts_are_equal(boson_account, photon_account):
+    _ensure_accounts_are_equal = ensure_rlp_objects_are_equal(
+        obj_a_name="boson_account",
+        obj_b_name="photon_account",
+    )
+
+    corrected_boson_account = PhotonAccount(boson_account.nonce,
+                                            boson_account.block_number,
+                                            boson_account.receivable_transactions,
+                                            boson_account.balance,
+                                            boson_account.storage_root,
+                                            code_hash=boson_account.code_hash)
+
+    _ensure_accounts_are_equal(corrected_boson_account, photon_account)
+
+def test_photon_account_db_upgrade_format():
+    test_address = get_primary_node_private_helios_key(0).public_key.to_canonical_address()
+    testdb = MemoryDB()
+
+    old_account_db = AccountDB(testdb)
+    old_account = Account()
+    old_account_db._set_account(address = test_address, account = old_account)
+    old_account_db.persist()
+
+    photon_account_db = PhotonAccountDB(testdb)
+    photon_account = photon_account_db._get_account(test_address)
+
+    ensure_accounts_are_equal(old_account, photon_account)
+
+    if not isinstance(photon_account, PhotonAccount):
+        raise Exception("PhotonAccountDB gave incorrect account type")
+
+    #
+    # test saving new photon account
+    #
+    photon_account_db._set_account(test_address, photon_account)
+    photon_account = photon_account_db._get_account(test_address)
+
+    ensure_accounts_are_equal(old_account, photon_account)
+
+
+    #
+    # Test setting something like the balance
+    #
+    photon_account_db.set_balance(test_address, 100)
+    balance = photon_account_db.get_balance(test_address)
+
+    assert(balance == 100)
+
+# test_photon_account_db_upgrade_format()
+# exit()
+
+
+def test_photon_account_db_smart_contract_storage():
+    test_address = get_primary_node_private_helios_key(0).public_key.to_canonical_address()
+    smart_contract_address = get_primary_node_private_helios_key(1).public_key.to_canonical_address()
+
+    testdb = MemoryDB()
+    photon_account_db = PhotonAccountDB(testdb)
+
+    #
+    # Load when doesnt exist
+    #
+    storage_at_0 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 0)
+    assert(storage_at_0 == 0)
+
+    #
+    # Set, then load
+    #
+    photon_account_db.set_smart_contract_storage(test_address, smart_contract_address, 0, 100)
+    storage_at_0 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 0)
+    assert(storage_at_0 == 100)
+
+    #
+    # Set another slot, then load both
+    #
+    photon_account_db.set_smart_contract_storage(test_address, smart_contract_address, 1, 200)
+    storage_at_0 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 0)
+    storage_at_1 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 1)
+    assert (storage_at_0 == 100)
+    assert (storage_at_1 == 200)
+
+    #
+    # Overwrite, then load both
+    #
+    photon_account_db.set_smart_contract_storage(test_address, smart_contract_address, 0, 300)
+    photon_account_db.set_smart_contract_storage(test_address, smart_contract_address, 1, 400)
+    storage_at_0 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 0)
+    storage_at_1 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 1)
+    assert (storage_at_0 == 300)
+    assert (storage_at_1 == 400)
+
+    #
+    # Delete, then load
+    #
+    photon_account_db.delete_smart_contract_storage(test_address, smart_contract_address)
+    storage_at_0 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 0)
+    assert (storage_at_0 == 0)
+
+# test_photon_account_db_smart_contract_storage()
+# exit()
+
+
+def test_photon_account_db_save_root_hash():
+    test_address = get_primary_node_private_helios_key(0).public_key.to_canonical_address()
+    testdb = MemoryDB()
+    photon_account_db = PhotonAccountDB(testdb)
+
+    photon_account_db.set_balance(test_address, 100)
+    photon_account_db.persist()
+    saved_account_hash = photon_account_db.get_account_hash(test_address)
+    photon_account_db.save_current_account_with_hash_lookup(test_address)
+
+    photon_account_db.set_balance(test_address, 200)
+
+    photon_account_db.revert_to_account_from_hash(saved_account_hash, test_address)
+    balance = photon_account_db.get_balance(test_address)
+    assert(balance == 100)
+
+
+# test_photon_account_db_save_root_hash()
+# exit()

@@ -19,11 +19,11 @@ from hvm.rlp.receipts import (
 )
 
 from .transactions import (
-    HeliosTestnetTransaction,
-    HeliosTestnetReceiveTransaction,
+    BosonTransaction,
+    BosonReceiveTransaction,
 )
 
-from .computation import HeliosTestnetComputation
+from .computation import BosonComputation
 
 from hvm.rlp.headers import BaseBlockHeader
 
@@ -32,10 +32,10 @@ from hvm.vm.forks.helios_testnet import make_helios_testnet_receipt
 
 
 def make_boson_receipt(base_header: BaseBlockHeader,
-                                computation: HeliosTestnetComputation,
-                                send_transaction: HeliosTestnetTransaction,
-                                receive_transaction: HeliosTestnetReceiveTransaction = None,
-                                refund_transaction: HeliosTestnetReceiveTransaction = None,
+                                computation: BosonComputation,
+                                send_transaction: BosonTransaction,
+                                receive_transaction: BosonReceiveTransaction = None,
+                                refund_transaction: BosonReceiveTransaction = None,
                                 ) -> Receipt:
 
     return make_helios_testnet_receipt(base_header,
