@@ -267,7 +267,6 @@ class BaseChain(Configurable, metaclass=ABCMeta):
         if cls.vm_configuration is None:
             raise AttributeError("Chain classes must define the VMs in vm_configuration")
         validate_uint256(timestamp)
-
         for start_timestamp, vm_class in reversed(cls.vm_configuration):
             if timestamp >= start_timestamp:
                 return vm_class
@@ -784,7 +783,7 @@ class Chain(BaseChain):
         Initializes the Chain from a genesis state.
         """
 
-        genesis_vm_class = cls.get_vm_class_for_block_timestamp()
+        genesis_vm_class = cls.get_vm_class_for_block_timestamp(genesis_params['timestamp'])
 
         account_db = genesis_vm_class.get_state_class().get_account_db_class()(
             base_db

@@ -1027,5 +1027,19 @@ def test_helios_delegated_token():
     result = chain.get_transaction_result(spoof_transaction)
     print("Result from 'this': {}".format(encode_hex(result)))
 
-test_helios_delegated_token()
+# test_helios_delegated_token()
+# exit()
+
+AVATAR_CALL_CONTRACT_SRC_FILE = 'contract_data/avatar_call.sol'
+def test_avatar_call():
+    compile_sol_and_save_to_file(AVATAR_CALL_CONTRACT_SRC_FILE, 'contract_data/avatar_call.pkl')
+    compiled_sol = load_compiled_sol_dict('contract_data/avatar_call.pkl')
+    contract_interface = compiled_sol['{}:AvatarTest'.format(AVATAR_CALL_CONTRACT_SRC_FILE)]
+    binary = contract_interface['bin']
+    print(binary)
+
+
+
+
+test_avatar_call()
 exit()

@@ -29,7 +29,7 @@ from hvm.rlp.headers import BaseBlockHeader
 
 from hvm.vm.forks.helios_testnet import make_helios_testnet_receipt
 
-
+from typing import List, Tuple
 
 def make_boson_receipt(base_header: BaseBlockHeader,
                                 computation: BosonComputation,
@@ -62,4 +62,5 @@ class BosonVM(VM):
     validate_transaction_against_header = validate_boson_transaction_against_header
     consensus_db_class = BosonConsensusDB
 
+    # constants
     min_time_between_blocks = constants.MIN_TIME_BETWEEN_BLOCKS

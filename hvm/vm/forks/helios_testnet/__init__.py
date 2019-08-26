@@ -1,3 +1,5 @@
+from hvm.rlp.blocks import BaseBlock
+from hvm.vm.computation import BaseComputation
 from hvm.vm.forks.helios_testnet.consensus import HeliosTestnetConsensusDB
 from .constants import (
     EIP658_TRANSACTION_STATUS_CODE_FAILURE,
@@ -26,7 +28,7 @@ from hvm.rlp.receipts import (
     Receipt,
 )
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Tuple, List
 
 from .transactions import (
     HeliosTestnetTransaction,
@@ -116,5 +118,6 @@ class HeliosTestnetVM(VM):
     make_receipt = staticmethod(make_helios_testnet_receipt)
     validate_transaction_against_header = validate_helios_testnet_transaction_against_header
 
-    #constants
+
+    # constants
     min_time_between_blocks = constants.MIN_TIME_BETWEEN_BLOCKS

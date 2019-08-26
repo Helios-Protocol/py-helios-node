@@ -14,7 +14,7 @@ from hvm.chains.testnet import (
     TESTNET_GENESIS_PARAMS,
     TESTNET_GENESIS_STATE,
     TESTNET_GENESIS_PRIVATE_KEY,
-)
+    TestnetTesterChain)
 
 from hvm.db.backends.memory import MemoryDB
 from hvm.db.backends.level import LevelDB
@@ -240,7 +240,8 @@ def create_valid_block_at_timestamp(base_db, private_key, transactions = None, r
     if timestamp == None:
         timestamp = int(time.time())
 
-    chain = TestnetChain(JournalDB(base_db), private_key.public_key.to_canonical_address(), private_key)
+    chain = TestnetTesterChain(JournalDB(base_db), private_key.public_key.to_canonical_address(), private_key)
+    chain.set_fixed_vm_for_timestamp(timestamp)
 
     queue_block = chain.get_queue_block()
     queue_block = queue_block.copy(header = queue_block.header.copy(timestamp = timestamp),
@@ -320,8 +321,8 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
 
         total_gas = gas_price
         sender_chain = TestnetChain(base_db, sender_priv_key.public_key.to_canonical_address(), sender_priv_key)
-        dummy_sender_chain = TestnetChain(JournalDB(base_db), sender_priv_key.public_key.to_canonical_address(),
-                                          sender_priv_key)
+        dummy_sender_chain = TestnetTesterChain(JournalDB(base_db), sender_priv_key.public_key.to_canonical_address(), sender_priv_key)
+        dummy_sender_chain.set_fixed_vm_for_timestamp(tx_timestamp)
 
         dummy_sender_chain.create_and_sign_transaction_for_queue_block(
             gas_price=gas_price,
@@ -345,8 +346,9 @@ def add_transactions_to_blockchain_db(base_db, tx_list: List):
 
         # then receive the transactions
 
-        dummy_receiver_chain = TestnetChain(JournalDB(base_db), receive_priv_key.public_key.to_canonical_address(),
+        dummy_receiver_chain = TestnetTesterChain(JournalDB(base_db), receive_priv_key.public_key.to_canonical_address(),
                                             receive_priv_key)
+        dummy_receiver_chain.set_fixed_vm_for_timestamp(tx_timestamp)
         dummy_receiver_chain.populate_queue_block_with_receive_tx()
         imported_block = dummy_receiver_chain.import_current_queue_block()
 
@@ -384,6 +386,18 @@ def create_dev_test_blockchain_database_with_given_transactions(base_db, tx_list
     add_transactions_to_blockchain_db(base_db, tx_list)
 
 
+# def give_chain_a_fixed_vm_for_timestamp(chain, timestamp):
+#     '''
+#     Finds the correct VM for the given timestamp, and fixes the chain to that VM regardless of the block timestamp.
+#     Usefull for creating a new block for a specific VM.
+#     '''
+#
+#     vm_class = chain.get_vm_class_for_block_timestamp(timestamp)
+#     new_vm_configuration = ((0, vm_class),)
+#     chain.vm_configuration = new_vm_configuration
+#     print("Setting vm to {}".format(vm_class))
+#     print('VM for now = {}'.format(chain.get_vm(timestamp=int(time.time()))))
+#     return chain
 
 #key_balance_dict = {priv_key: (balance, timestamp)}
 def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_genesis = False):
@@ -406,17 +420,19 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_gen
         sender_chain = TestnetChain.from_genesis(base_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), genesis_params, genesis_state)
 
     sender_chain.min_gas_db.initialize_historical_minimum_gas_price_at_genesis(min_gas_price=1, net_tpc_cap=5)
-
+    
+    
     prev_timestamp = 0
     for priv_key, balance_timestamp in key_balance_dict.items():
         sender_chain = TestnetChain(base_db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
-
-        dummy_sender_chain = TestnetChain(JournalDB(base_db), TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
         balance = balance_timestamp[0]
         timestamp = balance_timestamp[1]
         if timestamp < prev_timestamp:
             raise ValueError("timestamps must be in ascending order")
+
+        dummy_sender_chain = TestnetTesterChain(JournalDB(base_db), TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+        dummy_sender_chain.set_fixed_vm_for_timestamp(timestamp)
 
         receiver_privkey = priv_key
 
@@ -432,7 +448,6 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_gen
                 )
 
 
-
         # import the block into the dummy chain to complete it and make sure it is valid
         imported_block = dummy_sender_chain.import_current_queue_block()
 
@@ -444,7 +459,9 @@ def create_dev_fixed_blockchain_database(base_db, key_balance_dict, use_real_gen
 
         #then receive the transactions
         receiver_chain = TestnetChain(base_db, receiver_privkey.public_key.to_canonical_address(), receiver_privkey)
-        dummy_receiver_chain = TestnetChain(JournalDB(base_db), receiver_privkey.public_key.to_canonical_address(), receiver_privkey)
+        dummy_receiver_chain = TestnetTesterChain(JournalDB(base_db), receiver_privkey.public_key.to_canonical_address(), receiver_privkey)
+        dummy_receiver_chain.set_fixed_vm_for_timestamp(timestamp)
+
         dummy_receiver_chain.populate_queue_block_with_receive_tx()
         imported_block = dummy_receiver_chain.import_current_queue_block()
 

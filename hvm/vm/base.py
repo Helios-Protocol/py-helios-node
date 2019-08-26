@@ -186,6 +186,8 @@ class BaseVM(Configurable, metaclass=ABCMeta):
         :return: receipt
         """
         raise NotImplementedError("VM classes must implement this method")
+    
+    
 
     @abstractmethod
     def reverse_pending_transactions(self, block_header: BaseBlockHeader) -> None:
@@ -381,6 +383,20 @@ class VM(BaseVM):
     #
     # Execution
     #
+    def apply_all_transactions(self, block: BaseBlock) -> Tuple[BaseBlockHeader, List[Receipt], List[BaseComputation], List[BaseComputation], List[BaseTransaction]]:
+
+        #run all of the transactions.
+        last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, block.header)
+
+
+        #then run all receive transactions
+        last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, last_header)
+
+        # then combine
+        receipts.extend(receive_receipts)
+
+        return last_header, receipts, receive_computations, send_computations, processed_receive_transactions
+
     def apply_send_transaction(self,
                                header: BlockHeader,
                                transaction: BaseTransaction,
@@ -530,12 +546,7 @@ class VM(BaseVM):
 
             if validate:
                 receipt = self.make_receipt(header, computation, send_transaction, receive_transaction, refund_transaction)
-
-                new_header = header.copy(
-                    bloom=int(BloomFilter(header.bloom) | receipt.bloom),
-                    gas_used=receipt.gas_used,
-                )
-
+                new_header = self.apply_receipt_to_header(header, receipt)
                 return new_header, receipt, computation, processed_transaction
             else:
                 return None, None, computation, processed_transaction
@@ -699,11 +710,18 @@ class VM(BaseVM):
                 except ValueError:
                     pass
                 
-                
+    def apply_receipt_to_header(self, base_header: BlockHeader, receipt: Receipt) -> BlockHeader:
+        new_header = base_header.copy(
+            bloom=int(BloomFilter(base_header.bloom) | receipt.bloom),
+            gas_used=receipt.gas_used,
+        )
+        return new_header
+
+
     #
     # Mining
     #
-
+    
     def import_block(self, block: Union[BaseBlock, BaseQueueBlock], validate: bool = True, private_key: PrivateKey = None, **kwargs) -> BaseBlock:
         """
         Import the given block to the chain.
@@ -749,20 +767,28 @@ class VM(BaseVM):
         # We need to re-initialize the `state` to update the execution context.
         # We don't need to refresh the state because it should have just been created for this block.
         # self.refresh_state()
-        
-        #run all of the transactions.
-        last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, block.header)
-        
-        
-        #then run all receive transactions
-        last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, last_header)
+
+        last_header, receipts, receive_computations, send_computations, processed_receive_transactions = self.apply_all_transactions(block)
+        # #run all of the transactions.
+        # last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, block.header)
+        #
+        #
+        # #then run all receive transactions
+        # last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, last_header)
+        #
+        #
+        # # run all receive transactions
+        # last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, block.header)
+        #
+        # # then run all of the send transactions.
+        # last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, last_header)
+
 
         if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
             self._apply_reward_bundle(block.reward_bundle, block.header.timestamp, block.header.chain_address, validate=validate)
 
 
-        #then combine
-        receipts.extend(receive_receipts)
+
 
 
         #
@@ -805,13 +831,6 @@ class VM(BaseVM):
             If it is a queueblock, then it must be signed now.
             It cannot be signed earlier because the header fields were changing
             """
-            #update timestamp now.
-            # self.logger.debug("setting timestamp of block to {}".format(int(time.time())))
-            # block = block.copy(
-            #     header=block.header.copy(
-            #         timestamp=block_timestamp,
-            #     ),
-            # )
 
             # change any final header parameters before signing
             block = self.pack_block(block, **kwargs)
@@ -823,18 +842,6 @@ class VM(BaseVM):
 
         for tx in block.receive_transactions:
             self.state.account_db.delete_receivable_transaction(block.header.chain_address, tx.send_transaction_hash)
-            # if tx.is_refund:
-            #     self.state.account_db.delete_receivable_transaction(block.header.chain_address, tx.send_transaction_hash)
-            # else:
-            #     # block_hash, index, is_receive = self.chaindb.get_transaction_index(tx.send_transaction_hash)
-            #     #
-            #     # send_transaction = self.chaindb.get_transaction_by_index_and_block_hash(
-            #     #     block_hash,
-            #     #     index,
-            #     #     self.get_transaction_class(),
-            #     # )
-            #
-            #     self.state.account_db.delete_receivable_transaction(block.header.chain_address, tx.send_transaction_hash)
 
         
         #save all send transactions in the state as receivable
@@ -850,38 +857,6 @@ class VM(BaseVM):
         return block
 
 
-    #this can be used for fast sync
-    #dangerous. It assumes all blocks are correct.
-    # def import_block_no_verification(self, block, *args, **kwargs):
-    #     """
-    #     Import the given block to the chain.
-    #     """
-    #     #TODO:check to see if it is replacing a block, or being added to the top
-    #     #TODO: allow this for contract addresses
-    #     if block.sender != self.wallet_address:
-    #         raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
-    #
-    #
-    #     # we need to re-initialize the `state` to update the execution context.
-    #     self.refresh_state()
-    #
-    #     #if we don't validate here, then we are opening ourselves up to someone having invalid receive transactions.
-    #     #We would also not check to see if the send transaction exists. So lets validate for now. We can only
-    #     #set validate to False if we 100% trust the source
-    #     #run all of the transactions.
-    #     #self._apply_all_transactions(block.transactions, block.header, validate = False)
-    #     self._apply_all_transactions(block.transactions, block.header, validate = True)
-    #
-    #     #then run all receive transactions
-    #     #self._apply_all_transactions(block.receive_transactions, block.header, validate = False)
-    #     self._apply_all_transactions(block.receive_transactions, block.header, validate = True)
-    #
-    #     #save all send transactions in the state as receivable
-    #     self.save_transactions_as_receivable(block.header.hash, block.transactions)
-    #
-    #     self.state.account_db.persist()
-    #
-    #     return block
 
 
     def save_recievable_transactions(self,block_header_hash: Hash32, computations: List[BaseComputation], receive_transactions: List[BaseReceiveTransaction]) -> None:

@@ -52,8 +52,9 @@ from helios.dev_tools import (
     create_dev_test_random_blockchain_db_with_reward_blocks,
     create_dev_test_blockchain_database_with_given_transactions,
     create_new_genesis_params_and_state,
-    create_blockchain_database_for_exceeding_tpc_cap
-)
+    create_blockchain_database_for_exceeding_tpc_cap,
+    create_predefined_blockchain_database,
+    create_valid_block_at_timestamp)
 
 from sys import exit
 
@@ -331,7 +332,8 @@ def test_chronological_block_window_stake():
     assert (sender_chain.get_mature_stake_for_chronological_block_window(chronological_block_window_two_start) == expected_mature_stake_3)
     assert (sender_chain.get_mature_stake_for_chronological_block_window(chronological_block_window_two_start, expected_mature_stake_4_time) == expected_mature_stake_4)
 
-
+# test_chronological_block_window_stake()
+# exit()
 def test_send_transaction_then_receive():
     # testdb = LevelDB('/home/tommy/.local/share/helios/chain/full27')
     testdb = MemoryDB()
@@ -971,6 +973,8 @@ def test_import_invalid_block_wrong_parent_hash():
     with pytest.raises(ValidationError):
         chain.import_block(block_with_same_nonse_transaction)
 
+test_import_invalid_block_wrong_parent_hash()
+exit()
 
 def test_import_invalid_block_gas_limit_too_small():
     testdb1 = MemoryDB()
@@ -1959,6 +1963,99 @@ def test_over_full_block():
 
 
 # test_over_full_block()
+
+def test_receive_and_send_in_same_block():
+    testdb1 = MemoryDB()
+
+    chain = TestnetChain.from_genesis(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER.public_key.to_canonical_address(),
+        value=10000000000,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+    chain.import_current_queue_block()
+
+    receiver_chain = TestnetChain(testdb1, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+
+    receiver_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER2.public_key.to_canonical_address(),
+        value=1,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+    receiver_chain.populate_queue_block_with_receive_tx()
+    receiver_chain.import_current_queue_block()
+    receiver_balance = receiver_chain.get_vm().state.account_db.get_balance(RECEIVER.public_key.to_canonical_address())
+    assert(receiver_balance == 10000000000 - 1 - 21000)
+
+test_receive_and_send_in_same_block()
+exit()
+
+def test_import_block_reverse_transactions():
+    testdb1 = MemoryDB()
+
+    TestnetChain.from_genesis(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+
+    create_predefined_blockchain_database(testdb1)
+
+    dummy_sender_chain = TestnetChain(JournalDB(testdb1), TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    dummy_sender_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER.public_key.to_canonical_address(),
+        value=10000,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+
+
+    dummy_sender_block = dummy_sender_chain.import_current_queue_block()
+
+    old_timestamp_sender_block = create_valid_block_at_timestamp(testdb1, TESTNET_GENESIS_PRIVATE_KEY, dummy_sender_block.transactions, dummy_sender_block.receive_transactions, timestamp=1566767650)
+
+    sender_chain = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    sender_chain.import_block(old_timestamp_sender_block)
+
+    dummy_chain = TestnetChain(JournalDB(testdb1), RECEIVER.public_key.to_canonical_address(), RECEIVER)
+
+    dummy_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=21000,
+        to=RECEIVER2.public_key.to_canonical_address(),
+        value=1,
+        data=b"",
+        v=0,
+        r=0,
+        s=0
+    )
+    dummy_chain.populate_queue_block_with_receive_tx()
+    block = dummy_chain.import_current_queue_block()
+
+    older_timestamp_blockblock = create_valid_block_at_timestamp(testdb1, RECEIVER, block.transactions, block.receive_transactions, timestamp= 1566767651)
+
+    print(older_timestamp_blockblock.transactions[0].hash)
+    print()
+    print(older_timestamp_blockblock.receive_transactions[0].hash)
+    print()
+    print(older_timestamp_blockblock.to_dict())
+    print()
+    print(older_timestamp_blockblock.hash)
+
+# test_import_block_reverse_transactions()
+# exit()
 
 #
 # def test_chronological_block_initialization_2():

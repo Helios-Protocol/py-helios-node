@@ -1,4 +1,4 @@
-
+from hvm.constants import GAS_TX
 from hvm.vm.forks.boson import BosonTransaction, BosonReceiveTransaction
 from rlp_cython.sedes import (
     big_endian_int,
@@ -22,6 +22,31 @@ class PhotonTransaction(BosonTransaction):
         ('r', big_endian_int),
         ('s', big_endian_int),
     ]
+
+    def __init__(self,  # noqa: F811
+                 nonce,
+                 gas_price,
+                 gas,
+                 to,
+                 value,
+                 data = b'',
+                 code_address = b'',
+                 v=0,
+                 r=0,
+                 s=0):
+
+        super(PhotonTransaction, self).__init__(
+            nonce = nonce,
+            gas_price = gas_price,
+            gas = gas,
+            to = to,
+            value = value,
+            data = data,
+            code_address = code_address,
+            v = v,
+            r = r,
+            s = s,
+        )
 
 class PhotonReceiveTransaction(BosonReceiveTransaction):
     pass
