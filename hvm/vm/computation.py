@@ -13,7 +13,7 @@ from typing import (  # noqa: F401
     List,
     Tuple,
 )
-
+from hvm.constants import GAS_TX
 from eth_typing import (
     Address
 )
@@ -118,6 +118,10 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
     opcodes = None  # type: Dict[int, Opcode]
     _precompiles = None  # type: Dict[bytes, Callable[['BaseComputation'], Any]]
 
+    # This is a list of any messages that need to be sent to external addresses. Each message is contained within a touple
+    # with the first element being an identifier of the type of call. 'call', 'avatar'
+    external_call_messages: List[Tuple[str,Message]] = []
+
     logger = cast(TraceLogger, logging.getLogger('hvm.vm.computation.Computation'))
 
     def __init__(self,
@@ -139,10 +143,16 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
 
         code = message.code
         self.code = CodeStream(code)
-
+        self.external_call_messages = []
     #
     # Convenience
     #
+
+
+    @property
+    def has_external_call_messages(self) -> bool:
+        return len(self.get_all_children_external_call_messages()) > 0
+
     @property
     def is_origin_computation(self) -> bool:
         """
@@ -578,3 +588,45 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
             return self.opcodes[opcode]
         except KeyError:
             return InvalidOpcode(opcode)
+
+    #
+    # External call api
+    #
+    def get_all_children_external_call_messages(self) -> List[Tuple[str,Message]]:
+        '''
+        Returns all external message calls for this computation and all child computations
+        '''
+        external_call_messages = []
+        external_call_messages.extend(self.external_call_messages)
+
+        for child_computation in self.children:
+            external_call_messages.extend(child_computation.get_all_children_external_call_messages())
+
+        return external_call_messages
+
+    @property
+    def required_gas_for_external_calls(self) -> int:
+        num_external_calls = len(self.get_all_children_external_call_messages())
+        required_additional_gas = num_external_calls * GAS_TX
+        return required_additional_gas
+
+    @property
+    def has_min_required_gas_for_external_calls(self) -> bool:
+        '''
+        Checks to see if there is enough gas to pay just the GAS_TX for all call messages.
+        '''
+        return self.get_gas_remaining() > self.required_gas_for_external_calls
+
+    def set_error_if_not_enough_gas_for_external_calls(self) -> None:
+        self.logger.debug("Out of gas: Needed {0} - Remaining {1} - Reason: {2}".format(
+                self.required_gas_for_external_calls,
+                self.get_gas_remaining(),
+                "Not enough gas to pay for child transactions created by this contract",
+            ))
+
+        if not self.has_min_required_gas_for_external_calls:
+            self._error = "Out of gas: Needed {0} - Remaining {1} - Reason: {2}".format(
+                self.required_gas_for_external_calls,
+                self.get_gas_remaining(),
+                "Not enough gas to pay for child transactions created by this contract",
+            )

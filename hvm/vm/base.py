@@ -769,25 +769,9 @@ class VM(BaseVM):
         # self.refresh_state()
 
         last_header, receipts, receive_computations, send_computations, processed_receive_transactions = self.apply_all_transactions(block)
-        # #run all of the transactions.
-        # last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, block.header)
-        #
-        #
-        # #then run all receive transactions
-        # last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, last_header)
-        #
-        #
-        # # run all receive transactions
-        # last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, block.header)
-        #
-        # # then run all of the send transactions.
-        # last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, last_header)
-
 
         if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
             self._apply_reward_bundle(block.reward_bundle, block.header.timestamp, block.header.chain_address, validate=validate)
-
-
 
 
 

@@ -16,7 +16,7 @@ from trie import (
     HexaryTrie,
 )
 
-from hvm.exceptions import ReceivableTransactionNotFound,StateRootNotFound
+from hvm.exceptions import ReceivableTransactionNotFound,StateRootNotFound, ValidationError
 from eth_hash.auto import keccak
 from eth_utils import encode_hex
 
@@ -37,7 +37,7 @@ from hvm.db.journal import (
 from hvm.rlp.accounts import (
     Account,
     TransactionKey,
-)
+    AccountDepreciated)
 from hvm.validation import (
     validate_is_bytes,
     validate_uint256,
@@ -210,7 +210,7 @@ class BaseAccountDB(metaclass=ABCMeta):
 
 
 class AccountDB(BaseAccountDB):
-
+    version = 0
     logger = logging.getLogger('hvm.db.account.AccountDB')
 
     def __init__(self, db):
@@ -343,9 +343,18 @@ class AccountDB(BaseAccountDB):
     #
     def get_receivable_transactions(self, address: Address) -> List[TransactionKey]:
         validate_canonical_address(address, title="Storage Address")
-        account = self._get_account(address)
-        return account.receivable_transactions
-    
+        receivable_transactions_lookup_key = SchemaV1.make_account_receivable_transactions_lookup_key(address)
+        try:
+            encoded = self._journaldb[receivable_transactions_lookup_key]
+            return rlp.decode(encoded, sedes=rlp.sedes.CountableList(TransactionKey), use_list = True)
+        except KeyError:
+            return []
+
+    def save_receivable_transactions(self, address: Address, transaction_keys: List[TransactionKey]) -> None:
+        receivable_transactions_lookup_key = SchemaV1.make_account_receivable_transactions_lookup_key(address)
+        encoded = rlp.encode(transaction_keys, sedes=rlp.sedes.CountableList(TransactionKey))
+        self._journaldb[receivable_transactions_lookup_key] = encoded
+
     def has_receivable_transactions(self, address: Address) -> bool:
         tx = self.get_receivable_transactions(address)
         if len(tx) == 0:
@@ -362,7 +371,7 @@ class AccountDB(BaseAccountDB):
         return None
         
      
-    def add_receivable_transactions(self, address: Address, transaction_keys: TransactionKey) -> None:
+    def add_receivable_transactions(self, address: Address, transaction_keys: List[TransactionKey]) -> None:
         validate_canonical_address(address, title="Wallet Address")
         for tx_key in transaction_keys:
             self.add_receivable_transaction(address, tx_key.transaction_hash, tx_key.sender_block_hash)
@@ -372,13 +381,7 @@ class AccountDB(BaseAccountDB):
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         validate_is_bytes(sender_block_hash, title="Sender Block Hash")
         
-        #this is the wallet address people send money to when slashed. It is a sink
-        if address == SLASH_WALLET_ADDRESS:
-            return
-
-
-        account = self._get_account(address)
-        receivable_transactions = account.receivable_transactions
+        receivable_transactions = self.get_receivable_transactions(address)
 
         # first lets make sure we don't already have the transaction
         for tx_key in receivable_transactions:
@@ -386,12 +389,8 @@ class AccountDB(BaseAccountDB):
                 raise ValueError("Tried to save a receivable transaction that was already saved. TX HASH = {}".format(encode_hex(transaction_hash)))
 
         
-        new_receivable_transactions = receivable_transactions + (TransactionKey(transaction_hash, sender_block_hash), )
-        
-        
-        #self.logger.debug(new_receivable_transactions)
-        self.logger.debug("Adding receivable transaction {} to account {}".format(encode_hex(transaction_hash), encode_hex(address)))
-        self._set_account(address, account.copy(receivable_transactions=new_receivable_transactions))
+        receivable_transactions.append(TransactionKey(transaction_hash, sender_block_hash))
+        self.save_receivable_transactions(address, receivable_transactions)
 
         #finally, if this is a smart contract, lets add it to the list of smart contracts with pending transactions
         if is_contract_deploy or self.get_code_hash(address) != EMPTY_SHA3:
@@ -404,8 +403,9 @@ class AccountDB(BaseAccountDB):
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         
         self.logger.debug("deleting receivable tx {} from account {}".format(encode_hex(transaction_hash), encode_hex(address)))
-        account = self._get_account(address)
-        receivable_transactions = list(self.get_receivable_transactions(address))
+
+        receivable_transactions = self.get_receivable_transactions(address)
+
         i = 0
         found = False
         for tx_key in receivable_transactions:
@@ -419,7 +419,7 @@ class AccountDB(BaseAccountDB):
         else:
             raise ReceivableTransactionNotFound("transaction hash {0} not found in receivable_transactions database for wallet {1}".format(transaction_hash, address))
         
-        self._set_account(address, account.copy(receivable_transactions=tuple(receivable_transactions)))
+        self.save_receivable_transactions(address, receivable_transactions)
 
         if self.get_code_hash(address) != EMPTY_SHA3:
             if len(receivable_transactions) == 0:
@@ -531,33 +531,67 @@ class AccountDB(BaseAccountDB):
     
     def get_account_hash(self, address: Address) -> Hash32:
         account = self._get_account(address)
-        account_hashable = account.copy(
-            receivable_transactions = (),
-            block_conflicts = (),
+        #
+        # Backwards compatability so that the hashes are still correct for old blocks. This is fixed in next fork.
+        #
+        hashable_account = AccountDepreciated(
+            account.nonce,
+            account.block_number,
+            (),
+            (),
+            account.balance,
+            account.storage_root,
+            account.code_hash
         )
-        account_hashable_encoded = rlp.encode(account_hashable, sedes=Account)
+        account_hashable_encoded = rlp.encode(hashable_account, sedes=AccountDepreciated)
         return keccak(account_hashable_encoded)
     
     #
     # Internal
     #
-    def _get_account(self, address):
-        account_lookup_key = SchemaV1.make_account_lookup_key(address)
-        rlp_account = self._journaldb.get(account_lookup_key, b'')
+    def _decode_and_upgrade_account(self, rlp_account: bytes, address: Address, account_version_lookup_key: bytes) -> Account:
         if rlp_account:
-            account = rlp.decode(rlp_account, sedes=Account)
-            #account = hm_decode(rlp_account, sedes_classes=[Account])
+            account_version = self._journaldb.get(account_version_lookup_key, -1)
+            if account_version == self.version:
+                account = rlp.decode(rlp_account, sedes=Account)
+            elif account_version == -1:
+                self.logger.debug("Found a depreciated account that needs upgrading.")
+                #we need to upgrade this from the depreciated version
+                depreciated_account = rlp.decode(rlp_account, sedes=AccountDepreciated)
+                account = Account(
+                    depreciated_account.nonce,
+                    depreciated_account.block_number,
+                    depreciated_account.balance,
+                    depreciated_account.storage_root,
+                    depreciated_account.code_hash
+                )
+                # remember to also save receivable transactions
+                receivable_transactions = depreciated_account.receivable_transactions
+                self.save_receivable_transactions(address, receivable_transactions)
+            else:
+                raise ValidationError("The loaded account is from an unknown account version {}. This account db is version {}".format(account_version, self.version))
+
         else:
             account = Account()
         return account
 
+    def _get_account(self, address: Address) -> Account:
+        account_lookup_key = SchemaV1.make_account_lookup_key(address)
+        rlp_account = self._journaldb.get(account_lookup_key, b'')
+        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address)
+        account = self._decode_and_upgrade_account(rlp_account, address, account_version_lookup_key)
+        return account
 
-    def _set_account(self, address, account):
+
+    def _set_account(self, address: Address, account: Account) -> None:
         encoded_account = rlp.encode(account, sedes=Account)
         #encoded_account = hm_encode(account)
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
         self._journaldb[account_lookup_key] = encoded_account
-        
+
+        # set the account version
+        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address)
+        self._journaldb[account_version_lookup_key] = self.version
 
     #
     # Record and discard API
@@ -596,6 +630,11 @@ class AccountDB(BaseAccountDB):
         
         lookup_key = SchemaV1.make_account_by_hash_lookup_key(account_hash)
         self.db[lookup_key] = rlp_account
+
+        # set the account version
+        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(account_hash)
+        self.db[account_version_lookup_key] = self.version
+
         
     
     def revert_to_account_from_hash(self, account_hash, wallet_address):
@@ -604,7 +643,8 @@ class AccountDB(BaseAccountDB):
         lookup_key = SchemaV1.make_account_by_hash_lookup_key(account_hash)
         try:
             rlp_encoded = self.db[lookup_key]
-            account = rlp.decode(rlp_encoded, sedes=Account)
+            account_version_lookup_key = SchemaV1.make_account_version_lookup_key(account_hash)
+            account = self._decode_and_upgrade_account(rlp_encoded, wallet_address, account_version_lookup_key)
             self._set_account(wallet_address, account)
         except KeyError:
             raise StateRootNotFound()

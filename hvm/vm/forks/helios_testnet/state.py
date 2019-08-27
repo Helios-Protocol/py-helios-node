@@ -376,19 +376,24 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             # this kind of receive transaction may include a nonzero gas refund. Must add it in now
             # It gets a refund if send has data and is not create. ie. there was a computation on receive
             if computation.msg.data != b'' and not computation.msg.is_create:
-                gas_remaining = computation.get_gas_remaining()
-                gas_refunded = computation.get_gas_refund()
+                if computation.has_external_call_messages:
+                    self.vm_state.logger.debug(
+                        'SAVING REFUND FOR CHILD CALLS: tx_hash = {}'.format(receive_transaction.hash)
+                    )
+                else:
+                    gas_remaining = computation.get_gas_remaining()
+                    gas_refunded = computation.get_gas_refund()
 
-                gas_used = send_transaction.gas - gas_remaining
-                gas_refund = min(gas_refunded, gas_used // 2)
-                gas_refund_amount = (gas_refund + gas_remaining) * send_transaction.gas_price
+                    gas_used = send_transaction.gas - gas_remaining
+                    gas_refund = min(gas_refunded, gas_used // 2)
+                    gas_refund_amount = (gas_refund + gas_remaining) * send_transaction.gas_price
 
-                self.vm_state.logger.debug(
-                    'SAVING REFUND TO RECEIVE TX: %s -> %s',
-                    gas_refund_amount,
-                    encode_hex(computation.msg.sender),
-                )
-                receive_transaction = receive_transaction.copy(remaining_refund = gas_refund_amount)
+                    self.vm_state.logger.debug(
+                        'SAVING REFUND TO RECEIVE TX: %s -> %s',
+                        gas_refund_amount,
+                        encode_hex(computation.msg.sender),
+                    )
+                    receive_transaction = receive_transaction.copy(remaining_refund = gas_refund_amount)
 
             return receive_transaction
         else:

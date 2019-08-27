@@ -44,6 +44,28 @@ class Account(rlp.Serializable):
     fields = [
         ('nonce', f_big_endian_int),
         ('block_number', f_big_endian_int),
+        ('balance', big_endian_int),
+        ('storage_root', trie_root),
+        ('code_hash', hash32)
+    ]
+
+    def __init__(self,
+                 nonce: int=0,
+                 block_number: int=0,
+                 balance: int=0,
+                 storage_root: bytes=BLANK_ROOT_HASH,
+                 code_hash: bytes=EMPTY_SHA3,
+                 **kwargs: Any) -> None:
+        super(Account, self).__init__(nonce, block_number, balance, storage_root, code_hash, **kwargs)
+
+
+class AccountDepreciated(rlp.Serializable):
+    """
+    RLP object for accounts.
+    """
+    fields = [
+        ('nonce', f_big_endian_int),
+        ('block_number', f_big_endian_int),
         ('receivable_transactions', CountableList(TransactionKey)),
         ('block_conflicts', CountableList(BlockConflictKey)),
         ('balance', big_endian_int),
@@ -60,4 +82,4 @@ class Account(rlp.Serializable):
                  storage_root: bytes=BLANK_ROOT_HASH,
                  code_hash: bytes=EMPTY_SHA3,
                  **kwargs: Any) -> None:
-        super(Account, self).__init__(nonce, block_number, receivable_transactions, block_conflicts, balance, storage_root, code_hash, **kwargs)
+        super(AccountDepreciated, self).__init__(nonce, block_number, receivable_transactions, block_conflicts, balance, storage_root, code_hash, **kwargs)

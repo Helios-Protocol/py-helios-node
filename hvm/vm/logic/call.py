@@ -166,6 +166,89 @@ class Call(BaseCall):
             computation.msg.is_static,
         )
 
+    def __call__(self, computation):
+        computation.consume_gas(
+            self.gas_cost,
+            reason=self.mnemonic,
+        )
+
+        (
+            gas,
+            value,
+            to,
+            sender,
+            code_address,
+            memory_input_start_position,
+            memory_input_size,
+            memory_output_start_position,
+            memory_output_size,
+            should_transfer_value,
+            is_static,
+        ) = self.get_call_params(computation)
+
+        computation.extend_memory(memory_input_start_position, memory_input_size)
+        computation.extend_memory(memory_output_start_position, memory_output_size)
+
+        call_data = computation.memory_read(memory_input_start_position, memory_input_size)
+
+        #
+        # Message gas allocation and fees
+        #
+        child_msg_gas, child_msg_gas_fee = self.compute_msg_gas(computation, gas, to, value)
+        computation.consume_gas(child_msg_gas_fee, reason=self.mnemonic)
+
+        # Pre-call checks
+        sender_balance = computation.state.account_db.get_balance(
+            computation.msg.storage_address
+        )
+
+        insufficient_funds = should_transfer_value and sender_balance < value
+        stack_too_deep = computation.msg.depth + 1 > constants.STACK_DEPTH_LIMIT
+
+        if insufficient_funds or stack_too_deep:
+            computation.return_data = b''
+            if insufficient_funds:
+                err_message = "Insufficient Funds: have: {0} | need: {1}".format(
+                    sender_balance,
+                    value,
+                )
+            elif stack_too_deep:
+                err_message = "Stack Limit Reached"
+            else:
+                raise Exception("Invariant: Unreachable code path")
+
+            self.logger.debug(
+                "%s failure: %s",
+                self.mnemonic,
+                err_message,
+            )
+            computation.return_gas(child_msg_gas)
+            computation.stack_push(0)
+        else:
+
+            child_msg_kwargs = {
+                'gas': child_msg_gas,
+                'value': value,
+                'to': to,
+                'data': call_data,
+                'code': b'',
+                'code_address': code_address,
+                'should_transfer_value': should_transfer_value,
+                'is_static': is_static,
+            }
+            if sender is not None:
+                child_msg_kwargs['sender'] = sender
+
+            child_msg = computation.prepare_child_message(**child_msg_kwargs)
+
+            #
+            # Now we send it back to the vm to make a send transaction out of it.
+            #
+            computation.external_call_messages.append(('call', child_msg))
+
+            # push 1 to show there was no error
+            computation.stack_push(1)
+
 
 class CallCode(BaseCall):
     def compute_msg_extra_gas(self, computation, gas, to, value):
@@ -352,7 +435,5 @@ class StaticCallHelios(StaticCall):
 
 
 class CallHelios(CallByzantium):
-
-    def __call__(self, computation):
-        raise AttemptedToAccessExternalStorage("The Call function uses storage on a different contract. This is not allowed on Helios. Use DelegateCall instead.")
+    pass
 

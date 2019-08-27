@@ -9,6 +9,10 @@ from typing import (  # noqa: F401
     List
 )
 
+from hvm.rlp.accounts import (
+    TransactionKey,
+)
+
 from hvm.constants import (
     BLANK_ROOT_HASH,
     MAX_PREV_HEADER_DEPTH,
@@ -232,14 +236,12 @@ class BaseState(Configurable, metaclass=ABCMeta):
         self.account_db.revert_to_account_from_hash(account_hash, wallet_address)
         self.account_db.persist()
         
-    def revert_account_to_hash_keep_receivable_transactions_and_persist(self, account_hash, wallet_address):
-        receivable_transactions = self.account_db.get_receivable_transactions(wallet_address)
+    def revert_account_to_hash_keep_receivable_transactions_and_persist(self, account_hash: Hash32, wallet_address: Address, receivable_transactions: List[TransactionKey]):
         self.account_db.revert_to_account_from_hash(account_hash, wallet_address)
         self.account_db.add_receivable_transactions(wallet_address, receivable_transactions)
         self.account_db.persist()
         
-    def clear_account_keep_receivable_transactions_and_persist(self, wallet_address):
-        receivable_transactions = self.account_db.get_receivable_transactions(wallet_address)
+    def clear_account_keep_receivable_transactions_and_persist(self, wallet_address: Address, receivable_transactions: List[TransactionKey]) -> None:
         self.account_db.delete_account(wallet_address)
         self.account_db.add_receivable_transactions(wallet_address, receivable_transactions)
         self.account_db.persist()

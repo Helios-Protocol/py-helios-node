@@ -77,6 +77,26 @@ class PhotonVM(VM):
         # First, run all of the receive transactions
         last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, block.header)
 
+        # TODO, go through receive computations looking for child call messages. Then calculate gas remaining using:
+        # gas_remaining = computation.get_gas_remaining()
+        # gas_refunded = computation.get_gas_refund()
+        #
+        # gas_used = send_transaction.gas - gas_remaining
+        # gas_refund = min(gas_refunded, gas_used // 2)
+        # gas_refund_amount = (gas_refund + gas_remaining) * send_transaction.gas_price
+        #
+        # self.vm_state.logger.debug(
+        #     'SAVING REFUND TO RECEIVE TX: %s -> %s',
+        #     gas_refund_amount,
+        #     encode_hex(computation.msg.sender),
+        # )
+        # receive_transaction = receive_transaction.copy(remaining_refund=gas_refund_amount)
+        # TODO: then split the remaining up evenly over child computations
+        # TODO: then create the new transactions and add them to the block. But only add them if they don't already exist there.
+        # Who is going to sign these transactions? The sender needs to be the person who sent the first transaction so that they
+        # can be correctly refunded. But they arent here to sign it... Add another field to the transaction for refund address?
+
+
         # Then, run all of the send transactions
         last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, last_header)
 

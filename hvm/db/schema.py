@@ -36,6 +36,15 @@ class SchemaV1(BaseSchema):
     def make_account_lookup_key(wallet_address:Address) -> bytes:
         return b'account:%s' % wallet_address
 
+    # This one can take an account address, or an account hash
+    @staticmethod
+    def make_account_version_lookup_key(identifier: bytes) -> bytes:
+        return b'account_version:%s' % identifier
+
+    @staticmethod
+    def make_account_receivable_transactions_lookup_key(wallet_address: Address) -> bytes:
+        return b'account_rtx:%s' % wallet_address
+
     @staticmethod
     def make_photon_account_lookup_key(wallet_address: Address) -> bytes:
         return b'photon_account:%s' % wallet_address

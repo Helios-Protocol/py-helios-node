@@ -334,6 +334,7 @@ def test_chronological_block_window_stake():
 
 # test_chronological_block_window_stake()
 # exit()
+
 def test_send_transaction_then_receive():
     # testdb = LevelDB('/home/tommy/.local/share/helios/chain/full27')
     testdb = MemoryDB()
@@ -715,7 +716,7 @@ def test_import_chain():
         import_chain(testdb1, testdb2)
 
 
-#test_import_chain()
+test_import_chain()
 
 
 # def import_chronological_block_window(testdb1, testdb2):
@@ -844,7 +845,6 @@ def test_import_invalid_transaction_duplicate_nonce():
 
     valid_block = dummy_chain.import_current_queue_block()
 
-    print('First nonce =',valid_block.transactions[0].nonce)
 
     dummy_chain = TestnetChain(JournalDB(testdb1), TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
@@ -945,8 +945,6 @@ def test_import_invalid_block_wrong_parent_hash():
 
     valid_block = dummy_chain.import_current_queue_block()
 
-    print('First nonce =',valid_block.transactions[0].nonce)
-
     dummy_chain = TestnetChain(JournalDB(testdb1), TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
     dummy_chain.create_and_sign_transaction_for_queue_block(
@@ -973,8 +971,8 @@ def test_import_invalid_block_wrong_parent_hash():
     with pytest.raises(ValidationError):
         chain.import_block(block_with_same_nonse_transaction)
 
-test_import_invalid_block_wrong_parent_hash()
-exit()
+# test_import_invalid_block_wrong_parent_hash()
+# exit()
 
 def test_import_invalid_block_gas_limit_too_small():
     testdb1 = MemoryDB()
@@ -1998,8 +1996,8 @@ def test_receive_and_send_in_same_block():
     receiver_balance = receiver_chain.get_vm().state.account_db.get_balance(RECEIVER.public_key.to_canonical_address())
     assert(receiver_balance == 10000000000 - 1 - 21000)
 
-test_receive_and_send_in_same_block()
-exit()
+# test_receive_and_send_in_same_block()
+# exit()
 
 def test_import_block_reverse_transactions():
     testdb1 = MemoryDB()

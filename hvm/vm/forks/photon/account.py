@@ -4,8 +4,8 @@ import rlp_cython as rlp
 
 from hvm.rlp.accounts import (
     Account,
-    TransactionKey
-)
+    TransactionKey,
+    AccountDepreciated)
 
 
 from rlp_cython.sedes import (
@@ -30,7 +30,7 @@ from hvm.rlp.sedes import (
 
 )
 
-from hvm.exceptions import StateRootNotFound
+from hvm.exceptions import StateRootNotFound, ValidationError
 
 from eth_typing import Address
 
@@ -58,7 +58,6 @@ class PhotonAccount(rlp.Serializable):
     fields = [
         ('nonce', f_big_endian_int),
         ('block_number', f_big_endian_int),
-        ('receivable_transactions', CountableList(TransactionKey)),
         ('balance', big_endian_int),
         ('storage_root', trie_root),
         ('smart_contract_storage_root', trie_root),
@@ -72,16 +71,17 @@ class PhotonAccount(rlp.Serializable):
     def __init__(self,
                  nonce: int=0,
                  block_number: int=0,
-                 receivable_transactions = (),
                  balance: int=0,
                  storage_root: bytes=BLANK_ROOT_HASH,
                  smart_contract_storage_root: bytes = BLANK_ROOT_HASH,
                  code_hash: bytes=EMPTY_SHA3,
                  **kwargs: Any) -> None:
-        super(PhotonAccount, self).__init__(nonce, block_number, receivable_transactions, balance, storage_root, smart_contract_storage_root, code_hash, **kwargs)
+        super(PhotonAccount, self).__init__(nonce, block_number, balance, storage_root, smart_contract_storage_root, code_hash, **kwargs)
+
 
 class PhotonAccountDB(AccountDB):
 
+    version = 1
     #
     # Storage
     #
@@ -154,51 +154,68 @@ class PhotonAccountDB(AccountDB):
         self._set_account(address, account.copy(smart_contract_storage_root=smart_contract_storage_roots.root_hash))
 
 
-
     def get_account_hash(self, address: Address) -> Hash32:
         account = self._get_account(address)
-        account_hashable = account.copy(
-            receivable_transactions = (),
-        )
-        account_hashable_encoded = rlp.encode(account_hashable, sedes=PhotonAccount)
+        account_hashable_encoded = rlp.encode(account, sedes=PhotonAccount)
         return keccak(account_hashable_encoded)
 
     #
     # Internal
     #
-    # Need to try and load account using new schema, but if it raises keyerror, then fall back to old version.
-    # but when we are saving, since this accountdb was loaded, that means it is supposed to be saved as this version
-    def _get_account(self, address: Address) -> PhotonAccount:
-        photon_account_lookup_key = SchemaV1.make_photon_account_lookup_key(address)
-        photon_rlp_account = self._journaldb.get(photon_account_lookup_key, b'')
-        if photon_rlp_account:
-            photon_account = rlp.decode(photon_rlp_account, sedes=PhotonAccount)
-        else:
-            # This might be the first block on the new fork. Try to load the old one.
-            boson_account_lookup_key = SchemaV1.make_account_lookup_key(address)
-            boson_rlp_account = self._journaldb.get(boson_account_lookup_key, b'')
-
-            if boson_rlp_account:
-                boson_account = rlp.decode(boson_rlp_account, sedes=Account)
-
-                # convert to new one
-                photon_account = PhotonAccount(
+    def _decode_and_upgrade_account(self, rlp_account: bytes, address: Address, account_version_lookup_key: bytes) -> PhotonAccount:
+        if rlp_account:
+            account_version = self._journaldb.get(account_version_lookup_key, -1)
+            if account_version == self.version:
+                account = rlp.decode(rlp_account, sedes=PhotonAccount)
+            elif account_version == -1:
+                self.logger.debug("Found a depreciated account that needs upgrading.")
+                #we need to upgrade this from the depreciated version
+                depreciated_account = rlp.decode(rlp_account, sedes=AccountDepreciated)
+                account = PhotonAccount(
+                    depreciated_account.nonce,
+                    depreciated_account.block_number,
+                    depreciated_account.balance,
+                    depreciated_account.storage_root,
+                    code_hash=depreciated_account.code_hash
+                )
+                # remember to also save receivable transactions
+                receivable_transactions = depreciated_account.receivable_transactions
+                self.save_receivable_transactions(address, receivable_transactions)
+            elif account_version == 0:
+                self.logger.debug("Found a boson account that needs upgrading")
+                boson_account = rlp.decode(rlp_account, sedes=Account)
+                account = PhotonAccount(
                     boson_account.nonce,
                     boson_account.block_number,
-                    boson_account.receivable_transactions,
                     boson_account.balance,
                     boson_account.storage_root,
                     code_hash=boson_account.code_hash
                 )
-
             else:
-                photon_account = PhotonAccount()
-        return photon_account
+                raise ValidationError("The loaded account is from an unknown account version {}. This account db is version {}".format(account_version, self.version))
+
+        else:
+            account = PhotonAccount()
+        return account
+
+    def _get_account(self, address: Address) -> PhotonAccount:
+        account_lookup_key = SchemaV1.make_account_lookup_key(address)
+        rlp_account = self._journaldb.get(account_lookup_key, b'')
+        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address)
+        account = self._decode_and_upgrade_account(rlp_account, address, account_version_lookup_key)
+        return account
+
 
     def _set_account(self, address: Address, account: PhotonAccount) -> None:
+        if not isinstance(account, PhotonAccount):
+            raise ValidationError("Expected a photon account, but a different version of account was provided.")
         encoded_account = rlp.encode(account, sedes=PhotonAccount)
-        account_lookup_key = SchemaV1.make_photon_account_lookup_key(address)
+        account_lookup_key = SchemaV1.make_account_lookup_key(address)
         self._journaldb[account_lookup_key] = encoded_account
+
+        # set the account version
+        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address)
+        self._journaldb[account_version_lookup_key] = self.version
 
     #
     # Saving account state at particular account hash
@@ -213,13 +230,18 @@ class PhotonAccountDB(AccountDB):
         lookup_key = SchemaV1.make_account_by_hash_lookup_key(account_hash)
         self.db[lookup_key] = rlp_account
 
+        # set the account version
+        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(account_hash)
+        self.db[account_version_lookup_key] = self.version
+
     def revert_to_account_from_hash(self, account_hash: Hash32, address: Address) -> None:
         validate_canonical_address(address, title="Address")
         validate_is_bytes(account_hash, title="account_hash")
         lookup_key = SchemaV1.make_account_by_hash_lookup_key(account_hash)
         try:
             rlp_encoded = self.db[lookup_key]
-            account = rlp.decode(rlp_encoded, sedes=PhotonAccount)
+            account_version_lookup_key = SchemaV1.make_account_version_lookup_key(account_hash)
+            account = self._decode_and_upgrade_account(rlp_encoded, address, account_version_lookup_key)
             self._set_account(address, account)
         except KeyError:
             raise StateRootNotFound()

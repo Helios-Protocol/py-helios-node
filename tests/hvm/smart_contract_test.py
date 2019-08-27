@@ -1041,5 +1041,5 @@ def test_avatar_call():
 
 
 
-test_avatar_call()
-exit()
+# test_avatar_call()
+# exit()

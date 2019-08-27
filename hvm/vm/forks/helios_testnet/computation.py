@@ -130,6 +130,8 @@ class HeliosTestnetComputation(BaseComputation):
                 self.transaction_context,
             )
 
+            computation.set_error_if_not_enough_gas_for_external_calls()
+
             if computation.is_error:
                 self.state.revert(snapshot)
             else:

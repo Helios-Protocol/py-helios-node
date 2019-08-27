@@ -1476,46 +1476,93 @@ class Chain(BaseChain):
 
         return
 
+
+
+    #
+    # Reverting account functions
+    #
+    def clear_account_while_keeping_receivable_transactions(self, chain_address: Address) -> None:
+        try:
+            #get current receivable transactions from vm for newest block. But add it to receivable transactions for vm of block reverting to.
+            newest_header = self.chaindb.get_canonical_head(chain_address)
+            revert_header = self.chaindb.get_canonical_block_header_by_number(BlockNumber(0), chain_address)
+
+            newest_vm = self.get_vm(header=newest_header)
+            revert_vm = self.get_vm(header=revert_header)
+
+            current_receivable_transactions = newest_vm.state.account_db.get_receivable_transactions(chain_address)
+
+            revert_vm.state.clear_account_keep_receivable_transactions_and_persist(chain_address, current_receivable_transactions)
+
+        except HeaderNotFound:
+            pass
+        
+    def revert_account_while_keeping_receivable_transactions(self, new_chain_head_header: BlockHeader) -> None:
+        try:
+            #get current receivable transactions from vm for newest block. But add it to receivable transactions for vm of block reverting to.
+            newest_header = self.chaindb.get_canonical_head(new_chain_head_header.chain_address)
+            
+            newest_vm = self.get_vm(header=newest_header)
+            revert_vm = self.get_vm(header=new_chain_head_header)
+
+            current_receivable_transactions = newest_vm.state.account_db.get_receivable_transactions(new_chain_head_header.chain_address)
+
+            revert_vm.state.revert_account_to_hash_keep_receivable_transactions_and_persist(new_chain_head_header.account_hash, new_chain_head_header.chain_address, current_receivable_transactions)
+
+        except HeaderNotFound:
+            pass
+
+    def revert_account_to_block_parent_and_add_receivable_transactions_from_block(self, header_to_revert: BlockHeader) -> None:
+        # We don't load receivable transactions from the VM. Instead, we go through the transactions in the block. This is because
+        # the receivable transactions in the saved account for the block may not be accurate anymore.
+        vm = self.get_vm(header=header_to_revert)
+        vm.reverse_pending_transactions(header_to_revert)
+        vm.state.account_db.persist()
+
     #
     # Reverting block functions
     #
 
-    def delete_canonical_chain(self, wallet_address: Address, vm: 'BaseVM', save_block_head_hash_timestamp:bool = True) -> None:
-        self.logger.debug("delete_canonical_chain. Chain address {}".format(encode_hex(wallet_address)))
-        self.chain_head_db.delete_chain(wallet_address, save_block_head_hash_timestamp)
-        self.chaindb.delete_canonical_chain(wallet_address)
-        vm.state.clear_account_keep_receivable_transactions_and_persist(wallet_address)
+    def delete_canonical_chain(self, chain_address: Address, save_block_head_hash_timestamp:bool = True) -> None:
+        self.logger.debug("delete_canonical_chain. Chain address {}".format(encode_hex(chain_address)))
+        
+        self.clear_account_while_keeping_receivable_transactions(chain_address)
+        self.chain_head_db.delete_chain(chain_address, save_block_head_hash_timestamp)
+        self.chaindb.delete_canonical_chain(chain_address)
 
 
-    def set_parent_as_canonical_head(self, existing_block_header: BlockHeader, vm: 'BaseVM', save_block_head_hash_timestamp:bool = True) -> None:
+    def set_parent_as_canonical_head(self, existing_block_header: BlockHeader, save_block_head_hash_timestamp:bool = True) -> None:
         block_parent_header = self.chaindb.get_block_header_by_hash(existing_block_header.parent_hash)
+
         self.logger.debug("Setting new block as canonical head after reverting blocks. Chain address {}, header hash {}".format(encode_hex(existing_block_header.chain_address), encode_hex(block_parent_header.hash)))
+
+        self.revert_account_while_keeping_receivable_transactions(block_parent_header)
 
         if save_block_head_hash_timestamp:
             self.chain_head_db.add_block_hash_to_timestamp(block_parent_header.chain_address, block_parent_header.hash, block_parent_header.timestamp)
 
+
         self.chain_head_db.set_chain_head_hash(block_parent_header.chain_address, block_parent_header.hash)
         self.chaindb._set_as_canonical_chain_head(block_parent_header)
-        vm.state.revert_account_to_hash_keep_receivable_transactions_and_persist(block_parent_header.account_hash, block_parent_header.chain_address)
+
+
 
     def revert_block(self, descendant_block_hash: Hash32) -> None:
         self.logger.debug('Reverting block with hash {}'.format(encode_hex(descendant_block_hash)))
         descendant_block_header = self.chaindb.get_block_header_by_hash(descendant_block_hash)
-        vm = self.get_vm(descendant_block_header)
+
+        self.revert_account_to_block_parent_and_add_receivable_transactions_from_block(descendant_block_header)
         self.chain_head_db.delete_block_hash_from_chronological_window(descendant_block_hash, descendant_block_header.timestamp)
-        self.chaindb.remove_block_from_all_parent_child_lookups(descendant_block_header, vm.get_block_class().receive_transaction_class)
+        self.chaindb.remove_block_from_all_parent_child_lookups(descendant_block_header, self.get_vm(header=descendant_block_header).get_block_class().receive_transaction_class)
         self.chaindb.delete_all_block_children_lookups(descendant_block_hash)
         self.revert_block_chronological_consistency_lookups(descendant_block_hash)
-
-        #for every one, re-add pending receive transaction for all receive transactions only if sending block still exists
-        #make all blocks unprocessed so that receivable transactions are not saved that came from one of the non-canonical blocks.
-        vm.reverse_pending_transactions(descendant_block_header)
 
         # remove the block from the canonical chain. This must be done last because reversing the pending transactions requires that it
         # is still in the canonical chain to look up transactions
         self.chaindb.delete_block_from_canonical_chain(descendant_block_hash)
         #self.chaindb.save_unprocessed_block_lookup(descendant_block_hash)
-        vm.state.account_db.persist()
+
+
 
     def revert_block_chronological_consistency_lookups(self, block_hash: Hash32) -> None:
         # check to see if there are any reward type 2 proofs. Then loop through each one to revert inconsistency lookups
@@ -1545,13 +1592,11 @@ class Chain(BaseChain):
     def purge_block_and_all_children_and_set_parent_as_chain_head(self, existing_block_header: BlockHeader, save_block_head_hash_timestamp: bool = True) -> None:
         # First make sure it is actually in the canonical chain. If not, then we don't have anything to do.
         if self.chaindb.is_in_canonical_chain(existing_block_header.hash):
-
-            vm = self.get_vm()
             if existing_block_header.block_number == 0:
-                self.delete_canonical_chain(existing_block_header.chain_address, vm, save_block_head_hash_timestamp)
+                self.delete_canonical_chain(existing_block_header.chain_address, save_block_head_hash_timestamp)
             else:
                 #set the parent block as the new canonical head, and handle all the data for that
-                self.set_parent_as_canonical_head(existing_block_header, vm, save_block_head_hash_timestamp)
+                self.set_parent_as_canonical_head(existing_block_header, save_block_head_hash_timestamp)
 
             #1) delete chronological transactions, delete everything from chronological root hashes, delete children lookups
             all_descendant_block_hashes = self.chaindb.get_all_descendant_block_hashes(existing_block_header.hash)
@@ -1568,12 +1613,10 @@ class Chain(BaseChain):
 
                             if descendant_block_header.chain_address != existing_block_header.chain_address:
                                 if descendant_block_header.block_number == 0:
-                                    self.delete_canonical_chain(descendant_block_header.chain_address, vm, save_block_head_hash_timestamp)
+                                    self.delete_canonical_chain(descendant_block_header.chain_address, save_block_head_hash_timestamp)
                                 else:
-                                    self.set_parent_as_canonical_head(descendant_block_header, vm, save_block_head_hash_timestamp)
+                                    self.set_parent_as_canonical_head(descendant_block_header, save_block_head_hash_timestamp)
 
-                # Must persist now because revert_block creates new vm's for each block and could overrwite changes if we wait.
-                vm.state.account_db.persist()
 
                 #now we know what the new heads are, so we can deal with the rest of the descendants
                 for descendant_block_hash in all_descendant_block_hashes:
