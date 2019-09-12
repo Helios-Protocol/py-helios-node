@@ -150,7 +150,14 @@ def receipt_to_dict(receipt: Receipt, tx_hash: Hash32, chain: AsyncChain) -> Dic
 def transaction_to_dict(transaction: BaseTransaction, chain: AsyncChain) -> Dict[str, str]:
     transaction_hash = Hash32(transaction.hash)
     dict_to_return = all_rlp_fields_to_dict_camel_case(transaction)
-    dict_to_return['from'] = encode_hex(transaction.sender)
+    try:
+        dict_to_return['from'] = encode_hex(transaction.sender)
+    except TypeError as e:
+        print('transaction.sender {}'.format(transaction.sender))
+        print('transaction._valid_transaction {}'.format(transaction._valid_transaction))
+        print('transaction._sender {}'.format(transaction._sender))
+        raise e
+
     dict_to_return['hash'] = encode_hex(transaction.hash)
     dict_to_return['gasUsed'] = to_hex(chain.chaindb.get_transaction_receipt(transaction_hash).gas_used)
     block_hash, tx_index, is_receive = chain.chaindb.get_transaction_index(transaction_hash)
