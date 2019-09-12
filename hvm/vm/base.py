@@ -634,7 +634,7 @@ class VM(BaseVM):
         )
 
 
-    def _apply_all_send_transactions(self, transactions, base_header, validate = True):
+    def _apply_all_send_transactions(self, transactions, base_header, validate = True) -> Tuple[BlockHeader, List[Receipt], List[BaseComputation]]:
         receipts = []
         previous_header = base_header
         result_header = base_header
@@ -657,7 +657,7 @@ class VM(BaseVM):
                 computations.append(computation)
             return result_header, [], computations
 
-    def _apply_all_receive_transactions(self, transactions, base_header, validate=True):
+    def _apply_all_receive_transactions(self, transactions, base_header, validate=True) -> Tuple[BlockHeader, List[Receipt], List[BaseComputation], List[BaseReceiveTransaction]]:
         receipts = []
         previous_header = base_header
         result_header = base_header

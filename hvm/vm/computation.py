@@ -25,7 +25,7 @@ from hvm.constants import (
 from hvm.exceptions import (
     Halt,
     VMError,
-)
+    OutOfGas)
 from hvm.utils.datatypes import (
     Configurable,
 )
@@ -465,6 +465,15 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         else:
             return self._gas_meter.gas_remaining
 
+    def get_gas_remaining_including_refunds(self) -> int:
+        gas_remaining = self.get_gas_remaining()
+        gas_refunded = self.get_gas_refund()
+
+        gas_used = self.msg.gas - gas_remaining
+        gas_refund = min(gas_refunded, gas_used // 2)
+        gas_refund_amount = (gas_refund + gas_remaining) * self.transaction_context.gas_price
+        return gas_refund_amount
+
     #
     # Context Manager API
     #
@@ -592,6 +601,10 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
     #
     # External call api
     #
+    def apply_external_call_message(self, call_message, mnemonic):
+        self.external_call_messages.append((mnemonic, call_message))
+
+
     def get_all_children_external_call_messages(self) -> List[Tuple[str,Message]]:
         '''
         Returns all external message calls for this computation and all child computations
@@ -606,6 +619,7 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
 
     @property
     def required_gas_for_external_calls(self) -> int:
+        # This only checks to see if there si enough to send the external call transactions. Not perform the computation
         num_external_calls = len(self.get_all_children_external_call_messages())
         required_additional_gas = num_external_calls * GAS_TX
         return required_additional_gas
@@ -618,15 +632,10 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         return self.get_gas_remaining() > self.required_gas_for_external_calls
 
     def set_error_if_not_enough_gas_for_external_calls(self) -> None:
-        self.logger.debug("Out of gas: Needed {0} - Remaining {1} - Reason: {2}".format(
-                self.required_gas_for_external_calls,
-                self.get_gas_remaining(),
-                "Not enough gas to pay for child transactions created by this contract",
-            ))
-
         if not self.has_min_required_gas_for_external_calls:
-            self._error = "Out of gas: Needed {0} - Remaining {1} - Reason: {2}".format(
-                self.required_gas_for_external_calls,
-                self.get_gas_remaining(),
-                "Not enough gas to pay for child transactions created by this contract",
-            )
+            with self:
+                raise OutOfGas("Out of gas: Needed {0} - Remaining {1} - Reason: {2}".format(
+                    self.required_gas_for_external_calls,
+                    self.get_gas_remaining(),
+                    "Not enough gas to pay for child transactions created by this contract",
+                ))

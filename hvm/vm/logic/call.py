@@ -17,6 +17,10 @@ from hvm.vm.opcode import (
 from hvm.utils.address import (
     force_bytes_to_address,
 )
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hvm.vm.computation import BaseComputation
 
 
 class BaseCall(Opcode, metaclass=ABCMeta):
@@ -166,7 +170,7 @@ class Call(BaseCall):
             computation.msg.is_static,
         )
 
-    def __call__(self, computation):
+    def __call__(self, computation: 'BaseComputation'):
         computation.consume_gas(
             self.gas_cost,
             reason=self.mnemonic,
@@ -202,10 +206,20 @@ class Call(BaseCall):
             computation.msg.storage_address
         )
 
-        insufficient_funds = should_transfer_value and sender_balance < value
+
+        other_code_sending_value = False
+        if computation.transaction_context.is_receive:
+            if value > 0 and (computation.transaction_context.caller_chain_address != computation.msg.storage_address):
+                other_code_sending_value = True
+
+            insufficient_funds = should_transfer_value and sender_balance < value
+        else:
+            # Don't check suffecient funds on send. It isnt this account the funds will be sent from.
+            # The only possible way for it to get here is contract creation.
+            insufficient_funds = False
         stack_too_deep = computation.msg.depth + 1 > constants.STACK_DEPTH_LIMIT
 
-        if insufficient_funds or stack_too_deep:
+        if insufficient_funds or stack_too_deep or other_code_sending_value:
             computation.return_data = b''
             if insufficient_funds:
                 err_message = "Insufficient Funds: have: {0} | need: {1}".format(
@@ -214,6 +228,14 @@ class Call(BaseCall):
                 )
             elif stack_too_deep:
                 err_message = "Stack Limit Reached"
+            elif other_code_sending_value:
+                err_message = "This smart contract code is from a different chain, but it tried to send value with a child transaction. " \
+                              "This is not allowed. Only smart contract code from this chain can send child transactions with nonzero value. " \
+                              "This chain address: {} | contract_storage_address: {} | value: {}".format(
+                    computation.transaction_context.caller_chain_address,
+                    computation.msg.storage_address,
+                    value
+                )
             else:
                 raise Exception("Invariant: Unreachable code path")
 
@@ -244,7 +266,7 @@ class Call(BaseCall):
             #
             # Now we send it back to the vm to make a send transaction out of it.
             #
-            computation.external_call_messages.append(('call', child_msg))
+            computation.apply_external_call_message(child_msg, self.mnemonic)
 
             # push 1 to show there was no error
             computation.stack_push(1)
@@ -279,7 +301,7 @@ class CallCode(BaseCall):
             memory_input_size,
             memory_output_start_position,
             memory_output_size,
-            True,  # should_transfer_value,
+            False,  # should_transfer_value,
             computation.msg.is_static,
         )
 

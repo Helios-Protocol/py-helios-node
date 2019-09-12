@@ -41,3 +41,4 @@ def collect_touched_accounts(computation):
     if not computation.is_origin_computation or not computation.is_error:
         for child in computation.children:
             yield from collect_touched_accounts(child)
+

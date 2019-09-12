@@ -85,6 +85,51 @@ def child_message(computation):
     return child_message
 
 
+def test_failing_if_not_enough_gas_for_child_computation(child_message, transaction_context):
+    message = Message(
+        to=CANONICAL_ADDRESS_A,
+        sender=CANONICAL_ADDRESS_B,
+        value=100,
+        data=b'',
+        code=b'',
+        gas=100,
+    )
+    computation = DummyComputation(
+        state=None,
+        message=message,
+        transaction_context=transaction_context,
+    )
+    computation.apply_external_call_message(child_message, 'CALL')
+
+    # It only has 100 gas, which isnt enough for the 21000 required.
+
+    computation.set_error_if_not_enough_gas_for_external_calls()
+
+    assert(computation.is_error)
+
+    message = Message(
+        to=CANONICAL_ADDRESS_A,
+        sender=CANONICAL_ADDRESS_B,
+        value=100,
+        data=b'',
+        code=b'',
+        gas=1000000,
+    )
+    computation = DummyComputation(
+        state=None,
+        message=message,
+        transaction_context=transaction_context,
+    )
+    computation.apply_external_call_message(child_message, 'CALL')
+
+    # It has 1000000 gas, which is enough for the 21000 required. no error expected
+
+    computation.set_error_if_not_enough_gas_for_external_calls()
+
+    assert (not computation.is_error)
+
+
+
 def test_is_origin_computation(computation, transaction_context):
     assert computation.is_origin_computation
     message2 = Message(
@@ -242,6 +287,7 @@ def test_get_log_entries_order_with_children(computation, child_message):
     assert logs[0] == parent_log
     assert logs[1] == child_log
     assert logs[2] == parent_log2
+
 
 
 def test_get_log_entries_with_vmerror(computation):

@@ -1,12 +1,3 @@
-#from cytoolz import (
-#    merge,
-#)
-#
-#from hvm import precompiles
-#from hvm.utils.address import (
-#    force_bytes_to_address,
-#)
-
 
 from cytoolz import (
     merge,
@@ -129,8 +120,6 @@ class HeliosTestnetComputation(BaseComputation):
                 self.msg,
                 self.transaction_context,
             )
-
-            computation.set_error_if_not_enough_gas_for_external_calls()
 
             if computation.is_error:
                 self.state.revert(snapshot)
