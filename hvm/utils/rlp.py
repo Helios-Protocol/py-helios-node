@@ -71,6 +71,31 @@ def ensure_rlp_objects_are_equal(obj_a, obj_b, obj_a_name, obj_b_name):
     raise ValidationError(error_message)
 
 @curry
+def ensure_rlp_objects_are_equal_except_for_field_names(obj_a, obj_b, obj_a_name, obj_b_name, allowed_fields):
+    diff_unfiltered = diff_rlp_object(obj_a, obj_b)
+    diff = [d for d in diff_unfiltered if d[0] not in allowed_fields]
+    if len(diff) > 0:
+        longest_field_name = max(len(field_name) for field_name, _, _ in diff)
+        error_message = (
+            "Mismatch between {obj_a_name} and {obj_b_name} on {0} fields:\n - {1}".format(
+                len(diff),
+                "\n - ".join(tuple(
+                    "{0}:\n    (actual)  : {1}\n    (expected): {2}".format(
+                        field_name.ljust(longest_field_name, ' '),
+                        actual,
+                        expected,
+                    )
+                    for field_name, actual, expected
+                    in diff
+                )),
+                obj_a_name=obj_a_name,
+                obj_b_name=obj_b_name,
+            )
+        )
+        raise ValidationError(error_message)
+
+
+@curry
 def validate_rlp_equal(obj_a,
                        obj_b,
                        obj_a_name: str=None,

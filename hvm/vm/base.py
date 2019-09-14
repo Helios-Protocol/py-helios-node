@@ -383,7 +383,7 @@ class VM(BaseVM):
     #
     # Execution
     #
-    def apply_all_transactions(self, block: BaseBlock) -> Tuple[BaseBlockHeader, List[Receipt], List[BaseComputation], List[BaseComputation], List[BaseTransaction]]:
+    def apply_all_transactions(self, block: BaseBlock, private_key: PrivateKey = None) -> Tuple[BaseBlockHeader, List[Receipt], List[BaseComputation], List[BaseComputation], List[BaseReceiveTransaction], List[BaseTransaction]]:
 
         #run all of the transactions.
         last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, block.header)
@@ -395,7 +395,7 @@ class VM(BaseVM):
         # then combine
         receipts.extend(receive_receipts)
 
-        return last_header, receipts, receive_computations, send_computations, processed_receive_transactions
+        return last_header, receipts, receive_computations, send_computations, processed_receive_transactions, []
 
     def apply_send_transaction(self,
                                header: BlockHeader,
@@ -768,7 +768,13 @@ class VM(BaseVM):
         # We don't need to refresh the state because it should have just been created for this block.
         # self.refresh_state()
 
-        last_header, receipts, receive_computations, send_computations, processed_receive_transactions = self.apply_all_transactions(block)
+        last_header, receipts, receive_computations, send_computations, processed_receive_transactions, computation_call_send_transactions = self.apply_all_transactions(block, private_key = private_key)
+
+        if is_queue_block:
+            # need to add any new computation call send transactions to the list of send transactions
+            if len(computation_call_send_transactions) > 0:
+                self.logger.debug("Adding computation call send transactions to block send transactions for queue block")
+                block = block.copy(transactions = block.transactions.extend(computation_call_send_transactions))
 
         if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
             self._apply_reward_bundle(block.reward_bundle, block.header.timestamp, block.header.chain_address, validate=validate)
@@ -835,6 +841,7 @@ class VM(BaseVM):
         if validate:
             # Perform validation
             self.validate_block(block)
+            self.validate_computation_call_send_transactions_against_block(block, computation_call_send_transactions)
         
         #state is persisted from chain after ensuring block unchanged
 
@@ -842,6 +849,7 @@ class VM(BaseVM):
 
 
 
+        
 
     def save_recievable_transactions(self,block_header_hash: Hash32, computations: List[BaseComputation], receive_transactions: List[BaseReceiveTransaction]) -> None:
         '''
@@ -1062,47 +1070,18 @@ class VM(BaseVM):
         block = cls.get_queue_block_class()
         genesis_block = block.make_genesis_block(chain_address)
         return genesis_block
-    
-    # @classmethod
-    # @functools.lru_cache(maxsize=32)
-    # @to_tuple
-    # def get_prev_hashes(cls, last_block_hash, chaindb):
-    #     if last_block_hash == GENESIS_PARENT_HASH:
-    #         return
-    #
-    #     block_header = get_block_header_by_hash(last_block_hash, chaindb)
-    #
-    #     for _ in range(MAX_PREV_HEADER_DEPTH):
-    #         yield block_header.hash
-    #         try:
-    #             block_header = get_parent_header(block_header, chaindb)
-    #         except (IndexError, HeaderNotFound):
-    #             break
 
-    # @property
-    # def previous_hashes(self):
-    #     """
-    #     Convenience API for accessing the previous 255 block hashes.
-    #     """
-    #     return self.get_prev_hashes(self.block.header.parent_hash, self.chaindb)
-    
-    
         
     #
     # Transactions
     #
-    def create_transaction(self, *args, **kwargs):
+    def create_transaction(self, *args, **kwargs) -> BaseTransaction:
         """
         Proxy for instantiating a signed transaction for this VM.
         """
-#        from hvm.rlp_templates.transactions import BaseTransaction
-#        class P2PSendTransaction(rlp_templates.Serializable):
-#            fields = BaseTransaction._meta.fields
-            
         return self.get_transaction_class()(*args, **kwargs)
-        #return P2PSendTransaction(*args, **kwargs)
     
-    def create_receive_transaction(self, *args, **kwargs):
+    def create_receive_transaction(self, *args, **kwargs) -> BaseReceiveTransaction:
         """
         Proxy for instantiating a signed transaction for this VM.
         """
@@ -1111,14 +1090,14 @@ class VM(BaseVM):
         
         
     @classmethod
-    def get_transaction_class(cls):
+    def get_transaction_class(cls) -> Type[BaseTransaction]:
         """
         Return the class that this VM uses for transactions.
         """
         return cls.get_block_class().get_transaction_class()
     
     @classmethod
-    def get_receive_transaction_class(cls):
+    def get_receive_transaction_class(cls) -> Type[BaseReceiveTransaction]:
         """
         Return the class that this VM uses for transactions.
         """
@@ -1191,6 +1170,9 @@ class VM(BaseVM):
         actual_balance = self.state.account_db.get_balance(block.header.chain_address)
         if block.header.account_balance != actual_balance:
             raise ValidationError("Block header balance is incorrect. Got {}, expected {}. Chain address = {}".format(block.header.account_balance, actual_balance, block.header.chain_address))
+    
+    def validate_computation_call_send_transactions_against_block(self, block: BaseBlock, computation_call_send_transactions: List[BaseTransaction]) -> None:
+        pass
 
     #
     # State

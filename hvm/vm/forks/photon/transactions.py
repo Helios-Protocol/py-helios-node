@@ -10,6 +10,19 @@ from hvm.rlp.sedes import (
 )
 
 class PhotonTransaction(BosonTransaction):
+    '''
+    caller:
+    # If the tx was created in a computation on a smart contract chain, caller is the address of that chain.
+    # In that case, sender can be anyone who created the block.
+    # TODO: Add functions to this that override sender to caller if it is not null. Then create new property called
+    # signer, which points to old sender. This will allow the vm to transfer value properly.
+
+    origin:
+    # origin is the address of the account that started the chain of smart contract computations that resulted in
+    # this transaction. It points to the same thing tx.origin does in classic solidity.
+    # This is null if this tx wasn't created by a smart contract.
+    # Add validation that makes sure this is null if it didnt come from a smart contract.
+    '''
     fields = [
         ('nonce', f_big_endian_int),
         ('gas_price', big_endian_int),
@@ -17,15 +30,7 @@ class PhotonTransaction(BosonTransaction):
         ('to', address),
         ('value', big_endian_int),
         ('data', binary),
-        # If the tx was created in a computation on a smart contract chain, caller is the address of that chain.
-        # In that case, sender can be anyone who created the block.
-        # TODO: Add functions to this that override sender to caller if it is not null. Then create new property called
-        # signer, which points to old sender. This will allow the vm to transfer value properly.
         ('caller', address),
-        # origin is the address of the account that started the chain of smart contract computations that resulted in
-        # this transaction. It points to the same thing tx.origin does in classic solidity.
-        # This is null if this tx wasn't created by a smart contract.
-        # Add validation that makes sure this is null if it didnt come from a smart contract.
         ('origin', address),
         ('code_address', address),
         ('v', big_endian_int),
@@ -40,8 +45,8 @@ class PhotonTransaction(BosonTransaction):
                  to,
                  value,
                  data = b'',
-                 caller=b'',
-                 origin=b'',
+                 caller = b'',
+                 origin = b'',
                  code_address = b'',
                  v=0,
                  r=0,
@@ -61,6 +66,11 @@ class PhotonTransaction(BosonTransaction):
             r = r,
             s = s,
         )
+
+    @property
+    def created_by_computation(self) -> bool:
+        return self.caller != b''
+
 
 class PhotonReceiveTransaction(BosonReceiveTransaction):
     pass

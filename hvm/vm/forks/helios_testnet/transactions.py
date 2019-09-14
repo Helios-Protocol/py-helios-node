@@ -50,8 +50,6 @@ from hvm.rlp.sedes import (
 )
 import functools
 
-
-
 class HeliosTestnetTransaction(BaseTransaction):
 
     _cache = True

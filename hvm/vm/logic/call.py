@@ -209,7 +209,9 @@ class Call(BaseCall):
 
         other_code_sending_value = False
         if computation.transaction_context.is_receive:
-            if value > 0 and (computation.transaction_context.caller_chain_address != computation.msg.storage_address):
+            if value > 0 and (code_address is not None):
+                # This only allows code from this chain to send a transaction with nonzero value. Prevents malicious third party
+                # code from being able to transfer value from this chain.
                 other_code_sending_value = True
 
             insufficient_funds = should_transfer_value and sender_balance < value

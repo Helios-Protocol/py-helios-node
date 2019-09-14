@@ -41,7 +41,7 @@ class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
         return cls.transaction_class
     
     @classmethod
-    def get_receive_transaction_class(cls) -> Type['BaseTransaction']:
+    def get_receive_transaction_class(cls) -> Type['BaseReceiveTransaction']:
         if cls.receive_transaction_class is None:
             raise AttributeError("Block subclasses must declare a receive_transaction_class")
         return cls.receive_transaction_class
