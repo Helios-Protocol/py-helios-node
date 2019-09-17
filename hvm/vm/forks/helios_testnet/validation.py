@@ -18,7 +18,7 @@ from typing import Union, Optional # noqa: F401
 This only performs checks that can be done against the state.
 '''
    
-def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransaction, caller_chain_address:bytes, receive_transaction: Optional[BaseReceiveTransaction] = None, refund_receive_transaction: Optional[BaseReceiveTransaction] = None):
+def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransaction, this_chain_address:bytes, receive_transaction: Optional[BaseReceiveTransaction] = None, refund_receive_transaction: Optional[BaseReceiveTransaction] = None):
 
     #first find out if it is a send send_transaction or a receive transaction or a refund transaction
     if refund_receive_transaction is not None:
@@ -31,7 +31,7 @@ def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransa
             raise ValidationError(
                 'Refund transactions must have 0 remaining refund')
 
-        if send_transaction.sender != caller_chain_address:
+        if send_transaction.sender != this_chain_address:
             raise ValidationError(
                 'Refunds can only go back to the original chain that sent the initial transaction')
 
@@ -43,7 +43,7 @@ def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransa
         #we check to make sure the send transaction is in the account in the state before it gets here.
         #receiver = send_transaction.receiver
 
-        if send_transaction.to != caller_chain_address and send_transaction.to != CREATE_CONTRACT_ADDRESS:
+        if send_transaction.to != this_chain_address and send_transaction.to != CREATE_CONTRACT_ADDRESS:
             raise ValidationError(
                 'Receive transaction is trying to receive a transaction that is not meant for this chain')
 
@@ -57,10 +57,10 @@ def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransa
             raise ValidationError("Invalid signature S value")
 
         #this is just a normal send transaction
-        if send_transaction.sender != caller_chain_address:
+        if send_transaction.sender != this_chain_address:
             raise ValidationError(
-                'Send transaction sender doesnt match the caller_chain_address. If sending a tx, it must be sent by the sender chain address. Transaction sender = {}, caller_chain_address = {}'
-                    .format(send_transaction.sender, caller_chain_address))
+                'Send transaction sender doesnt match the this_chain_address. If sending a tx, it must be sent by the sender chain address. Transaction sender = {}, this_chain_address = {}'
+                    .format(send_transaction.sender, this_chain_address))
 
         gas_cost = send_transaction.gas * send_transaction.gas_price
         sender_balance = account_db.get_balance(send_transaction.sender)

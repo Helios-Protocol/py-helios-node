@@ -53,13 +53,13 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
     @abstractmethod
     def get_transaction_context(self,
                                 send_transaction: BaseTransaction,
-                                caller_chain_address:Address,
+                                this_chain_address:Address,
                                 receive_transaction: Optional[BaseReceiveTransaction] = None,
                                 refund_transaction: Optional[BaseReceiveTransaction] = None) -> 'BaseTransactionContext':
         raise NotImplementedError()
 
     def __call__(self, send_transaction: BaseTransaction,
-                 caller_chain_address: Address,
+                 this_chain_address: Address,
                  receive_transaction: Optional[BaseReceiveTransaction] = None,
                  refund_transaction: Optional[BaseReceiveTransaction] = None,
                  validate=True) -> 'BaseComputation':
@@ -67,9 +67,9 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
             self.validate_transaction(send_transaction=send_transaction,
                                       receive_transaction=receive_transaction,
                                       refund_transaction=refund_transaction,
-                                      caller_chain_address=caller_chain_address)
+                                      this_chain_address=this_chain_address)
 
-        transaction_context = self.get_transaction_context(send_transaction, caller_chain_address, receive_transaction, refund_transaction)
+        transaction_context = self.get_transaction_context(send_transaction, this_chain_address, receive_transaction, refund_transaction)
         message = self.build_evm_message(send_transaction, transaction_context, receive_transaction)
         computation = self.build_computation(message, transaction_context, validate)
         finalized_computation = self.finalize_computation(send_transaction, computation)
@@ -102,7 +102,7 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
     @abstractmethod
     def validate_transaction(self,
                              send_transaction: BaseTransaction,
-                             caller_chain_address:Address,
+                             this_chain_address:Address,
                              receive_transaction: Optional[BaseReceiveTransaction] = None,
                              refund_transaction: Optional[BaseReceiveTransaction] = None):
         raise NotImplementedError()
@@ -308,7 +308,7 @@ class BaseState(Configurable, metaclass=ABCMeta):
     #
     def apply_transaction(self,
                           send_transaction: BaseTransaction,
-                          caller_chain_address:Address,
+                          this_chain_address:Address,
                           receive_transaction: Optional[BaseReceiveTransaction] = None,
                           refund_transaction: Optional[BaseReceiveTransaction] = None,
                           validate: bool = True) -> 'BaseComputation':
@@ -318,7 +318,7 @@ class BaseState(Configurable, metaclass=ABCMeta):
         :param transaction: the transaction to apply
         :return: the new state root, and the computation
         """
-        computation, processed_transaction = self.execute_transaction(send_transaction, caller_chain_address, receive_transaction, refund_transaction, validate = validate)
+        computation, processed_transaction = self.execute_transaction(send_transaction, this_chain_address, receive_transaction, refund_transaction, validate = validate)
         
         return computation, processed_transaction
 
@@ -335,14 +335,14 @@ class BaseState(Configurable, metaclass=ABCMeta):
         
     def execute_transaction(self,
                             send_transaction: BaseTransaction,
-                            caller_chain_address:Address,
+                            this_chain_address:Address,
                             receive_transaction: Optional[BaseReceiveTransaction] = None,
                             refund_transaction: Optional[BaseReceiveTransaction] = None,
                             validate:bool = True) -> 'BaseComputation':
         executor = self.get_transaction_executor()
         if executor == None:
             raise ValueError("No transaction executor given")
-        return executor(send_transaction, caller_chain_address, receive_transaction, refund_transaction, validate = validate)
+        return executor(send_transaction, this_chain_address, receive_transaction, refund_transaction, validate = validate)
 
     def compute_single_transaction(self, transaction: Union[BaseTransaction, SpoofTransaction]) -> 'BaseComputation':
         executor = self.get_transaction_executor()

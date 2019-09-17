@@ -15,11 +15,24 @@ class PhotonTransactionContext(BosonTransactionContext):
     """
     This immutable object houses information that remains constant for the entire context of the VM
     execution.
+    this_chain_address is the address of the chain that the currently executing transaction lives on.
+    tx_caller is the address of the chain that sent the send transaction.
     """
-    __slots__ = ['_gas_price', '_is_receive', '_origin', '_send_tx_hash', '_log_counter', '_caller_chain_address',
-                 '_is_refund', '_receive_tx_hash', '_tx_caller', '_tx_origin', '_tx_code_address', '_tx_signer']
+    __slots__ = ['_gas_price',
+                 '_is_receive',
+                 '_origin',
+                 '_send_tx_hash',
+                 '_log_counter',
+                 '_this_chain_address',
+                 '_is_refund',
+                 '_receive_tx_hash',
+                 '_tx_caller',
+                 '_tx_origin',
+                 '_tx_code_address',
+                 '_tx_signer',
+                 ]
 
-    def __init__(self, origin: Address, send_tx_hash: Hash32, caller_chain_address: Address, gas_price: int = None,
+    def __init__(self, origin: Address, send_tx_hash: Hash32, this_chain_address: Address, gas_price: int = None,
                  receive_tx_hash: Hash32 = None, is_receive: bool = False, is_refund: bool = False, tx_caller: Address =None,
                  tx_origin: Address = None, tx_code_address: Address = None, tx_signer: Address = None):
 
@@ -40,7 +53,7 @@ class PhotonTransactionContext(BosonTransactionContext):
             validate_canonical_address(tx_signer, title="TransactionContext.tx_signer")
         self._tx_signer = tx_signer
 
-        super(PhotonTransactionContext, self).__init__(origin, send_tx_hash, caller_chain_address, gas_price, receive_tx_hash,
+        super(PhotonTransactionContext, self).__init__(origin, send_tx_hash, this_chain_address, gas_price, receive_tx_hash,
                                                  is_receive, is_refund)
 
 

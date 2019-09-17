@@ -234,7 +234,7 @@ class Call(BaseCall):
                 err_message = "This smart contract code is from a different chain, but it tried to send value with a child transaction. " \
                               "This is not allowed. Only smart contract code from this chain can send child transactions with nonzero value. " \
                               "This chain address: {} | contract_storage_address: {} | value: {}".format(
-                    computation.transaction_context.caller_chain_address,
+                    computation.transaction_context.this_chain_address,
                     computation.msg.storage_address,
                     value
                 )

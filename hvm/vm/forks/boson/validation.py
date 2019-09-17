@@ -10,13 +10,13 @@ from hvm.vm.forks.helios_testnet.validation import validate_helios_testnet_trans
 
 def validate_boson_transaction(account_db,
                                send_transaction: BaseTransaction,
-                               caller_chain_address:bytes,
+                               this_chain_address:bytes,
                                receive_transaction: Optional[BaseReceiveTransaction] = None,
                                refund_receive_transaction: Optional[BaseReceiveTransaction] = None):
 
     return validate_helios_testnet_transaction(account_db,
                                                send_transaction,
-                                               caller_chain_address,
+                                               this_chain_address,
                                                receive_transaction,
                                                refund_receive_transaction)
 

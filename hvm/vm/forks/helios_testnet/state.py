@@ -55,7 +55,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
         
     def get_transaction_context(self,
                                 send_transaction: BaseTransaction,
-                                caller_chain_address:Address,
+                                this_chain_address:Address,
                                 receive_transaction: Optional[BaseReceiveTransaction] = None,
                                 refund_transaction: Optional[BaseReceiveTransaction] = None) -> BaseTransactionContext:
         #for sending transactions, we won't know the sender block hash until after all transactions 
@@ -78,13 +78,13 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             origin=send_transaction.sender,
             gas_price=send_transaction.gas_price,
             send_tx_hash=send_transaction.hash,
-            caller_chain_address = caller_chain_address,
+            this_chain_address = this_chain_address,
             is_receive=is_receive,
             is_refund=is_refund,
             receive_tx_hash=receive_transaction_hash,
         )
             
-    def validate_transaction(self, send_transaction: BaseTransaction, caller_chain_address:Address, receive_transaction: Optional[BaseReceiveTransaction] = None, refund_transaction: Optional[BaseReceiveTransaction] = None):
+    def validate_transaction(self, send_transaction: BaseTransaction, this_chain_address:Address, receive_transaction: Optional[BaseReceiveTransaction] = None, refund_transaction: Optional[BaseReceiveTransaction] = None):
         # going to put all validation here instead of all over the place.
         # Validate the transaction
         
@@ -99,7 +99,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
         #for receiving: checks that the receiving tx is in the state, also checks that the 
         #receiving tx sender hash matches the real sender hash. This also gaurantees that the sender
         #sent the tx to this receiver, because the hash matches the one in the state
-        validate_helios_testnet_transaction(self.vm_state.account_db, send_transaction, caller_chain_address, receive_transaction, refund_transaction)
+        validate_helios_testnet_transaction(self.vm_state.account_db, send_transaction, this_chain_address, receive_transaction, refund_transaction)
 
 
     def build_evm_message(self,
@@ -146,7 +146,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
 
             if send_transaction.to == constants.CREATE_CONTRACT_ADDRESS:
                 # the contract address was already chosen on the send transaction. It is now the caller chain address
-                contract_address = transaction_context.caller_chain_address
+                contract_address = transaction_context.this_chain_address
                 data = b''
                 code = send_transaction.data
             else:

@@ -23,7 +23,7 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
 
     def get_transaction_context(self,
                                 send_transaction: PhotonTransaction,
-                                caller_chain_address:Address,
+                                this_chain_address:Address,
                                 receive_transaction: Optional[PhotonReceiveTransaction] = None,
                                 refund_transaction: Optional[PhotonReceiveTransaction] = None) -> PhotonTransactionContext:
 
@@ -43,7 +43,7 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
             origin=send_transaction.sender,
             gas_price=send_transaction.gas_price,
             send_tx_hash=send_transaction.hash,
-            caller_chain_address = caller_chain_address,
+            this_chain_address = this_chain_address,
             is_receive=is_receive,
             is_refund=is_refund,
             receive_tx_hash=receive_transaction_hash,
@@ -146,4 +146,6 @@ class PhotonState(BosonState):
     transaction_executor: Type[PhotonTransactionExecutor] = PhotonTransactionExecutor
     account_db_class: Type[PhotonAccountDB] = PhotonAccountDB
     transaction_context_class: Type[PhotonTransactionContext] = PhotonTransactionContext
+
+    account_db: PhotonAccountDB = None
     

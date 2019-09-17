@@ -72,7 +72,7 @@ class HeliosTestnetComputation(BaseComputation):
         if self.msg.should_transfer_value:
             if self.transaction_context.is_refund:
 
-                self.state.account_db.delta_balance(self.msg.sender, self.msg.refund_amount)
+                self.state.account_db.delta_balance(self.transaction_context.this_chain_address, self.msg.refund_amount)
                 self.logger.debug(
                     "REFUNDED: %s into %s",
                     self.msg.refund_amount,
@@ -82,7 +82,7 @@ class HeliosTestnetComputation(BaseComputation):
             elif self.transaction_context.is_receive:
 
                 if self.msg.value:
-                    self.state.account_db.delta_balance(self.msg.storage_address, self.msg.value)
+                    self.state.account_db.delta_balance(self.transaction_context.this_chain_address, self.msg.value)
                     self.logger.debug(
                         "RECEIVED: %s into %s",
                         self.msg.value,
@@ -91,19 +91,19 @@ class HeliosTestnetComputation(BaseComputation):
             elif self.msg.value:
                 # this is a send transaction
                 if validate:
-                    sender_balance = self.state.account_db.get_balance(self.msg.sender)
+                    sender_balance = self.state.account_db.get_balance(self.transaction_context.this_chain_address)
         
                     if sender_balance < self.msg.value:
                         raise InsufficientFunds(
                             "Insufficient funds: {0} < {1}".format(sender_balance, self.msg.value)
                         )
     
-                self.state.account_db.delta_balance(self.msg.sender, -1 * self.msg.value)
+                self.state.account_db.delta_balance(self.transaction_context.this_chain_address, -1 * self.msg.value)
 
                 self.logger.debug(
                     "SENT: %s from %s to pending transactions",
                     self.msg.value,
-                    encode_hex(self.msg.sender),
+                    encode_hex(self.transaction_context.this_chain_address),
                 )
 
         self.state.account_db.touch_account(self.msg.storage_address)

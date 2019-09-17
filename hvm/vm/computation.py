@@ -217,7 +217,7 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         """
         Helper method for creating a child computation.
         """
-        kwargs.setdefault('sender', self.msg.storage_address)
+        kwargs.setdefault('sender', self.transaction_context.this_chain_address)
 
         child_message = Message(
             gas=gas,

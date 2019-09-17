@@ -12,6 +12,7 @@ from hvm.validation import (
     validate_is_boolean,
 )
 
+from eth_typing import Address
 
 class Message(object):
     """
@@ -20,7 +21,7 @@ class Message(object):
     __slots__ = [
         'to', 'sender', 'value', 'data', 'depth', 'gas', 'code', '_code_address',
         'create_address', 'should_transfer_value', 'is_static', '_storage_address',
-        'refund_amount'
+        'refund_amount', '_create_address'
     ]
 
     logger = logging.getLogger('hvm.vm.message.Message')
@@ -64,6 +65,7 @@ class Message(object):
         if create_address is not None:
             validate_canonical_address(create_address, title="Message.storage_address")
         self.storage_address = create_address
+        self._create_address = create_address
 
         if code_address is not None:
             validate_canonical_address(code_address, title="Message.code_address")
@@ -78,6 +80,7 @@ class Message(object):
         validate_is_boolean(is_static, title="Message.is_static")
         self.is_static = is_static
 
+
     @property
     def code_address(self):
         if self._code_address is not None:
@@ -88,6 +91,10 @@ class Message(object):
     @code_address.setter
     def code_address(self, value):
         self._code_address = value
+
+    @property
+    def create_address(self):
+        return self._create_address
 
     @property
     def storage_address(self):
@@ -103,3 +110,5 @@ class Message(object):
     @property
     def is_create(self):
         return self.to == CREATE_CONTRACT_ADDRESS
+
+

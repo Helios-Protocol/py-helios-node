@@ -60,11 +60,11 @@ class PhotonAccount(rlp.Serializable):
         ('block_number', f_big_endian_int),
         ('balance', big_endian_int),
         ('storage_root', trie_root),
-        ('smart_contract_storage_root', trie_root),
+        ('external_smart_contract_storage_root', trie_root),
         ('code_hash', hash32)
     ]
 
-    # smart_contract_storage_root is a trie that acts as a db mapping "smart contract address" -> "storage root"
+    # external_smart_contract_storage_root is a trie that acts as a db mapping "smart contract address" -> "storage root"
     # The storage root that it points to is the storage that only code located at "smart contract address" can manipulate
     # It is not the global storage for that smart contract, it is storage specific to this chain.
 
@@ -73,10 +73,10 @@ class PhotonAccount(rlp.Serializable):
                  block_number: int=0,
                  balance: int=0,
                  storage_root: bytes=BLANK_ROOT_HASH,
-                 smart_contract_storage_root: bytes = BLANK_ROOT_HASH,
+                 external_smart_contract_storage_root: bytes = BLANK_ROOT_HASH,
                  code_hash: bytes=EMPTY_SHA3,
                  **kwargs: Any) -> None:
-        super(PhotonAccount, self).__init__(nonce, block_number, balance, storage_root, smart_contract_storage_root, code_hash, **kwargs)
+        super(PhotonAccount, self).__init__(nonce, block_number, balance, storage_root, external_smart_contract_storage_root, code_hash, **kwargs)
 
 
 class PhotonAccountDB(AccountDB):
@@ -86,19 +86,19 @@ class PhotonAccountDB(AccountDB):
     # Storage
     #
 
-    def get_smart_contract_storage(self, address: Address, smart_contract_address: Address, slot: int) -> bytes:
+    def get_external_smart_contract_storage(self, address: Address, smart_contract_address: Address, slot: int) -> bytes:
         validate_canonical_address(address, title="Storage Address")
         validate_canonical_address(smart_contract_address, title="smart_contract_address")
         validate_uint256(slot, title="Storage Slot")
 
         account = self._get_account(address)
 
-        smart_contract_storage_roots = HexaryTrie(self._journaldb, account.smart_contract_storage_root)
+        external_smart_contract_storage_roots = HexaryTrie(self._journaldb, account.external_smart_contract_storage_root)
 
-        if smart_contract_address in smart_contract_storage_roots:
-            smart_contract_storage_root = smart_contract_storage_roots[smart_contract_address]
+        if smart_contract_address in external_smart_contract_storage_roots:
+            external_smart_contract_storage_root = external_smart_contract_storage_roots[smart_contract_address]
 
-            storage = HashTrie(HexaryTrie(self._journaldb, smart_contract_storage_root))
+            storage = HashTrie(HexaryTrie(self._journaldb, external_smart_contract_storage_root))
 
             slot_as_key = pad32(int_to_big_endian(slot))
 
@@ -110,7 +110,7 @@ class PhotonAccountDB(AccountDB):
         else:
             return 0
 
-    def set_smart_contract_storage(self, address: Address, smart_contract_address: Address, slot: int, value: int) -> None:
+    def set_external_smart_contract_storage(self, address: Address, smart_contract_address: Address, slot: int, value: int) -> None:
         validate_uint256(value, title="Storage Value")
         validate_uint256(slot, title="Storage Slot")
         validate_canonical_address(address, title="Storage Address")
@@ -118,11 +118,11 @@ class PhotonAccountDB(AccountDB):
 
         account = self._get_account(address)
 
-        smart_contract_storage_roots = HexaryTrie(self._journaldb, account.smart_contract_storage_root)
+        external_smart_contract_storage_roots = HexaryTrie(self._journaldb, account.external_smart_contract_storage_root)
 
         try:
-            smart_contract_storage_root = smart_contract_storage_roots[smart_contract_address]
-            storage = HashTrie(HexaryTrie(self._journaldb, smart_contract_storage_root))
+            external_smart_contract_storage_root = external_smart_contract_storage_roots[smart_contract_address]
+            storage = HashTrie(HexaryTrie(self._journaldb, external_smart_contract_storage_root))
         except KeyError:
             storage = HashTrie(HexaryTrie(self._journaldb))
 
@@ -134,24 +134,24 @@ class PhotonAccountDB(AccountDB):
         else:
             del storage[slot_as_key]
 
-        smart_contract_storage_roots[smart_contract_address] = storage.root_hash
+        external_smart_contract_storage_roots[smart_contract_address] = storage.root_hash
 
-        self._set_account(address, account.copy(smart_contract_storage_root=smart_contract_storage_roots.root_hash))
+        self._set_account(address, account.copy(external_smart_contract_storage_root=external_smart_contract_storage_roots.root_hash))
 
 
-    def delete_smart_contract_storage(self, address: Address, smart_contract_address: Address) -> None:
+    def delete_external_smart_contract_storage(self, address: Address, smart_contract_address: Address) -> None:
         validate_canonical_address(address, title="Storage Address")
         validate_canonical_address(smart_contract_address, title="smart_contract_address")
 
         account = self._get_account(address)
-        smart_contract_storage_roots = HexaryTrie(self._journaldb, account.smart_contract_storage_root)
+        external_smart_contract_storage_roots = HexaryTrie(self._journaldb, account.external_smart_contract_storage_root)
 
         try:
-            smart_contract_storage_roots[smart_contract_address] = BLANK_ROOT_HASH
+            external_smart_contract_storage_roots[smart_contract_address] = BLANK_ROOT_HASH
         except KeyError:
             pass
 
-        self._set_account(address, account.copy(smart_contract_storage_root=smart_contract_storage_roots.root_hash))
+        self._set_account(address, account.copy(external_smart_contract_storage_root=external_smart_contract_storage_roots.root_hash))
 
 
     def get_account_hash(self, address: Address) -> Hash32:

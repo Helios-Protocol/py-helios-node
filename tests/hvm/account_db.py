@@ -331,40 +331,40 @@ def test_photon_account_db_smart_contract_storage():
     #
     # Load when doesnt exist
     #
-    storage_at_0 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 0)
+    storage_at_0 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 0)
     assert(storage_at_0 == 0)
 
     #
     # Set, then load
     #
-    photon_account_db.set_smart_contract_storage(test_address, smart_contract_address, 0, 100)
-    storage_at_0 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 0)
+    photon_account_db.set_external_smart_contract_storage(test_address, smart_contract_address, 0, 100)
+    storage_at_0 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 0)
     assert(storage_at_0 == 100)
 
     #
     # Set another slot, then load both
     #
-    photon_account_db.set_smart_contract_storage(test_address, smart_contract_address, 1, 200)
-    storage_at_0 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 0)
-    storage_at_1 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 1)
+    photon_account_db.set_external_smart_contract_storage(test_address, smart_contract_address, 1, 200)
+    storage_at_0 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 0)
+    storage_at_1 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 1)
     assert (storage_at_0 == 100)
     assert (storage_at_1 == 200)
 
     #
     # Overwrite, then load both
     #
-    photon_account_db.set_smart_contract_storage(test_address, smart_contract_address, 0, 300)
-    photon_account_db.set_smart_contract_storage(test_address, smart_contract_address, 1, 400)
-    storage_at_0 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 0)
-    storage_at_1 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 1)
+    photon_account_db.set_external_smart_contract_storage(test_address, smart_contract_address, 0, 300)
+    photon_account_db.set_external_smart_contract_storage(test_address, smart_contract_address, 1, 400)
+    storage_at_0 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 0)
+    storage_at_1 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 1)
     assert (storage_at_0 == 300)
     assert (storage_at_1 == 400)
 
     #
     # Delete, then load
     #
-    photon_account_db.delete_smart_contract_storage(test_address, smart_contract_address)
-    storage_at_0 = photon_account_db.get_smart_contract_storage(test_address, smart_contract_address, 0)
+    photon_account_db.delete_external_smart_contract_storage(test_address, smart_contract_address)
+    storage_at_0 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 0)
     assert (storage_at_0 == 0)
 
 

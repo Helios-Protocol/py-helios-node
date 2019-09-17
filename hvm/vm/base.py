@@ -136,7 +136,7 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     def apply_send_transaction(self,
                             header: BlockHeader,
                             transaction: BaseTransaction,
-                            caller_chain_address: Address,
+                            this_chain_address: Address,
                             validate: bool = True) -> Tuple[BlockHeader, Receipt, BaseComputation]:
         raise NotImplementedError("VM classes must implement this method")
 
@@ -144,7 +144,7 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     def apply_receive_transaction(self,
                                header: BlockHeader,
                                receive_transaction: BaseReceiveTransaction,
-                               caller_chain_address: Address,
+                               this_chain_address: Address,
                                validate: bool = True) -> Tuple[Optional[BlockHeader],
                                                                Optional[Receipt],
                                                                BaseComputation,
@@ -400,7 +400,7 @@ class VM(BaseVM):
     def apply_send_transaction(self,
                                header: BlockHeader,
                                transaction: BaseTransaction,
-                               caller_chain_address: Address,
+                               this_chain_address: Address,
                                validate: bool = True) -> Tuple[BlockHeader, Receipt, BaseComputation]:
         """
         Apply the transaction to the current block. This is a wrapper around
@@ -409,7 +409,7 @@ class VM(BaseVM):
         :param header: header of the block before application
         :param transaction: to apply
         """
-        #caller_chain_address = header.sender
+        #this_chain_address = header.sender
         #this is a send transaction
         send_transaction = transaction
         receive_transaction = None
@@ -418,7 +418,7 @@ class VM(BaseVM):
 
 
         computation, _ = self.state.apply_transaction(send_transaction = send_transaction,
-                                                   caller_chain_address = caller_chain_address,
+                                                   this_chain_address = this_chain_address,
                                                    receive_transaction = receive_transaction,
                                                    validate = validate)
         if validate:
@@ -437,7 +437,7 @@ class VM(BaseVM):
     def apply_receive_transaction(self,
                                header: BlockHeader,
                                receive_transaction: BaseReceiveTransaction,
-                               caller_chain_address: Address,
+                               this_chain_address: Address,
                                validate: bool = True) -> Tuple[Optional[BlockHeader],
                                                                Optional[Receipt],
                                                                BaseComputation,
@@ -450,7 +450,7 @@ class VM(BaseVM):
         :param transaction: to apply
         """
         # Lets make sure we have this receivable transaction in the account
-        receivable_tx_key = self.state.account_db.get_receivable_transaction(caller_chain_address,
+        receivable_tx_key = self.state.account_db.get_receivable_transaction(this_chain_address,
                                                                              receive_transaction.send_transaction_hash)
 
         # Very first thing, check to see if this transaction has been received before:
@@ -484,8 +484,8 @@ class VM(BaseVM):
             if self.chaindb.is_in_canonical_chain(receive_transaction.sender_block_hash):
                 self.logger.debug("The sender block of the missing receivable transaction is in the canonical chain. This must means the tx is in there, but wasnt saved to canonical transactions...")
 
-            raise ReceivableTransactionNotFound("caller_chain_address = {}, send_transaction_hash = {}, sender_block_hash = {}".format(
-                encode_hex(caller_chain_address),
+            raise ReceivableTransactionNotFound("this_chain_address = {}, send_transaction_hash = {}, sender_block_hash = {}".format(
+                encode_hex(this_chain_address),
                 encode_hex(receive_transaction.send_transaction_hash),
                 encode_hex(receive_transaction.sender_block_hash),
             ))
@@ -539,7 +539,7 @@ class VM(BaseVM):
 
             # we assume past this point that, if it is a receive transaction, the send transaction exists in account
             computation, processed_transaction = self.state.apply_transaction(send_transaction=send_transaction,
-                                                       caller_chain_address=caller_chain_address,
+                                                       this_chain_address=this_chain_address,
                                                        receive_transaction=receive_transaction,
                                                        refund_transaction=refund_transaction,
                                                        validate=validate)
@@ -612,7 +612,7 @@ class VM(BaseVM):
         #     origin=send_transaction.sender,
         #     gas_price=send_transaction.gas_price,
         #     send_tx_hash=send_transaction.hash,
-        #     caller_chain_address=caller_chain_address,
+        #     this_chain_address=this_chain_address,
         #     is_receive=is_receive,
         #     is_refund=is_refund,
         #     receive_tx_hash=receive_transaction_hash,
@@ -622,7 +622,7 @@ class VM(BaseVM):
         transaction_context = self.state.get_transaction_context_class()(
             gas_price=gas_price,
             origin=origin,
-            caller_chain_address=origin,
+            this_chain_address=origin,
             send_tx_hash=ZERO_HASH32
         )
 
@@ -640,11 +640,11 @@ class VM(BaseVM):
         result_header = base_header
         computations = []
 
-        caller_chain_address = base_header.chain_address
+        this_chain_address = base_header.chain_address
 
         if validate:
             for transaction in transactions:
-                result_header, receipt, computation = self.apply_send_transaction(previous_header, transaction, caller_chain_address, validate = validate)
+                result_header, receipt, computation = self.apply_send_transaction(previous_header, transaction, this_chain_address, validate = validate)
 
                 previous_header = result_header
                 receipts.append(receipt)
@@ -664,11 +664,11 @@ class VM(BaseVM):
         computations = []
         processed_receive_transactions = []
 
-        caller_chain_address = base_header.chain_address
+        this_chain_address = base_header.chain_address
         if validate:
             for transaction in transactions:
                 result_header, receipt, computation, processed_receive_tx = self.apply_receive_transaction(previous_header, transaction,
-                                                                                  caller_chain_address,
+                                                                                  this_chain_address,
                                                                                   validate=validate)
 
                 previous_header = result_header
@@ -864,7 +864,7 @@ class VM(BaseVM):
         for computation in computations:
             msg = computation.msg
             transaction_context = computation.transaction_context
-            self.state.account_db.add_receivable_transaction(msg.storage_address,
+            self.state.account_db.add_receivable_transaction(msg.create_address,
                                                              transaction_context.send_tx_hash,
                                                              block_header_hash,
                                                              msg.is_create)

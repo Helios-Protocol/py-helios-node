@@ -15,16 +15,16 @@ class BaseTransactionContext:
     This immutable object houses information that remains constant for the entire context of the VM
     execution.
     """
-    __slots__ = ['_gas_price', '_is_receive', '_origin', '_send_tx_hash', '_log_counter', '_caller_chain_address', '_is_refund', '_receive_tx_hash']
+    __slots__ = ['_gas_price', '_is_receive', '_origin', '_send_tx_hash', '_log_counter', '_this_chain_address', '_is_refund', '_receive_tx_hash']
 
-    def __init__(self, origin: Address, send_tx_hash: Hash32, caller_chain_address:Address, gas_price: int = None, receive_tx_hash: Hash32 = None, is_receive: bool = False, is_refund: bool = False):
+    def __init__(self, origin: Address, send_tx_hash: Hash32, this_chain_address:Address, gas_price: int = None, receive_tx_hash: Hash32 = None, is_receive: bool = False, is_refund: bool = False):
         if gas_price is not None:
             validate_uint256(gas_price, title="TransactionContext.gas_price")
         self._gas_price = gas_price
         validate_canonical_address(origin, title="TransactionContext.origin")
         self._origin = origin
-        validate_canonical_address(caller_chain_address, title='caller_chain_address')
-        self._caller_chain_address = caller_chain_address
+        validate_canonical_address(this_chain_address, title='this_chain_address')
+        self._this_chain_address = this_chain_address
         validate_is_boolean(is_receive, title="is_receive")
         self._is_receive = is_receive
         validate_is_boolean(is_refund, title="is_from_refund")
@@ -65,7 +65,7 @@ class BaseTransactionContext:
         return self._receive_tx_hash
 
     @property
-    def caller_chain_address(self):
-        return self._caller_chain_address
+    def this_chain_address(self):
+        return self._this_chain_address
 
     

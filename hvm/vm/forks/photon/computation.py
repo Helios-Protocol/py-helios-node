@@ -1,5 +1,6 @@
 from hvm.vm.forks.boson import BosonComputation
 from hvm.vm.forks.boson.computation import BOSON_PRECOMPILES
+from hvm.vm.forks.photon import PhotonState
 from hvm.vm.forks.photon.transaction_context import PhotonTransactionContext
 
 from .opcodes import PHOTON_OPCODES
@@ -28,6 +29,7 @@ class PhotonComputation(BosonComputation):
     _precompiles = PHOTON_PRECOMPILES
 
     transaction_context: PhotonTransactionContext = None
+    state: PhotonState = None
 
     def apply_message(self, validate=True):
         snapshot = self.state.snapshot()
@@ -37,42 +39,42 @@ class PhotonComputation(BosonComputation):
 
         if self.msg.should_transfer_value:
             if self.transaction_context.is_refund:
-
-                self.state.account_db.delta_balance(self.msg.sender, self.msg.refund_amount)
-                self.logger.debug(
-                    "REFUNDED: %s into %s",
-                    self.msg.refund_amount,
-                    encode_hex(self.msg.sender),
-                )
+                if self.msg.refund_amount:
+                    self.state.account_db.delta_balance(self.transaction_context.this_chain_address, self.msg.refund_amount)
+                    self.logger.debug(
+                        "REFUNDED: %s into %s",
+                        self.msg.refund_amount,
+                        encode_hex(self.transaction_context.this_chain_address),
+                    )
 
             elif self.transaction_context.is_receive:
 
                 if self.msg.value:
-                    self.state.account_db.delta_balance(self.msg.storage_address, self.msg.value)
+                    self.state.account_db.delta_balance(self.transaction_context.this_chain_address, self.msg.value)
                     self.logger.debug(
                         "RECEIVED: %s into %s",
                         self.msg.value,
-                        encode_hex(self.msg.storage_address),
+                        encode_hex(self.transaction_context.this_chain_address),
                     )
             elif self.msg.value:
                 # this is a send transaction
                 if validate:
-                    sender_balance = self.state.account_db.get_balance(self.msg.sender)
+                    sender_balance = self.state.account_db.get_balance(self.transaction_context.this_chain_address)
 
                     if sender_balance < self.msg.value:
                         raise InsufficientFunds(
                             "Insufficient funds: {0} < {1}".format(sender_balance, self.msg.value)
                         )
 
-                self.state.account_db.delta_balance(self.msg.sender, -1 * self.msg.value)
+                self.state.account_db.delta_balance(self.transaction_context.this_chain_address, -1 * self.msg.value)
 
                 self.logger.debug(
                     "SENT: %s from %s to pending transactions",
                     self.msg.value,
-                    encode_hex(self.msg.sender),
+                    encode_hex(self.transaction_context.this_chain_address),
                 )
 
-        self.state.account_db.touch_account(self.msg.storage_address)
+        self.state.account_db.touch_account(self.transaction_context.this_chain_address)
 
         if self.transaction_context.is_refund:
             # We never run computations on a refund
