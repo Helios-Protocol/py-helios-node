@@ -1351,11 +1351,12 @@ class ChainDB(BaseChainDB):
             raise TransactionNotFound(
                 "No transaction is at index {} of block {}".format(transaction_index, block_header))
 
+    @functools.lru_cache(maxsize=128)
     def get_transaction_by_hash(self,
                                 tx_hash: Hash32,
                                 send_tx_class: Type['BaseTransaction'],
                                 receive_tx_class: Type['BaseReceiveTransaction']) -> Union['BaseTransaction', 'BaseReceiveTransaction']:
-
+        # todo. test cache
         block_hash, index, is_receive = self.get_transaction_index(tx_hash)
         if is_receive:
             transaction = self.get_receive_transaction_by_index_and_block_hash(

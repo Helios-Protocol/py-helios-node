@@ -1,3 +1,4 @@
+from eth_typing import Address
 from hvm.constants import GAS_TX
 from hvm.vm.forks.boson import BosonTransaction, BosonReceiveTransaction
 from rlp_cython.sedes import (
@@ -69,8 +70,14 @@ class PhotonTransaction(BosonTransaction):
 
     @property
     def created_by_computation(self) -> bool:
-        return self.caller != b''
+        return self.caller != b'' or self.origin != b''
 
+    @property
+    def refund_address(self) -> Address:
+        if self.created_by_computation:
+            return self.origin
+        else:
+            return self.sender
 
 class PhotonReceiveTransaction(BosonReceiveTransaction):
     pass

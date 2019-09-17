@@ -1,3 +1,5 @@
+from eth_typing import Hash32
+from eth_utils import encode_hex
 from hvm.exceptions import ValidationError
 from hvm.utils.rlp import diff_rlp_object
 from hvm.vm.forks.photon.consensus import PhotonConsensusDB
@@ -28,7 +30,7 @@ from .transactions import (
 
 from .computation import PhotonComputation
 
-from hvm.rlp.headers import BaseBlockHeader
+from hvm.rlp.headers import BaseBlockHeader, BlockHeader
 
 from hvm.vm.forks.boson import make_boson_receipt
 
@@ -74,6 +76,7 @@ class PhotonVM(VM):
     consensus_db_class = PhotonConsensusDB
 
 
+
     def apply_all_transactions(self, block: PhotonBlock, private_key: PrivateKey = None) -> Tuple[
                                                                                         BaseBlockHeader,
                                                                                         List[Receipt],
@@ -109,11 +112,12 @@ class PhotonVM(VM):
                         else:
                             current_nonce_for_computation_calls = self.get_next_nonce_after_normal_transactions(block.transactions)
 
-                    # todo: add origin to tx context, then grab it here.
-                    origin = b''
+
+                    origin = receive_computation.transaction_context.tx_origin if receive_computation.transaction_context.tx_origin is not None else receive_computation.msg.sender
 
                     # todo: after adding avatarcall, take care of code address here
-                    code_address = b''
+                    code_address = receive_computation.transaction_context.tx_code_address if receive_computation.transaction_context.tx_code_address is not None else b''
+
 
 
                     for i in range(len(external_call_message_bundles)):
@@ -161,6 +165,7 @@ class PhotonVM(VM):
         # Who is going to sign these transactions? The sender needs to be the person who sent the first transaction so that they
         # can be correctly refunded. But they arent here to sign it... Add another field to the transaction for refund address?
 
+
         if len(computation_call_send_transactions) > 0:
             normal_send_transactions, _ = self.separate_normal_transactions_and_computation_calls(block.transactions)
             send_transactions = normal_send_transactions.extend(computation_call_send_transactions)
@@ -176,6 +181,27 @@ class PhotonVM(VM):
         return last_header, receipts, receive_computations, send_computations, processed_receive_transactions, computation_call_send_transactions
 
 
+    def save_recievable_transactions(self,block_header_hash: Hash32, computations: List[PhotonComputation], receive_transactions: List[PhotonReceiveTransaction]) -> None:
+        for computation in computations:
+            msg = computation.msg
+            transaction_context = computation.transaction_context
+            self.state.account_db.add_receivable_transaction(msg.storage_address,
+                                                             transaction_context.send_tx_hash,
+                                                             block_header_hash,
+                                                             msg.is_create)
+
+        # Refunds
+        for receive_transaction in receive_transactions:
+            if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:
+                send_transaction = self.chaindb.get_transaction_by_hash(receive_transaction.send_transaction_hash)
+                refund_address = send_transaction.refund_address
+                sender_chain_address = self.chaindb.get_chain_wallet_address_for_block_hash(receive_transaction.sender_block_hash)
+                self.logger.debug("SAVING RECEIVABLE REFUND TX WITH HASH {} ON CHAIN {}: {}".format(encode_hex(receive_transaction.hash), encode_hex(refund_address), receive_transaction.as_dict()))
+
+                self.state.account_db.add_receivable_transaction(refund_address,
+                                                                 receive_transaction.hash,
+                                                                 block_header_hash)
+
     def apply_receipt_to_header(self, base_header: BaseBlockHeader, receipt: Receipt) -> BaseBlockHeader:
         new_header = base_header.copy(
             bloom=int(BloomFilter(base_header.bloom) | receipt.bloom),
@@ -185,27 +211,29 @@ class PhotonVM(VM):
 
 
     def contains_computation_calls(self, send_transactions: List[PhotonTransaction]) -> bool:
-        # todo: test
+        # Caution: this function assumes computation calls are at the end of the list if they exist
         if len(send_transactions) == 0:
             return False
         else:
             return send_transactions[-1].created_by_computation
 
-    @functools.lru_cache(maxsize=128)
+
     def separate_normal_transactions_and_computation_calls(self, send_transactions: List[PhotonTransaction]) -> Tuple[List[PhotonTransaction], List[PhotonTransaction]]:
-        #todo: test. also test cache effectiveness
         normal_transactions = []
         computation_transactions = []
+        computation_call_found = False
         for tx in send_transactions:
             if tx.created_by_computation:
                 computation_transactions.append(tx)
+                computation_call_found = True
             else:
+                if computation_call_found:
+                    raise ValidationError("Normal send transaction came after a computation call send transaction. This is not allowed.")
                 normal_transactions.append(tx)
 
         return normal_transactions, computation_transactions
 
     def get_next_nonce_after_normal_transactions(self, send_transactions: List[PhotonTransaction]) -> int:
-        #todo: test
         if len(send_transactions) == 0:
             raise ValueError("Cannot get next nonce after normal transactions because the transaction list is empty.")
 
@@ -231,9 +259,9 @@ class PhotonVM(VM):
         :param computation_call_send_transactions:
         :return:
         '''
-        #todo: test
         self.logger.debug("Validating computation call send transactions in block vs the ones our VM generated.")
         send_transactions = block.transactions
+        # This function also ensures that the transactions are in the correct order with computations after normal
         _, block_computation_call_send_transactions = self.separate_normal_transactions_and_computation_calls(send_transactions)
 
         if len(block_computation_call_send_transactions) != len(computation_call_send_transactions):
