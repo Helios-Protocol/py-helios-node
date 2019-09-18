@@ -1,4 +1,7 @@
+import functools
+
 from eth_typing import Address
+from eth_utils import int_to_big_endian
 from hvm.constants import GAS_TX
 from hvm.vm.forks.boson import BosonTransaction, BosonReceiveTransaction
 from rlp_cython.sedes import (
@@ -9,6 +12,8 @@ from rlp_cython.sedes import (
 from hvm.rlp.sedes import (
     address,
 )
+
+import rlp_cython as rlp
 
 class PhotonTransaction(BosonTransaction):
     '''
@@ -78,6 +83,7 @@ class PhotonTransaction(BosonTransaction):
             return self.origin
         else:
             return self.sender
+
 
 class PhotonReceiveTransaction(BosonReceiveTransaction):
     pass

@@ -3,7 +3,7 @@ from hvm.exceptions import (
     Halt,
     Revert,
     WriteProtection,
-)
+    ForbiddenOperationForSurrogateCall)
 
 from hvm.utils.address import (
     force_bytes_to_address,
@@ -13,9 +13,14 @@ from hvm.utils.hexadecimal import (
     encode_hex,
 )
 from hvm.vm import mnemonics
+
 from hvm.vm.opcode import (
     Opcode,
 )
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hvm.vm.forks.photon import PhotonComputation
 
 from .call import max_child_gas_eip150
 
@@ -62,16 +67,22 @@ def selfdestruct_eip161(computation):
         not computation.state.account_db.account_exists(beneficiary) or
         computation.state.account_db.account_is_empty(beneficiary)
     )
-    if is_dead and computation.state.account_db.get_balance(computation.msg.storage_address):
+    if is_dead and computation.state.account_db.get_balance(computation.transaction_context.this_chain_address):
         computation.consume_gas(
             constants.GAS_SELFDESTRUCT_NEWACCOUNT,
             reason=mnemonics.SELFDESTRUCT,
         )
     _selfdestruct(computation, beneficiary)
 
+def selfdestruct_photon(computation: 'PhotonComputation'):
+    if computation.transaction_context.tx_code_address is not None:
+        raise ForbiddenOperationForSurrogateCall("Cannot execute selfdestruct from a surrogate call")
+
+    selfdestruct_eip161(computation)
+
 
 def _selfdestruct(computation, beneficiary):
-    local_balance = computation.state.account_db.get_balance(computation.msg.storage_address)
+    local_balance = computation.state.account_db.get_balance(computation.transaction_context.this_chain_address)
     beneficiary_balance = computation.state.account_db.get_balance(beneficiary)
 
     # 1st: Transfer to beneficiary
@@ -79,11 +90,11 @@ def _selfdestruct(computation, beneficiary):
     # 2nd: Zero the balance of the address being deleted (must come after
     # sending to beneficiary in case the contract named itself as the
     # beneficiary.
-    computation.state.account_db.set_balance(computation.msg.storage_address, 0)
+    computation.state.account_db.set_balance(computation.transaction_context.this_chain_address, 0)
 
     computation.logger.debug(
         "SELFDESTRUCT: %s (%s) -> %s",
-        encode_hex(computation.msg.storage_address),
+        encode_hex(computation.transaction_context.this_chain_address),
         local_balance,
         encode_hex(beneficiary),
     )
@@ -98,6 +109,8 @@ class Create(Opcode):
         return gas
 
     def __call__(self, computation):
+        raise NotImplementedError('Create opcode needs to be implemented')
+
         computation.consume_gas(self.gas_cost, reason=self.mnemonic)
 
         value, start_position, size = computation.stack_pop(
@@ -108,7 +121,7 @@ class Create(Opcode):
         computation.extend_memory(start_position, size)
 
         insufficient_funds = computation.state.account_db.get_balance(
-            computation.msg.storage_address
+            computation.transaction_context.this_chain_address
         ) < value
         stack_too_deep = computation.msg.depth + 1 > constants.STACK_DEPTH_LIMIT
 
@@ -123,11 +136,11 @@ class Create(Opcode):
         )
         computation.consume_gas(create_msg_gas, reason="CREATE")
 
-        creation_nonce = computation.state.account_db.get_nonce(computation.msg.storage_address)
-        computation.state.account_db.increment_nonce(computation.msg.storage_address)
+        creation_nonce = computation.state.account_db.get_nonce(computation.transaction_context.this_chain_address)
+        computation.state.account_db.increment_nonce(computation.transaction_context.this_chain_address)
 
         contract_address = generate_contract_address(
-            computation.msg.storage_address,
+            computation.transaction_context.this_chain_address,
             creation_nonce,
         )
 

@@ -6,7 +6,7 @@ from uuid import UUID
 import traceback
 import logging
 from lru import LRU
-from typing import Set, Tuple, List, Optional  # noqa: F401
+from typing import Set, Tuple, List, Optional, Union  # noqa: F401
 
 from eth_typing import Hash32
 
@@ -549,9 +549,22 @@ class AccountDB(BaseAccountDB):
     #
     # Internal
     #
-    def _decode_and_upgrade_account(self, rlp_account: bytes, address: Address, account_version_lookup_key: bytes) -> Account:
+
+    def _get_account_version(self, address_or_hash: Union[Address, Hash32]) -> int:
+        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address_or_hash)
+        account_version_encoded = self._journaldb.get(account_version_lookup_key, b'')
+        if account_version_encoded:
+            return rlp.decode(account_version_encoded, sedes=rlp.sedes.f_big_endian_int)
+        else:
+            return -1
+
+    def _set_account_version(self, address_or_hash: Union[Address, Hash32], version: int) -> None:
+        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address_or_hash)
+        encoded = rlp.encode(version, sedes=rlp.sedes.f_big_endian_int)
+        self._journaldb[account_version_lookup_key] = encoded
+
+    def _decode_and_upgrade_account(self, rlp_account: bytes, address: Address, account_version: int) -> Account:
         if rlp_account:
-            account_version = self._journaldb.get(account_version_lookup_key, -1)
             if account_version == self.version:
                 account = rlp.decode(rlp_account, sedes=Account)
             elif account_version == -1:
@@ -578,8 +591,8 @@ class AccountDB(BaseAccountDB):
     def _get_account(self, address: Address) -> Account:
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
         rlp_account = self._journaldb.get(account_lookup_key, b'')
-        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address)
-        account = self._decode_and_upgrade_account(rlp_account, address, account_version_lookup_key)
+        account_version = self._get_account_version(address)
+        account = self._decode_and_upgrade_account(rlp_account, address, account_version)
         return account
 
 
@@ -590,8 +603,7 @@ class AccountDB(BaseAccountDB):
         self._journaldb[account_lookup_key] = encoded_account
 
         # set the account version
-        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address)
-        self._journaldb[account_version_lookup_key] = self.version
+        self._set_account_version(address, self.version)
 
     #
     # Record and discard API
@@ -632,8 +644,7 @@ class AccountDB(BaseAccountDB):
         self.db[lookup_key] = rlp_account
 
         # set the account version
-        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(account_hash)
-        self.db[account_version_lookup_key] = self.version
+        self._set_account_version(account_hash, self.version)
 
         
     
@@ -643,8 +654,8 @@ class AccountDB(BaseAccountDB):
         lookup_key = SchemaV1.make_account_by_hash_lookup_key(account_hash)
         try:
             rlp_encoded = self.db[lookup_key]
-            account_version_lookup_key = SchemaV1.make_account_version_lookup_key(account_hash)
-            account = self._decode_and_upgrade_account(rlp_encoded, wallet_address, account_version_lookup_key)
+            account_version = self._get_account_version(account_hash)
+            account = self._decode_and_upgrade_account(rlp_encoded, wallet_address, account_version)
             self._set_account(wallet_address, account)
         except KeyError:
             raise StateRootNotFound()

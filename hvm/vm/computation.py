@@ -399,12 +399,12 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
     def register_account_for_deletion(self, beneficiary: Address) -> None:
         validate_canonical_address(beneficiary, title="Self destruct beneficiary address")
 
-        if self.msg.storage_address in self.accounts_to_delete:
+        if self.transaction_context.this_chain_address in self.accounts_to_delete:
             raise ValueError(
                 "Invariant.  Should be impossible for an account to be "
                 "registered for deletion multiple times"
             )
-        self.accounts_to_delete[self.msg.storage_address] = beneficiary
+        self.accounts_to_delete[self.transaction_context.this_chain_address] = beneficiary
 
     def add_log_entry(self, account: Address, topics: List[int], data: bytes) -> None:
         validate_canonical_address(account, title="Log entry address")

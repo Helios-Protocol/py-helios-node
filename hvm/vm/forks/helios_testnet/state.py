@@ -45,6 +45,8 @@ from .transaction_context import (  # noqa: F401
 
 from typing import Union, Optional, TYPE_CHECKING  # noqa: F401
 
+from .utils import collect_touched_accounts
+
 if TYPE_CHECKING:
     from hvm.vm.computation import (  # noqa: F401
         BaseComputation,
@@ -127,17 +129,6 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
 
         elif transaction_context.is_receive == True:
             # this is a receive transaction - now we get to execute any code or data
-            # transaction_context = self.get_transaction_context(send_transaction)
-            # gas_fee = transaction.transaction.gas * transaction_context.gas_price
-
-            # TODO:
-            # fail niceley here so we can put a failed tx. the failed tx can be seen in the receipt status_code
-            # we will have to refund the sender the money if this is the case.
-            # so the amount of gas the send tx paid is saved as transaction.transaction.gas
-            # Setup VM Message
-            # message_gas = transaction.transaction.gas - transaction.transaction.intrinsic_gas -1 * gas_fee
-            # I tested this, if this tx uses more gas than what was charged to the send tx it will fail.
-
 
             # Setup VM Message
             message_gas = send_transaction.gas - send_transaction.intrinsic_gas
@@ -189,13 +180,6 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
 
             refund_amount = 0
 
-            #when a contract is created with a send transaction, do no computation.
-            #we have to put the computation back. because it needs to charge computation
-            #gas on the send. We just have to make sure it doesnt execute the transaction...
-            #TODO: make sure the computation is not executed
-            #temporarily we will just do no computation. This means interactions with
-            #smart contracts will cost no gas until we finish this.
-
             if send_transaction.to == constants.CREATE_CONTRACT_ADDRESS:
                 contract_address = generate_contract_address(
                     send_transaction.sender,
@@ -225,8 +209,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             )
 
 
-
-        message = Message(
+        message = self._build_evm_message(
             gas=message_gas,
             to=send_transaction.to,
             sender=send_transaction.sender,
@@ -235,9 +218,32 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             code=code,
             create_address=contract_address,
             refund_amount=refund_amount,
+            transaction=send_transaction,
         )
         return message
 
+    def _build_evm_message(self,
+                        gas,
+                        to,
+                        sender,
+                        value,
+                        data,
+                        code,
+                        create_address,
+                        refund_amount,
+                        transaction,
+                       ):
+        message = Message(
+            gas=gas,
+            to=to,
+            sender=sender,
+            value=value,
+            data=data,
+            code=code,
+            create_address=create_address,
+            refund_amount=refund_amount,
+        )
+        return message
 
 
     def build_computation(self, message: Message, transaction_context: BaseTransactionContext, validate: bool = True) -> 'BaseComputation':
@@ -251,7 +257,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
         else:
             if message.is_create:
                 is_collision = self.vm_state.account_db.account_has_code_or_nonce(
-                    message.storage_address
+                    message.resolved_to
                 )
 
                 if is_collision:
@@ -260,12 +266,12 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
                     computation = self.vm_state.get_computation(message, transaction_context)
                     computation._error = ContractCreationCollision(
                         "Address collision while creating contract: {0}".format(
-                            encode_hex(message.storage_address),
+                            encode_hex(message.resolved_to),
                         )
                     )
                     self.vm_state.logger.debug(
                         "Address collision while creating contract: %s",
-                        encode_hex(message.storage_address),
+                        encode_hex(message.resolved_to),
                     )
                 else:
                     computation = self.vm_state.get_computation(

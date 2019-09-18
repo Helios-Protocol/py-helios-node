@@ -185,7 +185,7 @@ class PhotonVM(VM):
         for computation in computations:
             msg = computation.msg
             transaction_context = computation.transaction_context
-            self.state.account_db.add_receivable_transaction(msg.storage_address,
+            self.state.account_db.add_receivable_transaction(msg.resolved_to,
                                                              transaction_context.send_tx_hash,
                                                              block_header_hash,
                                                              msg.is_create)
@@ -195,7 +195,6 @@ class PhotonVM(VM):
             if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:
                 send_transaction = self.chaindb.get_transaction_by_hash(receive_transaction.send_transaction_hash)
                 refund_address = send_transaction.refund_address
-                sender_chain_address = self.chaindb.get_chain_wallet_address_for_block_hash(receive_transaction.sender_block_hash)
                 self.logger.debug("SAVING RECEIVABLE REFUND TX WITH HASH {} ON CHAIN {}: {}".format(encode_hex(receive_transaction.hash), encode_hex(refund_address), receive_transaction.as_dict()))
 
                 self.state.account_db.add_receivable_transaction(refund_address,

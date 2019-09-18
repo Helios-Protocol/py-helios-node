@@ -25,7 +25,8 @@ def number(computation):
 
 
 def difficulty(computation):
-    computation.stack_push(computation.state.difficulty)
+    raise DepreciatedVMFunctionality("difficulty has been removed.")
+    #computation.stack_push(computation.state.difficulty)
 
 
 def gaslimit(computation):

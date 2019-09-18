@@ -864,7 +864,7 @@ class VM(BaseVM):
         for computation in computations:
             msg = computation.msg
             transaction_context = computation.transaction_context
-            self.state.account_db.add_receivable_transaction(msg.create_address,
+            self.state.account_db.add_receivable_transaction(msg.resolved_to,
                                                              transaction_context.send_tx_hash,
                                                              block_header_hash,
                                                              msg.is_create)

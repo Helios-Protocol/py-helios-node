@@ -85,6 +85,9 @@ class PhotonTransactionContext(BosonTransactionContext):
     def is_computation_call_origin(self):
         return self.tx_origin is not None or self.tx_caller is not None
 
+    @property
+    def is_surrogate_call(self):
+        return self.tx_code_address is not None
 
 
 

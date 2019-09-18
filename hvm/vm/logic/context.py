@@ -1,7 +1,7 @@
 from hvm import constants
 from hvm.exceptions import (
     OutOfBoundsRead,
-)
+    DepreciatedVMFunctionality, AttemptedToAccessExternalStorage)
 
 from hvm.utils.address import (
     force_bytes_to_address,
@@ -13,6 +13,8 @@ from hvm.utils.numeric import (
 
 def balance(computation):
     addr = force_bytes_to_address(computation.stack_pop(type_hint=constants.BYTES))
+    if addr != computation.transaction_context.this_chain_address:
+        raise AttemptedToAccessExternalStorage("Attempted to read the balance of another chain. This is not allowed.")
     balance = computation.state.account_db.get_balance(addr)
     computation.stack_push(balance)
 
@@ -22,8 +24,7 @@ def origin(computation):
 
 
 def address(computation):
-    print("ASKED FOR ADDRESS")
-    computation.stack_push(computation.msg.storage_address)
+    computation.stack_push(computation.transaction_context.this_chain_address)
 
 
 def caller(computation):

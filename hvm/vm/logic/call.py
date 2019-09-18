@@ -9,7 +9,8 @@ from hvm.exceptions import (
     OutOfGas,
     WriteProtection,
     AttemptedToAccessExternalStorage,
-)
+    ForbiddenOperationForExecutingOnSend, ForbiddenOperationForSurrogateCall)
+
 from hvm.vm.opcode import (
     Opcode,
 )
@@ -20,8 +21,7 @@ from hvm.utils.address import (
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from hvm.vm.computation import BaseComputation
-
+    from hvm.vm.forks.photon import PhotonComputation
 
 class BaseCall(Opcode, metaclass=ABCMeta):
     @abstractmethod
@@ -71,7 +71,7 @@ class BaseCall(Opcode, metaclass=ABCMeta):
 
         # Pre-call checks
         sender_balance = computation.state.account_db.get_balance(
-            computation.msg.storage_address
+            computation.transaction_context.this_chain_address
         )
 
         insufficient_funds = should_transfer_value and sender_balance < value
@@ -170,7 +170,7 @@ class Call(BaseCall):
             computation.msg.is_static,
         )
 
-    def __call__(self, computation: 'BaseComputation'):
+    def __call__(self, computation: 'PhotonComputation'):
         computation.consume_gas(
             self.gas_cost,
             reason=self.mnemonic,
@@ -202,26 +202,21 @@ class Call(BaseCall):
         computation.consume_gas(child_msg_gas_fee, reason=self.mnemonic)
 
         # Pre-call checks
+        if not computation.transaction_context.is_receive:
+            raise ForbiddenOperationForExecutingOnSend("Computation executing on send cannot create new call transactions.")
+
+        if value > 0 and computation.transaction_context.is_surrogate_call:
+            raise ForbiddenOperationForSurrogateCall("Surrogate call transactions are not allowed to create new call transactions with nonzero value")
+
         sender_balance = computation.state.account_db.get_balance(
-            computation.msg.storage_address
+            computation.transaction_context.this_chain_address
         )
 
+        insufficient_funds = should_transfer_value and sender_balance < value
 
-        other_code_sending_value = False
-        if computation.transaction_context.is_receive:
-            if value > 0 and (code_address is not None):
-                # This only allows code from this chain to send a transaction with nonzero value. Prevents malicious third party
-                # code from being able to transfer value from this chain.
-                other_code_sending_value = True
-
-            insufficient_funds = should_transfer_value and sender_balance < value
-        else:
-            # Don't check suffecient funds on send. It isnt this account the funds will be sent from.
-            # The only possible way for it to get here is contract creation.
-            insufficient_funds = False
         stack_too_deep = computation.msg.depth + 1 > constants.STACK_DEPTH_LIMIT
 
-        if insufficient_funds or stack_too_deep or other_code_sending_value:
+        if insufficient_funds or stack_too_deep:
             computation.return_data = b''
             if insufficient_funds:
                 err_message = "Insufficient Funds: have: {0} | need: {1}".format(
@@ -230,14 +225,6 @@ class Call(BaseCall):
                 )
             elif stack_too_deep:
                 err_message = "Stack Limit Reached"
-            elif other_code_sending_value:
-                err_message = "This smart contract code is from a different chain, but it tried to send value with a child transaction. " \
-                              "This is not allowed. Only smart contract code from this chain can send child transactions with nonzero value. " \
-                              "This chain address: {} | contract_storage_address: {} | value: {}".format(
-                    computation.transaction_context.this_chain_address,
-                    computation.msg.storage_address,
-                    value
-                )
             else:
                 raise Exception("Invariant: Unreachable code path")
 
@@ -290,8 +277,8 @@ class CallCode(BaseCall):
             memory_output_size,
         ) = computation.stack_pop(num_items=5, type_hint=constants.UINT256)
 
-        to = computation.msg.storage_address
-        sender = computation.msg.storage_address
+        to = computation.transaction_context.this_chain_address
+        sender = computation.transaction_context.this_chain_address
 
         return (
             gas,
@@ -326,7 +313,7 @@ class DelegateCall(BaseCall):
             memory_output_size,
         ) = computation.stack_pop(num_items=4, type_hint=constants.UINT256)
 
-        to = computation.msg.storage_address
+        to = computation.transaction_context.this_chain_address
         sender = computation.msg.sender
         value = computation.msg.value
 

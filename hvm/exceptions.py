@@ -371,3 +371,15 @@ class DepreciatedVMFunctionality(VMError):
     Raised when a contract calls another a depreciated global variable or function
     """
     pass
+
+class ForbiddenOperationForSurrogateCall(VMError):
+    """
+    Raised when a Surrogate call tries to do something it isnt allowed to.
+    """
+    pass
+
+class ForbiddenOperationForExecutingOnSend(VMError):
+    """
+    Raised when the sender side of the computation tries to do something it isnt allowed to.
+    """
+    pass

@@ -17,11 +17,11 @@ from eth_typing import Address
 class Message(object):
     """
     A message for VM computation.
+    resolved_to resolves CREATE_CONTRACT_ADDRESS to the actual contract address
     """
     __slots__ = [
         'to', 'sender', 'value', 'data', 'depth', 'gas', 'code', '_code_address',
-        'create_address', 'should_transfer_value', 'is_static', '_storage_address',
-        'refund_amount', '_create_address'
+        'create_address', 'should_transfer_value', 'is_static', 'refund_amount',
     ]
 
     logger = logging.getLogger('hvm.vm.message.Message')
@@ -44,6 +44,7 @@ class Message(object):
 
         if to != CREATE_CONTRACT_ADDRESS:
             validate_canonical_address(to, title="Message.to")
+
         self.to = to
 
         validate_canonical_address(sender, title="Message.sender")
@@ -63,9 +64,8 @@ class Message(object):
         self.code = code
 
         if create_address is not None:
-            validate_canonical_address(create_address, title="Message.storage_address")
-        self.storage_address = create_address
-        self._create_address = create_address
+            validate_canonical_address(create_address, title="Message.create_address")
+        self.create_address = create_address
 
         if code_address is not None:
             validate_canonical_address(code_address, title="Message.code_address")
@@ -92,20 +92,14 @@ class Message(object):
     def code_address(self, value):
         self._code_address = value
 
-    @property
-    def create_address(self):
-        return self._create_address
 
     @property
-    def storage_address(self):
-        if self._storage_address is not None:
-            return self._storage_address
+    def resolved_to(self):
+        # previously called storage address
+        if self.create_address is not None:
+            return self.create_address
         else:
             return self.to
-
-    @storage_address.setter
-    def storage_address(self, value):
-        self._storage_address = value
 
     @property
     def is_create(self):

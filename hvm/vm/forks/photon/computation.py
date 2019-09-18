@@ -1,6 +1,6 @@
 from hvm.vm.forks.boson import BosonComputation
 from hvm.vm.forks.boson.computation import BOSON_PRECOMPILES
-from hvm.vm.forks.photon import PhotonState
+
 from hvm.vm.forks.photon.transaction_context import PhotonTransactionContext
 
 from .opcodes import PHOTON_OPCODES
@@ -16,6 +16,10 @@ from hvm.exceptions import (
     StackDepthLimit,
 )
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hvm.vm.forks.photon.state import PhotonState
 
 PHOTON_PRECOMPILES = BOSON_PRECOMPILES
 
@@ -29,7 +33,7 @@ class PhotonComputation(BosonComputation):
     _precompiles = PHOTON_PRECOMPILES
 
     transaction_context: PhotonTransactionContext = None
-    state: PhotonState = None
+    state: 'PhotonState' = None
 
     def apply_message(self, validate=True):
         snapshot = self.state.snapshot()

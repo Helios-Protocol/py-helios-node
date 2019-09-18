@@ -44,7 +44,10 @@ class LevelDB(BaseAtomicDB):
         return v
 
     def __setitem__(self, key: bytes, value: bytes) -> None:
-        self.db.put(key, value)
+        try:
+            self.db.put(key, value)
+        except TypeError as e:
+            raise TypeError("{} | key: {} | value = {}".format(str(e), key, value))
 
     def _exists(self, key: bytes) -> bool:
         return self.db.get(key) is not None

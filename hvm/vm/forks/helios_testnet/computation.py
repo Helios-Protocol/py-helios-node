@@ -76,7 +76,7 @@ class HeliosTestnetComputation(BaseComputation):
                 self.logger.debug(
                     "REFUNDED: %s into %s",
                     self.msg.refund_amount,
-                    encode_hex(self.msg.sender),
+                    encode_hex(self.transaction_context.this_chain_address),
                 )
 
             elif self.transaction_context.is_receive:
@@ -86,7 +86,7 @@ class HeliosTestnetComputation(BaseComputation):
                     self.logger.debug(
                         "RECEIVED: %s into %s",
                         self.msg.value,
-                        encode_hex(self.msg.storage_address),
+                        encode_hex(self.transaction_context.this_chain_address),
                     )
             elif self.msg.value:
                 # this is a send transaction
@@ -106,7 +106,7 @@ class HeliosTestnetComputation(BaseComputation):
                     encode_hex(self.transaction_context.this_chain_address),
                 )
 
-        self.state.account_db.touch_account(self.msg.storage_address)
+        self.state.account_db.touch_account(self.transaction_context.this_chain_address)
 
         if self.transaction_context.is_refund:
             # We never run computations on a refund
@@ -165,7 +165,7 @@ class HeliosTestnetComputation(BaseComputation):
 
         if self.transaction_context.is_receive and not self.transaction_context.is_refund:
             # EIP161 nonce incrementation
-            self.state.account_db.increment_nonce(self.msg.storage_address)
+            self.state.account_db.increment_nonce(self.msg.resolved_to)
 
         computation = self.apply_message(validate = validate)
 
@@ -205,12 +205,12 @@ class HeliosTestnetComputation(BaseComputation):
                         if self.logger:
                             self.logger.debug(
                                 "SETTING CODE: %s -> length: %s | hash: %s",
-                                encode_hex(self.msg.storage_address),
+                                encode_hex(self.msg.resolved_to),
                                 len(contract_code),
                                 encode_hex(keccak(contract_code))
                             )
 
-                        self.state.account_db.set_code(self.msg.storage_address, contract_code)
+                        self.state.account_db.set_code(self.msg.resolved_to, contract_code)
 
                     self.state.commit(snapshot)
 

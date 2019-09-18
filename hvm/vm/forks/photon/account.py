@@ -162,9 +162,8 @@ class PhotonAccountDB(AccountDB):
     #
     # Internal
     #
-    def _decode_and_upgrade_account(self, rlp_account: bytes, address: Address, account_version_lookup_key: bytes) -> PhotonAccount:
+    def _decode_and_upgrade_account(self, rlp_account: bytes, address: Address, account_version: int) -> PhotonAccount:
         if rlp_account:
-            account_version = self._journaldb.get(account_version_lookup_key, -1)
             if account_version == self.version:
                 account = rlp.decode(rlp_account, sedes=PhotonAccount)
             elif account_version == -1:
@@ -201,8 +200,8 @@ class PhotonAccountDB(AccountDB):
     def _get_account(self, address: Address) -> PhotonAccount:
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
         rlp_account = self._journaldb.get(account_lookup_key, b'')
-        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address)
-        account = self._decode_and_upgrade_account(rlp_account, address, account_version_lookup_key)
+        account_version = self._get_account_version(address)
+        account = self._decode_and_upgrade_account(rlp_account, address, account_version)
         return account
 
 
@@ -214,8 +213,7 @@ class PhotonAccountDB(AccountDB):
         self._journaldb[account_lookup_key] = encoded_account
 
         # set the account version
-        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address)
-        self._journaldb[account_version_lookup_key] = self.version
+        self._set_account_version(address, self.version)
 
     #
     # Saving account state at particular account hash
@@ -231,8 +229,7 @@ class PhotonAccountDB(AccountDB):
         self.db[lookup_key] = rlp_account
 
         # set the account version
-        account_version_lookup_key = SchemaV1.make_account_version_lookup_key(account_hash)
-        self.db[account_version_lookup_key] = self.version
+        self._set_account_version(account_hash, self.version)
 
     def revert_to_account_from_hash(self, account_hash: Hash32, address: Address) -> None:
         validate_canonical_address(address, title="Address")
@@ -240,8 +237,8 @@ class PhotonAccountDB(AccountDB):
         lookup_key = SchemaV1.make_account_by_hash_lookup_key(account_hash)
         try:
             rlp_encoded = self.db[lookup_key]
-            account_version_lookup_key = SchemaV1.make_account_version_lookup_key(account_hash)
-            account = self._decode_and_upgrade_account(rlp_encoded, address, account_version_lookup_key)
+            account_version = self._get_account_version(account_hash)
+            account = self._decode_and_upgrade_account(rlp_encoded, address, account_version)
             self._set_account(address, account)
         except KeyError:
             raise StateRootNotFound()
