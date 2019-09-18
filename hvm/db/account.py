@@ -355,6 +355,13 @@ class AccountDB(BaseAccountDB):
         encoded = rlp.encode(transaction_keys, sedes=rlp.sedes.CountableList(TransactionKey))
         self._journaldb[receivable_transactions_lookup_key] = encoded
 
+    def save_receivable_transactions_if_none_exist(self, address: Address, transaction_keys: List[TransactionKey]) -> None:
+        existing_txs = self.get_receivable_transactions(address)
+        if len(existing_txs) == 0:
+            self.save_receivable_transactions(address, transaction_keys)
+
+
+
     def has_receivable_transactions(self, address: Address) -> bool:
         tx = self.get_receivable_transactions(address)
         if len(tx) == 0:
@@ -377,6 +384,7 @@ class AccountDB(BaseAccountDB):
             self.add_receivable_transaction(address, tx_key.transaction_hash, tx_key.sender_block_hash)
             
     def add_receivable_transaction(self, address: Address, transaction_hash: Hash32, sender_block_hash: Hash32, is_contract_deploy:bool = False) -> None:
+        self.logger.debug("Adding receivable transaction {} to address {}".format(encode_hex(transaction_hash), encode_hex(address)))
         validate_canonical_address(address, title="Wallet Address")
         validate_is_bytes(transaction_hash, title="Transaction Hash")
         validate_is_bytes(sender_block_hash, title="Sender Block Hash")
@@ -388,7 +396,7 @@ class AccountDB(BaseAccountDB):
             if tx_key.transaction_hash == transaction_hash:
                 raise ValueError("Tried to save a receivable transaction that was already saved. TX HASH = {}".format(encode_hex(transaction_hash)))
 
-        
+
         receivable_transactions.append(TransactionKey(transaction_hash, sender_block_hash))
         self.save_receivable_transactions(address, receivable_transactions)
 
@@ -471,7 +479,7 @@ class AccountDB(BaseAccountDB):
 
         address_set.add(address)
 
-        self.db[key] = rlp.encode(list(address_set), sedes=rlp.sedes.FCountableList(address))
+        self._journaldb[key] = rlp.encode(list(address_set), sedes=rlp.sedes.FCountableList(address))
 
     def _remove_address_from_smart_contracts_with_pending_transactions(self, address: Address) -> None:
         key = SchemaV1.make_smart_contracts_with_pending_transactions_lookup_key()
@@ -480,7 +488,7 @@ class AccountDB(BaseAccountDB):
 
         address_set.remove(address)
 
-        self.db[key] = rlp.encode(list(address_set), sedes=rlp.sedes.FCountableList(address))
+        self._journaldb[key] = rlp.encode(list(address_set), sedes=rlp.sedes.FCountableList(address))
 
     def has_pending_smart_contract_transactions(self, address: Address) -> bool:
         validate_canonical_address(address, title="Storage Address")
@@ -491,7 +499,7 @@ class AccountDB(BaseAccountDB):
         key = SchemaV1.make_smart_contracts_with_pending_transactions_lookup_key()
 
         try:
-            address_list = rlp.decode(self.db[key], sedes=rlp.sedes.FCountableList(address), use_list=True)
+            address_list = rlp.decode(self._journaldb[key], sedes=rlp.sedes.FCountableList(address), use_list=True)
             return address_list
         except KeyError:
             return []
@@ -559,6 +567,7 @@ class AccountDB(BaseAccountDB):
             return -1
 
     def _set_account_version(self, address_or_hash: Union[Address, Hash32], version: int) -> None:
+        self.logger.debug('Saving account or hash {} as version {}'.format(encode_hex(address_or_hash), self.version))
         account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address_or_hash)
         encoded = rlp.encode(version, sedes=rlp.sedes.f_big_endian_int)
         self._journaldb[account_version_lookup_key] = encoded
@@ -580,7 +589,7 @@ class AccountDB(BaseAccountDB):
                 )
                 # remember to also save receivable transactions
                 receivable_transactions = depreciated_account.receivable_transactions
-                self.save_receivable_transactions(address, receivable_transactions)
+                self.save_receivable_transactions_if_none_exist(address, receivable_transactions)
             else:
                 raise ValidationError("The loaded account is from an unknown account version {}. This account db is version {}".format(account_version, self.version))
 

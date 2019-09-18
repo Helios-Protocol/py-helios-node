@@ -43,7 +43,7 @@ from hvm.validation import (
 )
 from eth_typing import Hash32
 
-from eth_utils import int_to_big_endian
+from eth_utils import int_to_big_endian, encode_hex
 
 from hvm.db.hash_trie import HashTrie
 
@@ -167,7 +167,8 @@ class PhotonAccountDB(AccountDB):
             if account_version == self.version:
                 account = rlp.decode(rlp_account, sedes=PhotonAccount)
             elif account_version == -1:
-                self.logger.debug("Found a depreciated account that needs upgrading.")
+                self.logger.debug("Found a depreciated account with address {} that needs upgrading to version {}.".format(
+                    encode_hex(address), self.version))
                 #we need to upgrade this from the depreciated version
                 depreciated_account = rlp.decode(rlp_account, sedes=AccountDepreciated)
                 account = PhotonAccount(
@@ -179,9 +180,10 @@ class PhotonAccountDB(AccountDB):
                 )
                 # remember to also save receivable transactions
                 receivable_transactions = depreciated_account.receivable_transactions
-                self.save_receivable_transactions(address, receivable_transactions)
+                self.save_receivable_transactions_if_none_exist(address, receivable_transactions)
             elif account_version == 0:
-                self.logger.debug("Found a boson account that needs upgrading")
+                self.logger.debug("Found a boson account with address {} that needs upgrading to version {}.".format(
+                    encode_hex(address), self.version))
                 boson_account = rlp.decode(rlp_account, sedes=Account)
                 account = PhotonAccount(
                     boson_account.nonce,

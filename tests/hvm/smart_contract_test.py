@@ -173,7 +173,12 @@ def import_all_pending_smart_contract_blocks(database):
 
     # now we need to add the block to the smart contract
     list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
+    print('ZZZZZZZZZ')
+    print([encode_hex(x) for x in list_of_smart_contracts])
     for airdrop_contract_address in list_of_smart_contracts:
+        print("TX_KEYS")
+        tx_keys = chain.get_vm().state.account_db.get_receivable_transactions(airdrop_contract_address)
+        print(tx_keys)
         chain = TestnetChain(database, airdrop_contract_address, private_keys[0])
 
         chain.populate_queue_block_with_receive_tx()

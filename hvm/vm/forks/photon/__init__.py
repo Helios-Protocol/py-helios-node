@@ -193,7 +193,9 @@ class PhotonVM(VM):
         # Refunds
         for receive_transaction in receive_transactions:
             if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:
-                send_transaction = self.chaindb.get_transaction_by_hash(receive_transaction.send_transaction_hash)
+                send_transaction = self.chaindb.get_transaction_by_hash(receive_transaction.send_transaction_hash,
+                                                                        send_tx_class = self.get_block_class().transaction_class,
+                                                                        receive_tx_class=self.get_block_class().receive_transaction_class)
                 refund_address = send_transaction.refund_address
                 self.logger.debug("SAVING RECEIVABLE REFUND TX WITH HASH {} ON CHAIN {}: {}".format(encode_hex(receive_transaction.hash), encode_hex(refund_address), receive_transaction.as_dict()))
 
