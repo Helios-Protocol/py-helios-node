@@ -3,7 +3,9 @@ from typing import Type  # noqa: F401
 
 from hvm import constants
 from hvm.utils.address import generate_contract_address
+from hvm.vm.forks.helios_testnet.validation import validate_helios_testnet_transaction
 from hvm.vm.forks.photon.constants import REFUND_SELFDESTRUCT
+from hvm.vm.forks.photon.validation import validate_photon_transaction
 from hvm.vm.message import Message
 
 from .account import PhotonAccountDB
@@ -207,6 +209,18 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
                     self.vm_state.account_db.delete_account(account)
 
         return computation
+
+    def validate_transaction(self,
+                             send_transaction: PhotonTransaction,
+                             this_chain_address: Address,
+                             receive_transaction: Optional[PhotonReceiveTransaction] = None,
+                             refund_transaction: Optional[PhotonReceiveTransaction] = None):
+
+        # checks signature, gas, and field types
+        send_transaction.validate()
+
+        validate_photon_transaction(self.vm_state.account_db, send_transaction, this_chain_address, receive_transaction, refund_transaction)
+
 
 
 class PhotonState(BosonState):

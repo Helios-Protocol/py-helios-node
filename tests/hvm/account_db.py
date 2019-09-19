@@ -72,6 +72,25 @@ from hvm.rlp.accounts import Account, AccountDepreciated
 from hvm.constants import BLANK_ROOT_HASH, EMPTY_SHA3
 from hvm.utils.rlp import ensure_rlp_objects_are_equal
 
+
+from helios.utils.logging import (
+    setup_helios_stderr_logging,
+)
+
+log_level = getattr(logging, 'DEBUG')
+#log_level = 1 #trace
+logger, _, handler_stream = setup_helios_stderr_logging(log_level)
+logger.propagate = True
+
+logger = logging.getLogger('hp2p')
+logger.setLevel(log_level)
+logger.addHandler(handler_stream)
+
+logger = logging.getLogger('hvm')
+logger.setLevel(log_level)
+logger.addHandler(handler_stream)
+
+
 def ensure_accounts_are_equal(boson_account, photon_account):
     _ensure_accounts_are_equal = ensure_rlp_objects_are_equal(
         obj_a_name="boson_account",
@@ -283,6 +302,30 @@ def test_version():
     assert (photon_account_db.version == 1)
 
 
+def test_version_saving():
+    test_address = get_primary_node_private_helios_key(0).public_key.to_canonical_address()
+    testdb = MemoryDB()
+
+    old_account_db = AccountDB(testdb)
+    account_version = old_account_db._get_account_version(test_address)
+    assert(account_version == -1)
+    old_account_db.set_balance(test_address, 100)
+
+    account_version = old_account_db._get_account_version(test_address)
+    assert(account_version == 0)
+
+    old_account_db.persist()
+
+    photon_account_db = PhotonAccountDB(testdb)
+    account_version = photon_account_db._get_account_version(test_address)
+    assert(account_version == 0)
+
+    photon_account_db._get_account(test_address)
+    account_version = photon_account_db._get_account_version(test_address)
+    assert(account_version == 1)
+
+
+
 
 def test_photon_account_db_upgrade_format():
     test_address = get_primary_node_private_helios_key(0).public_key.to_canonical_address()
@@ -384,10 +427,12 @@ def test_photon_account_db_save_root_hash():
     balance = photon_account_db.get_balance(test_address)
     assert(balance == 100)
 
+
 # test_upgrade_from_depreciated_photon()
 # test_upgrade_from_depreciated_boson()
 # test_receivable_transactions_boson()
 # test_version()
+# test_version_saving()
 # test_photon_account_db_upgrade_format()
 # test_photon_account_db_smart_contract_storage()
 # test_photon_account_db_save_root_hash()

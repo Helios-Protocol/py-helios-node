@@ -172,6 +172,9 @@ class BaseAccountDB(metaclass=ABCMeta):
     def get_smart_contracts_with_pending_transactions(self) -> List[Address]:
         raise NotImplementedError("Must be implemented by subclasses")
 
+    @abstractmethod
+    def is_smart_contract(self, address: Address) -> bool:
+        raise NotImplementedError("Must be implemented by subclasses")
 
     #
     # Account Methods
@@ -239,10 +242,14 @@ class AccountDB(BaseAccountDB):
         self._journaldb = JournalDB(self._batchdb)
 
 
+
+
+
     #
     # Storage
     #
     def get_storage(self, address, slot):
+        
         validate_canonical_address(address, title="Storage Address")
         validate_uint256(slot, title="Storage Slot")
 
@@ -253,11 +260,15 @@ class AccountDB(BaseAccountDB):
 
         if slot_as_key in storage:
             encoded_value = storage[slot_as_key]
-            return rlp.decode(encoded_value, sedes=rlp.sedes.big_endian_int)
+            to_return = rlp.decode(encoded_value, sedes=rlp.sedes.big_endian_int)
         else:
-            return 0
+            to_return = 0
+        
+        self.logger.debug("getting storage for address {} | slot {} | value {}".format(encode_hex(address), slot, to_return))
+        return to_return
 
     def set_storage(self, address, slot, value):
+        self.logger.debug("Setting storage for address {} | slot {} | value {}".format(encode_hex(address), slot, value))
         validate_uint256(value, title="Storage Value")
         validate_uint256(slot, title="Storage Slot")
         validate_canonical_address(address, title="Storage Address")
@@ -504,6 +515,9 @@ class AccountDB(BaseAccountDB):
         except KeyError:
             return []
 
+    def is_smart_contract(self, address: Address) -> bool:
+        return self.account_has_code(address) or self.has_pending_smart_contract_transactions(address)
+
     #
     # Account Methods
     #
@@ -590,6 +604,9 @@ class AccountDB(BaseAccountDB):
                 # remember to also save receivable transactions
                 receivable_transactions = depreciated_account.receivable_transactions
                 self.save_receivable_transactions_if_none_exist(address, receivable_transactions)
+
+                # Lets immediately set the new account
+                self._set_account(address = address, account = account)
             else:
                 raise ValidationError("The loaded account is from an unknown account version {}. This account db is version {}".format(account_version, self.version))
 
@@ -632,6 +649,7 @@ class AccountDB(BaseAccountDB):
 
     def persist(self, save_account_hash = False, wallet_address = None) -> None:
         self.logger.debug('Persisting account db. save_account_hash {} | wallet_address {}'.format(save_account_hash, wallet_address))
+        # Check to see if it needs to be upgraded, and do it now
         self._journaldb.persist()
         self._batchdb.commit(apply_deletes=True)
         

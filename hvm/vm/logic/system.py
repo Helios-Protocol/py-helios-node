@@ -3,7 +3,7 @@ from hvm.exceptions import (
     Halt,
     Revert,
     WriteProtection,
-    ForbiddenOperationForSurrogateCall)
+    ForbiddenOperationForSurrogateCall, DepreciatedVMFunctionality)
 
 from hvm.utils.address import (
     force_bytes_to_address,
@@ -75,10 +75,11 @@ def selfdestruct_eip161(computation):
     _selfdestruct(computation, beneficiary)
 
 def selfdestruct_photon(computation: 'PhotonComputation'):
-    if computation.transaction_context.tx_code_address is not None:
-        raise ForbiddenOperationForSurrogateCall("Cannot execute selfdestruct from a surrogate call")
-
-    selfdestruct_eip161(computation)
+    raise DepreciatedVMFunctionality("Selfdestruct has been removed.")
+    # if computation.transaction_context.tx_code_address is not None:
+    #     raise ForbiddenOperationForSurrogateCall("Cannot execute selfdestruct from a surrogate call")
+    #
+    # selfdestruct_eip161(computation)
 
 
 def _selfdestruct(computation, beneficiary):

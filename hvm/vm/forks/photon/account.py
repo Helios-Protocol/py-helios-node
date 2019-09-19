@@ -181,6 +181,9 @@ class PhotonAccountDB(AccountDB):
                 # remember to also save receivable transactions
                 receivable_transactions = depreciated_account.receivable_transactions
                 self.save_receivable_transactions_if_none_exist(address, receivable_transactions)
+
+                # Lets immediately set the new account
+                self._set_account(address=address, account=account)
             elif account_version == 0:
                 self.logger.debug("Found a boson account with address {} that needs upgrading to version {}.".format(
                     encode_hex(address), self.version))
@@ -192,6 +195,9 @@ class PhotonAccountDB(AccountDB):
                     boson_account.storage_root,
                     code_hash=boson_account.code_hash
                 )
+
+                # Lets immediately set the new account
+                self._set_account(address=address, account=account)
             else:
                 raise ValidationError("The loaded account is from an unknown account version {}. This account db is version {}".format(account_version, self.version))
 

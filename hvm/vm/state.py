@@ -81,7 +81,7 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
 
         return finalized_computation, processed_transaction
 
-    def perform_transaction_computation(self, send_transaction: Union[BaseTransaction, SpoofTransaction]) -> 'BaseComputation':
+    def perform_transaction_computation(self, send_transaction: Union[BaseTransaction, SpoofTransaction], this_chain_address: Address) -> 'BaseComputation':
         '''
         This performs the transaction computation regardless of whether it would normally do it on the send or receive transaction.
         Does not finalize the transaction because that behavior is dependent on the type of transaction.
@@ -89,7 +89,7 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
         :param send_transaction:
         :return:
         '''
-        transaction_context = self.get_transaction_context(send_transaction, send_transaction.sender)
+        transaction_context = self.get_transaction_context(send_transaction, this_chain_address)
         message = self.build_evm_message(send_transaction, transaction_context)
 
         return self.vm_state.get_computation(message, transaction_context).apply_computation(
@@ -344,12 +344,12 @@ class BaseState(Configurable, metaclass=ABCMeta):
             raise ValueError("No transaction executor given")
         return executor(send_transaction, this_chain_address, receive_transaction, refund_transaction, validate = validate)
 
-    def compute_single_transaction(self, transaction: Union[BaseTransaction, SpoofTransaction]) -> 'BaseComputation':
+    def compute_single_transaction(self, transaction: Union[BaseTransaction, SpoofTransaction], this_chain_address: Address) -> 'BaseComputation':
         executor = self.get_transaction_executor()
         if executor == None:
             raise ValueError("No transaction executor given")
 
-        return executor.perform_transaction_computation(transaction)
+        return executor.perform_transaction_computation(transaction, this_chain_address)
 
 
 

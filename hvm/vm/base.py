@@ -565,7 +565,7 @@ class VM(BaseVM):
         :param transaction:
         :return:
         '''
-        return self.state.compute_single_transaction(transaction)
+        return self.state.compute_single_transaction(transaction, self.header.chain_address)
 
 
     def execute_bytecode(self,
@@ -743,9 +743,7 @@ class VM(BaseVM):
         else:
             is_queue_block = False
             head_block = self.block
-            if (block.sender != block.header.chain_address and not (
-                self.state.account_db.account_has_code(block.header.chain_address) or
-                self.state.account_db.has_pending_smart_contract_transactions(block.header.chain_address))):
+            if (block.sender != block.header.chain_address and not self.state.account_db.is_smart_contract(block.header.chain_address)):
                 raise BlockOnWrongChain("Tried to import a block that doesnt belong on this chain.")
 
         # Base the block off of the existing head block so that parameters are correct. Then after importing we will
@@ -774,11 +772,12 @@ class VM(BaseVM):
             # need to add any new computation call send transactions to the list of send transactions
             if len(computation_call_send_transactions) > 0:
                 self.logger.debug("Adding computation call send transactions to block send transactions for queue block")
-                block = block.copy(transactions = block.transactions.extend(computation_call_send_transactions))
+                existing_transactions = list(block.transactions)
+                existing_transactions.extend(computation_call_send_transactions)
+                block = block.copy(transactions = existing_transactions)
 
         if not (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
             self._apply_reward_bundle(block.reward_bundle, block.header.timestamp, block.header.chain_address, validate=validate)
-
 
 
         #

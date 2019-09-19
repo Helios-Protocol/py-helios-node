@@ -123,15 +123,16 @@ from helios.utils.logging import (
 )
 
 log_level = getattr(logging, 'DEBUG')
+log_level = 1 #trace
 logger, _, handler_stream = setup_helios_stderr_logging(log_level)
 logger.propagate = True
 
 logger = logging.getLogger('hp2p')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(log_level)
 logger.addHandler(handler_stream)
 
 logger = logging.getLogger('hvm')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(log_level)
 logger.addHandler(handler_stream)
 
 SENDER = TESTNET_GENESIS_PRIVATE_KEY
@@ -173,12 +174,7 @@ def import_all_pending_smart_contract_blocks(database):
 
     # now we need to add the block to the smart contract
     list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
-    print('ZZZZZZZZZ')
-    print([encode_hex(x) for x in list_of_smart_contracts])
     for airdrop_contract_address in list_of_smart_contracts:
-        print("TX_KEYS")
-        tx_keys = chain.get_vm().state.account_db.get_receivable_transactions(airdrop_contract_address)
-        print(tx_keys)
         chain = TestnetChain(database, airdrop_contract_address, private_keys[0])
 
         chain.populate_queue_block_with_receive_tx()
@@ -372,11 +368,11 @@ def test_erc_20_smart_contract_call():
     
     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
+
     EXPECTED_TOTAL_SUPPLY = 10000000000000000000000
     deployed_contract_address = b'%\xf1\xf7[(2\xd5l\xe4DL\x97\xbf+\xe2M[pN\xdc'
     max_gas = 20000000
     transaction_sender = TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address()
-
 
     compiled_sol = load_compiled_sol_dict('contract_data/erc20_compiled.pkl')
 
@@ -392,6 +388,7 @@ def test_erc_20_smart_contract_call():
 
     tx_nonce = chain.get_vm().state.account_db.get_nonce(transaction_sender)
 
+    print(encode_hex(deployed_contract_address))
     transaction = chain.create_transaction(
         gas_price=0x01,
         gas=max_gas,
@@ -405,7 +402,8 @@ def test_erc_20_smart_contract_call():
     )
 
     spoof_transaction = SpoofTransaction(transaction, from_=transaction_sender)
-
+    
+    chain = TestnetChain(testdb, deployed_contract_address)
     result = chain.get_transaction_result(spoof_transaction)
 
     assert(big_endian_to_int(result) == EXPECTED_TOTAL_SUPPLY)
@@ -463,8 +461,8 @@ def test_erc_20_smart_contract_call():
     assert (big_endian_to_int(result) == 0)
 
 
-# test_erc_20_smart_contract_call()
-# exit()
+#test_erc_20_smart_contract_call()
+#exit()
 
 
 def test_airdrop_simple_token_contract_call():
@@ -589,6 +587,7 @@ def test_airdrop_simple_token_contract_call():
 
     spoof_transaction = SpoofTransaction(transaction, from_=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
+    chain = TestnetChain(testdb, simple_token_contract_address)
     result = chain.get_transaction_result(spoof_transaction)
 
     assert(big_endian_to_int(result) == balance_for_airdrop_contract)

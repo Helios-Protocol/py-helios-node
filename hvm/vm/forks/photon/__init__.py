@@ -168,7 +168,8 @@ class PhotonVM(VM):
 
         if len(computation_call_send_transactions) > 0:
             normal_send_transactions, _ = self.separate_normal_transactions_and_computation_calls(block.transactions)
-            send_transactions = normal_send_transactions.extend(computation_call_send_transactions)
+            normal_send_transactions.extend(computation_call_send_transactions)
+            send_transactions = normal_send_transactions
         else:
             send_transactions = block.transactions
 

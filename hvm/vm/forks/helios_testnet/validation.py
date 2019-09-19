@@ -1,24 +1,26 @@
+from eth_typing import Address
+
 from hvm.exceptions import (
     ValidationError,
-    ReceiveTransactionIncorrectSenderBlockHash,
-    ReceivableTransactionNotFound,
-    ReceivingTransactionForWrongWallet,
 )
 from hvm.constants import (
     SECPK1_N,
     CREATE_CONTRACT_ADDRESS
 )
-from hvm.rlp.transactions import (
-    BaseTransaction,
-    BaseReceiveTransaction 
-)
-from typing import Union, Optional # noqa: F401
+from typing import Union, Optional, TYPE_CHECKING # noqa: F401
+
+if TYPE_CHECKING:
+    from hvm.vm.forks.helios_testnet import HeliosTestnetTransaction, HeliosTestnetReceiveTransaction
 
 '''
 This only performs checks that can be done against the state.
 '''
    
-def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransaction, this_chain_address:bytes, receive_transaction: Optional[BaseReceiveTransaction] = None, refund_receive_transaction: Optional[BaseReceiveTransaction] = None):
+def validate_helios_testnet_transaction(account_db,
+                                        send_transaction: 'HeliosTestnetTransaction',
+                                        this_chain_address: Address,
+                                        receive_transaction: Optional['HeliosTestnetReceiveTransaction'] = None,
+                                        refund_receive_transaction: Optional['HeliosTestnetReceiveTransaction'] = None):
 
     #first find out if it is a send send_transaction or a receive transaction or a refund transaction
     if refund_receive_transaction is not None:
@@ -37,11 +39,6 @@ def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransa
 
     elif receive_transaction is not None:
         #this is a receive transaction
-        # if it is a receive send_transaction we need to make sure the send send_transaction exists and is within the correct block hash
-        #TODO: need to check to see if send_transaction hash already exists in our db. this will stop double receive. answer: This is done in the vm before it gets here
-        #TODO: dont forget to delete the receivable send_transaction after executing. answer:done
-        #we check to make sure the send transaction is in the account in the state before it gets here.
-        #receiver = send_transaction.receiver
 
         if send_transaction.to != this_chain_address and send_transaction.to != CREATE_CONTRACT_ADDRESS:
             raise ValidationError(
@@ -56,8 +53,7 @@ def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransa
         if send_transaction.s > SECPK1_N // 2 or send_transaction.s == 0:
             raise ValidationError("Invalid signature S value")
 
-        #this is just a normal send transaction
-        if send_transaction.sender != this_chain_address:
+        if send_transaction.sender != this_chain_address and not account_db.is_smart_contract(this_chain_address):
             raise ValidationError(
                 'Send transaction sender doesnt match the this_chain_address. If sending a tx, it must be sent by the sender chain address. Transaction sender = {}, this_chain_address = {}'
                     .format(send_transaction.sender, this_chain_address))
@@ -74,8 +70,9 @@ def validate_helios_testnet_transaction(account_db, send_transaction: BaseTransa
     
         if sender_balance < total_cost:
             raise ValidationError("Sender account balance cannot afford txn. Sender balance = {}, total cost = {}".format(sender_balance, total_cost))
-    
-        if account_db.get_nonce(send_transaction.sender) != send_transaction.nonce:
+
+        # Send transaction nonces should always correspond to the nonce on this chain address. Not always going to be the sender.
+        if account_db.get_nonce(this_chain_address) != send_transaction.nonce:
             raise ValidationError("Invalid send_transaction nonce. got: {0}, expected: {1}".format(send_transaction.nonce, account_db.get_nonce(send_transaction.sender)))
 
 
