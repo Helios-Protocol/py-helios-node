@@ -628,6 +628,14 @@ def test_airdrop_simple_token_contract_call():
 
     import_all_pending_smart_contract_blocks(testdb)
 
+    list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
+    for airdrop_contract_address in list_of_smart_contracts:
+        chain = TestnetChain(database, airdrop_contract_address, private_keys[0])
+
+        chain.populate_queue_block_with_receive_tx()
+        imported_block = chain.import_current_queue_block()
+    return list_of_smart_contracts
+
 
 
 
