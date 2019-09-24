@@ -450,6 +450,16 @@ class BaseChain(Configurable, metaclass=ABCMeta):
     # Execution API
     #
     @abstractmethod
+    def generate_tx_and_get_result(self,
+                                   tx_data: bytes,
+                                   from_address: Address,
+                                   to_address: Address,
+                                   at_header: BlockHeader = None,
+                                   at_timestamp: Timestamp = None,
+                                   ) -> Any:
+        raise NotImplementedError("Chain classes must implement this method")
+
+    @abstractmethod
     def get_transaction_result(
             self,
             transaction: Union[BaseTransaction, SpoofTransaction],
@@ -826,6 +836,7 @@ class Chain(BaseChain):
         #chain_head_db.add_block_hash_to_chronological_window(genesis_header.hash, genesis_header.timestamp)
 
         return cls(base_db, wallet_address = wallet_address, private_key=private_key)
+
 
     def get_chain_at_block_parent(self, block: BaseBlock) -> BaseChain:
         """
@@ -1439,6 +1450,25 @@ class Chain(BaseChain):
     #
     # Execution API
     #
+    def generate_tx_and_get_result(self,
+                                   tx_data: bytes,
+                                   from_address: Address,
+                                   to_address: Address,
+                                   at_header: BlockHeader = None,
+                                   at_timestamp: Timestamp = None,
+                                   **kwargs,
+                                   ) -> Any:
+
+        vm = self.get_vm(header=at_header, timestamp=at_timestamp)
+        tx = vm.generate_transaction_for_single_computation(tx_data = tx_data,
+                                                    from_address = from_address,
+                                                    to_address = to_address,
+                                                    **kwargs,
+                                                    )
+
+
+        return self.get_transaction_result(tx)
+
 
     def get_transaction_result(
             self,

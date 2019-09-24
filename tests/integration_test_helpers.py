@@ -141,17 +141,6 @@ def ensure_blockchain_databases_identical(base_db_1, base_db_2):
             assert ( assert_var_1==assert_var_2 )
 
 
-def compile_sol_and_save_to_file(solidity_file, output_file):
-    compiled_sol = compile_files([solidity_file])
-    print("writing compiled code dictionary with keys {}".format(compiled_sol.keys()))
-    f = open(output_file, "wb")
-    pickle.dump(compiled_sol, f)
-    f.close()
-
-def load_compiled_sol_dict(compiled_file_location):
-    pickle_in = open(compiled_file_location, "rb")
-    compiled_sol_dict = pickle.load(pickle_in)
-    return compiled_sol_dict
 
 W3_TX_DEFAULTS = {'gas': 0, 'gasPrice': 0, 'chainId': 0}
 
@@ -186,6 +175,8 @@ def ensure_chronological_chain_matches_canonical(chain):
 
     # also, the newest historical root hash must be the same
     assert(historical_root_hashes_chain[-1] == historical_root_hashes_dummy_chain[-1])
+
+
 
 
     

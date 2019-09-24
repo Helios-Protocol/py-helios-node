@@ -32,7 +32,6 @@ class PhotonTransactionContext(BosonTransactionContext):
                  '_tx_code_address',
                  '_tx_signer',
                  '_tx_execute_on_send',
-
                  ]
 
     def __init__(self, send_tx_to: Address,  origin: Address, send_tx_hash: Hash32, this_chain_address: Address, gas_price: int = None,

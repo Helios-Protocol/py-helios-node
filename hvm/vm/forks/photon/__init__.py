@@ -1,7 +1,10 @@
-from eth_typing import Hash32
+from eth_typing import Hash32, Address
 from eth_utils import encode_hex
+
+from hvm.constants import BLOCK_GAS_LIMIT
 from hvm.exceptions import ValidationError
 from hvm.utils.rlp import diff_rlp_object
+from hvm.utils.spoof import SpoofTransaction
 from hvm.vm.forks.photon.consensus import PhotonConsensusDB
 from hvm.vm.forks.photon.utils import ensure_computation_call_send_transactions_are_equal
 
@@ -75,6 +78,31 @@ class PhotonVM(VM):
     validate_transaction_against_header = validate_photon_transaction_against_header
     consensus_db_class = PhotonConsensusDB
 
+    def generate_transaction_for_single_computation(self,
+                                                    tx_data: bytes,
+                                                    from_address: Address,
+                                                    to_address: Address,
+                                                    **kwargs,
+                                                    ) -> SpoofTransaction:
+        tx_nonce = self.state.account_db.get_nonce(from_address)
+        if from_address == self.header.chain_address:
+            # This chain is the from address, so it should be execute on send
+            execute_on_send = True
+        else:
+            execute_on_send = False
+
+        transaction = self.create_transaction(
+            gas_price=0x01,
+            gas=BLOCK_GAS_LIMIT,
+            to=to_address,
+            value=0,
+            nonce=tx_nonce,
+            data=tx_data,
+            execute_on_send = execute_on_send,
+            **kwargs,
+        )
+
+        return SpoofTransaction(transaction, from_=from_address)
 
 
     def apply_all_transactions(self, block: PhotonBlock, private_key: PrivateKey = None) -> Tuple[

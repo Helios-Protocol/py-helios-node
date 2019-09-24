@@ -70,7 +70,7 @@ contract HeliosDelegatedToken {
         return balance;
     }
 
-    function send(address _to, uint256 amount) public {
+    function send(uint256 amount) public {
         if(is_send()){
             emit IsSend(tx.origin, address(this), true);
             require(amount <= balance);

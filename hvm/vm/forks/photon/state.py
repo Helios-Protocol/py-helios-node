@@ -28,32 +28,141 @@ from eth_hash.auto import keccak
 from .utils import photon_collect_touched_accounts
 class PhotonTransactionExecutor(BosonTransactionExecutor):
 
-    def _build_evm_message(self,
-                           gas,
-                           to,
-                           sender,
-                           value,
-                           data,
-                           code,
-                           create_address,
-                           refund_amount,
-                           transaction: PhotonTransaction,
-                           ):
+    def build_evm_message(self,
+                          send_transaction: PhotonTransaction,
+                          transaction_context: PhotonTransactionContext,
+                          receive_transaction: PhotonReceiveTransaction = None) -> Message:
+        if transaction_context.is_refund == True:
 
-        if transaction.created_by_computation:
-            sender = transaction.caller
+            # Setup VM Message
+            message_gas = 0
+            refund_amount = receive_transaction.remaining_refund
+            create_address = None
+            data = b''
+            code = b''
+
+            self.vm_state.logger.debug(
+                (
+                    "REFUND TRANSACTION: sender: %s | refund amount: %s "
+                ),
+                encode_hex(send_transaction.sender),
+                refund_amount,
+            )
+
+        elif transaction_context.is_receive == True:
+            # this is a receive transaction - now we get to execute any code or data
+
+            # Setup VM Message
+            message_gas = send_transaction.gas - send_transaction.intrinsic_gas
+
+            refund_amount = 0
+
+            if send_transaction.to == constants.CREATE_CONTRACT_ADDRESS:
+                # create call
+                # the contract address was already chosen on the send transaction. It is now the caller chain address
+                create_address = transaction_context.this_chain_address
+                data = b''
+                code = send_transaction.data
+            elif send_transaction.code_address == b'':
+                # normal call
+                create_address = None
+                data = send_transaction.data
+                code = self.vm_state.account_db.get_code(send_transaction.to)
+            else:
+                # surrogate call
+                create_address = None
+                data = send_transaction.data
+                code = self.vm_state.account_db.get_code(send_transaction.code_address)
+
+            self.vm_state.logger.debug(
+                (
+                    "RECEIVE TRANSACTION: hash: %s | sender: %s | to: %s | value: %s | gas: %s | "
+                    "gas-price: %s | s: %s | r: %s | v: %s | data-hash: %s"
+                ),
+                encode_hex(send_transaction.hash),
+                encode_hex(send_transaction.sender),
+                encode_hex(send_transaction.to),
+                send_transaction.value,
+                send_transaction.gas,
+                send_transaction.gas_price,
+                send_transaction.s,
+                send_transaction.r,
+                send_transaction.v,
+                encode_hex(keccak(data)),
+            )
+
+        else:
+            # this is a send transaction
+
+            # transaction_context = self.get_transaction_context(send_transaction, receive_transaction)
+            gas_fee = send_transaction.gas * transaction_context.gas_price
+
+            # this is the default gas fee for the send tx that needs to be subtracted on the receive of a smart contract
+            # Buy Gas
+            self.vm_state.account_db.delta_balance(send_transaction.sender, -1 * gas_fee)
+
+            # Increment Nonce
+            self.vm_state.account_db.increment_nonce(send_transaction.sender)
+
+            # Setup VM Message
+            message_gas = send_transaction.gas - send_transaction.intrinsic_gas
+
+            refund_amount = 0
+
+            if send_transaction.to == constants.CREATE_CONTRACT_ADDRESS:
+                # create call
+                create_address = generate_contract_address(
+                    send_transaction.sender,
+                    self.vm_state.account_db.get_nonce(send_transaction.sender) - 1,
+                )
+                data = b''
+                code = send_transaction.data
+            elif send_transaction.code_address == b'':
+                # normal call
+                create_address = None
+                data = send_transaction.data
+                code = self.vm_state.account_db.get_code(send_transaction.to)
+            else:
+                # surrogate call
+                create_address = None
+                data = send_transaction.data
+                code = self.vm_state.account_db.get_code(send_transaction.code_address)
+
+
+            self.vm_state.logger.debug(
+                (
+                    "SEND TRANSACTION: sender: %s | to: %s | value: %s | gas: %s | "
+                    "gas-price: %s | s: %s | r: %s | v: %s | data-hash: %s"
+                ),
+                encode_hex(send_transaction.sender),
+                encode_hex(send_transaction.to),
+                send_transaction.value,
+                send_transaction.gas,
+                send_transaction.gas_price,
+                send_transaction.s,
+                send_transaction.r,
+                send_transaction.v,
+                encode_hex(keccak(send_transaction.data)),
+            )
+
+        if send_transaction.created_by_computation:
+            sender = send_transaction.caller
+        else:
+            sender = send_transaction.sender
 
         message = Message(
-            gas=gas,
-            to=to,
+            gas=message_gas,
+            to=send_transaction.to,
             sender=sender,
-            value=value,
+            value=send_transaction.value,
             data=data,
             code=code,
             create_address=create_address,
             refund_amount=refund_amount,
         )
+
         return message
+
 
     def get_transaction_context(self,
                                 send_transaction: PhotonTransaction,

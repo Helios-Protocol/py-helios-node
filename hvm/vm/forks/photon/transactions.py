@@ -59,7 +59,8 @@ class PhotonTransaction(BosonTransaction):
                  execute_on_send = False,
                  v=0,
                  r=0,
-                 s=0):
+                 s=0,
+                 **kwargs):
 
         super(PhotonTransaction, self).__init__(
             nonce = nonce,
@@ -75,6 +76,7 @@ class PhotonTransaction(BosonTransaction):
             v = v,
             r = r,
             s = s,
+            **kwargs
         )
 
     @property

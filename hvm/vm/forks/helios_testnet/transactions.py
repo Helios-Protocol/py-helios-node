@@ -56,6 +56,31 @@ class HeliosTestnetTransaction(BaseTransaction):
     _sender = None
     _valid_transaction = None
 
+    def __init__(self,  # noqa: F811
+                 nonce,
+                 gas_price,
+                 gas,
+                 to,
+                 value,
+                 data = b'',
+                 v=0,
+                 r=0,
+                 s=0,
+                 **kwargs):
+
+        super(HeliosTestnetTransaction, self).__init__(
+            nonce = nonce,
+            gas_price = gas_price,
+            gas = gas,
+            to = to,
+            value = value,
+            data = data,
+            v = v,
+            r = r,
+            s = s,
+            **kwargs
+        )
+
     @functools.lru_cache(maxsize=128)
     def get_message_for_signing(self, chain_id: int = None) -> bytes:
         if chain_id is None:

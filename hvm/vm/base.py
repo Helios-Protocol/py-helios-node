@@ -18,7 +18,7 @@ from hvm.utils.address import (
     generate_contract_address,
 )
 
-from hvm.constants import CREATE_CONTRACT_ADDRESS
+from hvm.constants import CREATE_CONTRACT_ADDRESS, BLOCK_GAS_LIMIT
 import time
 
 import rlp_cython as rlp
@@ -149,6 +149,14 @@ class BaseVM(Configurable, metaclass=ABCMeta):
                                                                Optional[Receipt],
                                                                BaseComputation,
                                                                Optional[BaseReceiveTransaction]]:
+        raise NotImplementedError("VM classes must implement this method")
+
+    @abstractmethod
+    def generate_transaction_for_single_computation(self,
+                                                    tx_data: bytes,
+                                                    from_address: Address,
+                                                    to_address: Address
+                                                    ) -> SpoofTransaction:
         raise NotImplementedError("VM classes must implement this method")
 
     @abstractmethod
@@ -557,6 +565,25 @@ class VM(BaseVM):
             self.consensus_db.validate_reward_bundle(reward_bundle, chain_address=wallet_address, block_timestamp = block_timestamp)
 
         self.state.apply_reward_bundle(reward_bundle, wallet_address)
+
+    def generate_transaction_for_single_computation(self,
+                                                   tx_data: bytes,
+                                                   from_address: Address,
+                                                   to_address: Address,
+                                                   **kwargs,
+                                                   ) -> SpoofTransaction:
+        tx_nonce = self.state.account_db.get_nonce(from_address)
+
+        transaction = self.create_transaction(
+            gas_price=0x01,
+            gas=BLOCK_GAS_LIMIT,
+            to=to_address,
+            value=0,
+            nonce=tx_nonce,
+            data=tx_data,
+        )
+
+        return SpoofTransaction(transaction, from_=from_address)
 
 
     def compute_single_transaction(self, transaction: Union[BaseTransaction, SpoofTransaction]) -> BaseComputation:

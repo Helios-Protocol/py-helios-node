@@ -209,7 +209,7 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             )
 
 
-        message = self._build_evm_message(
+        message = Message(
             gas=message_gas,
             to=send_transaction.to,
             sender=send_transaction.sender,
@@ -218,32 +218,10 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
             code=code,
             create_address=contract_address,
             refund_amount=refund_amount,
-            transaction=send_transaction,
         )
+
         return message
 
-    def _build_evm_message(self,
-                        gas,
-                        to,
-                        sender,
-                        value,
-                        data,
-                        code,
-                        create_address,
-                        refund_amount,
-                        transaction,
-                       ):
-        message = Message(
-            gas=gas,
-            to=to,
-            sender=sender,
-            value=value,
-            data=data,
-            code=code,
-            create_address=create_address,
-            refund_amount=refund_amount,
-        )
-        return message
 
 
     def build_computation(self, message: Message, transaction_context: BaseTransactionContext, validate: bool = True) -> 'BaseComputation':
