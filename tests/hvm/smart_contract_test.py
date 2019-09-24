@@ -388,6 +388,7 @@ def test_erc_20_smart_contract_call():
 
     tx_nonce = chain.get_vm().state.account_db.get_nonce(transaction_sender)
 
+    print('deployed contract address')
     print(encode_hex(deployed_contract_address))
     transaction = chain.create_transaction(
         gas_price=0x01,
@@ -434,6 +435,7 @@ def test_erc_20_smart_contract_call():
 
     assert(big_endian_to_int(result) == EXPECTED_TOTAL_SUPPLY)
 
+    print("Second part")
     #
     # Make sure other addresses have no balance
     #
@@ -461,8 +463,8 @@ def test_erc_20_smart_contract_call():
     assert (big_endian_to_int(result) == 0)
 
 
-#test_erc_20_smart_contract_call()
-#exit()
+# test_erc_20_smart_contract_call()
+# exit()
 
 
 def test_airdrop_simple_token_contract_call():
@@ -639,8 +641,8 @@ def test_airdrop_simple_token_contract_call():
 
 
 
-test_airdrop_simple_token_contract_call()
-exit()
+# test_airdrop_simple_token_contract_call()
+# exit()
 
 def test_talamus_contract():
     absolute_dir = os.path.dirname(os.path.realpath(__file__))
@@ -793,6 +795,7 @@ def test_helios_delegated_token():
     create_predefined_blockchain_database(testdb)
 
     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
     chain.create_and_sign_transaction_for_queue_block(
         gas_price=0x01,
         gas=max_gas,
@@ -804,7 +807,6 @@ def test_helios_delegated_token():
         s=0
     )
 
-    # time.sleep(1)
     print("deploying smart contract")
 
     chain.import_current_queue_block()
@@ -815,18 +817,44 @@ def test_helios_delegated_token():
     print(encode_hex(deployed_contract_address))
     
     #
-    # Now call it to see what this says
+    # Mint some coins
     #
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
     HeliosDelegatedToken = w3.hls.contract(
         address=Web3.toChecksumAddress(deployed_contract_address),
         abi=contract_interface['abi']
     )
 
-    w3_tx2 = HeliosDelegatedToken.functions.getCoinbase().buildTransaction(W3_TX_DEFAULTS)
+    expected_balance = 1000
+    w3_tx = HeliosDelegatedToken.functions.mintSender(expected_balance).buildTransaction(W3_TX_DEFAULTS)
 
-    tx_sender = TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address()
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+        execute_on_send = True,
+        v=0,
+        r=0,
+        s=0
+    )
 
-    tx_nonce = chain.get_vm().state.account_db.get_nonce(tx_sender)
+    print("Minting some coins locally")
+
+    chain.import_current_queue_block()
+
+    import_all_pending_smart_contract_blocks(testdb)
+
+    #
+    # Check local balance
+    #
+
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+
+    tx_nonce = chain.get_vm().state.account_db.get_nonce(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
     transaction = chain.create_transaction(
         gas_price=0x01,
@@ -834,19 +862,114 @@ def test_helios_delegated_token():
         to=deployed_contract_address,
         value=0,
         nonce=tx_nonce,
-        data=decode_hex(w3_tx2['data']),
+        data=decode_hex(w3_tx['data']),
+        execute_on_send = True,
         v=0,
         r=0,
         s=0
     )
 
-    spoof_transaction = SpoofTransaction(transaction, from_=tx_sender)
-    print("tx sender: {}".format(encode_hex(tx_sender)))
-    result = chain.get_transaction_result(spoof_transaction)
-    print("Result from 'this': {}".format(encode_hex(result)))
+    spoof_transaction = SpoofTransaction(transaction, from_=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
-# test_helios_delegated_token()
-# exit()
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    result = chain.get_transaction_result(spoof_transaction)
+
+    print("local balance")
+    print(big_endian_to_int(result))
+    assert (big_endian_to_int(result) == expected_balance)
+
+    #
+    # Send tokens to another address
+    #
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+
+    send_balance = 100
+    w3_tx = HeliosDelegatedToken.functions.send(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), send_balance).buildTransaction(W3_TX_DEFAULTS)
+
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+        execute_on_send=True,
+        v=0,
+        r=0,
+        s=0
+    )
+
+    print("Sending coins")
+
+    chain.import_current_queue_block()
+
+    import_all_pending_smart_contract_blocks(testdb)
+
+    #
+    # Check local balance
+    #
+
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+
+    tx_nonce = chain.get_vm().state.account_db.get_nonce(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+    transaction = chain.create_transaction(
+        gas_price=0x01,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=0,
+        nonce=tx_nonce,
+        data=decode_hex(w3_tx['data']),
+        execute_on_send=True,
+        v=0,
+        r=0,
+        s=0
+    )
+
+    spoof_transaction = SpoofTransaction(transaction,
+                                         from_=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    result = chain.get_transaction_result(spoof_transaction)
+
+    print("local balance")
+    print(big_endian_to_int(result))
+    assert (big_endian_to_int(result) == expected_balance-send_balance)
+
+    #
+    # Check receiver balance
+    #
+
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+
+    tx_nonce = chain.get_vm().state.account_db.get_nonce(deployed_contract_address)
+
+    transaction = chain.create_transaction(
+        gas_price=0x01,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=0,
+        nonce=tx_nonce,
+        data=decode_hex(w3_tx['data']),
+        execute_on_send=True,
+        v=0,
+        r=0,
+        s=0
+    )
+
+    spoof_transaction = SpoofTransaction(transaction, from_=deployed_contract_address)
+
+    chain = TestnetChain(testdb, deployed_contract_address)
+    result = chain.get_transaction_result(spoof_transaction)
+
+    print("receiver balance")
+    print(big_endian_to_int(result))
+    assert (big_endian_to_int(result) == send_balance)
+
+
+test_helios_delegated_token()
+exit()
 
 AVATAR_CALL_CONTRACT_SRC_FILE = 'contract_data/avatar_call.sol'
 def test_avatar_call():

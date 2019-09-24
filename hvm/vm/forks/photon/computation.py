@@ -103,6 +103,7 @@ class PhotonComputation(BosonComputation):
         else:
             # this is a send transaction. We only run computation if is_create = True, and in that case we only run it to determine
             # the gas cost. So we create a snapshot to remove any changes other thank calculating gas cost.
+            # It will also run here if execute_on_send == True
 
             if self.msg.is_create:
                 computation_snapshot = self.state.snapshot()
@@ -119,11 +120,26 @@ class PhotonComputation(BosonComputation):
                 else:
                     # computation worked, but we don't want it yet until the receive transaction. So lets revert the computation
                     # but commit the transaction above.
-                    if self.logger:
-                        self.logger.debug(
-                            "REVERTING COMPUTATION FOR CONTRACT DEPLOYMENT. WILL DEPLOY ON RECEIVE TX."
-                        )
+                    self.logger.debug(
+                        "REVERTING COMPUTATION FOR CONTRACT DEPLOYMENT. WILL DEPLOY ON RECEIVE TX."
+                    )
                     self.state.revert(computation_snapshot)
+                    self.state.commit(snapshot)
+
+            elif self.transaction_context.tx_execute_on_send:
+                computation = self.apply_computation(
+                    self.state,
+                    self.msg,
+                    self.transaction_context,
+                )
+
+                if computation.is_error:
+                    # This will revert the computation snapshot as well.
+                    self.state.revert(snapshot)
+                else:
+                    self.logger.debug(
+                        "SUCCESSFULLY EXECUTED SEND PORTION OF TRANSACTION"
+                    )
                     self.state.commit(snapshot)
 
             else:

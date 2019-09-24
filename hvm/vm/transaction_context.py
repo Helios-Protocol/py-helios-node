@@ -37,6 +37,7 @@ class BaseTransactionContext:
 
         self._log_counter = itertools.count()
 
+
     def get_next_log_counter(self):
         return next(self._log_counter)
 
@@ -47,10 +48,18 @@ class BaseTransactionContext:
     @property
     def origin(self):
         return self._origin
-    
+
+    @property
+    def is_send(self):
+        return not (self.is_receive or self.is_refund)
+
     @property
     def is_receive(self):
         return self._is_receive
+
+    @is_receive.setter
+    def is_receive(self, value):
+        self._is_receive = value
 
     @property
     def is_refund(self):

@@ -106,3 +106,4 @@ class Message(object):
         return self.to == CREATE_CONTRACT_ADDRESS
 
 
+

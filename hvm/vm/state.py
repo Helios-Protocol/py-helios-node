@@ -90,6 +90,10 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
         :return:
         '''
         transaction_context = self.get_transaction_context(send_transaction, this_chain_address)
+        if send_transaction.to == this_chain_address:
+            # Assume they are trying to run it on receive since it is being imported on the receiving chain
+            transaction_context.is_receive = True
+
         message = self.build_evm_message(send_transaction, transaction_context)
 
         return self.vm_state.get_computation(message, transaction_context).apply_computation(

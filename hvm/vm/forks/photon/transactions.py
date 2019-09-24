@@ -8,6 +8,7 @@ from rlp_cython.sedes import (
     big_endian_int,
     binary,
     f_big_endian_int,
+    boolean
 )
 from hvm.rlp.sedes import (
     address,
@@ -39,6 +40,7 @@ class PhotonTransaction(BosonTransaction):
         ('caller', address),
         ('origin', address),
         ('code_address', address),
+        ('execute_on_send', boolean),
         ('v', big_endian_int),
         ('r', big_endian_int),
         ('s', big_endian_int),
@@ -54,6 +56,7 @@ class PhotonTransaction(BosonTransaction):
                  caller = b'',
                  origin = b'',
                  code_address = b'',
+                 execute_on_send = False,
                  v=0,
                  r=0,
                  s=0):
@@ -68,6 +71,7 @@ class PhotonTransaction(BosonTransaction):
             caller = caller,
             origin = origin,
             code_address = code_address,
+            execute_on_send=execute_on_send,
             v = v,
             r = r,
             s = s,

@@ -66,15 +66,25 @@ def sload(computation):
 def sstore_photon(computation: 'PhotonComputation'):
     slot, value = computation.stack_pop(num_items=2, type_hint=constants.UINT256)
 
-    if computation.transaction_context.tx_code_address is None:
+    if computation.transaction_context.is_surrogate_call or computation.transaction_context.is_send:
+        if computation.msg.is_create:
+            # Save it in the storage allocated for the newly created address
+            current_value = computation.state.account_db.get_external_smart_contract_storage(
+                address=computation.transaction_context.this_chain_address,
+                smart_contract_address=computation.msg.resolved_to,
+                slot=slot,
+            )
+        else:
+            # Save it in the storage allocated for the original contract address
+            current_value = computation.state.account_db.get_external_smart_contract_storage(
+                address=computation.transaction_context.this_chain_address,
+                smart_contract_address=computation.transaction_context.smart_contract_storage_address,
+                slot=slot,
+            )
+
+    else:
         current_value = computation.state.account_db.get_storage(
             address=computation.transaction_context.this_chain_address,
-            slot=slot,
-        )
-    else:
-        current_value = computation.state.account_db.get_external_smart_contract_storage(
-            address=computation.transaction_context.this_chain_address,
-            smart_contract_address=computation.transaction_context.tx_code_address,
             slot=slot,
         )
 
@@ -108,33 +118,58 @@ def sstore_photon(computation: 'PhotonComputation'):
     if gas_refund:
         computation.refund_gas(gas_refund)
 
-    if computation.transaction_context.tx_code_address is None:
+
+    if computation.transaction_context.is_surrogate_call or computation.transaction_context.is_send:
+        if computation.msg.is_create:
+            # Save it in the storage allocated for the newly created address
+            computation.state.account_db.set_external_smart_contract_storage(
+                address=computation.transaction_context.this_chain_address,
+                smart_contract_address=computation.msg.resolved_to,
+                slot=slot,
+                value=value,
+            )
+        else:
+            # Save it in the storage allocated for the original contract address
+            computation.state.account_db.set_external_smart_contract_storage(
+                address=computation.transaction_context.this_chain_address,
+                smart_contract_address=computation.transaction_context.smart_contract_storage_address,
+                slot=slot,
+                value=value,
+            )
+
+    else:
         computation.state.account_db.set_storage(
             address=computation.transaction_context.this_chain_address,
             slot=slot,
             value=value,
         )
-    else:
-        computation.state.account_db.set_external_smart_contract_storage(
-            address=computation.transaction_context.this_chain_address,
-            smart_contract_address=computation.transaction_context.tx_code_address,
-            slot=slot,
-            value=value,
-        )
+
 
 
 def sload_photon(computation: 'PhotonComputation'):
     slot = computation.stack_pop(type_hint=constants.UINT256)
 
-    if computation.transaction_context.tx_code_address is None:
+    if computation.transaction_context.is_surrogate_call or computation.transaction_context.is_send:
+        if computation.msg.is_create:
+            # Save it in the storage allocated for the newly created address
+            value = computation.state.account_db.get_external_smart_contract_storage(
+                address=computation.transaction_context.this_chain_address,
+                smart_contract_address=computation.msg.resolved_to,
+                slot=slot,
+            )
+        else:
+            # Save it in the storage allocated for the original contract address
+            value = computation.state.account_db.get_external_smart_contract_storage(
+                address=computation.transaction_context.this_chain_address,
+                smart_contract_address=computation.transaction_context.smart_contract_storage_address,
+                slot=slot,
+            )
+
+    else:
         value = computation.state.account_db.get_storage(
             address=computation.transaction_context.this_chain_address,
             slot=slot,
         )
-    else:
-        value = computation.state.account_db.get_external_smart_contract_storage(
-            address=computation.transaction_context.this_chain_address,
-            smart_contract_address=computation.transaction_context.tx_code_address,
-            slot=slot,
-        )
+
+
     computation.stack_push(value)

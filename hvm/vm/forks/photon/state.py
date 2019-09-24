@@ -79,6 +79,7 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
             origin = send_transaction.sender
 
         return PhotonTransactionContext(
+            send_tx_to = send_transaction.to,
             origin=origin,
             gas_price=send_transaction.gas_price,
             send_tx_hash=send_transaction.hash,
@@ -89,7 +90,8 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
             tx_caller = send_transaction.caller if send_transaction.caller != b'' else None,
             tx_origin = send_transaction.origin if send_transaction.origin != b'' else None,
             tx_code_address = send_transaction.code_address if send_transaction.code_address != b'' else None,
-            tx_signer = send_transaction.sender
+            tx_signer = send_transaction.sender,
+            tx_execute_on_send=send_transaction.execute_on_send
         )
 
     def add_possible_refunds_to_currently_executing_transaction(self,
@@ -150,7 +152,7 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
             computation.refund_gas(REFUND_SELFDESTRUCT * num_deletions)
 
 
-        if not computation.transaction_context.is_receive and not computation.transaction_context.is_refund and not computation.transaction_context.is_computation_call_origin:
+        if computation.transaction_context.is_send and not computation.transaction_context.is_computation_call_origin:
             # this is a send transaction that didnt originate from a computation call. This is the only kind that could potentially refund gas
 
             if computation.msg.is_create or computation.msg.data == b'':
