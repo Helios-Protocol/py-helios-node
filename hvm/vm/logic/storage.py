@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 def sstore(computation):
-    slot, value = computation.stack_pop(num_items=2, type_hint=constants.UINT256)
+    slot, value = computation.stack_pop_ints(num_items=2)
 
     current_value = computation.state.account_db.get_storage(
         address=computation.transaction_context.this_chain_address,
@@ -54,17 +54,17 @@ def sstore(computation):
 
 
 def sload(computation):
-    slot = computation.stack_pop(type_hint=constants.UINT256)
+    slot = computation.stack_pop1_int()
 
     value = computation.state.account_db.get_storage(
         address=computation.transaction_context.this_chain_address,
         slot=slot,
     )
-    computation.stack_push(value)
+    computation.stack_push_int(value)
 
 
 def sstore_photon(computation: 'PhotonComputation'):
-    slot, value = computation.stack_pop(num_items=2, type_hint=constants.UINT256)
+    slot, value = computation.stack_pop_ints(num_items=2)
 
     if computation.transaction_context.is_surrogate_call or computation.transaction_context.is_send:
         if computation.msg.is_create:
@@ -147,7 +147,7 @@ def sstore_photon(computation: 'PhotonComputation'):
 
 
 def sload_photon(computation: 'PhotonComputation'):
-    slot = computation.stack_pop(type_hint=constants.UINT256)
+    slot = computation.stack_pop1_int()
 
     if computation.transaction_context.is_surrogate_call or computation.transaction_context.is_send:
         if computation.msg.is_create:
@@ -172,4 +172,4 @@ def sload_photon(computation: 'PhotonComputation'):
         )
 
 
-    computation.stack_push(value)
+    computation.stack_push_int(value)

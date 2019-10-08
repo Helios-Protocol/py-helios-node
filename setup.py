@@ -8,6 +8,7 @@ deps = {
         "aiohttp>=2.3.1,<4.0.0",
         "async_lru>=0.1.0,<1.0.0",
         "cryptography>=2.0.3,<3.0.0",
+        "cached-property>=1.5.1,<2",
         "cytoolz>=0.9.0,<1.0.0",
         "eth-bloom>=1.0.3,<2.0.0",
         "eth-keys>=0.2.0b3,<1.0.0",

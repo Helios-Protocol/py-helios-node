@@ -351,4 +351,22 @@ def validate_header_params_for_configuration(header_params):
 def validate_private_key(private_key):
     if not isinstance(private_key, PrivateKey):
         raise ValidationError("This is not a private key")
+
+
+def validate_stack_int(value: int) -> None:
+    if 0 <= value <= UINT_256_MAX:
+        return
+    raise ValidationError(
+        "Invalid Stack Item: Must be either a length 32 byte "
+        "string or a 256 bit integer. Got {!r}".format(value)
+    )
+
+
+def validate_stack_bytes(value: bytes) -> None:
+    if len(value) <= 32:
+        return
+    raise ValidationError(
+        "Invalid Stack Item: Must be either a length 32 byte "
+        "string or a 256 bit integer. Got {!r}".format(value)
+    )
         

@@ -12,11 +12,14 @@ from typing import (  # noqa: F401
     Iterator,
     List,
     Tuple,
+    Union
 )
 from hvm.constants import GAS_TX
 from eth_typing import (
     Address
 )
+
+from cached_property import cached_property
 
 from hvm.constants import (
     GAS_MEMORY,
@@ -302,25 +305,25 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         """
         return self._gas_meter.refund_gas(amount)
 
-    def stack_pop(self, num_items=1, type_hint=None):
-        """
-        Pop and return a number of items equal to ``num_items`` from the stack.
-        ``type_hint`` can be either ``'uint256'`` or ``'bytes'``.  The return value
-        will be an ``int`` or ``bytes`` type depending on the value provided for
-        the ``type_hint``.
+    # def stack_pop(self, num_items=1, type_hint=None):
+    #     """
+    #     Pop and return a number of items equal to ``num_items`` from the stack.
+    #     ``type_hint`` can be either ``'uint256'`` or ``'bytes'``.  The return value
+    #     will be an ``int`` or ``bytes`` type depending on the value provided for
+    #     the ``type_hint``.
+    #
+    #     Raise `hvm.exceptions.InsufficientStack` if there are not enough items on
+    #     the stack.
+    #     """
+    #     return self._stack.pop(num_items, type_hint)
 
-        Raise `hvm.exceptions.InsufficientStack` if there are not enough items on
-        the stack.
-        """
-        return self._stack.pop(num_items, type_hint)
-
-    def stack_push(self, value):
-        """
-        Push ``value`` onto the stack.
-
-        Raise `hvm.exceptions.StackDepthLimit` if the stack is full.
-        """
-        return self._stack.push(value)
+    # def stack_push(self, value):
+    #     """
+    #     Push ``value`` onto the stack.
+    #
+    #     Raise `hvm.exceptions.StackDepthLimit` if the stack is full.
+    #     """
+    #     return self._stack.push(value)
 
     def stack_swap(self, position):
         """
@@ -333,6 +336,38 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         Duplicate the stack item at ``position`` and pushes it onto the stack.
         """
         return self._stack.dup(position)
+
+    @cached_property
+    def stack_pop_ints(self) -> Callable[[int], Tuple[int, ...]]:
+        return self._stack.pop_ints
+
+    @cached_property
+    def stack_pop_bytes(self) -> Callable[[int], Tuple[bytes, ...]]:
+        return self._stack.pop_bytes
+
+    @cached_property
+    def stack_pop_any(self) -> Callable[[int], Tuple[Union[int, bytes], ...]]:
+        return self._stack.pop_any
+
+    @cached_property
+    def stack_pop1_int(self) -> Callable[[], int]:
+        return self._stack.pop1_int
+
+    @cached_property
+    def stack_pop1_bytes(self) -> Callable[[], bytes]:
+        return self._stack.pop1_bytes
+
+    @cached_property
+    def stack_pop1_any(self) -> Callable[[], Union[int, bytes]]:
+        return self._stack.pop1_any
+
+    @cached_property
+    def stack_push_int(self) -> Callable[[int], None]:
+        return self._stack.push_int
+
+    @cached_property
+    def stack_push_bytes(self) -> Callable[[bytes], None]:
+        return self._stack.push_bytes
 
     #
     # Computed properties.

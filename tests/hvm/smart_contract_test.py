@@ -972,3 +972,17 @@ def test_surrogate_call():
 
 
 test_surrogate_call()
+
+def test_compiler():
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+
+    # deploy the contract
+    w3 = Web3()
+
+    max_gas = 20000000
+
+    deployed_contract_address, contract_interface = deploy_contract(testdb, 'compiler_test', 'CompilerTest')
+
+
+test_compiler()

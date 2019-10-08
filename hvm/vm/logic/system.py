@@ -26,7 +26,7 @@ from .call import max_child_gas_eip150
 
 
 def return_op(computation):
-    start_position, size = computation.stack_pop(num_items=2, type_hint=constants.UINT256)
+    start_position, size = computation.stack_pop_ints(num_items=2)
 
     computation.extend_memory(start_position, size)
 
@@ -36,7 +36,7 @@ def return_op(computation):
 
 
 def revert(computation):
-    start_position, size = computation.stack_pop(num_items=2, type_hint=constants.UINT256)
+    start_position, size = computation.stack_pop_ints(num_items=2)
 
     computation.extend_memory(start_position, size)
 
@@ -46,13 +46,13 @@ def revert(computation):
 
 
 def selfdestruct(computation):
-    beneficiary = force_bytes_to_address(computation.stack_pop(type_hint=constants.BYTES))
+    beneficiary = force_bytes_to_address(computation.stack_pop1_bytes())
     _selfdestruct(computation, beneficiary)
     raise Halt('SELFDESTRUCT')
 
 
 def selfdestruct_eip150(computation):
-    beneficiary = force_bytes_to_address(computation.stack_pop(type_hint=constants.BYTES))
+    beneficiary = force_bytes_to_address(computation.stack_pop1_bytes())
     if not computation.state.account_db.account_exists(beneficiary):
         computation.consume_gas(
             constants.GAS_SELFDESTRUCT_NEWACCOUNT,
@@ -62,7 +62,7 @@ def selfdestruct_eip150(computation):
 
 
 def selfdestruct_eip161(computation):
-    beneficiary = force_bytes_to_address(computation.stack_pop(type_hint=constants.BYTES))
+    beneficiary = force_bytes_to_address(computation.stack_pop1_bytes())
     is_dead = (
         not computation.state.account_db.account_exists(beneficiary) or
         computation.state.account_db.account_is_empty(beneficiary)
@@ -114,9 +114,8 @@ class Create(Opcode):
 
         computation.consume_gas(self.gas_cost, reason=self.mnemonic)
 
-        value, start_position, size = computation.stack_pop(
-            num_items=3,
-            type_hint=constants.UINT256,
+        value, start_position, size = computation.stack_pop_ints(
+            num_items=3
         )
 
         computation.extend_memory(start_position, size)
@@ -127,7 +126,7 @@ class Create(Opcode):
         stack_too_deep = computation.msg.depth + 1 > constants.STACK_DEPTH_LIMIT
 
         if insufficient_funds or stack_too_deep:
-            computation.stack_push(0)
+            computation.stack_push_int(0)
             return
 
         call_data = computation.memory_read(start_position, size)
@@ -152,7 +151,7 @@ class Create(Opcode):
                 "Address collision while creating contract: %s",
                 encode_hex(contract_address),
             )
-            computation.stack_push(0)
+            computation.stack_push_int(0)
             return
 
         child_msg = computation.prepare_child_message(
@@ -167,9 +166,9 @@ class Create(Opcode):
         child_computation = computation.apply_child_computation(child_msg)
 
         if child_computation.is_error:
-            computation.stack_push(0)
+            computation.stack_push_int(0)
         else:
-            computation.stack_push(contract_address)
+            computation.stack_push_bytes(contract_address)
         computation.return_gas(child_computation.get_gas_remaining())
 
 
@@ -183,3 +182,46 @@ class CreateByzantium(CreateEIP150):
         if computation.msg.is_static:
             raise WriteProtection("Cannot modify state while inside of a STATICCALL context")
         return super(CreateEIP150, self).__call__(computation)
+
+
+# need to implement this
+# class Create2(CreateByzantium):
+#
+#     def get_stack_data(self, computation: ComputationAPI) -> CreateOpcodeStackData:
+#         endowment, memory_start, memory_length, salt = computation.stack_pop_ints(4)
+#
+#         return CreateOpcodeStackData(endowment, memory_start, memory_length, salt)
+#
+#     def get_gas_cost(self, data: CreateOpcodeStackData) -> int:
+#         return constants.GAS_CREATE + constants.GAS_SHA3WORD * ceil32(data.memory_length) // 32
+#
+#     def generate_contract_address(self,
+#                                   stack_data: CreateOpcodeStackData,
+#                                   call_data: bytes,
+#                                   computation: ComputationAPI) -> Address:
+#
+#         computation.state.increment_nonce(computation.msg.storage_address)
+#         return generate_safe_contract_address(
+#             computation.msg.storage_address,
+#             stack_data.salt,
+#             call_data
+#         )
+#
+#     def apply_create_message(self, computation: ComputationAPI, child_msg: MessageAPI) -> None:
+#         # We need to ensure that creation operates on empty storage **and**
+#         # that if the initialization code fails that we revert the account back
+#         # to its original state root.
+#         snapshot = computation.state.snapshot()
+#
+#         computation.state.delete_storage(child_msg.storage_address)
+#
+#         child_computation = computation.apply_child_computation(child_msg)
+#
+#         if child_computation.is_error:
+#             computation.state.revert(snapshot)
+#             computation.stack_push_int(0)
+#         else:
+#             computation.state.commit(snapshot)
+#             computation.stack_push_bytes(child_msg.storage_address)
+#
+#         computation.return_gas(child_computation.get_gas_remaining())
