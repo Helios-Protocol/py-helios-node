@@ -14,7 +14,8 @@ from pathlib import Path
 
 home = str(Path.home())
 
-os.environ["SOLC_BINARY"] = home + "/.py-solc/solc-v0.4.25/bin/solc"
+# os.environ["SOLC_BINARY"] = home + "/.py-solc/solc-v0.4.25/bin/solc"
+os.environ["SOLC_BINARY"] = home + "/solidity/cmake-build-debug/solc/solc"
 
 try:
     get_solc_version()

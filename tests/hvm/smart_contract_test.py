@@ -84,16 +84,6 @@ from eth_utils import to_int
 from hvm.utils.address import generate_contract_address
 
 from pathlib import Path
-home = str(Path.home())
-
-os.environ["SOLC_BINARY"] = home + "/.py-solc/solc-v0.4.25/bin/solc"
-
-try:
-    get_solc_version()
-except Exception:
-    print("Solc not found. Installing")
-    from solc import install_solc
-    install_solc('v0.4.25')
 
 import pickle
 
@@ -146,8 +136,8 @@ from tests.hvm.smart_contract_helpers import (
     load_compiled_sol_dict,
     import_all_pending_smart_contract_blocks,
     format_receipt_for_web3_to_extract_events,
-    deploy_contract
-)
+    deploy_contract,
+    compile_and_get_contract_interface)
 SIMPLE_TOKEN_SOLIDITY_SRC_FILE = 'contract_data/erc20.sol'
 
 
@@ -855,6 +845,9 @@ def test_helios_delegated_token():
 
 
 # test_helios_delegated_token()
+# exit()
+
+# compile_and_get_contract_interface('helios_delegated_token', 'HeliosDelegatedToken')
 # exit()
 
 

@@ -1,4 +1,4 @@
-pragma solidity ^0.4.23;
+pragma solidity ^0.5.11;
 
 /**
  * @title SafeMath
@@ -56,6 +56,11 @@ contract HeliosDelegatedToken {
     function is_send() internal view returns (bool){
         return address(tx.origin) == address(this);
     }
+
+//    function checkIfExecuteOnSend() public view returns (bool){
+//        return tx.executeonsend;
+//
+//    }
 
     function mintSender(uint256 amount) public {
         if(is_send()){
