@@ -52,15 +52,13 @@ contract HeliosDelegatedToken {
     uint256 balance;
     event Mint(address indexed _address, uint256 value);
     event IsSend(address indexed origin, address indexed _this, bool value);
+    event Balance(address indexed _address, uint256 value);
+    event Amount(address indexed _address, uint256 value);
 
     function is_send() internal view returns (bool){
         return address(tx.origin) == address(this);
     }
 
-//    function checkIfExecuteOnSend() public view returns (bool){
-//        return tx.executeonsend;
-//
-//    }
 
     function mintSender(uint256 amount) public {
         if(is_send()){
@@ -78,43 +76,15 @@ contract HeliosDelegatedToken {
     function send(uint256 amount) public {
         if(is_send()){
             emit IsSend(tx.origin, address(this), true);
+            emit Balance(address(this), balance);
+            emit Amount(address(this), amount);
             require(amount <= balance);
             balance = balance.sub(amount);
+
         }else{
             emit IsSend(tx.origin, address(this), false);
             // Here need to check to make sure tx.is_send == true
             balance = balance.add(amount);
         }
     }
-
-
-//    function getStorageAddress()
-//        public
-//        returns (address)
-//    {
-//        return address(this);
-//    }
-//
-//    function getSender()
-//        public
-//        returns (address)
-//    {
-//        return address(msg.sender);
-//    }
-//
-//    function getOrigin()
-//        public
-//        returns (address)
-//    {
-//        return address(tx.origin);
-//    }
-//
-//    function getCoinbase()
-//        public
-//        returns (address)
-//    {
-//        return address(block.coinbase);
-//    }
-
-
 }

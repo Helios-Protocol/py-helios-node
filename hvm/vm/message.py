@@ -22,6 +22,7 @@ class Message(object):
     __slots__ = [
         'to', 'sender', 'value', 'data', 'depth', 'gas', 'code', '_code_address',
         'create_address', 'should_transfer_value', 'is_static', 'refund_amount',
+        'execute_on_send'
     ]
 
     logger = logging.getLogger('hvm.vm.message.Message')
@@ -38,7 +39,8 @@ class Message(object):
                  code_address=None,
                  should_transfer_value=True,
                  is_static=False,
-                 refund_amount=0):
+                 refund_amount=0,
+                 execute_on_send=False):
         validate_uint256(gas, title="Message.gas")
         self.gas = gas  # type: int
 
@@ -79,6 +81,9 @@ class Message(object):
 
         validate_is_boolean(is_static, title="Message.is_static")
         self.is_static = is_static
+
+        validate_is_boolean(execute_on_send, title="Message.execute_on_send")
+        self.execute_on_send = execute_on_send
 
 
     @property

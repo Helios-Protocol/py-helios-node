@@ -92,7 +92,7 @@ class PhotonVM(VM):
             execute_on_send = False
 
         transaction = self.create_transaction(
-            gas_price=0x01,
+            gas_price=0x00,
             gas=BLOCK_GAS_LIMIT,
             to=to_address,
             value=0,
@@ -121,16 +121,11 @@ class PhotonVM(VM):
         computation_call_send_transactions = []
         for receive_computation in receive_computations:
             if receive_computation.msg.data != b'':
+
                 # Only check if there is actually transaction data because this will be an expensive function
-                external_call_message_bundles = receive_computation.get_all_children_external_call_messages()
+                external_call_messages = receive_computation.get_all_children_external_call_messages()
 
-                if len(external_call_message_bundles) > 0:
-                    gas_remaining_for_children_txs = receive_computation.get_gas_remaining_including_refunds()
-                    gas_for_each_tx = int(gas_remaining_for_children_txs/len(external_call_message_bundles))
-
-                    #Add this to the first tx
-                    gas_remainder = gas_remaining_for_children_txs - gas_for_each_tx*len(external_call_message_bundles)
-
+                if len(external_call_messages) > 0:
                     gas_price = receive_computation.transaction_context.gas_price
 
                     # Do this in here for performance. We only compute it if there are computation calls.
@@ -140,23 +135,19 @@ class PhotonVM(VM):
                         else:
                             current_nonce_for_computation_calls = self.get_next_nonce_after_normal_transactions(block.transactions)
 
+                    if receive_computation.transaction_context.is_computation_call_origin:
+                        origin = receive_computation.transaction_context.tx_origin
+                    else:
+                        # Needs to be the code address that generated this
+                        origin = receive_computation.transaction_context.smart_contract_storage_address
 
-                    origin = receive_computation.transaction_context.tx_origin if receive_computation.transaction_context.tx_origin is not None else receive_computation.msg.sender
 
-                    # todo: after adding avatarcall, take care of code address here
-                    code_address = receive_computation.transaction_context.tx_code_address if receive_computation.transaction_context.tx_code_address is not None else b''
+                    for i in range(len(external_call_messages)):
+                        call_message = external_call_messages[i]
+                        gas = call_message.gas
+                        code_address = call_message.code_address if call_message.code_address is not None else b''
 
-
-
-                    for i in range(len(external_call_message_bundles)):
-                        external_call_message_bundle = external_call_message_bundles[i]
-                        call_opcode = external_call_message_bundle[0]
-                        call_message = external_call_message_bundle[1]
-
-                        if i == 0:
-                            gas = gas_for_each_tx + gas_remainder
-                        else:
-                            gas = gas_for_each_tx
+                        execute_on_send = call_message.execute_on_send
 
                         new_tx = self.create_transaction(
                             nonce = current_nonce_for_computation_calls,
@@ -167,8 +158,19 @@ class PhotonVM(VM):
                             data=call_message.data,
                             caller = block.header.chain_address,
                             origin = origin,
-                            code_address = code_address
+                            code_address = code_address,
+                            execute_on_send = execute_on_send
                         )
+
+                        self.logger.debug("Creating a new child transaction with parameters:"
+                                          "nonce: {} | gas_price: {} | gas: {} | to: {} | "
+                                          "value: {} | data: {} | "
+                                          "caller: {} | origin: {} | "
+                                          "code_address: {} | execute_on_send: {}".format(
+                            new_tx.nonce, new_tx.gas_price, new_tx.gas, encode_hex(new_tx.to),
+                            new_tx.value, encode_hex(new_tx.data), encode_hex(new_tx.caller),
+                            encode_hex(new_tx.origin), encode_hex(new_tx.code_address), new_tx.execute_on_send
+                        ))
 
                         new_tx = new_tx.get_signed(private_key, self.network_id)
 

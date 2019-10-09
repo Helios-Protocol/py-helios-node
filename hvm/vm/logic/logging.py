@@ -3,7 +3,7 @@ import functools
 from typing import List  # noqa: F401
 
 from hvm import constants
-
+from eth_utils import encode_hex, to_int
 
 def log_XX(computation, topic_count):
     if topic_count < 0 or topic_count > 4:
@@ -35,6 +35,12 @@ def log_XX(computation, topic_count):
         topics=topics,
         data=log_data,
     )
+    print("Smart contract logging with account: {} | "
+          "topics: {} | data: {}".format(
+        encode_hex(computation.transaction_context.this_chain_address),
+        topics,
+        to_int(log_data)
+    ))
 
 
 log0 = functools.partial(log_XX, topic_count=0)

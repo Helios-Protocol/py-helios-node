@@ -101,6 +101,9 @@ class BaseAccountDB(metaclass=ABCMeta):
 
     def delta_balance(self, address, delta):
         if delta != 0:
+            new_balance = self.get_balance(address) + delta
+            if new_balance < 0:
+                raise ValidationError("Cannod delta balance because account does not have anough funds. Account balance: {} | delta: {}".format(self.get_balance(address), delta))
             self.set_balance(address, self.get_balance(address) + delta)
 
     #

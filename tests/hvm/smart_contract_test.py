@@ -676,8 +676,6 @@ def test_talamus_contract():
         s=0
     )
 
-    print('ZZZZZZZZZZZZZZZZZZZZZZZZZZZ')
-    print(tx.as_dict())
 
     # from rpc
     # {'nonce': 1, 'gas_price': 2000000000, 'gas': 2000000, 'to': b'\x81\xbd\xf6;\x9an\x87\x1fV\r\xca\x1dU\xe8s+\\\xcd\xc2\xf9', 'value': 0, 'data': b'0x010f836e0000000000000000000000000000000000000000000000000000000000000000', 'v': 38, 'r': 77546672203976404837758472880488256719656950035867254665717724200250517648493, 's': 2580236846734574215375389852957773325366136635134534812926657997746477469836}
@@ -971,7 +969,208 @@ def test_surrogate_call():
 
 
 
-test_surrogate_call()
+# test_surrogate_call()
+
+
+
+def test_surrogate_call_with_airdrop():
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+
+    # deploy the contract
+    w3 = Web3()
+
+    max_gas = 20000000
+
+    token_contract_address, contract_interface = deploy_contract(testdb, 'helios_delegated_token',
+                                                                    'HeliosDelegatedToken')
+
+    #
+    # Mint some coins
+    #
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+
+    HeliosDelegatedToken = w3.hls.contract(
+        address=Web3.toChecksumAddress(token_contract_address),
+        abi=contract_interface['abi']
+    )
+
+    expected_balance = 1000
+    w3_tx = HeliosDelegatedToken.functions.mintSender(expected_balance).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        value=0,
+        data=decode_hex(w3_tx['data']),
+        execute_on_send=True,
+        code_address = token_contract_address
+    )
+
+    print("Minting some coins locally")
+
+    chain.import_current_queue_block()
+
+    #
+    # Check local balance
+    #
+
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    result = chain.generate_tx_and_get_result(decode_hex(w3_tx['data']),
+                                              from_address=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                              to_address=token_contract_address)
+
+    print("local balance")
+    print(big_endian_to_int(result))
+    assert (big_endian_to_int(result) == expected_balance)
+
+    #
+    # deploy airdrop
+    #
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+    airdrop_contract_address, airdrop_contract_interface = deploy_contract(testdb, 'delegated_airdrop', 'DelegatedAirdrop')
+
+    DelegatedAirdrop = w3.hls.contract(
+        address=Web3.toChecksumAddress(airdrop_contract_address),
+        abi=airdrop_contract_interface['abi']
+    )
+
+    #
+    # Send tokens to airdrop contract
+    #
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+
+    send_balance = 100
+    w3_tx = HeliosDelegatedToken.functions.send(send_balance).buildTransaction(W3_TX_DEFAULTS)
+
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=airdrop_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+        execute_on_send=True,
+        code_address = token_contract_address,
+    )
+
+    print("Sending coins")
+
+    chain.import_current_queue_block()
+
+    print("Receiving coins")
+
+    chain = TestnetChain(testdb, airdrop_contract_address, RECEIVER)
+    chain.populate_queue_block_with_receive_tx()
+    chain.import_current_queue_block()
+
+
+    #
+    # Check local balance
+    #
+
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    result = chain.generate_tx_and_get_result(decode_hex(w3_tx['data']),
+                                              from_address=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                              to_address=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                              code_address = token_contract_address)
+
+    print("local balance")
+    print(big_endian_to_int(result))
+    assert (big_endian_to_int(result) == expected_balance - send_balance)
+
+    #
+    # Check receiver balance
+    #
+
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+    chain = TestnetChain(testdb, airdrop_contract_address)
+    result = chain.generate_tx_and_get_result(decode_hex(w3_tx['data']),
+                                              from_address=airdrop_contract_address,
+                                              to_address=airdrop_contract_address,
+                                              code_address = token_contract_address)
+
+    print("receiver balance")
+    print(big_endian_to_int(result))
+    assert (big_endian_to_int(result) == send_balance)
+
+
+    #
+    # Delegate airdrop 50 tokens
+    #
+
+    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+
+    drop_balance = 50
+    w3_tx = DelegatedAirdrop.functions.drop(token_contract_address, RECEIVER.public_key.to_canonical_address(), drop_balance).buildTransaction(W3_TX_DEFAULTS)
+
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=airdrop_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data'])
+    )
+
+    print("Sending airdrop call")
+
+    chain.import_current_queue_block()
+
+    print("Receiving airdrop call")
+
+    chain = TestnetChain(testdb, airdrop_contract_address, RECEIVER)
+    chain.populate_queue_block_with_receive_tx()
+    chain.import_current_queue_block()
+    
+    #
+    # Receive the airdrop on RECEIVER chain
+    #
+    chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+    chain.populate_queue_block_with_receive_tx()
+    chain.import_current_queue_block()
+
+    #
+    # Check balance of token at airdrop_contract_address
+    #
+
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+    chain = TestnetChain(testdb, airdrop_contract_address)
+    result = chain.generate_tx_and_get_result(decode_hex(w3_tx['data']),
+                                              from_address=airdrop_contract_address,
+                                              to_address=airdrop_contract_address,
+                                              code_address=token_contract_address)
+
+    print("token balance on airdrop chain")
+    print(big_endian_to_int(result))
+    assert (big_endian_to_int(result) == send_balance - drop_balance)
+
+    #
+    # Check receiver balance
+    #
+
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+    chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address())
+    result = chain.generate_tx_and_get_result(decode_hex(w3_tx['data']),
+                                              from_address=RECEIVER.public_key.to_canonical_address(),
+                                              to_address=RECEIVER.public_key.to_canonical_address(),
+                                              code_address=token_contract_address)
+
+    print("balance of tokens on reciever chain from the airdrop")
+    print(big_endian_to_int(result))
+    assert (big_endian_to_int(result) == drop_balance)
+
+test_surrogate_call_with_airdrop()
 
 def test_compiler():
     testdb = MemoryDB()
@@ -984,5 +1183,62 @@ def test_compiler():
 
     deployed_contract_address, contract_interface = deploy_contract(testdb, 'compiler_test', 'CompilerTest')
 
+#
+# test_compiler()
 
-test_compiler()
+#
+# def test_delegated_drop():
+#     testdb = MemoryDB()
+#     # absolute_dir = os.path.dirname(os.path.realpath(__file__))
+#     # testdb = LevelDB(absolute_dir + "/predefined_databases/delegated_token")
+#     w3 = Web3()
+#     max_gas = 20000000
+#
+#     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),TESTNET_GENESIS_PRIVATE_KEY)
+#
+#     min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+#
+#     create_predefined_blockchain_database(testdb)
+#
+#     token_contract_address, token_contract_interface = deploy_contract(testdb, 'helios_delegated_token', 'HeliosDelegatedToken')
+#     print('token_contract_address')
+#     print(token_contract_address)
+#     print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+#     time.sleep(min_time_between_blocks)
+#
+#     airdrop_contract_address, airdrop_contract_interface = deploy_contract(testdb, 'delegated_airdrop', 'DelegatedAirdrop')
+#     print('airdrop_contract_address')
+#     print(airdrop_contract_address)
+#
+#     HeliosDelegatedToken = w3.hls.contract(
+#         address=Web3.toChecksumAddress(token_contract_address),
+#         abi=token_contract_interface['abi']
+#     )
+#
+#     send_balance = 100
+#     w3_tx = HeliosDelegatedToken.functions.send(send_balance).buildTransaction(W3_TX_DEFAULTS)
+#
+#     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+#                          TESTNET_GENESIS_PRIVATE_KEY)
+#     chain.create_and_sign_transaction_for_queue_block(
+#         gas_price=0x01,
+#         gas=max_gas,
+#         to=RECEIVER.public_key.to_canonical_address(),
+#         value=0,
+#         data=decode_hex(w3_tx['data']),
+#         execute_on_send=True,
+#         code_address=deployed_contract_address,
+#     )
+#
+#     print("Sending coins")
+#
+#     chain.import_current_queue_block()
+#
+#     print("Receiving coins")
+#
+#     chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+#     chain.populate_queue_block_with_receive_tx()
+#     chain.import_current_queue_block()
+#
+
+# test_delegated_drop()

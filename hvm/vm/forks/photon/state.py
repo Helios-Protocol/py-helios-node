@@ -228,23 +228,14 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
             # It gets a refund if send has data and is not create. ie. there was a computation on receive
             if computation.transaction_context.is_computation_call_origin or (computation.msg.data != b'' and not computation.msg.is_create):
                 # New: we always process refunds after receiving a transaction originating in a computation call
-                if computation.has_external_call_messages and not computation.is_error:
-                    # If the computation has child transactions that it must make, and there were no errors, then save the gas to send them.
-                    # But if there was an error, then we still return whatever gas is left over like normal, which is the else.
+                gas_refund_amount = computation.get_gas_remaining_including_refunds()
 
-                    self.vm_state.logger.debug(
-                        'SAVING REFUND FOR CHILD CALLS: tx_hash = {}'.format(receive_transaction.hash)
-                    )
-                else:
-
-                    gas_refund_amount = computation.get_gas_remaining_including_refunds()
-
-                    self.vm_state.logger.debug(
-                        'SAVING REFUND TO RECEIVE TX: %s -> %s',
-                        gas_refund_amount,
-                        encode_hex(computation.transaction_context.refund_address),
-                    )
-                    receive_transaction = receive_transaction.copy(remaining_refund=gas_refund_amount)
+                self.vm_state.logger.debug(
+                    'SAVING REFUND TO RECEIVE TX: %s -> %s',
+                    gas_refund_amount,
+                    encode_hex(computation.transaction_context.refund_address),
+                )
+                receive_transaction = receive_transaction.copy(remaining_refund=gas_refund_amount)
 
             return receive_transaction
         else:

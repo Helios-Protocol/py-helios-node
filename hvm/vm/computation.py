@@ -636,11 +636,11 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
     #
     # External call api
     #
-    def apply_external_call_message(self, call_message, mnemonic):
-        self.external_call_messages.append((mnemonic, call_message))
+    def apply_external_call_message(self, call_message):
+        self.external_call_messages.append(call_message)
 
 
-    def get_all_children_external_call_messages(self) -> List[Tuple[str,Message]]:
+    def get_all_children_external_call_messages(self) -> List[Message]:
         '''
         Returns all external message calls for this computation and all child computations
         '''
@@ -655,8 +655,8 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
     @property
     def required_gas_for_external_calls(self) -> int:
         # This only checks to see if there si enough to send the external call transactions. Not perform the computation
-        num_external_calls = len(self.get_all_children_external_call_messages())
-        required_additional_gas = num_external_calls * GAS_TX
+        external_call_msgs = self.get_all_children_external_call_messages()
+        required_additional_gas = sum([msg.gas for msg in external_call_msgs])
         return required_additional_gas
 
     @property

@@ -16,7 +16,7 @@ from hvm.vm.forks.photon.constants import (
 
 from hvm.vm.logic.storage import sstore_photon, sload_photon
 from hvm.vm.logic.system import _selfdestruct, selfdestruct_photon
-from hvm.vm.logic import arithmetic, context, system
+from hvm.vm.logic import arithmetic, context, system, call
 
 from hvm.vm.opcode import as_opcode
 from cytoolz import merge
@@ -42,6 +42,11 @@ PHOTON_UPDATED_OPCODES = {
 
 
     # New opcodes
+    opcode_values.SURROGATECALL: call.SurrogateCall.configure(
+        __name__='opcode:SURROGATECALL',
+        mnemonic=mnemonics.SURROGATECALL,
+        gas_cost=constants.GAS_CALL,
+    )(),
     opcode_values.SHL: as_opcode(
         logic_fn=arithmetic.shl,
         mnemonic=mnemonics.SHL,

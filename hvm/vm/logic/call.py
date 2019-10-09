@@ -4,6 +4,7 @@ from abc import (
 )
 
 from hvm import constants
+from hvm.constants import GAS_TX
 
 from hvm.exceptions import (
     OutOfGas,
@@ -168,6 +169,7 @@ class Call(BaseCall):
             memory_output_size,
             True,  # should_transfer_value,
             computation.msg.is_static,
+            False
         )
 
     def __call__(self, computation: 'PhotonComputation'):
@@ -188,25 +190,33 @@ class Call(BaseCall):
             memory_output_size,
             should_transfer_value,
             is_static,
+            execute_on_send,
         ) = self.get_call_params(computation)
 
         computation.extend_memory(memory_input_start_position, memory_input_size)
-        computation.extend_memory(memory_output_start_position, memory_output_size)
+
+        if memory_output_start_position is not None:
+            computation.extend_memory(memory_output_start_position, memory_output_size)
 
         call_data = computation.memory_read(memory_input_start_position, memory_input_size)
+
+
+
+        # Pre-call checks
+        if not computation.transaction_context.is_receive:
+            raise ForbiddenOperationForExecutingOnSend("Computation executing on send cannot create new call transactions.")
+
+        if computation.transaction_context.is_surrogate_call:
+            raise ForbiddenOperationForSurrogateCall("Surrogatecalls are not allowed to create children calls or surrogatecalls. They are only allowed to create delegatecalls.")
+
+        if gas < GAS_TX:
+            raise OutOfGas("Calls and surrogatecalls require at least {} gas. But only {} was provided.".format(GAS_TX, gas))
 
         #
         # Message gas allocation and fees
         #
         child_msg_gas, child_msg_gas_fee = self.compute_msg_gas(computation, gas, to, value)
         computation.consume_gas(child_msg_gas_fee, reason=self.mnemonic)
-
-        # Pre-call checks
-        if not computation.transaction_context.is_receive:
-            raise ForbiddenOperationForExecutingOnSend("Computation executing on send cannot create new call transactions.")
-
-        if value > 0 and computation.transaction_context.is_surrogate_call:
-            raise ForbiddenOperationForSurrogateCall("Surrogate call transactions are not allowed to create new call transactions with nonzero value")
 
         sender_balance = computation.state.account_db.get_balance(
             computation.transaction_context.this_chain_address
@@ -246,6 +256,7 @@ class Call(BaseCall):
                 'code_address': code_address,
                 'should_transfer_value': should_transfer_value,
                 'is_static': is_static,
+                'execute_on_send': execute_on_send,
             }
             if sender is not None:
                 child_msg_kwargs['sender'] = sender
@@ -255,10 +266,43 @@ class Call(BaseCall):
             #
             # Now we send it back to the vm to make a send transaction out of it.
             #
-            computation.apply_external_call_message(child_msg, self.mnemonic)
+            computation.apply_external_call_message(child_msg)
 
             # push 1 to show there was no error
             computation.stack_push_int(1)
+
+
+class SurrogateCall(Call):
+    def get_call_params(self, computation):
+        gas = computation.stack_pop1_int()
+        code_address = force_bytes_to_address(computation.stack_pop1_bytes())
+        value = computation.stack_pop1_int()
+        execute_on_send = bool(computation.stack_pop1_int())
+        to = force_bytes_to_address(computation.stack_pop1_bytes())
+
+        (
+            memory_input_start_position,
+            memory_input_size
+        ) = computation.stack_pop_ints(num_items=2)
+
+        print("TEEEEEEESST")
+        print("gas = {} | code_address = {} | value = {} | to = {} | execute_on_send = {}".format(
+            gas, code_address, value, to, execute_on_send
+        ))
+        return (
+            gas,
+            value,
+            to,
+            None,  # sender
+            code_address,  # code_address
+            memory_input_start_position,
+            memory_input_size,
+            None,
+            None,
+            True,  # should_transfer_value,
+            computation.msg.is_static,
+            execute_on_send
+        )
 
 
 class CallCode(BaseCall):
