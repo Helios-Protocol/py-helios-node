@@ -18,9 +18,9 @@ class Memory(object):
     VM Memory
     """
     __slots__ = ['_bytes']
-    logger = logging.getLogger('hvm.vm.memory.Memory')
+    logger = logging.getLogger('eth.vm.memory.Memory')
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._bytes = bytearray()
 
     def extend(self, start_position: int, size: int) -> None:
@@ -32,7 +32,16 @@ class Memory(object):
             return
 
         size_to_extend = new_size - len(self)
-        self._bytes.extend(itertools.repeat(0, size_to_extend))
+        try:
+            self._bytes.extend(itertools.repeat(0, size_to_extend))
+        except BufferError:
+            # we can't extend the buffer (which might involve relocating it) if a
+            # memoryview (which stores a pointer into the buffer) has been created by
+            # read() and not released. Callers of read() will never try to write to the
+            # buffer so we're not missing anything by making a new buffer and forgetting
+            # about the old one. We're keeping too much memory around but this is still a
+            # net savings over having read() return a new bytes() object every time.
+            self._bytes = self._bytes + bytearray(size_to_extend)
 
     def __len__(self) -> int:
         return len(self._bytes)
@@ -48,17 +57,17 @@ class Memory(object):
             validate_length(value, length=size)
             validate_lte(start_position + size, maximum=len(self))
 
-            if len(self._bytes) < start_position + size:
-                self._bytes.extend(itertools.repeat(
-                    0,
-                    len(self._bytes) - (start_position + size),
-                ))
-
             for idx, v in enumerate(value):
                 self._bytes[start_position + idx] = v
 
-    def read(self, start_position: int, size: int) -> bytes:
+    def read(self, start_position: int, size: int) -> memoryview:
         """
-        Read a value from memory.
+        Return a view into the memory
+        """
+        return memoryview(self._bytes)[start_position:start_position + size]
+
+    def read_bytes(self, start_position: int, size: int) -> bytes:
+        """
+        Read a value from memory and return a fresh bytes instance
         """
         return bytes(self._bytes[start_position:start_position + size])

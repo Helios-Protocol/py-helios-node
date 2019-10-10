@@ -87,16 +87,21 @@ class PhotonComputation(BosonComputation):
 
         elif self.transaction_context.is_receive:
             # this is when we run all computation normally
+
+            # Take a snapshot of the current computation call nonce so that it can be reset if the computation fails
+            initial_computation_call_nonce = self.state.execution_context.computation_call_nonce
+
             computation = self.apply_computation(
                 self.state,
                 self.msg,
                 self.transaction_context,
             )
 
-            computation.set_error_if_not_enough_gas_for_external_calls()
-
             if computation.is_error:
                 self.state.revert(snapshot)
+
+                # Reset the computation call nonce on error.
+                self.state.execution_context.computation_call_nonce = initial_computation_call_nonce
             else:
                 self.state.commit(snapshot)
 

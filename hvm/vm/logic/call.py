@@ -209,13 +209,15 @@ class Call(BaseCall):
         if computation.transaction_context.is_surrogate_call:
             raise ForbiddenOperationForSurrogateCall("Surrogatecalls are not allowed to create children calls or surrogatecalls. They are only allowed to create delegatecalls.")
 
-        if gas < GAS_TX:
-            raise OutOfGas("Calls and surrogatecalls require at least {} gas. But only {} was provided.".format(GAS_TX, gas))
 
         #
         # Message gas allocation and fees
         #
         child_msg_gas, child_msg_gas_fee = self.compute_msg_gas(computation, gas, to, value)
+
+        if child_msg_gas < GAS_TX:
+            raise OutOfGas("Calls and surrogatecalls require at least {} gas. But only {} was provided.".format(GAS_TX, child_msg_gas))
+
         computation.consume_gas(child_msg_gas_fee, reason=self.mnemonic)
 
         sender_balance = computation.state.account_db.get_balance(

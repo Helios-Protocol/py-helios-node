@@ -9,6 +9,7 @@ from typing import (  # noqa: F401
     List
 )
 
+from hvm.db.backends.base import BaseDB
 from hvm.rlp.accounts import (
     TransactionKey,
 )
@@ -33,6 +34,8 @@ from hvm.rlp.consensus import StakeRewardBundle
 from typing import Optional, Union  # noqa: F401
 
 from eth_typing import Address, Hash32
+
+from hvm.vm.execution_context import ExecutionContext
 from hvm.vm.message import Message
 from hvm.utils.spoof import (
     SpoofTransaction,
@@ -162,7 +165,7 @@ class BaseState(Configurable, metaclass=ABCMeta):
     transaction_executor = None  # type: Type[BaseTransactionExecutor]
 
 
-    def __init__(self, db, execution_context):
+    def __init__(self, db: BaseDB, execution_context: ExecutionContext):
         self._db = db
         self.execution_context = execution_context
         self.account_db: BaseAccountDB = self.get_account_db_class()(self._db)

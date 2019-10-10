@@ -3,10 +3,12 @@ from eth_utils import encode_hex
 
 from hvm.constants import BLOCK_GAS_LIMIT
 from hvm.exceptions import ValidationError
+from hvm.utils.address import generate_contract_address
 from hvm.utils.rlp import diff_rlp_object
 from hvm.utils.spoof import SpoofTransaction
 from hvm.vm.forks.photon.consensus import PhotonConsensusDB
 from hvm.vm.forks.photon.utils import ensure_computation_call_send_transactions_are_equal
+from hvm.vm.message import Message
 
 from .constants import (
     EIP658_TRANSACTION_STATUS_CODE_FAILURE,
@@ -78,6 +80,8 @@ class PhotonVM(VM):
     validate_transaction_against_header = validate_photon_transaction_against_header
     consensus_db_class = PhotonConsensusDB
 
+    min_time_between_blocks = constants.MIN_TIME_BETWEEN_BLOCKS
+
     def generate_transaction_for_single_computation(self,
                                                     tx_data: bytes,
                                                     from_address: Address,
@@ -105,6 +109,7 @@ class PhotonVM(VM):
         return SpoofTransaction(transaction, from_=from_address)
 
 
+
     def apply_all_transactions(self, block: PhotonBlock, private_key: PrivateKey = None) -> Tuple[
                                                                                         BaseBlockHeader,
                                                                                         List[Receipt],
@@ -120,7 +125,7 @@ class PhotonVM(VM):
 
         computation_call_send_transactions = []
         for receive_computation in receive_computations:
-            if receive_computation.msg.data != b'':
+            if receive_computation.msg.data != b'' and not receive_computation.is_error:
 
                 # Only check if there is actually transaction data because this will be an expensive function
                 external_call_messages = receive_computation.get_all_children_external_call_messages()
@@ -130,10 +135,7 @@ class PhotonVM(VM):
 
                     # Do this in here for performance. We only compute it if there are computation calls.
                     if current_nonce_for_computation_calls is None:
-                        if len(block.transactions) == 0:
-                            current_nonce_for_computation_calls = self.state.account_db.get_nonce(block.header.chain_address)
-                        else:
-                            current_nonce_for_computation_calls = self.get_next_nonce_after_normal_transactions(block.transactions)
+                        current_nonce_for_computation_calls = self.get_nonce_for_computation_calls(block)
 
                     if receive_computation.transaction_context.is_computation_call_origin:
                         origin = receive_computation.transaction_context.tx_origin
@@ -148,6 +150,14 @@ class PhotonVM(VM):
                         code_address = call_message.code_address if call_message.code_address is not None else b''
 
                         execute_on_send = call_message.execute_on_send
+
+                        #todo: need to allow for create2 addresses here, in which the salt must be used. how do we tell
+                        # the transaction to use this kind instead of the nonce kind. Precompile?
+                        if call_message.is_create:
+                            self.validate_create_call(call_message,
+                                                     block.header.chain_address,
+                                                     current_nonce_for_computation_calls
+                                                     )
 
                         new_tx = self.create_transaction(
                             nonce = current_nonce_for_computation_calls,
@@ -278,7 +288,18 @@ class PhotonVM(VM):
             else:
                 return computation_calls[0].nonce
 
-    
+    def get_nonce_for_computation_calls(self, block: PhotonBlock) -> int:
+        if len(block.transactions) == 0:
+            nonce = self.state.account_db.get_nonce(block.header.chain_address)
+        else:
+            nonce = self.get_next_nonce_after_normal_transactions(block.transactions)
+        return nonce
+
+    def add_computation_call_nonce_to_execution_context(self, block):
+        nonce = self.get_nonce_for_computation_calls(block)
+        self.state.execution_context.computation_call_nonce = nonce
+
+
     #
     # Validation
     #
@@ -303,7 +324,29 @@ class PhotonVM(VM):
         for i in range(len(block_computation_call_send_transactions)):
             ensure_computation_call_send_transactions_are_equal(block_computation_call_send_transactions[i], computation_call_send_transactions[i])
 
+    def validate_create_call(self,
+                             call_message: Message,
+                             this_chain_address: Address,
+                             current_nonce_for_computation_calls: int
+                             ) -> None:
+        if call_message.nonce != current_nonce_for_computation_calls:
+            raise ValidationError(
+                "A computation call or create was generated with a nonce that is different from what it should be. "
+                "The nonce used to generate the call: {} | what it should be: {}".format(
+                    call_message.nonce, current_nonce_for_computation_calls
+                ))
 
+        # double check that the contract address is the correct one for this nonce
+        contract_address = generate_contract_address(
+            this_chain_address,
+            current_nonce_for_computation_calls,
+        )
+        if contract_address != call_message.create_address:
+            raise ValidationError(
+                "A create message generated the incorrect contract address for this nonce."
+                "nonce: {} | generated contract address: {} | expected contract address: {}".format(
+                    current_nonce_for_computation_calls,
+                    encode_hex(call_message.create_address),
+                    encode_hex(contract_address)
+                ))
 
-
-    min_time_between_blocks = constants.MIN_TIME_BETWEEN_BLOCKS

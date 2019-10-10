@@ -748,11 +748,21 @@ class VM(BaseVM):
     #
     # Mining
     #
-    
+
+    def add_computation_call_nonce_to_execution_context(self, block):
+        if len(block.transactions) == 0:
+            nonce = self.state.account_db.get_nonce(block.header.chain_address)
+        else:
+            nonce = block.send_transactions[-1].nonce + 1
+
+        self.state.execution_context.computation_call_nonce = nonce
+
+
     def import_block(self, block: Union[BaseBlock, BaseQueueBlock], validate: bool = True, private_key: PrivateKey = None, **kwargs) -> BaseBlock:
         """
         Import the given block to the chain.
         """
+        self.add_computation_call_nonce_to_execution_context(block)
 
         # Ensure that this is the correct VM for the block being imported. The timestamp must match that
         # of the header in this VM.

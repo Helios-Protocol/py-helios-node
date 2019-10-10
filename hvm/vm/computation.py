@@ -49,6 +49,7 @@ from hvm.validation import (
 from hvm.vm.code_stream import (
     CodeStream,
 )
+from hvm.vm.execution_context import ExecutionContext
 from hvm.vm.gas_meter import (
     GasMeter,
 )
@@ -101,6 +102,7 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
     state: BaseState = None
     msg: Message = None
     transaction_context: BaseTransactionContext = None
+    execution_context: ExecutionContext = None
 
     _memory = None
     _stack = None
@@ -133,6 +135,7 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
                  transaction_context: BaseTransactionContext) -> None:
 
         self.state = state
+        self.execution_context = self.state.execution_context
         self.msg = message
         self.transaction_context = transaction_context
 
@@ -221,6 +224,7 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         Helper method for creating a child computation.
         """
         kwargs.setdefault('sender', self.transaction_context.this_chain_address)
+        kwargs.setdefault('nonce', self.execution_context.computation_call_nonce)
 
         child_message = Message(
             gas=gas,
@@ -280,11 +284,17 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         """
         return self._memory.write(start_position, size, value)
 
-    def memory_read(self, start_position: int, size: int) -> bytes:
+    def memory_read(self, start_position: int, size: int) -> memoryview:
         """
         Read and return ``size`` bytes from memory starting at ``start_position``.
         """
         return self._memory.read(start_position, size)
+
+    def memory_read_bytes(self, start_position: int, size: int) -> bytes:
+        """
+        Read and return ``size`` bytes from memory starting at ``start_position``.
+        """
+        return self._memory.read_bytes(start_position, size)
 
     def consume_gas(self, amount: int, reason: str) -> None:
         """
@@ -580,6 +590,18 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         """
         raise NotImplementedError("Must be implemented by subclasses")
 
+    def simulate_apply_create_message(self):
+        snapshot = self.state.snapshot()
+        computation_call_nonce_before = self.execution_context.computation_call_nonce
+
+        computation = self.apply_create_message()
+
+        self.state.revert(snapshot)
+        self.execution_context.computation_call_nonce = computation_call_nonce_before
+        return computation
+
+
+
     @abstractmethod
     def apply_create_message(self) -> 'BaseComputation':
         """
@@ -638,6 +660,7 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
     #
     def apply_external_call_message(self, call_message):
         self.external_call_messages.append(call_message)
+        self.execution_context.increment_computation_call_nonce()
 
 
     def get_all_children_external_call_messages(self) -> List[Message]:
@@ -648,29 +671,9 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         external_call_messages.extend(self.external_call_messages)
 
         for child_computation in self.children:
-            external_call_messages.extend(child_computation.get_all_children_external_call_messages())
+            if not child_computation.is_error:
+                external_call_messages.extend(child_computation.get_all_children_external_call_messages())
+
+        external_call_messages.sort(key=lambda msg: msg.nonce)
 
         return external_call_messages
-
-    @property
-    def required_gas_for_external_calls(self) -> int:
-        # This only checks to see if there si enough to send the external call transactions. Not perform the computation
-        external_call_msgs = self.get_all_children_external_call_messages()
-        required_additional_gas = sum([msg.gas for msg in external_call_msgs])
-        return required_additional_gas
-
-    @property
-    def has_min_required_gas_for_external_calls(self) -> bool:
-        '''
-        Checks to see if there is enough gas to pay just the GAS_TX for all call messages.
-        '''
-        return self.get_gas_remaining() > self.required_gas_for_external_calls
-
-    def set_error_if_not_enough_gas_for_external_calls(self) -> None:
-        if not self.has_min_required_gas_for_external_calls:
-            with self:
-                raise OutOfGas("Out of gas: Needed {0} - Remaining {1} - Reason: {2}".format(
-                    self.required_gas_for_external_calls,
-                    self.get_gas_remaining(),
-                    "Not enough gas to pay for child transactions created by this contract",
-                ))

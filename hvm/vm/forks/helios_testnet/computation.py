@@ -195,7 +195,7 @@ class HeliosTestnetComputation(BaseComputation):
                     # Different from Frontier: reverts state on gas failure while
                     # writing contract code.
                     computation._error = err
-                    self.logger.debug("NOT ENOUGH GAS TO WRITE CONTRACT CODE")
+                    self.logger.debug("NOT ENOUGH GAS TO WRITE CONTRACT CODE. Error: {}".format(err))
                     self.state.revert(snapshot)
                 else:
 
