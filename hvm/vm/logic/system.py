@@ -262,10 +262,10 @@ class Create2(Create):
     def apply_external_call_create_message(self, computation: 'PhotonComputation', child_msg: Message, stack_data: CreateOpcodeStackData) -> None:
         initial_gas_given = child_msg.gas
         child_computation = computation.__class__(
-                            computation.state,
-                            child_msg,
-                            computation.transaction_context,
-                        ).simulate_apply_create_message()
+                                computation.state,
+                                child_msg,
+                                computation.transaction_context,
+                            ).simulate_apply_create_message()
 
         gas_remaining = child_computation.get_gas_remaining()
         gas_used = initial_gas_given - gas_remaining
@@ -280,8 +280,6 @@ class Create2(Create):
             )
             computation.stack_push_int(0)
             return
-
-        child_msg.salt = stack_data.salt
 
         if child_computation.is_error:
             computation.stack_push_int(0)

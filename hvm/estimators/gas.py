@@ -11,6 +11,8 @@ from hvm.utils.spoof import (
 def _get_computation_error(state, transaction):
 
     snapshot = state.snapshot()
+    # Take a snapshot of the current computation call nonce so that it can be reset if the computation fails
+    computation_call_nonce_snapshot = state.execution_context.computation_call_nonce
 
     try:
         computation = state.execute_transaction(transaction)
@@ -21,6 +23,7 @@ def _get_computation_error(state, transaction):
 
     finally:
         state.revert(snapshot)
+        state.execution_context.computation_call_nonce = computation_call_nonce_snapshot
 
 
 @curry

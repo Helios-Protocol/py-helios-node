@@ -37,6 +37,8 @@ class PhotonComputation(BosonComputation):
 
     def apply_message(self, validate=True):
         snapshot = self.state.snapshot()
+        # Take a snapshot of the current computation call nonce so that it can be reset if the computation fails
+        computation_call_nonce_snapshot = self.state.execution_context.computation_call_nonce
 
         if self.msg.depth > constants.STACK_DEPTH_LIMIT:
             raise StackDepthLimit("Stack depth limit reached")
@@ -88,9 +90,6 @@ class PhotonComputation(BosonComputation):
         elif self.transaction_context.is_receive:
             # this is when we run all computation normally
 
-            # Take a snapshot of the current computation call nonce so that it can be reset if the computation fails
-            initial_computation_call_nonce = self.state.execution_context.computation_call_nonce
-
             computation = self.apply_computation(
                 self.state,
                 self.msg,
@@ -101,7 +100,7 @@ class PhotonComputation(BosonComputation):
                 self.state.revert(snapshot)
 
                 # Reset the computation call nonce on error.
-                self.state.execution_context.computation_call_nonce = initial_computation_call_nonce
+                self.state.execution_context.computation_call_nonce = computation_call_nonce_snapshot
             else:
                 self.state.commit(snapshot)
 
@@ -112,6 +111,7 @@ class PhotonComputation(BosonComputation):
 
             if self.msg.is_create:
                 computation_snapshot = self.state.snapshot()
+                initial_create_computation_call_nonce = self.state.execution_context.computation_call_nonce
 
                 computation = self.apply_computation(
                     self.state,
@@ -122,6 +122,7 @@ class PhotonComputation(BosonComputation):
                 if computation.is_error:
                     # This will revert the computation snapshot as well.
                     self.state.revert(snapshot)
+                    self.state.execution_context.computation_call_nonce = computation_call_nonce_snapshot
                 else:
                     # computation worked, but we don't want it yet until the receive transaction. So lets revert the computation
                     # but commit the transaction above.
@@ -129,7 +130,10 @@ class PhotonComputation(BosonComputation):
                         "REVERTING COMPUTATION FOR CONTRACT DEPLOYMENT. WILL DEPLOY ON RECEIVE TX."
                     )
                     self.state.revert(computation_snapshot)
+                    self.state.execution_context.computation_call_nonce = initial_create_computation_call_nonce
                     self.state.commit(snapshot)
+
+
 
             elif self.transaction_context.tx_execute_on_send:
                 computation = self.apply_computation(
@@ -141,6 +145,7 @@ class PhotonComputation(BosonComputation):
                 if computation.is_error:
                     # This will revert the computation snapshot as well.
                     self.state.revert(snapshot)
+                    self.state.execution_context.computation_call_nonce = computation_call_nonce_snapshot
                 else:
                     self.logger.debug(
                         "SUCCESSFULLY EXECUTED SEND PORTION OF TRANSACTION"

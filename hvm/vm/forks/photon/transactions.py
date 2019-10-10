@@ -40,6 +40,7 @@ class PhotonTransaction(BosonTransaction):
         ('caller', address),
         ('origin', address),
         ('code_address', address),
+        ('create_address', address),
         ('execute_on_send', boolean),
         ('v', big_endian_int),
         ('r', big_endian_int),
@@ -56,6 +57,7 @@ class PhotonTransaction(BosonTransaction):
                  caller = b'',
                  origin = b'',
                  code_address = b'',
+                 create_address = b'',
                  execute_on_send = False,
                  v=0,
                  r=0,
@@ -72,6 +74,7 @@ class PhotonTransaction(BosonTransaction):
             caller = caller,
             origin = origin,
             code_address = code_address,
+            create_address = create_address,
             execute_on_send=execute_on_send,
             v = v,
             r = r,
@@ -81,7 +84,7 @@ class PhotonTransaction(BosonTransaction):
 
     @property
     def created_by_computation(self) -> bool:
-        return self.caller != b'' or self.origin != b''
+        return self.caller != b'' or self.origin != b'' or self.create_address != b''
 
     @property
     def refund_address(self) -> Address:

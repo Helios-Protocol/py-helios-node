@@ -16,8 +16,8 @@ from rlp_cython.sedes import (
 )
 
 from eth_typing import (
-    Address
-)
+    Address,
+    Hash32)
 
 from eth_hash.auto import keccak
 
@@ -83,7 +83,7 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
 
 
     @property
-    def hash(self) -> bytes:
+    def hash(self) -> Hash32:
         return keccak(rlp.encode(self))
 
     @property

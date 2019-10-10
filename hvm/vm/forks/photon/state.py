@@ -57,7 +57,7 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
 
             refund_amount = 0
 
-            if send_transaction.to == constants.CREATE_CONTRACT_ADDRESS:
+            if transaction_context.is_create_tx:
                 # create call
                 # the contract address was already chosen on the send transaction. It is now the caller chain address
                 create_address = transaction_context.this_chain_address
@@ -109,12 +109,15 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
 
             refund_amount = 0
 
-            if send_transaction.to == constants.CREATE_CONTRACT_ADDRESS:
+            if transaction_context.is_create_tx:
                 # create call
-                create_address = generate_contract_address(
-                    send_transaction.sender,
-                    self.vm_state.account_db.get_nonce(send_transaction.sender) - 1,
-                )
+                if transaction_context.tx_create_address is not None:
+                    create_address = transaction_context.tx_create_address
+                else:
+                    create_address = generate_contract_address(
+                        send_transaction.sender,
+                        self.vm_state.account_db.get_nonce(send_transaction.sender) - 1,
+                    )
                 data = b''
                 code = send_transaction.data
             elif send_transaction.code_address == b'':
@@ -199,6 +202,7 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
             tx_caller = send_transaction.caller if send_transaction.caller != b'' else None,
             tx_origin = send_transaction.origin if send_transaction.origin != b'' else None,
             tx_code_address = send_transaction.code_address if send_transaction.code_address != b'' else None,
+            tx_create_address = send_transaction.create_address if send_transaction.create_address != b'' else None,
             tx_signer = send_transaction.sender,
             tx_execute_on_send=send_transaction.execute_on_send
         )

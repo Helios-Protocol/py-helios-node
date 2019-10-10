@@ -22,7 +22,7 @@ class Message(object):
     __slots__ = [
         'to', 'sender', 'value', 'data', 'depth', 'gas', 'code', '_code_address',
         'create_address', 'should_transfer_value', 'is_static', 'refund_amount',
-        'execute_on_send', 'nonce', 'salt'
+        'execute_on_send', 'nonce'
     ]
 
     logger = logging.getLogger('hvm.vm.message.Message')
@@ -41,8 +41,7 @@ class Message(object):
                  is_static=False,
                  refund_amount=0,
                  execute_on_send=False,
-                 nonce=0,
-                 salt: int=0):
+                 nonce=0):
         validate_uint256(gas, title="Message.gas")
         self.gas = gas  # type: int
 
@@ -62,9 +61,6 @@ class Message(object):
 
         validate_is_bytes(data, title="Message.data")
         self.data = data
-
-        validate_is_integer(salt, title="Message.salt")
-        self.salt = salt
 
         validate_is_integer(depth, title="Message.depth")
         validate_gte(depth, minimum=0, title="Message.depth")
@@ -116,7 +112,7 @@ class Message(object):
 
     @property
     def is_create(self):
-        return self.to == CREATE_CONTRACT_ADDRESS
+        return self.to == CREATE_CONTRACT_ADDRESS or self.create_address is not None
 
 
 

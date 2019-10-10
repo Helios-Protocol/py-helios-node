@@ -140,8 +140,8 @@ class PhotonVM(VM):
                     if receive_computation.transaction_context.is_computation_call_origin:
                         origin = receive_computation.transaction_context.tx_origin
                     else:
-                        # Needs to be the code address that generated this
-                        origin = receive_computation.transaction_context.smart_contract_storage_address
+                        # Needs to be the original sender so we know where to send the refund at the end.
+                        origin = receive_computation.transaction_context.refund_address
 
 
                     for i in range(len(external_call_messages)):
@@ -151,13 +151,13 @@ class PhotonVM(VM):
 
                         execute_on_send = call_message.execute_on_send
 
-                        #todo: need to allow for create2 addresses here, in which the salt must be used. how do we tell
-                        # the transaction to use this kind instead of the nonce kind. Precompile?
                         if call_message.is_create:
                             self.validate_create_call(call_message,
-                                                     block.header.chain_address,
                                                      current_nonce_for_computation_calls
                                                      )
+                            create_address = call_message.create_address
+                        else:
+                            create_address = b''
 
                         new_tx = self.create_transaction(
                             nonce = current_nonce_for_computation_calls,
@@ -169,6 +169,7 @@ class PhotonVM(VM):
                             caller = block.header.chain_address,
                             origin = origin,
                             code_address = code_address,
+                            create_address = create_address,
                             execute_on_send = execute_on_send
                         )
 
@@ -326,7 +327,6 @@ class PhotonVM(VM):
 
     def validate_create_call(self,
                              call_message: Message,
-                             this_chain_address: Address,
                              current_nonce_for_computation_calls: int
                              ) -> None:
         if call_message.nonce != current_nonce_for_computation_calls:
@@ -336,17 +336,4 @@ class PhotonVM(VM):
                     call_message.nonce, current_nonce_for_computation_calls
                 ))
 
-        # double check that the contract address is the correct one for this nonce
-        contract_address = generate_contract_address(
-            this_chain_address,
-            current_nonce_for_computation_calls,
-        )
-        if contract_address != call_message.create_address:
-            raise ValidationError(
-                "A create message generated the incorrect contract address for this nonce."
-                "nonce: {} | generated contract address: {} | expected contract address: {}".format(
-                    current_nonce_for_computation_calls,
-                    encode_hex(call_message.create_address),
-                    encode_hex(contract_address)
-                ))
 

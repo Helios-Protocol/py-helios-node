@@ -1,3 +1,4 @@
+from hvm.constants import CREATE_CONTRACT_ADDRESS
 from hvm.vm.forks.boson.transaction_context import BosonTransactionContext
 
 import itertools
@@ -30,13 +31,15 @@ class PhotonTransactionContext(BosonTransactionContext):
                  '_tx_caller',
                  '_tx_origin',
                  '_tx_code_address',
+                 '_tx_create_address',
                  '_tx_signer',
                  '_tx_execute_on_send',
                  ]
 
     def __init__(self, send_tx_to: Address,  origin: Address, send_tx_hash: Hash32, this_chain_address: Address, gas_price: int = None,
                  receive_tx_hash: Hash32 = None, is_receive: bool = False, is_refund: bool = False, tx_caller: Address =None,
-                 tx_origin: Address = None, tx_code_address: Address = None, tx_signer: Address = None, tx_execute_on_send = False,
+                 tx_origin: Address = None, tx_code_address: Address = None, tx_create_address: Address = None, tx_signer: Address = None,
+                 tx_execute_on_send = False,
                  ):
 
         if send_tx_to:
@@ -46,6 +49,10 @@ class PhotonTransactionContext(BosonTransactionContext):
         if tx_caller is not None:
             validate_canonical_address(tx_caller, title="TransactionContext.tx_caller")
         self._tx_caller = tx_caller
+
+        if tx_create_address is not None:
+            validate_canonical_address(tx_create_address, title="TransactionContext.tx_create_address")
+        self._tx_create_address = tx_create_address
 
         if tx_origin is not None:
             validate_canonical_address(tx_origin, title="TransactionContext.tx_origin")
@@ -82,6 +89,10 @@ class PhotonTransactionContext(BosonTransactionContext):
         return self._tx_code_address
 
     @property
+    def tx_create_address(self):
+        return self._tx_create_address
+
+    @property
     def tx_signer(self):
         return self._tx_signer
 
@@ -103,6 +114,10 @@ class PhotonTransactionContext(BosonTransactionContext):
     @property
     def is_surrogate_call(self):
         return self.tx_code_address is not None
+
+    @property
+    def is_create_tx(self):
+        return self.send_tx_to == CREATE_CONTRACT_ADDRESS or self.tx_create_address is not None
 
     @property
     def smart_contract_storage_address(self):
