@@ -20,9 +20,6 @@ from hvm.vm.forks.helios_testnet.opcodes import HELIOS_TESTNET_OPCODES
 
 BOSON_UPDATED_OPCODES = {
 
-    #
-    # Call
-    #
 
 }
 

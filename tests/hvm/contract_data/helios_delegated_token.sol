@@ -87,4 +87,14 @@ contract HeliosDelegatedToken {
             balance = balance.add(amount);
         }
     }
+
+
+    function do_something(uint256 variable) public {
+        if(is_send()){
+            // Code to be executed on send
+
+        }else{
+            // Code to be executed on receive
+        }
+    }
 }

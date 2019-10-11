@@ -68,6 +68,8 @@ class PhotonComputation(BosonComputation):
             allow_negative_refund_strategy
         )
 
+
+
     def apply_message(self, validate=True):
         snapshot = self.state.snapshot()
         # Take a snapshot of the current computation call nonce so that it can be reset if the computation fails

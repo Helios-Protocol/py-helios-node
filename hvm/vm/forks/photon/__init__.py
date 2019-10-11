@@ -131,45 +131,37 @@ class PhotonVM(VM):
                 external_call_messages = receive_computation.get_all_children_external_call_messages()
 
                 if len(external_call_messages) > 0:
-                    gas_price = receive_computation.transaction_context.gas_price
-
                     # Do this in here for performance. We only compute it if there are computation calls.
                     if current_nonce_for_computation_calls is None:
                         current_nonce_for_computation_calls = self.get_nonce_for_computation_calls(block)
 
-                    if receive_computation.transaction_context.is_computation_call_origin:
-                        origin = receive_computation.transaction_context.tx_origin
-                    else:
-                        # Needs to be the original sender so we know where to send the refund at the end.
-                        origin = receive_computation.transaction_context.refund_address
-
+                    gas_price = receive_computation.transaction_context.gas_price
+                    origin = receive_computation.transaction_context.child_tx_origin
 
                     for i in range(len(external_call_messages)):
                         call_message = external_call_messages[i]
-                        gas = call_message.gas
-                        code_address = call_message.code_address if call_message.code_address is not None else b''
+
+                        # if the code address is the one we are sending this tx to, just send a normal non-surrogate tx.
+                        code_address = call_message.code_address if call_message.code_address != call_message.to else b''
 
                         execute_on_send = call_message.execute_on_send
 
                         if call_message.is_create:
-                            self.validate_create_call(call_message,
-                                                     current_nonce_for_computation_calls
-                                                     )
-                            create_address = call_message.create_address
-                        else:
-                            create_address = b''
+                            self.validate_create_call(call_message, current_nonce_for_computation_calls)
+
+                        create_address = call_message.create_address if call_message.create_address is not None else b''
 
                         new_tx = self.create_transaction(
                             nonce = current_nonce_for_computation_calls,
                             gas_price=gas_price,
-                            gas=gas,
+                            gas=call_message.gas,
                             to=call_message.to,
                             value=call_message.value,
-                            data=call_message.data,
+                            data=call_message.data_as_bytes,
                             caller = block.header.chain_address,
                             origin = origin,
-                            code_address = code_address,
-                            create_address = create_address,
+                            code_address = call_message.child_tx_code_addres,
+                            create_address = call_message.child_tx_create_address,
                             execute_on_send = execute_on_send
                         )
 
@@ -221,7 +213,6 @@ class PhotonVM(VM):
         receipts.extend(receive_receipts)
 
         return last_header, receipts, receive_computations, send_computations, processed_receive_transactions, computation_call_send_transactions
-
 
     def save_recievable_transactions(self,block_header_hash: Hash32, computations: List[PhotonComputation], receive_transactions: List[PhotonReceiveTransaction]) -> None:
         for computation in computations:

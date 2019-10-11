@@ -11,10 +11,10 @@ from eth_utils import (
 from hvm import (
     constants
 )
-from hvm.constants import ZERO_HASH32, ZERO_ADDRESS, BLOCK_GAS_LIMIT
+from hvm.constants import ZERO_HASH32, ZERO_ADDRESS, BLOCK_GAS_LIMIT, GAS_CALLSTIPEND, CREATE_CONTRACT_ADDRESS
 from hvm.utils.address import (
     force_bytes_to_address,
-)
+    generate_contract_address, generate_safe_contract_address)
 from hvm.db.atomic import (
     AtomicDB
 )
@@ -24,8 +24,8 @@ from hvm.db.chain import (
 from hvm.exceptions import (
     InvalidInstruction,
     VMError,
-    ValidationError
-)
+    ValidationError,
+    ForbiddenOperationForSurrogateCall, OutOfGas, ForbiddenOperationForExecutingOnSend)
 from hvm.rlp.headers import (
     BlockHeader,
 )
@@ -41,6 +41,7 @@ from hvm.vm.forks import (
 from hvm.vm.message import (
     Message,
 )
+from pprint import pprint
 
 
 NORMALIZED_ADDRESS_A = "0x0f572e5295c57f15886f9b263e2f6d2d6c7b5ec6"
@@ -51,6 +52,8 @@ ADDRESS_NOT_IN_STATE = NORMALIZED_ADDRESS_B
 ADDRESS_WITH_JUST_BALANCE = "0x0000000000000000000000000000000000000001"
 CANONICAL_ADDRESS_A = to_canonical_address("0x0f572e5295c57f15886f9b263e2f6d2d6c7b5ec6")
 CANONICAL_ADDRESS_B = to_canonical_address("0xcd1722f3947def4cf144679da39c4c32bdc35681")
+CANONICAL_ADDRESS_C = to_canonical_address("0xcd1722f3947def4cf144679da39c4c32bdc35682")
+CANONICAL_ADDRESS_D = to_canonical_address("0xcd1722f3947def4cf144679da39c4c32bdc35683")
 
 GENESIS_HEADER = BlockHeader(
     block_number=constants.GENESIS_BLOCK_NUMBER
@@ -76,7 +79,9 @@ def setup_computation(
         code_address = None,
         execute_on_send = False,
         is_receive=False,
-        is_surrogate=False):
+        is_surrogate=False,
+        is_computation_call_origin = False,
+        is_create_tx = False):
 
     message = Message(
         to=to,
@@ -102,9 +107,16 @@ def setup_computation(
     else:
         tx_code_address = None
 
+    if is_computation_call_origin:
+        tx_origin = CANONICAL_ADDRESS_C
+        tx_caller = CANONICAL_ADDRESS_C
+    else:
+        tx_origin = None
+        tx_caller = None
 
     tx_context = vm_class._state_class.transaction_context_class(
         send_tx_to=to,
+        tx_signer=CANONICAL_ADDRESS_B,
         gas_price=1,
         origin=CANONICAL_ADDRESS_B,
         send_tx_hash=ZERO_HASH32,
@@ -112,7 +124,9 @@ def setup_computation(
         receive_tx_hash=receive_tx_hash,
         tx_execute_on_send=execute_on_send,
         is_receive=is_receive,
-        tx_code_address=tx_code_address
+        tx_code_address=tx_code_address,
+        tx_origin=tx_origin,
+        tx_caller=tx_caller
     )
 
 
@@ -932,59 +946,852 @@ def test_blake2b_f_compression(vm_class, input_hex, output_hex, expect_exception
 
 
 @pytest.mark.parametrize(
-    'vm_class, tx_gas, call_gas, is_receive, is_surrogate, expect_error',
+    'vm_class, tx_gas, call_gas, value, is_receive, is_surrogate, computation_call_origin, is_create_tx, execute_on_send, expect_error',
     (
-        ( #not enough gas
+        ( # not enough gas in transaction
             PhotonVM,
             1000,
-            20000,
+            200000,
+            0,
             True,
             False,
-            True
+            False,
+            False,
+            False,
+            OutOfGas
+        ),
+        ( # enough tx gas, but not enough call gas
+            PhotonVM,
+            10000000,
+            2000,
+            0,
+            True,
+            False,
+            False,
+            False,
+            False,
+            OutOfGas
         ),
         (
             PhotonVM,
             100000000,
             100000,
+            0,
             True,
             False,
-            False
+            False,
+            False,
+            False,
+            None
         ),
+        (
+            PhotonVM,
+            100000000,
+            100000,
+            1,
+            True,
+            False,
+            False,
+            False,
+            False,
+            None
+        ),
+        ( # surrogate calls cannot create children calls
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            True,
+            True,
+            False,
+            False,
+            False,
+            ForbiddenOperationForSurrogateCall
+        ),
+        ( # Execute on send cannot create calls
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            False,
+            False,
+            False,
+            False,
+            True,
+            ForbiddenOperationForExecutingOnSend
+        ),
+        (  # Execute on send cannot create calls
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            False,
+            True,
+            False,
+            False,
+            True,
+            ForbiddenOperationForExecutingOnSend
+        ),
+        (
+            PhotonVM,
+            100000000,
+            100000,
+            1,
+            True,
+            False,
+            True,
+            False,
+            False,
+            None
+        ),
+        ( # create_tx will execute to determine gas usage, but it wont save any external calls
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            False, # is_receive
+            False, # is_surrogate
+            False, # computation_call_origin
+            True, # is_create_tx
+            False, # execute_on_send
+            None
+        ),
+        ( # execute on send but not create
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            False, # is_receive
+            False, # is_surrogate
+            False, # computation_call_origin
+            False, # is_create_tx
+            True, # execute_on_send
+            ForbiddenOperationForExecutingOnSend
+        ),
+
     )
 )
-def test_call(vm_class, tx_gas, call_gas, is_receive, is_surrogate, expect_error):
+def test_call(vm_class, tx_gas, call_gas, value, is_receive, is_surrogate, computation_call_origin, is_create_tx, execute_on_send, expect_error):
+    call_data = encode_hex(pad32(b"1283712983711973"))
     code = assemble(
+                # store call_data into memory
+                opcode_values.PUSH32,
+                call_data, # value
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(0))), # start position
+                opcode_values.MSTORE,
+
+                #store call parameters in stack
                 opcode_values.PUSH32,
                 encode_hex(pad32(int_to_big_endian(0))), # memory_out_length
                 opcode_values.PUSH32,
                 encode_hex(pad32(int_to_big_endian(0))),# memory_out_start
                 opcode_values.PUSH32,
-                encode_hex(pad32(int_to_big_endian(0))),# memory_in_length
+                encode_hex(pad32(int_to_big_endian(32))),# memory_in_length
                 opcode_values.PUSH32,
                 encode_hex(pad32(int_to_big_endian(0))),# memory_in_start
                 opcode_values.PUSH32,
-                encode_hex(pad32(int_to_big_endian(0))), # value
+                encode_hex(pad32(int_to_big_endian(value))), # value
                 opcode_values.PUSH20,
-                CANONICAL_ADDRESS_B, # to
+                CANONICAL_ADDRESS_A, # to
                 opcode_values.PUSH32,
                 encode_hex(pad32(int_to_big_endian(call_gas))), # gas
+
+                # make the call
                 opcode_values.CALL, # call
             )
 
-
+    if is_create_tx:
+        create_address = CANONICAL_ADDRESS_B
+        to = CREATE_CONTRACT_ADDRESS
+    else:
+        create_address = None
+        to = CANONICAL_ADDRESS_B
 
     computation = setup_computation(
         vm_class,
-        CANONICAL_ADDRESS_B,
+        create_address,
         code=code,
         gas=tx_gas,
-        to=CANONICAL_ADDRESS_B,
+        to=to,
         data=b'',
         is_receive=is_receive,
-        is_surrogate=is_surrogate
+        is_surrogate=is_surrogate,
+        code_address=CANONICAL_ADDRESS_B,
+        is_computation_call_origin=computation_call_origin,
+        execute_on_send = execute_on_send,
     )
 
+    computation.state.account_db.set_balance(CANONICAL_ADDRESS_B, value)
+
+    if value > 0:
+        expected_call_gas = call_gas + GAS_CALLSTIPEND
+    else:
+        expected_call_gas = call_gas
 
     comp = computation.apply_message()
-    if expect_error:
-        assert isinstance(comp.error, VMError)
+    external_call_messages = comp.get_all_children_external_call_messages()
+
+    if expect_error is not None:
+        assert isinstance(comp.error, expect_error)
+        assert(len(external_call_messages) == 0)
+    else:
+        with pytest.raises(AttributeError):
+            error = comp.error
+
+        if is_create_tx and not is_receive:
+            assert(len(external_call_messages) == 0)
+        else:
+            call_message = external_call_messages[0]
+            assert (call_message.gas == expected_call_gas)
+            assert (call_message.to == CANONICAL_ADDRESS_A)
+            assert (call_message.sender == CANONICAL_ADDRESS_B)
+            assert (call_message.value == value)
+            assert (call_message.data_as_bytes == decode_hex(call_data))
+            assert (call_message.code == b'')
+            assert (call_message.create_address is None)
+            assert (call_message.code_address == call_message.to)
+            assert (call_message.should_transfer_value == True)
+            assert (call_message.is_static == False)
+            assert (call_message.refund_amount == 0)
+            assert (call_message.execute_on_send == False)
+            assert (call_message.nonce == 0)
+
+            assert (call_message.resolved_to == call_message.to)
+            assert (call_message.is_create == False)
+            assert (call_message.child_tx_code_address == b'')
+            assert (call_message.child_tx_create_address == b'')
+
+            assert (comp.transaction_context.child_tx_origin == CANONICAL_ADDRESS_C if computation_call_origin else call_message.sender)
+            assert (comp.transaction_context.is_computation_call_origin == computation_call_origin)
+            assert (comp.transaction_context.is_surrogate_call == is_surrogate)
+
+            # pprint("gas: {} | to: {} | sender: {} | value: {} | data: {} | code: {} | depth: {} | create_address: {} | code_address: {} | should_transfer_value: {} | is_static: {} | refund_amount: {} | execute_on_send: {} | nonce: {}".format(
+            #         call_message.gas,
+            #         call_message.to,
+            #         call_message.sender,
+            #         call_message.value,
+            #         call_message.data,
+            #         call_message.code,
+            #         call_message.depth,
+            #         call_message.create_address,
+            #         call_message.code_address,
+            #         call_message.should_transfer_value,
+            #         call_message.is_static,
+            #         call_message.refund_amount,
+            #         call_message.execute_on_send,
+            #         call_message.nonce
+            #         )
+            # )
+
+
+@pytest.mark.parametrize(
+    'vm_class, tx_gas, call_gas, value, is_receive, is_surrogate, computation_call_origin, is_create_tx, execute_on_send, expect_error',
+    (
+        ( # not enough gas in transaction
+            PhotonVM,
+            1000,
+            200000,
+            0,
+            True,
+            False,
+            False,
+            False,
+            False,
+            OutOfGas
+        ),
+        ( # enough tx gas, but not enough call gas
+            PhotonVM,
+            10000000,
+            2000,
+            0,
+            True,
+            False,
+            False,
+            False,
+            False,
+            OutOfGas
+        ),
+        (
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            True,
+            False,
+            False,
+            False,
+            False,
+            None
+        ),
+        (
+            PhotonVM,
+            100000000,
+            100000,
+            1,
+            True,
+            False,
+            False,
+            False,
+            False,
+            None
+        ),
+        ( # surrogate calls cannot create children calls
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            True,
+            True,
+            False,
+            False,
+            False,
+            ForbiddenOperationForSurrogateCall
+        ),
+        ( # Execute on send cannot create calls
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            False,
+            False,
+            False,
+            False,
+            True,
+            ForbiddenOperationForExecutingOnSend
+        ),
+        (  # Execute on send cannot create calls
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            False,
+            True,
+            False,
+            False,
+            True,
+            ForbiddenOperationForExecutingOnSend
+        ),
+        (
+            PhotonVM,
+            100000000,
+            100000,
+            1,
+            True,
+            False,
+            True,
+            False,
+            False,
+            None
+        ),
+        ( # create_tx will execute to determine gas usage, but it wont save any external calls
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            False, # is_receive
+            False, # is_surrogate
+            False, # computation_call_origin
+            True, # is_create_tx
+            False, # execute_on_send
+            None
+        ),
+        ( # execute on send but not create
+            PhotonVM,
+            100000000,
+            100000,
+            0,
+            False, # is_receive
+            False, # is_surrogate
+            False, # computation_call_origin
+            False, # is_create_tx
+            True, # execute_on_send
+            ForbiddenOperationForExecutingOnSend
+        ),
+
+    )
+)
+def test_surrogate_call(vm_class, tx_gas, call_gas, value, is_receive, is_surrogate, computation_call_origin, is_create_tx, execute_on_send, expect_error):
+    call_data = encode_hex(pad32(b"1283712983711973"))
+    code = assemble(
+                # store call_data into memory
+                opcode_values.PUSH32,
+                call_data, # value
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(0))), # start position
+                opcode_values.MSTORE,
+
+                #store call parameters in stack
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(32))), # memory_in_length
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(0))), # memory_in_start
+                opcode_values.PUSH20,
+                CANONICAL_ADDRESS_A,  # to
+                opcode_values.PUSH1,
+                encode_hex(int_to_big_endian(1 if execute_on_send else 0)), # execute on send
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(value))), # value
+                opcode_values.PUSH20,
+                CANONICAL_ADDRESS_D, # code_address
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(call_gas))), # gas
+
+                # make the call
+                opcode_values.SURROGATECALL, # call
+            )
+
+    if is_create_tx:
+        create_address = CANONICAL_ADDRESS_B
+        to = CREATE_CONTRACT_ADDRESS
+    else:
+        create_address = None
+        to = CANONICAL_ADDRESS_B
+
+    computation = setup_computation(
+        vm_class,
+        create_address,
+        code=code,
+        gas=tx_gas,
+        to=to,
+        data=b'',
+        is_receive=is_receive,
+        is_surrogate=is_surrogate,
+        code_address=CANONICAL_ADDRESS_B,
+        is_computation_call_origin=computation_call_origin,
+        execute_on_send=execute_on_send,
+    )
+    computation.state.account_db.set_balance(CANONICAL_ADDRESS_B, value)
+
+    if value > 0:
+        expected_call_gas = call_gas + GAS_CALLSTIPEND
+    else:
+        expected_call_gas = call_gas
+
+    comp = computation.apply_message()
+    external_call_messages = comp.get_all_children_external_call_messages()
+
+    if expect_error is not None:
+        assert isinstance(comp.error, expect_error)
+        assert (len(external_call_messages) == 0)
+    else:
+        with pytest.raises(AttributeError):
+            error = comp.error
+
+        if is_create_tx and not is_receive:
+            assert(len(external_call_messages) == 0)
+        else:
+
+            call_message = external_call_messages[0]
+            assert (call_message.gas == expected_call_gas)
+            assert (call_message.to == CANONICAL_ADDRESS_A)
+            assert (call_message.sender == CANONICAL_ADDRESS_B)
+            assert (call_message.value == value)
+            assert (call_message.data_as_bytes == decode_hex(call_data))
+            assert (call_message.code == b'')
+            assert (call_message.create_address is None)
+            assert (call_message.code_address == CANONICAL_ADDRESS_D)
+            assert (call_message.should_transfer_value == True)
+            assert (call_message.is_static == False)
+            assert (call_message.refund_amount == 0)
+            assert (call_message.execute_on_send == execute_on_send)
+            assert (call_message.nonce == 0)
+
+            assert (call_message.resolved_to == call_message.to)
+            assert (call_message.is_create == False)
+            assert (call_message.child_tx_code_address == CANONICAL_ADDRESS_D)
+            assert (call_message.child_tx_create_address == b'')
+
+            assert (comp.transaction_context.child_tx_origin == CANONICAL_ADDRESS_C if computation_call_origin else call_message.sender)
+            assert (comp.transaction_context.is_computation_call_origin == computation_call_origin)
+            assert (comp.transaction_context.is_surrogate_call == is_surrogate)
+
+
+@pytest.mark.parametrize(
+    'vm_class, tx_gas, value, is_receive, is_surrogate, computation_call_origin, is_create_tx, execute_on_send, expect_error',
+    (
+        ( # not enough gas in transaction
+            PhotonVM,
+            1000,
+            0,
+            True,
+            False,
+            False,
+            False,
+            False,
+            OutOfGas
+        ),
+        (
+            PhotonVM,
+            100000000,
+            0,
+            True,
+            False,
+            False,
+            False,
+            False,
+            None
+        ),
+        (
+            PhotonVM,
+            100000000,
+            1,
+            True,
+            False,
+            False,
+            False,
+            False,
+            None
+        ),
+        ( # surrogate calls cannot create children calls
+            PhotonVM,
+            100000000,
+            0,
+            True,
+            True,
+            False,
+            False,
+            False,
+            ForbiddenOperationForSurrogateCall
+        ),
+        ( # Execute on send cannot create calls
+            PhotonVM,
+            100000000,
+            0,
+            False,
+            False,
+            False,
+            False,
+            True,
+            ForbiddenOperationForExecutingOnSend
+        ),
+        (  # Execute on send cannot create calls
+            PhotonVM,
+            100000000,
+            0,
+            False,
+            True,
+            False,
+            False,
+            True,
+            ForbiddenOperationForExecutingOnSend
+        ),
+        (
+            PhotonVM,
+            100000000,
+            1,
+            True,
+            False,
+            True,
+            False,
+            False,
+            None
+        ),
+        ( # create_tx will execute to determine gas usage, but it wont save any external calls
+            PhotonVM,
+            100000000,
+            0,
+            False, # is_receive
+            False, # is_surrogate
+            False, # computation_call_origin
+            True, # is_create_tx
+            False, # execute_on_send
+            None
+        ),
+        ( # execute on send but not create
+            PhotonVM,
+            100000000,
+            0,
+            False, # is_receive
+            False, # is_surrogate
+            False, # computation_call_origin
+            False, # is_create_tx
+            True, # execute_on_send
+            ForbiddenOperationForExecutingOnSend
+        ),
+
+    )
+)
+def test_create_call(vm_class, tx_gas, value, is_receive, is_surrogate, computation_call_origin, is_create_tx, execute_on_send, expect_error):
+    call_data = encode_hex(pad32(b"1283712983711973"))
+    code = assemble(
+        # store call_data into memory
+        opcode_values.PUSH32,
+        call_data,  # value
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(0))),  # start position
+        opcode_values.MSTORE,
+
+        # store call parameters in stack
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(32))),  # memory_in_length
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(0))),  # memory_in_start
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(value))),  # value
+
+        # make the call
+        opcode_values.CREATE,  # create
+    )
+
+    if is_create_tx:
+        create_address = CANONICAL_ADDRESS_B
+        to = CREATE_CONTRACT_ADDRESS
+    else:
+        create_address = None
+        to = CANONICAL_ADDRESS_B
+
+    computation = setup_computation(
+        vm_class,
+        create_address,
+        code=code,
+        gas=tx_gas,
+        to=to,
+        data=b'',
+        is_receive=is_receive,
+        is_surrogate=is_surrogate,
+        code_address=CANONICAL_ADDRESS_B,
+        is_computation_call_origin=computation_call_origin,
+        execute_on_send=execute_on_send,
+    )
+    computation.state.account_db.set_balance(CANONICAL_ADDRESS_B, value)
+
+    computation_call_nonce = computation.state.execution_context.computation_call_nonce
+    expected_contract_address = generate_contract_address(
+        computation.transaction_context.this_chain_address,
+        computation_call_nonce,
+    )
+
+    comp = computation.apply_message()
+    external_call_messages = comp.get_all_children_external_call_messages()
+
+    if expect_error is not None:
+        assert isinstance(comp.error, expect_error)
+        assert (len(external_call_messages) == 0)
+    else:
+        with pytest.raises(AttributeError):
+            error = comp.error
+
+        if is_create_tx and not is_receive:
+            assert (len(external_call_messages) == 0)
+        else:
+
+            call_message = external_call_messages[0]
+            assert (call_message.to == CREATE_CONTRACT_ADDRESS)
+            assert (call_message.sender == CANONICAL_ADDRESS_B)
+            assert (call_message.value == value)
+            assert (call_message.data_as_bytes == decode_hex(call_data))
+            assert (call_message.code == b'')
+            assert (call_message.create_address == expected_contract_address)
+            assert (call_message.code_address == b'')
+            assert (call_message.should_transfer_value == True)
+            assert (call_message.is_static == False)
+            assert (call_message.refund_amount == 0)
+            assert (call_message.execute_on_send == False)
+            assert (call_message.nonce == 0)
+
+            assert (call_message.resolved_to == expected_contract_address)
+            assert (call_message.is_create == True)
+            assert (call_message.child_tx_code_address == b'')
+            assert (call_message.child_tx_create_address == expected_contract_address)
+
+            assert (comp.transaction_context.child_tx_origin == CANONICAL_ADDRESS_C if computation_call_origin else call_message.sender)
+            assert (comp.transaction_context.is_computation_call_origin == computation_call_origin)
+            assert (comp.transaction_context.is_surrogate_call == is_surrogate)
+
+
+
+@pytest.mark.parametrize(
+    'vm_class, tx_gas, value, is_receive, is_surrogate, computation_call_origin, is_create_tx, execute_on_send, expect_error',
+    (
+        ( # not enough gas in transaction
+            PhotonVM,
+            1000,
+            0,
+            True,
+            False,
+            False,
+            False,
+            False,
+            OutOfGas
+        ),
+        (
+            PhotonVM,
+            100000000,
+            0,
+            True,
+            False,
+            False,
+            False,
+            False,
+            None
+        ),
+        (
+            PhotonVM,
+            100000000,
+            1,
+            True,
+            False,
+            False,
+            False,
+            False,
+            None
+        ),
+        ( # surrogate calls cannot create children calls
+            PhotonVM,
+            100000000,
+            0,
+            True,
+            True,
+            False,
+            False,
+            False,
+            ForbiddenOperationForSurrogateCall
+        ),
+        ( # Execute on send cannot create calls
+            PhotonVM,
+            100000000,
+            0,
+            False,
+            False,
+            False,
+            False,
+            True,
+            ForbiddenOperationForExecutingOnSend
+        ),
+        (  # Execute on send cannot create calls
+            PhotonVM,
+            100000000,
+            0,
+            False,
+            True,
+            False,
+            False,
+            True,
+            ForbiddenOperationForExecutingOnSend
+        ),
+        (
+            PhotonVM,
+            100000000,
+            1,
+            True,
+            False,
+            True,
+            False,
+            False,
+            None
+        ),
+        ( # create_tx will execute to determine gas usage, but it wont save any external calls
+            PhotonVM,
+            100000000,
+            0,
+            False, # is_receive
+            False, # is_surrogate
+            False, # computation_call_origin
+            True, # is_create_tx
+            False, # execute_on_send
+            None
+        ),
+        ( # execute on send but not create
+            PhotonVM,
+            100000000,
+            0,
+            False, # is_receive
+            False, # is_surrogate
+            False, # computation_call_origin
+            False, # is_create_tx
+            True, # execute_on_send
+            ForbiddenOperationForExecutingOnSend
+        ),
+
+    )
+)
+def test_create2_call(vm_class, tx_gas, value, is_receive, is_surrogate, computation_call_origin, is_create_tx, execute_on_send, expect_error):
+    call_data = encode_hex(pad32(b"1283712983711973"))
+    salt = encode_hex(pad32(int_to_big_endian(1337)))
+    code = assemble(
+        # store call_data into memory
+        opcode_values.PUSH32,
+        call_data,  # value
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(0))),  # start position
+        opcode_values.MSTORE,
+
+        # store call parameters in stack
+        opcode_values.PUSH32,
+        salt,  # salt
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(32))),  # memory_in_length
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(0))),  # memory_in_start
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(value))),  # value
+
+        # make the call
+        opcode_values.CREATE2,  # create
+    )
+
+    if is_create_tx:
+        create_address = CANONICAL_ADDRESS_B
+        to = CREATE_CONTRACT_ADDRESS
+    else:
+        create_address = None
+        to = CANONICAL_ADDRESS_B
+
+    computation = setup_computation(
+        vm_class,
+        create_address,
+        code=code,
+        gas=tx_gas,
+        to=to,
+        data=b'',
+        is_receive=is_receive,
+        is_surrogate=is_surrogate,
+        code_address=CANONICAL_ADDRESS_B,
+        is_computation_call_origin=computation_call_origin,
+        execute_on_send=execute_on_send,
+    )
+    computation.state.account_db.set_balance(CANONICAL_ADDRESS_B, value)
+
+    expected_contract_address = generate_safe_contract_address(
+        computation.transaction_context.this_chain_address,
+        1337,
+        decode_hex(call_data)
+    )
+
+    comp = computation.apply_message()
+    external_call_messages = comp.get_all_children_external_call_messages()
+
+    if expect_error is not None:
+        assert isinstance(comp.error, expect_error)
+        assert (len(external_call_messages) == 0)
+    else:
+        with pytest.raises(AttributeError):
+            error = comp.error
+
+        if is_create_tx and not is_receive:
+            assert (len(external_call_messages) == 0)
+        else:
+
+            call_message = external_call_messages[0]
+            assert (call_message.to == CREATE_CONTRACT_ADDRESS)
+            assert (call_message.sender == CANONICAL_ADDRESS_B)
+            assert (call_message.value == value)
+            assert (call_message.data_as_bytes == decode_hex(call_data))
+            assert (call_message.code == b'')
+            assert (call_message.create_address == expected_contract_address)
+            assert (call_message.code_address == b'')
+            assert (call_message.should_transfer_value == True)
+            assert (call_message.is_static == False)
+            assert (call_message.refund_amount == 0)
+            assert (call_message.execute_on_send == False)
+            assert (call_message.nonce == 0)
+
+            assert (call_message.resolved_to == expected_contract_address)
+            assert (call_message.is_create == True)
+            assert (call_message.child_tx_code_address == b'')
+            assert (call_message.child_tx_create_address == expected_contract_address)
+
+            assert (comp.transaction_context.child_tx_origin == CANONICAL_ADDRESS_C if computation_call_origin else call_message.sender)
+            assert (comp.transaction_context.is_computation_call_origin == computation_call_origin)
+            assert (comp.transaction_context.is_surrogate_call == is_surrogate)

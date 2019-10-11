@@ -3,6 +3,7 @@ import logging
 from hvm.constants import (
     CREATE_CONTRACT_ADDRESS,
 )
+from hvm.types import BytesOrView
 from hvm.validation import (
     validate_canonical_address,
     validate_is_bytes,
@@ -27,21 +28,22 @@ class Message(object):
 
     logger = logging.getLogger('hvm.vm.message.Message')
 
+
     def __init__(self,
-                 gas,
-                 to,
-                 sender,
-                 value,
-                 data,
-                 code,
-                 depth=0,
-                 create_address=None,
-                 code_address=None,
-                 should_transfer_value=True,
-                 is_static=False,
-                 refund_amount=0,
-                 execute_on_send=False,
-                 nonce=0):
+                 gas: int,
+                 to: Address,
+                 sender: Address,
+                 value: int,
+                 data: BytesOrView,
+                 code: bytes,
+                 depth: int=0,
+                 create_address: Address=None,
+                 code_address: Address=None,
+                 should_transfer_value: bool=True,
+                 is_static: bool=False,
+                 refund_amount: int=0,
+                 execute_on_send: bool=False,
+                 nonce: int=0):
         validate_uint256(gas, title="Message.gas")
         self.gas = gas  # type: int
 
@@ -117,6 +119,18 @@ class Message(object):
     @property
     def data_as_bytes(self) -> bytes:
         return bytes(self.data)
+
+    #
+    # Properties for child transaction creation
+    #
+
+    @property
+    def child_tx_code_address(self):
+        return self.code_address if self.code_address != self.to else b''
+
+    @property
+    def child_tx_create_address(self):
+        return self.create_address if self.create_address is not None else b''
 
 
 

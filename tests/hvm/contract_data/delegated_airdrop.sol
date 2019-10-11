@@ -9,10 +9,10 @@ contract DelegatedAirdrop {
 
         assembly {
             let x := mload(0x40)   //Find empty storage location using "free memory pointer"
-            mstore(x,sig) //Place signature at begining of empty storage
+            mstore(x,sig) //Place signature at beginning of empty storage
             mstore(add(x,0x04),amount) //Place first argument directly next to signature
 
-            let success := surrogatecall(100000, //50k gas
+            let success := surrogatecall(100000, //100k gas
                                         token_contract_address, //Delegated token contract address
                                         0,       //Value
                                         1,      //Execute on send?

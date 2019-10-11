@@ -5,7 +5,7 @@ from hvm.exceptions import (
     Halt,
     Revert,
     WriteProtection,
-    ForbiddenOperationForSurrogateCall, DepreciatedVMFunctionality)
+    ForbiddenOperationForSurrogateCall, DepreciatedVMFunctionality, ForbiddenOperationForExecutingOnSend, OutOfGas)
 
 from hvm.utils.address import (
     force_bytes_to_address,
@@ -155,6 +155,14 @@ class Create(Opcode):
         if computation.msg.is_static:
             raise WriteProtection("Cannot modify state while inside of a STATICCALL context")
 
+        # Pre-call checks
+        # This could actually execute on send if it is within a create transaction. But not if that create transaction has tx_execute_on_send
+        if not computation.transaction_context.is_receive and computation.transaction_context.tx_execute_on_send:
+            raise ForbiddenOperationForExecutingOnSend("Computation executing on send cannot use the Create opcode.")
+
+        if computation.transaction_context.is_surrogate_call:
+            raise ForbiddenOperationForSurrogateCall("Surrogatecalls are not allowed to use CREATE opcode.")
+
         stack_data = self.get_stack_data(computation)
 
         gas_cost = self.get_gas_cost(stack_data)
@@ -170,6 +178,16 @@ class Create(Opcode):
         stack_too_deep = computation.msg.depth + 1 > constants.STACK_DEPTH_LIMIT
 
         if insufficient_funds or stack_too_deep:
+            err_message = "Insufficient Funds: have: {0} | need: {1}".format(
+                    sender_balance,
+                    stack_data.value,
+                )
+
+            self.logger.debug(
+                "%s failure: %s",
+                self.mnemonic,
+                err_message,
+            )
             computation.stack_push_int(0)
             return
 
@@ -217,15 +235,13 @@ class Create(Opcode):
         gas_used = initial_gas_given - gas_remaining
         gas_needed_for_external_call = gas_used + GAS_TX
         if initial_gas_given < gas_needed_for_external_call:
-            self.logger.debug(
-                "Insufficient Gas for {}: provided: {} | needed: {}".format(
+            computation.stack_push_int(0)
+            raise OutOfGas("Insufficient Gas for {}: provided: {} | needed: {}".format(
                     self.mnemonic,
                     initial_gas_given,
                     gas_needed_for_external_call
-                )
-            )
-            computation.stack_push_int(0)
-            return
+                ))
+
 
 
         if child_computation.is_error:

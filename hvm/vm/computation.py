@@ -677,7 +677,9 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
     # External call api
     #
     def apply_external_call_message(self, call_message):
-        self.external_call_messages.append(call_message)
+        if self.transaction_context.is_receive:
+            # We can only create external call messages on receive.
+            self.external_call_messages.append(call_message)
         self.execution_context.increment_computation_call_nonce()
 
 

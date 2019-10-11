@@ -130,5 +130,20 @@ class PhotonTransactionContext(BosonTransactionContext):
                 raise ValueError("Transaction context doesn't know the storage address because it is create")
 
 
+    #
+    # Properties for any child transactions created by this transaction
+    #
+
+    @property
+    def child_tx_origin(self):
+        if self.is_computation_call_origin:
+            origin = self.tx_origin
+        else:
+            # Needs to be the original sender so we know where to send the refund at the end.
+            origin = self.refund_address
+
+        return origin
+
+
 
 

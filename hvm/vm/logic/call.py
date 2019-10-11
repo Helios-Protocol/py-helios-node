@@ -203,7 +203,8 @@ class Call(BaseCall):
 
 
         # Pre-call checks
-        if not computation.transaction_context.is_receive:
+        # This could actually execute on send if it is within a create transaction. But not if that create transaction has tx_execute_on_send
+        if not computation.transaction_context.is_receive and computation.transaction_context.tx_execute_on_send:
             raise ForbiddenOperationForExecutingOnSend("Computation executing on send cannot create new call transactions.")
 
         if computation.transaction_context.is_surrogate_call:
@@ -249,6 +250,7 @@ class Call(BaseCall):
             computation.stack_push_int(0)
         else:
 
+
             child_msg_kwargs = {
                 'gas': child_msg_gas,
                 'value': value,
@@ -287,10 +289,6 @@ class SurrogateCall(Call):
             memory_input_size
         ) = computation.stack_pop_ints(num_items=2)
 
-        print("TEEEEEEESST")
-        print("gas = {} | code_address = {} | value = {} | to = {} | execute_on_send = {}".format(
-            gas, code_address, value, to, execute_on_send
-        ))
         return (
             gas,
             value,
