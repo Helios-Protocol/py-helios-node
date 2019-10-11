@@ -18,7 +18,7 @@ class Memory(object):
     VM Memory
     """
     __slots__ = ['_bytes']
-    logger = logging.getLogger('eth.vm.memory.Memory')
+    logger = logging.getLogger('hvm.vm.memory.Memory')
 
     def __init__(self) -> None:
         self._bytes = bytearray()

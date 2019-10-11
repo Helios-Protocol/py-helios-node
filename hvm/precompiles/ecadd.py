@@ -18,13 +18,23 @@ from hvm.utils.padding import (
     pad32,
     pad32r,
 )
+from eth_utils.toolz import (
+    curry,
+)
 
+from typing import TYPE_CHECKING, Tuple
+if TYPE_CHECKING:
+    from hvm.vm.forks.photon import PhotonComputation
 
-def ecadd(computation):
-    computation.consume_gas(constants.GAS_ECADD, reason='ECADD Precompile')
+@curry
+def ecadd(
+        computation: 'PhotonComputation',
+        gas_cost: int = constants.GAS_ECADD) -> 'PhotonComputation':
+
+    computation.consume_gas(gas_cost, reason='ECADD Precompile')
 
     try:
-        result = _ecadd(computation.msg.data)
+        result = _ecadd(computation.msg.data_as_bytes)
     except ValidationError:
         raise VMError("Invalid ECADD parameters")
 
@@ -37,7 +47,7 @@ def ecadd(computation):
     return computation
 
 
-def _ecadd(data):
+def _ecadd(data: bytes) -> Tuple[bn128.FQ, bn128.FQ]:
     x1_bytes = pad32r(data[:32])
     y1_bytes = pad32r(data[32:64])
     x2_bytes = pad32r(data[64:96])
@@ -53,3 +63,6 @@ def _ecadd(data):
 
     result = bn128.normalize(bn128.add(p1, p2))
     return result
+
+
+

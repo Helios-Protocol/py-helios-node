@@ -375,7 +375,7 @@ class VM(BaseVM):
     @property
     def state(self) -> BaseState:
         if self._state is None:
-            self._state = self.get_state_class()(db=self.chaindb.db, execution_context=self.header.create_execution_context())
+            self._state = self.get_state_class()(db=self.chaindb.db, execution_context=self.header.create_execution_context(self.network_id))
         return self._state
 
     @state.setter
@@ -385,7 +385,7 @@ class VM(BaseVM):
     def refresh_state(self) -> None:
         self.state = self.get_state_class()(
             db=self.chaindb.db,
-            execution_context=self.header.create_execution_context()
+            execution_context=self.header.create_execution_context(self.network_id)
         )
 
     #

@@ -5,6 +5,7 @@ from setuptools import setup, find_packages
 
 deps = { 
     'hvm': [
+        "blake2b-py>=0.1.2,<0.2",
         "aiohttp>=2.3.1,<4.0.0",
         "async_lru>=0.1.0,<1.0.0",
         "cryptography>=2.0.3,<3.0.0",

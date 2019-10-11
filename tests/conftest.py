@@ -23,15 +23,16 @@ from helios.utils.logging import (
 )
 
 log_level = getattr(logging, 'DEBUG')
+log_level = 1
 logger, _, handler_stream = setup_helios_stderr_logging(log_level)
 logger.propagate = False
 
 logger = logging.getLogger('hp2p')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(log_level)
 logger.addHandler(handler_stream)
 
 logger = logging.getLogger('hvm')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(log_level)
 logger.addHandler(handler_stream)
 
 # logger = logging.getLogger('hp2p')

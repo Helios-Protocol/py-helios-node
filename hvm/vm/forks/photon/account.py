@@ -86,14 +86,22 @@ class PhotonAccountDB(AccountDB):
     # Storage
     #
 
-    def get_external_smart_contract_storage(self, address: Address, smart_contract_address: Address, slot: int) -> bytes:
+    def get_external_smart_contract_storage(self, address: Address, smart_contract_address: Address, slot: int, from_journal = True) -> bytes:
         validate_canonical_address(address, title="Storage Address")
         validate_canonical_address(smart_contract_address, title="smart_contract_address")
         validate_uint256(slot, title="Storage Slot")
 
-        account = self._get_account(address)
+        if from_journal:
+            account = self._get_account(address)
+            external_smart_contract_storage_roots = HexaryTrie(self._journaldb, account.external_smart_contract_storage_root)
+        else:
+            orig_journal_db = self._journaldb
+            self._journaldb = self.db
+            account = self._get_account(address, save_upgraded_account=False)
+            external_smart_contract_storage_roots = HexaryTrie(self._journaldb, account.external_smart_contract_storage_root)
 
-        external_smart_contract_storage_roots = HexaryTrie(self._journaldb, account.external_smart_contract_storage_root)
+
+
 
         if smart_contract_address in external_smart_contract_storage_roots:
             external_smart_contract_storage_root = external_smart_contract_storage_roots[smart_contract_address]
@@ -104,11 +112,17 @@ class PhotonAccountDB(AccountDB):
 
             if slot_as_key in storage:
                 encoded_value = storage[slot_as_key]
-                return rlp.decode(encoded_value, sedes=rlp.sedes.big_endian_int)
+                to_return = rlp.decode(encoded_value, sedes=rlp.sedes.big_endian_int)
             else:
-                return 0
+                to_return = 0
         else:
-            return 0
+            to_return = 0
+
+        if not from_journal:
+            self._journaldb = orig_journal_db
+
+        return to_return
+
 
     def set_external_smart_contract_storage(self, address: Address, smart_contract_address: Address, slot: int, value: int) -> None:
         validate_uint256(value, title="Storage Value")
@@ -162,7 +176,7 @@ class PhotonAccountDB(AccountDB):
     #
     # Internal
     #
-    def _decode_and_upgrade_account(self, rlp_account: bytes, address: Address, account_version: int) -> PhotonAccount:
+    def _decode_and_upgrade_account(self, rlp_account: bytes, address: Address, account_version: int, save_new_account = True) -> PhotonAccount:
         if rlp_account:
             if account_version == self.version:
                 account = rlp.decode(rlp_account, sedes=PhotonAccount)
@@ -178,12 +192,13 @@ class PhotonAccountDB(AccountDB):
                     depreciated_account.storage_root,
                     code_hash=depreciated_account.code_hash
                 )
-                # remember to also save receivable transactions
-                receivable_transactions = depreciated_account.receivable_transactions
-                self.save_receivable_transactions_if_none_exist(address, receivable_transactions)
+                if save_new_account:
+                    # remember to also save receivable transactions
+                    receivable_transactions = depreciated_account.receivable_transactions
+                    self.save_receivable_transactions_if_none_exist(address, receivable_transactions)
 
-                # Lets immediately set the new account
-                self._set_account(address=address, account=account)
+                    # Lets immediately set the new account
+                    self._set_account(address=address, account=account)
             elif account_version == 0:
                 self.logger.debug("Found a boson account with address {} that needs upgrading to version {}.".format(
                     encode_hex(address), self.version))
@@ -195,21 +210,14 @@ class PhotonAccountDB(AccountDB):
                     boson_account.storage_root,
                     code_hash=boson_account.code_hash
                 )
-
-                # Lets immediately set the new account
-                self._set_account(address=address, account=account)
+                if save_new_account:
+                    # Lets immediately set the new account
+                    self._set_account(address=address, account=account)
             else:
                 raise ValidationError("The loaded account is from an unknown account version {}. This account db is version {}".format(account_version, self.version))
 
         else:
             account = PhotonAccount()
-        return account
-
-    def _get_account(self, address: Address) -> PhotonAccount:
-        account_lookup_key = SchemaV1.make_account_lookup_key(address)
-        rlp_account = self._journaldb.get(account_lookup_key, b'')
-        account_version = self._get_account_version(address)
-        account = self._decode_and_upgrade_account(rlp_account, address, account_version)
         return account
 
 

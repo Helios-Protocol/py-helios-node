@@ -62,7 +62,7 @@ class BaseCall(Opcode, metaclass=ABCMeta):
         computation.extend_memory(memory_input_start_position, memory_input_size)
         computation.extend_memory(memory_output_start_position, memory_output_size)
 
-        call_data = computation.memory_read(memory_input_start_position, memory_input_size)
+        call_data = computation.memory_read_bytes(memory_input_start_position, memory_input_size)
 
         #
         # Message gas allocation and fees
@@ -198,7 +198,7 @@ class Call(BaseCall):
         if memory_output_start_position is not None:
             computation.extend_memory(memory_output_start_position, memory_output_size)
 
-        call_data = computation.memory_read(memory_input_start_position, memory_input_size)
+        call_data = computation.memory_read_bytes(memory_input_start_position, memory_input_size)
 
 
 

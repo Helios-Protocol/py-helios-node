@@ -114,5 +114,9 @@ class Message(object):
     def is_create(self):
         return self.to == CREATE_CONTRACT_ADDRESS or self.create_address is not None
 
+    @property
+    def data_as_bytes(self) -> bytes:
+        return bytes(self.data)
+
 
 

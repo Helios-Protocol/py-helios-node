@@ -251,13 +251,21 @@ class AccountDB(BaseAccountDB):
     #
     # Storage
     #
-    def get_storage(self, address, slot):
+    def get_storage(self, address, slot, from_journal = True):
         
         validate_canonical_address(address, title="Storage Address")
         validate_uint256(slot, title="Storage Slot")
 
-        account = self._get_account(address)
-        storage = HashTrie(HexaryTrie(self._journaldb, account.storage_root))
+        if from_journal:
+            account = self._get_account(address)
+            storage = HashTrie(HexaryTrie(self._journaldb, account.storage_root))
+        else:
+            orig_journal_db = self._journaldb
+            self._journaldb = self.db
+            account = self._get_account(address, save_upgraded_account=False)
+            storage = HashTrie(HexaryTrie(self._journaldb, account.storage_root))
+            self._journaldb = orig_journal_db
+
 
         slot_as_key = pad32(int_to_big_endian(slot))
 
@@ -268,6 +276,7 @@ class AccountDB(BaseAccountDB):
             to_return = 0
         
         self.logger.debug("getting storage for address {} | slot {} | value {}".format(encode_hex(address), slot, to_return))
+
         return to_return
 
     def set_storage(self, address, slot, value):
@@ -589,7 +598,7 @@ class AccountDB(BaseAccountDB):
         encoded = rlp.encode(version, sedes=rlp.sedes.f_big_endian_int)
         self._journaldb[account_version_lookup_key] = encoded
 
-    def _decode_and_upgrade_account(self, rlp_account: bytes, address: Address, account_version: int) -> Account:
+    def _decode_and_upgrade_account(self, rlp_account: bytes, address: Address, account_version: int, save_new_account = True) -> Account:
         if rlp_account:
             if account_version == self.version:
                 account = rlp.decode(rlp_account, sedes=Account)
@@ -604,12 +613,13 @@ class AccountDB(BaseAccountDB):
                     depreciated_account.storage_root,
                     depreciated_account.code_hash
                 )
-                # remember to also save receivable transactions
-                receivable_transactions = depreciated_account.receivable_transactions
-                self.save_receivable_transactions_if_none_exist(address, receivable_transactions)
+                if save_new_account:
+                    # remember to also save receivable transactions
+                    receivable_transactions = depreciated_account.receivable_transactions
+                    self.save_receivable_transactions_if_none_exist(address, receivable_transactions)
 
-                # Lets immediately set the new account
-                self._set_account(address = address, account = account)
+                    # Lets immediately set the new account
+                    self._set_account(address = address, account = account)
             else:
                 raise ValidationError("The loaded account is from an unknown account version {}. This account db is version {}".format(account_version, self.version))
 
@@ -617,11 +627,13 @@ class AccountDB(BaseAccountDB):
             account = Account()
         return account
 
-    def _get_account(self, address: Address) -> Account:
+
+    def _get_account(self, address: Address, save_upgraded_account = True) -> Account:
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
         rlp_account = self._journaldb.get(account_lookup_key, b'')
         account_version = self._get_account_version(address)
-        account = self._decode_and_upgrade_account(rlp_account, address, account_version)
+        account = self._decode_and_upgrade_account(rlp_account, address, account_version, save_upgraded_account)
+
         return account
 
 

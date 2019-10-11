@@ -428,6 +428,48 @@ def test_photon_account_db_save_root_hash():
     assert(balance == 100)
 
 
+def test_from_journal():
+    test_address = get_primary_node_private_helios_key(0).public_key.to_canonical_address()
+    smart_contract_address = get_primary_node_private_helios_key(1).public_key.to_canonical_address()
+
+    testdb = MemoryDB()
+    photon_account_db = PhotonAccountDB(testdb)
+
+    expected = 100
+    photon_account_db.set_storage(test_address, 0, expected)
+    storage_at_0 = photon_account_db.get_storage(test_address, 0)
+
+    assert(storage_at_0 == expected)
+    storage_at_0 = photon_account_db.get_storage(test_address, 0, from_journal=False)
+    assert(storage_at_0 == 0)
+
+    photon_account_db.persist()
+
+
+    storage_at_0 = photon_account_db.get_storage(test_address, 0, from_journal=False)
+    assert (storage_at_0 == expected)
+    storage_at_0 = photon_account_db.get_storage(test_address, 0, from_journal=True)
+    assert (storage_at_0 == expected)
+
+    photon_account_db.set_external_smart_contract_storage(test_address, smart_contract_address, 0, expected)
+    storage_at_0 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 0)
+    assert (storage_at_0 == expected)
+
+    storage_at_0 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 0, from_journal=False)
+    assert (storage_at_0 == 0)
+
+    photon_account_db.persist()
+
+    storage_at_0 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 0, from_journal=False)
+    assert (storage_at_0 == expected)
+    storage_at_0 = photon_account_db.get_external_smart_contract_storage(test_address, smart_contract_address, 0)
+    assert (storage_at_0 == expected)
+
+
+
+
+
+
 # test_upgrade_from_depreciated_photon()
 # test_upgrade_from_depreciated_boson()
 # test_receivable_transactions_boson()
@@ -436,3 +478,4 @@ def test_photon_account_db_save_root_hash():
 # test_photon_account_db_upgrade_format()
 # test_photon_account_db_smart_contract_storage()
 # test_photon_account_db_save_root_hash()
+# test_from_journal()

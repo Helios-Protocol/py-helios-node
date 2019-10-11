@@ -16,3 +16,9 @@
 from .helios_testnet import (  # noqa: F401
     HeliosTestnetVM,
 )
+from .boson import (  # noqa: F401
+    BosonVM,
+)
+from .photon import (  # noqa: F401
+    PhotonVM,
+)

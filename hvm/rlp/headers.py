@@ -260,12 +260,13 @@ class BaseBlockHeader(rlp.Serializable, metaclass=ABCMeta):
         header = cls(**header_kwargs)
         return header
 
-    def create_execution_context(self) -> ExecutionContext:
+    def create_execution_context(self, network_id:int) -> ExecutionContext:
 
         return ExecutionContext(
             timestamp=self.timestamp,
             block_number=self.block_number,
             gas_limit=self.gas_limit,
+            network_id=network_id,
         )
         
     #

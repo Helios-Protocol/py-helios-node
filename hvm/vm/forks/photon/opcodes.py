@@ -63,11 +63,11 @@ PHOTON_UPDATED_OPCODES = {
         gas_cost=constants.GAS_VERYLOW,
     ),
 
-    # opcode_values.CREATE2: system.Create2.configure(
-    #     __name__='opcode:CREATE2',
-    #     mnemonic=mnemonics.CREATE2,
-    #     gas_cost=constants.GAS_CREATE,
-    # )(),
+    opcode_values.CREATE2: system.Create2.configure(
+        __name__='opcode:CREATE2',
+        mnemonic=mnemonics.CREATE2,
+        gas_cost=constants.GAS_CREATE,
+    )(),
 
     opcode_values.CHAINID: as_opcode(
         logic_fn=context.chain_id,
@@ -91,6 +91,7 @@ PHOTON_UPDATED_OPCODES = {
         mnemonic=mnemonics.EXTCODEHASH,
         gas_cost=GAS_EXTCODEHASH_EIP1884,
     ),
+
     opcode_values.SSTORE: as_opcode(
         logic_fn=ensure_no_static(sstore_photon),
         mnemonic=mnemonics.SSTORE,

@@ -139,16 +139,18 @@ def sdiv(computation):
 
 
 @curry
-def exp(computation, gas_per_byte):
+def exp(computation: BaseComputation, gas_per_byte: int) -> None:
     """
     Exponentiation
     """
-    base, exponent = computation.stack_pop_ints(num_items=2)
+    base, exponent = computation.stack_pop_ints(2)
 
     bit_size = exponent.bit_length()
     byte_size = ceil8(bit_size) // 8
 
-    if base == 0:
+    if exponent == 0:
+        result = 1
+    elif base == 0:
         result = 0
     else:
         result = pow(base, exponent, constants.UINT_256_CEILING)
@@ -159,6 +161,8 @@ def exp(computation, gas_per_byte):
     )
 
     computation.stack_push_int(result)
+
+
 
 
 def signextend(computation):

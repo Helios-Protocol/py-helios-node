@@ -1,7 +1,12 @@
+from eth_utils.toolz import (
+    merge,
+)
+from hvm.utils.address import force_bytes_to_address
 from hvm.vm.forks.boson import BosonComputation
 from hvm.vm.forks.boson.computation import BOSON_PRECOMPILES
 
 from hvm.vm.forks.photon.transaction_context import PhotonTransactionContext
+from hvm.vm.gas_meter import GasMeter, allow_negative_refund_strategy
 
 from .opcodes import PHOTON_OPCODES
 
@@ -15,13 +20,31 @@ from hvm.exceptions import (
     InsufficientFunds,
     StackDepthLimit,
 )
+from .constants import (
+    GAS_ECADD,
+    GAS_ECMUL,
+    GAS_ECPAIRING_BASE,
+    GAS_ECPAIRING_PER_POINT,
+)
 
 from typing import TYPE_CHECKING
-
+from hvm import precompiles
 if TYPE_CHECKING:
     from hvm.vm.forks.photon.state import PhotonState
 
-PHOTON_PRECOMPILES = BOSON_PRECOMPILES
+
+PHOTON_PRECOMPILES = merge(
+    BOSON_PRECOMPILES,
+    {
+        force_bytes_to_address(b'\x06'): precompiles.ecadd(gas_cost=GAS_ECADD),
+        force_bytes_to_address(b'\x07'): precompiles.ecmul(gas_cost=GAS_ECMUL),
+        force_bytes_to_address(b'\x08'): precompiles.ecpairing(
+            gas_cost_base=GAS_ECPAIRING_BASE,
+            gas_cost_per_point=GAS_ECPAIRING_PER_POINT,
+        ),
+        force_bytes_to_address(b'\x09'): precompiles.blake2b_fcompress,
+    },
+)
 
 class PhotonComputation(BosonComputation):
     """
@@ -34,6 +57,16 @@ class PhotonComputation(BosonComputation):
 
     transaction_context: PhotonTransactionContext = None
     state: 'PhotonState' = None
+
+    #
+    # Gas Meter
+    #
+
+    def get_gas_meter(self) -> GasMeter:
+        return GasMeter(
+            self.msg.gas,
+            allow_negative_refund_strategy
+        )
 
     def apply_message(self, validate=True):
         snapshot = self.state.snapshot()

@@ -360,7 +360,7 @@ def test_send_transaction_then_receive():
     print('balance after delta= ', vm.state.account_db.get_balance(SENDER.public_key.to_canonical_address()))
     vm.state = vm.get_state_class()(
         db=vm.chaindb.db,
-        execution_context=vm.block.header.create_execution_context()
+        execution_context=vm.block.header.create_execution_context(vm.network_id)
     )
     print('balance after state refresh = ', vm.state.account_db.get_balance(SENDER.public_key.to_canonical_address()))
     # exit()

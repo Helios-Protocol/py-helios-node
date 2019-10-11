@@ -18,13 +18,24 @@ from hvm.utils.padding import (
     pad32,
     pad32r,
 )
+from eth_utils.toolz import (
+    curry,
+)
+
+from typing import TYPE_CHECKING, Tuple
+if TYPE_CHECKING:
+    from hvm.vm.forks.photon import PhotonComputation
 
 
-def ecmul(computation):
-    computation.consume_gas(constants.GAS_ECMUL, reason='ECMUL Precompile')
+@curry
+def ecmul(
+        computation: 'PhotonComputation',
+        gas_cost: int = constants.GAS_ECMUL) -> 'PhotonComputation':
+
+    computation.consume_gas(gas_cost, reason='ECMUL Precompile')
 
     try:
-        result = _ecmull(computation.msg.data)
+        result = _ecmull(computation.msg.data_as_bytes)
     except ValidationError:
         raise VMError("Invalid ECMUL parameters")
 
@@ -37,7 +48,7 @@ def ecmul(computation):
     return computation
 
 
-def _ecmull(data):
+def _ecmull(data: bytes) -> Tuple[bn128.FQ, bn128.FQ]:
     x_bytes = pad32r(data[:32])
     y_bytes = pad32r(data[32:64])
     m_bytes = pad32r(data[64:96])
@@ -50,3 +61,4 @@ def _ecmull(data):
 
     result = bn128.normalize(bn128.multiply(p, m))
     return result
+

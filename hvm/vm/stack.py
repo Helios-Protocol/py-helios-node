@@ -37,7 +37,7 @@ class Stack(object):
     VM Stack
     """
     __slots__ = ['values', '_append', '_pop_typed', '__len__']
-    logger = logging.getLogger('eth.vm.stack.Stack')
+    logger = logging.getLogger('hvm.vm.stack.Stack')
 
     #
     # Performance Note: Operations that push to the stack have the data in some natural form:

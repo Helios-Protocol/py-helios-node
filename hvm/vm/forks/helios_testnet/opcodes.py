@@ -309,11 +309,7 @@ FRONTIER_OPCODES = {
         mnemonic=mnemonics.SLOAD,
         gas_cost=constants.GAS_SLOAD,
     ),
-    opcode_values.SSTORE: as_opcode(
-        logic_fn=storage.sstore,
-        mnemonic=mnemonics.SSTORE,
-        gas_cost=constants.GAS_NULL,
-    ),
+
     opcode_values.JUMP: as_opcode(
         logic_fn=flow.jump,
         mnemonic=mnemonics.JUMP,
@@ -774,11 +770,6 @@ TANGERINE_WHISTLE_UPDATED_OPCODES = {
         mnemonic=mnemonics.SELFDESTRUCT,
         gas_cost=GAS_SELFDESTRUCT_EIP150,
     ),
-    opcode_values.CREATE: system.CreateEIP150.configure(
-        __name__='opcode:CREATE',
-        mnemonic=mnemonics.CREATE,
-        gas_cost=GAS_CREATE,
-    )(),
     opcode_values.CALL: call.CallEIP150.configure(
         __name__='opcode:CALL',
         mnemonic=mnemonics.CALL,
@@ -888,23 +879,7 @@ BYZANTIUM_UPDATED_OPCODES = {
         mnemonic=mnemonics.LOG4,
         gas_cost=constants.GAS_LOG,
     ),
-    #
-    # Create
-    #
-    opcode_values.CREATE: system.CreateByzantium.configure(
-        __name__='opcode:CREATE',
-        mnemonic=mnemonics.CREATE,
-        gas_cost=constants.GAS_CREATE,
-    )(),
-    # TODO: CREATE2
-    #
-    # Storage
-    #
-    opcode_values.SSTORE: as_opcode(
-        logic_fn=ensure_no_static(storage.sstore),
-        mnemonic=mnemonics.SSTORE,
-        gas_cost=constants.GAS_NULL,
-    ),
+
     #
     # Self Destruct
     #

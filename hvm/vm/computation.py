@@ -141,7 +141,7 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
 
         self._memory = Memory()
         self._stack = Stack()
-        self._gas_meter = GasMeter(message.gas)
+        self._gas_meter = self.get_gas_meter()
 
         self.children = []
         self.accounts_to_delete = {}
@@ -165,6 +165,18 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         Return ``True`` if this computation is the outermost computation at ``depth == 0``.
         """
         return self.msg.sender == self.transaction_context.origin
+
+    @property
+    def error(self) -> VMError:
+        if self._error is not None:
+            return self._error
+        raise AttributeError("Computation does not have an error")
+
+    @error.setter
+    def error(self, value: VMError) -> None:
+        if self._error is not None:
+            raise AttributeError(f"Computation already has an error set: {self._error}")
+        self._error = value
 
     @property
     def is_success(self) -> bool:
@@ -488,6 +500,12 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
 
     def get_log_entries(self) -> Tuple[Tuple[bytes, List[int], bytes], ...]:
         return tuple(log[1:] for log in self._get_log_entries())
+
+    #
+    # Gas Meter
+    #
+    def get_gas_meter(self) -> GasMeter:
+        return GasMeter(self.msg.gas)
 
     def get_gas_refund(self) -> int:
         if self.is_error:
