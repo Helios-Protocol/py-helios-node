@@ -204,7 +204,8 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
             tx_code_address = send_transaction.code_address if send_transaction.code_address != b'' else None,
             tx_create_address = send_transaction.create_address if send_transaction.create_address != b'' else None,
             tx_signer = send_transaction.sender,
-            tx_execute_on_send=send_transaction.execute_on_send
+            tx_execute_on_send=send_transaction.execute_on_send,
+            has_data = False if send_transaction.data == b'' else True
         )
 
     def add_possible_refunds_to_currently_executing_transaction(self,

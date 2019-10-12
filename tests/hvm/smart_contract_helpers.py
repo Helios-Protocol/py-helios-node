@@ -6,7 +6,7 @@ from hvm.chains.testnet import (
 
 from eth_utils import (
     decode_hex,
-)
+    hexstr_if_str, to_bytes)
 
 from solc import compile_files, get_solc_version
 
@@ -119,3 +119,9 @@ def deploy_contract(db, base_filename:str, contract_name: str):
     deployed_contract_address = list_of_smart_contracts[0]
 
     return deployed_contract_address, contract_interface
+
+def assemble(*codes):
+    return b''.join(
+        hexstr_if_str(to_bytes, element)
+        for element in codes
+    )

@@ -678,8 +678,11 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
     #
     def apply_external_call_message(self, call_message):
         if self.transaction_context.is_receive:
+            self.logger.debug("Adding external call message to computation")
             # We can only create external call messages on receive.
             self.external_call_messages.append(call_message)
+        else:
+            self.logger.debug("Skipping adding external call message to computation because this is not a receive transaction")
         self.execution_context.increment_computation_call_nonce()
 
 
@@ -687,6 +690,8 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         '''
         Returns all external message calls for this computation and all child computations
         '''
+        if self.is_error:
+            return []
         external_call_messages = []
         external_call_messages.extend(self.external_call_messages)
 

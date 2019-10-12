@@ -125,7 +125,8 @@ class PhotonVM(VM):
 
         computation_call_send_transactions = []
         for receive_computation in receive_computations:
-            if receive_computation.msg.data != b'' and not receive_computation.is_error:
+
+            if receive_computation.transaction_context.has_data and not receive_computation.is_error:
 
                 # Only check if there is actually transaction data because this will be an expensive function
                 external_call_messages = receive_computation.get_all_children_external_call_messages()
@@ -141,15 +142,10 @@ class PhotonVM(VM):
                     for i in range(len(external_call_messages)):
                         call_message = external_call_messages[i]
 
-                        # if the code address is the one we are sending this tx to, just send a normal non-surrogate tx.
-                        code_address = call_message.code_address if call_message.code_address != call_message.to else b''
-
                         execute_on_send = call_message.execute_on_send
 
                         if call_message.is_create:
                             self.validate_create_call(call_message, current_nonce_for_computation_calls)
-
-                        create_address = call_message.create_address if call_message.create_address is not None else b''
 
                         new_tx = self.create_transaction(
                             nonce = current_nonce_for_computation_calls,
@@ -160,7 +156,7 @@ class PhotonVM(VM):
                             data=call_message.data_as_bytes,
                             caller = block.header.chain_address,
                             origin = origin,
-                            code_address = call_message.child_tx_code_addres,
+                            code_address = call_message.child_tx_code_address,
                             create_address = call_message.child_tx_create_address,
                             execute_on_send = execute_on_send
                         )

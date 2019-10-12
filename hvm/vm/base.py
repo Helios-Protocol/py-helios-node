@@ -753,7 +753,7 @@ class VM(BaseVM):
         if len(block.transactions) == 0:
             nonce = self.state.account_db.get_nonce(block.header.chain_address)
         else:
-            nonce = block.send_transactions[-1].nonce + 1
+            nonce = block.transactions[-1].nonce + 1
 
         self.state.execution_context.computation_call_nonce = nonce
 

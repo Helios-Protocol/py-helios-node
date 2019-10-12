@@ -34,12 +34,13 @@ class PhotonTransactionContext(BosonTransactionContext):
                  '_tx_create_address',
                  '_tx_signer',
                  '_tx_execute_on_send',
+                 '_has_data'
                  ]
 
     def __init__(self, send_tx_to: Address,  origin: Address, send_tx_hash: Hash32, this_chain_address: Address, gas_price: int = None,
                  receive_tx_hash: Hash32 = None, is_receive: bool = False, is_refund: bool = False, tx_caller: Address =None,
                  tx_origin: Address = None, tx_code_address: Address = None, tx_create_address: Address = None, tx_signer: Address = None,
-                 tx_execute_on_send = False,
+                 tx_execute_on_send = False, has_data: bool= False
                  ):
 
         if send_tx_to:
@@ -69,6 +70,9 @@ class PhotonTransactionContext(BosonTransactionContext):
         validate_is_boolean(tx_execute_on_send, title="TransactionContext.tx_execute_on_send")
         self._tx_execute_on_send = tx_execute_on_send
 
+        validate_is_boolean(has_data, title="TransactionContext.has_data")
+        self._has_data = has_data
+
         super(PhotonTransactionContext, self).__init__(origin, send_tx_hash, this_chain_address, gas_price, receive_tx_hash,
                                                  is_receive, is_refund)
 
@@ -79,6 +83,10 @@ class PhotonTransactionContext(BosonTransactionContext):
     @property
     def tx_caller(self):
         return self._tx_caller
+
+    @property
+    def has_data(self):
+        return self._has_data
 
     @property
     def tx_origin(self):
