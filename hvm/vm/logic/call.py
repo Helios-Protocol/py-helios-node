@@ -193,6 +193,7 @@ class Call(BaseCall):
             execute_on_send,
         ) = self.get_call_params(computation)
 
+
         computation.extend_memory(memory_input_start_position, memory_input_size)
 
         if memory_output_start_position is not None:
