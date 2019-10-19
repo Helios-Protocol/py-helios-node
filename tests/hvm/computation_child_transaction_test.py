@@ -188,89 +188,107 @@ from hvm.vm.message import (
 from hvm.constants import CREATE_CONTRACT_ADDRESS
 
 
-# @pytest.mark.parametrize(
-#     'call_data, call_value, call_gas, gas_price, call_to, error_expected',
-#     (
-#         # (
-#         #     encode_hex(pad32(b"1283712983711973")),
-#         #     0,
-#         #     100000,
-#         #     1,
-#         #     RECEIVER.public_key.to_canonical_address(),
-#         #     False
-#         # ),
-#         # (
-#         #     encode_hex(pad32(b"123120371238719")),
-#         #     0,
-#         #     100000,
-#         #     1,
-#         #     RECEIVER.public_key.to_canonical_address(),
-#         #     False
-#         # ),
-#         # (
-#         #     encode_hex(pad32(b"123120371238719")),
-#         #     1,
-#         #     100000,
-#         #     1,
-#         #     RECEIVER.public_key.to_canonical_address(),
-#         #     False
-#         # ),
-#         # ( # sending more value than is in the chain
-#         #     encode_hex(pad32(b"123120371238719")),
-#         #     100,
-#         #     100000,
-#         #     1,
-#         #     RECEIVER.public_key.to_canonical_address(),
-#         #     True
-#         # ),
-#         ( # Sending more gas than the tx had
-#             encode_hex(pad32(b"123120371238719")),
-#             1,
-#             100000000000,
-#             1,
-#             RECEIVER.public_key.to_canonical_address(),
-#             False
-#         ),
-#         # ( # not sending enough gas
-#         #     encode_hex(pad32(b"123120371238719")),
-#         #     1,
-#         #     100,
-#         #     1,
-#         #     RECEIVER.public_key.to_canonical_address(),
-#         #     True
-#         # ),
-#         # ( # not sending enough gas
-#         #     encode_hex(pad32(b"123120371238719")),
-#         #     1,
-#         #     100,
-#         #     1,
-#         #     RECEIVER.public_key.to_canonical_address(),
-#         #     True
-#         # ),
-#         # (
-#         #     encode_hex(pad32(b"123120371238719")),
-#         #     0,
-#         #     100,
-#         #     2,
-#         #     RECEIVER.public_key.to_canonical_address(),
-#         #     False
-#         # ),
-#         # (
-#         #     encode_hex(pad32(b"123120371238719")),
-#         #     0,
-#         #     100,
-#         #     1,
-#         #     RECEIVER2.public_key.to_canonical_address(),
-#         #     False
-#         # ),
-#
-#     )
-# )
-def test_child_transaction_from_call_opcode(call_data, call_value, call_gas, gas_price, call_to, error_expected):
+@pytest.mark.parametrize(
+    'call_data, call_value, call_gas, gas_price, call_to, execute_on_send, error_expected, call_tx_succeedes, consumes_all_gas',
+    (
+        (
+            encode_hex(pad32(b"1283712983711973")),
+            0,
+            100000,
+            1,
+            RECEIVER.public_key.to_canonical_address(),
+            False,
+            False,
+            True,
+            False
+        ),
+        (
+            encode_hex(pad32(b"123120371238719")),
+            0,
+            100000,
+            1,
+            RECEIVER.public_key.to_canonical_address(),
+            False,
+            False,
+            True,
+            False
+        ),
+        (
+            encode_hex(pad32(b"123120371238719")),
+            1,
+            100000,
+            1,
+            RECEIVER.public_key.to_canonical_address(),
+            False,
+            False,
+            True,
+            False
+        ),
+        ( # sending more value than is in the chain. This doesn't result in an error.
+            encode_hex(pad32(b"123120371238719")),
+            100,
+            100000,
+            1,
+            RECEIVER.public_key.to_canonical_address(),
+            False,
+            False,
+            False,
+            False
+        ),
+        ( # Sending more gas than the tx had
+            encode_hex(pad32(b"123120371238719")),
+            1,
+            100000000000,
+            1,
+            RECEIVER.public_key.to_canonical_address(),
+            False,
+            False,
+            True,
+            False
+        ),
+        ( # not sending enough gas
+            encode_hex(pad32(b"123120371238719")),
+            1,
+            100,
+            1,
+            RECEIVER.public_key.to_canonical_address(),
+            False,
+            'soft_error',
+            True,
+            False
+        ),
+
+        (
+            encode_hex(pad32(b"123120371238719")),
+            0,
+            100000,
+            1,
+            RECEIVER2.public_key.to_canonical_address(),
+            False,
+            False,
+            True,
+            False
+        ),
+        ( # Executing on send not allowed for create. The sending block will fail to import
+            encode_hex(pad32(b"123120371238719")),
+            0,
+            100000,
+            1,
+            RECEIVER2.public_key.to_canonical_address(),
+            True,
+            'hard_error',
+            True,
+            False
+        ),
+
+    )
+)
+def test_child_transaction_from_call_opcode(call_data, call_value, call_gas, gas_price, call_to, execute_on_send, error_expected, call_tx_succeedes, consumes_all_gas):
     #call_data = encode_hex(pad32(b"1283712983711973"))
     #call_value = 0
     #call_gas = 100000
     tx_gas = 20000000
+    tx_value = 5
     #gas_price = 1
     #call_to = RECEIVER.public_key.to_canonical_address()
     code = assemble(
@@ -310,61 +328,450 @@ def test_child_transaction_from_call_opcode(call_data, call_value, call_gas, gas
         gas_price=gas_price,
         gas=tx_gas,
         to=CREATE_CONTRACT_ADDRESS,
-        value=5,
+        value=tx_value,
         data=code,
-        execute_on_send=True
+        execute_on_send=execute_on_send
     )
 
-    sender_block = sender_chain.import_current_queue_block()
-
-    deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-
-    receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
-    receiver_chain.populate_queue_block_with_receive_tx()
-    receiver_block = receiver_chain.import_current_queue_block()
+    sender_initial_balance = sender_chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
     #
     # Checks on the transaction that was generated by the computation
     #
-    if error_expected:
-        assert (len(receiver_block.transactions) == 0)
+    if error_expected == 'hard_error':
+        # We expect error on send, and the block wont send.
+        with pytest.raises(Exception):
+            sender_block = sender_chain.import_current_queue_block()
+            deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+            receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+            receiver_chain.populate_queue_block_with_receive_tx()
+
+    elif error_expected == 'soft_error':
+        # we expect a vm error on send, it will use all the gas but still import the block.
+        # We will raise an error when trying to receive the transaction because there is no transaction to receive.
+
+        sender_block = sender_chain.import_current_queue_block()
+
+        sender_final_balance = sender_chain.get_vm().state.account_db.get_balance( TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+        if consumes_all_gas:
+            assert((sender_final_balance-sender_initial_balance) == (tx_value + tx_gas*gas_price))
+
+        deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain.populate_queue_block_with_receive_tx()
+
+        with pytest.raises(Exception):
+            receiver_block = receiver_chain.import_current_queue_block()
     else:
-        assert(len(receiver_block.transactions) == 1)
 
-        generated_computation_tx = receiver_block.transactions[0]
+        sender_block = sender_chain.import_current_queue_block()
+        deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain.populate_queue_block_with_receive_tx()
 
-        assert (generated_computation_tx.value == call_value)
-        assert (generated_computation_tx.gas_price == gas_price)
-        assert (generated_computation_tx.to == call_to)
-        assert (generated_computation_tx.data == decode_hex(call_data))
-        assert (generated_computation_tx.caller == deploy_address)
-        assert (generated_computation_tx.origin == TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-        assert (generated_computation_tx.execute_on_send == False)
+        receiver_block = receiver_chain.import_current_queue_block()
+        if call_tx_succeedes:
+            assert(len(receiver_block.transactions) == 1)
+
+            generated_computation_tx = receiver_block.transactions[0]
+
+            assert (generated_computation_tx.value == call_value)
+            assert (generated_computation_tx.gas_price == gas_price)
+            assert (generated_computation_tx.to == call_to)
+            assert (generated_computation_tx.data == decode_hex(call_data))
+            assert (generated_computation_tx.caller == deploy_address)
+            assert (generated_computation_tx.origin == TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+            assert (generated_computation_tx.execute_on_send == False)
 
 
-        # things that change for other kinds of calls
-        assert (generated_computation_tx.code_address == b'')
-        assert (generated_computation_tx.create_address == b'')
+            # things that change for other kinds of calls
+            assert (generated_computation_tx.code_address == b'')
+            assert (generated_computation_tx.create_address == b'')
+        else:
+            assert (len(receiver_block.transactions) == 0)
+
+
+
+
+# test_child_transaction_from_call_opcode(encode_hex(pad32(b"123120371238719")),
+#             0,
+#             100000,
+#             1,
+#             RECEIVER2.public_key.to_canonical_address(),
+#             False,
+#             False,
+#             True,
+#             False)
+
+
+
+def test_contract_deployment_gas_cost():
+    call_data = encode_hex(pad32(b"1283712983711973"))
+    call_value = 0
+    call_gas = 100000
+    tx_gas = 20000000
+    tx_value = 0
+    gas_price = 1
+    call_to = RECEIVER.public_key.to_canonical_address()
+    code = assemble(
+                # store call_data into memory
+                opcode_values.PUSH32,
+                call_data, # value
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(0))), # start position
+                opcode_values.MSTORE,
+
+                #store call parameters in stack
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(0))), # memory_out_length
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(0))),# memory_out_start
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(32))),# memory_in_length
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(0))),# memory_in_start
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(call_value))), # value
+                opcode_values.PUSH20,
+                call_to, # to
+                opcode_values.PUSH32,
+                encode_hex(pad32(int_to_big_endian(call_gas))), # gas
+
+                # make the call
+                opcode_values.CALL, # call
+            )
+
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+
+    sender_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    sender_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=gas_price,
+        gas=tx_gas,
+        to=CREATE_CONTRACT_ADDRESS,
+        value=tx_value,
+        data=code,
+    )
+
+    sender_initial_balance = sender_chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+    sender_block = sender_chain.import_current_queue_block()
+
+    sender_final_balance = sender_chain.get_vm().state.account_db.get_balance( TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+    assert((sender_initial_balance - sender_final_balance) == 158081)
+
+
+# test_contract_deployment_gas_cost()
+
+
+
+@pytest.mark.parametrize(
+    'call_data, call_value, call_gas, gas_price, call_to, call_execute_on_send, error_expected, call_tx_succeedes, consumes_all_gas',
+    (
+        (
+            encode_hex(pad32(b"123120371238719")),
+            0,
+            100000,
+            1,
+            RECEIVER.public_key.to_canonical_address(),
+            False,
+            False,
+            True,
+            False
+        ),
+        ( # code address is the same as the to.
+            encode_hex(pad32(b"123120371238719")),
+            0,
+            100000,
+            1,
+            RECEIVER3.public_key.to_canonical_address(),
+            False,
+            False,
+            True,
+            False
+        ),
+        ( # the surrogatecall will have execute on send
+            encode_hex(pad32(b"123120371238719")),
+            0,
+            100000,
+            1,
+            RECEIVER3.public_key.to_canonical_address(),
+            True,
+            False,
+            True,
+            False
+        ),
+
+    )
+)
+def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call_gas, gas_price, call_to, call_execute_on_send, error_expected, call_tx_succeedes, consumes_all_gas):
+    tx_gas = 20000000
+    tx_value = 5
+    call_code_address = RECEIVER3.public_key.to_canonical_address()
+    code = assemble(
+        # store call_data into memory
+        opcode_values.PUSH32,
+        call_data,  # value
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(0))),  # start position
+        opcode_values.MSTORE,
+
+        # store call parameters in stack
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(32))),  # memory_in_length
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(0))),  # memory_in_start
+        opcode_values.PUSH20,
+        call_to,  # to
+        opcode_values.PUSH1,
+        encode_hex(int_to_big_endian(1 if call_execute_on_send else 0)),  # execute on send
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(call_value))),  # value
+        opcode_values.PUSH20,
+        call_code_address,  # code_address
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(call_gas))),  # gas
+
+        # make the call
+        opcode_values.SURROGATECALL,  # call
+    )
+
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+
+    sender_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    sender_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=gas_price,
+        gas=tx_gas,
+        to=CREATE_CONTRACT_ADDRESS,
+        value=tx_value,
+        data=code,
+    )
+
+    sender_initial_balance = sender_chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
     #
-    # Now we check the refund transaction
+    # Checks on the transaction that was generated by the computation
     #
+    if error_expected == 'hard_error':
+        # We expect error on send, and the block wont send.
+        with pytest.raises(Exception):
+            sender_block = sender_chain.import_current_queue_block()
+            deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+            receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+            receiver_chain.populate_queue_block_with_receive_tx()
 
-    # These are all create transactions. so there are no refunds. But we can check to make sure that it actually uses the
-    # correct amount of gas. it should give back to extra on the send transaction, then the receive should have the exact amount
-    # of gas. need to check this.
-    # sender_chain.populate_queue_block_with_receive_tx()
-    # sender_block = sender_chain.import_current_queue_block()
+    elif error_expected == 'soft_error':
+        # we expect a vm error on send, it will use all the gas but still import the block.
+        # We will raise an error when trying to receive the transaction because there is no transaction to receive.
+
+        sender_block = sender_chain.import_current_queue_block()
+
+        sender_final_balance = sender_chain.get_vm().state.account_db.get_balance( TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+        if consumes_all_gas:
+            assert((sender_final_balance-sender_initial_balance) == (tx_value + tx_gas*gas_price))
+
+        deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain.populate_queue_block_with_receive_tx()
+
+        with pytest.raises(Exception):
+            receiver_block = receiver_chain.import_current_queue_block()
+    else:
+
+        sender_block = sender_chain.import_current_queue_block()
+        deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain.populate_queue_block_with_receive_tx()
+
+        receiver_block = receiver_chain.import_current_queue_block()
+        if call_tx_succeedes:
+            assert(len(receiver_block.transactions) == 1)
+
+            generated_computation_tx = receiver_block.transactions[0]
+
+            assert (generated_computation_tx.value == call_value)
+            assert (generated_computation_tx.gas_price == gas_price)
+            assert (generated_computation_tx.to == call_to)
+            assert (generated_computation_tx.data == decode_hex(call_data))
+            assert (generated_computation_tx.caller == deploy_address)
+            assert (generated_computation_tx.origin == TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+            assert (generated_computation_tx.execute_on_send == call_execute_on_send)
 
 
-test_child_transaction_from_call_opcode(encode_hex(pad32(b"1283712983711973")),
-                                        0,
-                                        100000,
-                                        1,
-                                        RECEIVER.public_key.to_canonical_address(),
-                                        False)
+            # things that change for other kinds of calls
+            if call_code_address == call_to:
+                # If the code address is the recipient of the transaction, then code address is left blank because
+                # it will already be executing the code at the recipient chain.
+                assert (generated_computation_tx.code_address == b'')
+            else:
+                assert (generated_computation_tx.code_address == call_code_address)
+            assert (generated_computation_tx.create_address == b'')
+        else:
+            assert (len(receiver_block.transactions) == 0)
+
+
+# test_child_transaction_from_surrogatecall_opcode(encode_hex(pad32(b"123120371238719")),
+#             0,
+#             100000,
+#             1,
+#             RECEIVER3.public_key.to_canonical_address(),
+#             True,
+#             False,
+#             True,
+#             False)
 
 
 
 
+@pytest.mark.parametrize(
+    'call_data, call_value, call_gas, gas_price, call_to, call_execute_on_send, error_expected, call_tx_succeedes, consumes_all_gas',
+    (
+        (
+            encode_hex(pad32(b"123120371238719")),
+            0,
+            100000,
+            1,
+            RECEIVER.public_key.to_canonical_address(),
+            False,
+            False,
+            True,
+            False
+        ),
+        ( # code address is the same as the to.
+            encode_hex(pad32(b"123120371238719")),
+            0,
+            100000,
+            1,
+            RECEIVER3.public_key.to_canonical_address(),
+            False,
+            False,
+            True,
+            False
+        ),
+        ( # the surrogatecall will have execute on send
+            encode_hex(pad32(b"123120371238719")),
+            0,
+            100000,
+            1,
+            RECEIVER3.public_key.to_canonical_address(),
+            True,
+            False,
+            True,
+            False
+        ),
 
+    )
+)
+def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call_gas, gas_price, call_to, call_execute_on_send, error_expected, call_tx_succeedes, consumes_all_gas):
+    tx_gas = 20000000
+    tx_value = 5
+    call_code_address = RECEIVER3.public_key.to_canonical_address()
+    code = assemble(
+        # store call_data into memory
+        opcode_values.PUSH32,
+        call_data,  # value
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(0))),  # start position
+        opcode_values.MSTORE,
+
+        # store call parameters in stack
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(32))),  # memory_in_length
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(0))),  # memory_in_start
+        opcode_values.PUSH20,
+        call_to,  # to
+        opcode_values.PUSH1,
+        encode_hex(int_to_big_endian(1 if call_execute_on_send else 0)),  # execute on send
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(call_value))),  # value
+        opcode_values.PUSH20,
+        call_code_address,  # code_address
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(call_gas))),  # gas
+
+        # make the call
+        opcode_values.SURROGATECALL,  # call
+    )
+
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+
+    sender_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    sender_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=gas_price,
+        gas=tx_gas,
+        to=CREATE_CONTRACT_ADDRESS,
+        value=tx_value,
+        data=code,
+    )
+
+    sender_initial_balance = sender_chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+    #
+    # Checks on the transaction that was generated by the computation
+    #
+    if error_expected == 'hard_error':
+        # We expect error on send, and the block wont send.
+        with pytest.raises(Exception):
+            sender_block = sender_chain.import_current_queue_block()
+            deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+            receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+            receiver_chain.populate_queue_block_with_receive_tx()
+
+    elif error_expected == 'soft_error':
+        # we expect a vm error on send, it will use all the gas but still import the block.
+        # We will raise an error when trying to receive the transaction because there is no transaction to receive.
+
+        sender_block = sender_chain.import_current_queue_block()
+
+        sender_final_balance = sender_chain.get_vm().state.account_db.get_balance( TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+        if consumes_all_gas:
+            assert((sender_final_balance-sender_initial_balance) == (tx_value + tx_gas*gas_price))
+
+        deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain.populate_queue_block_with_receive_tx()
+
+        with pytest.raises(Exception):
+            receiver_block = receiver_chain.import_current_queue_block()
+    else:
+
+        sender_block = sender_chain.import_current_queue_block()
+        deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain.populate_queue_block_with_receive_tx()
+
+        receiver_block = receiver_chain.import_current_queue_block()
+        if call_tx_succeedes:
+            assert(len(receiver_block.transactions) == 1)
+
+            generated_computation_tx = receiver_block.transactions[0]
+
+            assert (generated_computation_tx.value == call_value)
+            assert (generated_computation_tx.gas_price == gas_price)
+            assert (generated_computation_tx.to == call_to)
+            assert (generated_computation_tx.data == decode_hex(call_data))
+            assert (generated_computation_tx.caller == deploy_address)
+            assert (generated_computation_tx.origin == TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+            assert (generated_computation_tx.execute_on_send == call_execute_on_send)
+
+
+            # things that change for other kinds of calls
+            if call_code_address == call_to:
+                # If the code address is the recipient of the transaction, then code address is left blank because
+                # it will already be executing the code at the recipient chain.
+                assert (generated_computation_tx.code_address == b'')
+            else:
+                assert (generated_computation_tx.code_address == call_code_address)
+            assert (generated_computation_tx.create_address == b'')
+        else:
+            assert (len(receiver_block.transactions) == 0)

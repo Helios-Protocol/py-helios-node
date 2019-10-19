@@ -805,6 +805,8 @@ class VM(BaseVM):
 
         last_header, receipts, receive_computations, send_computations, processed_receive_transactions, computation_call_send_transactions = self.apply_all_transactions(block, private_key = private_key)
 
+
+
         if is_queue_block:
             # need to add any new computation call send transactions to the list of send transactions
             if len(computation_call_send_transactions) > 0:
@@ -872,6 +874,7 @@ class VM(BaseVM):
         
         #save all send transactions in the state as receivable
         #we have to do this at the end here because the block hash is still changing when transactions are being processed.
+
         self.save_recievable_transactions(block.header.hash, send_computations, processed_receive_transactions)
 
         if validate:
@@ -900,10 +903,11 @@ class VM(BaseVM):
         for computation in computations:
             msg = computation.msg
             transaction_context = computation.transaction_context
-            self.state.account_db.add_receivable_transaction(msg.resolved_to,
-                                                             transaction_context.send_tx_hash,
-                                                             block_header_hash,
-                                                             msg.is_create)
+            if not computation.is_error:
+                self.state.account_db.add_receivable_transaction(msg.resolved_to,
+                                                                 transaction_context.send_tx_hash,
+                                                                 block_header_hash,
+                                                                 msg.is_create)
 
         for receive_transaction in receive_transactions:
             if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:

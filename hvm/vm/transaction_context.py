@@ -77,4 +77,8 @@ class BaseTransactionContext:
     def this_chain_address(self):
         return self._this_chain_address
 
+    @this_chain_address.setter
+    def this_chain_address(self, value):
+        self._this_chain_address = value
+
     

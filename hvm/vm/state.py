@@ -75,6 +75,7 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
         transaction_context = self.get_transaction_context(send_transaction, this_chain_address, receive_transaction, refund_transaction)
         message = self.build_evm_message(send_transaction, transaction_context, receive_transaction)
         computation = self.build_computation(message, transaction_context, validate)
+        first_computation = computation
         finalized_computation = self.finalize_computation(send_transaction, computation)
 
         processed_transaction = self.add_possible_refunds_to_currently_executing_transaction(send_transaction,

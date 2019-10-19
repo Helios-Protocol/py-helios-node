@@ -2,7 +2,8 @@ import functools
 
 from eth_typing import Address
 from eth_utils import int_to_big_endian
-from hvm.constants import GAS_TX
+from hvm.constants import GAS_TX, CREATE_CONTRACT_ADDRESS
+from hvm.exceptions import ValidationError
 from hvm.vm.forks.boson import BosonTransaction, BosonReceiveTransaction
 from rlp_cython.sedes import (
     big_endian_int,
@@ -92,6 +93,22 @@ class PhotonTransaction(BosonTransaction):
             return self.origin
         else:
             return self.sender
+
+    @property
+    def is_create(self) -> bool:
+        return self.to == CREATE_CONTRACT_ADDRESS or self.create_address != b''
+
+    def validate(self):
+        if self.is_create:
+            if self.execute_on_send:
+                raise ValidationError("Create transactions are not allowed to execute on send.")
+
+        super(PhotonTransaction, self).validate()
+
+
+
+
+# This is a create
 
 
 class PhotonReceiveTransaction(BosonReceiveTransaction):

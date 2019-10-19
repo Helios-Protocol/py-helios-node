@@ -612,10 +612,21 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
         snapshot = self.state.snapshot()
         computation_call_nonce_before = self.execution_context.computation_call_nonce
 
+        # need to set this_chain_address to the deployed address
+        initial_this_chain_address = self.transaction_context.this_chain_address
+        self.transaction_context.this_chain_address = self.msg.create_address
+
+        # temporarily increase the balance on the receiver chain by the value amount
+        self.state.account_db.delta_balance(self.transaction_context.this_chain_address, self.msg.value)
+
         computation = self.apply_create_message()
 
         self.state.revert(snapshot)
+
+        # reset changed variables
         self.execution_context.computation_call_nonce = computation_call_nonce_before
+        self.transaction_context.this_chain_address = initial_this_chain_address
+
         return computation
 
 

@@ -7,6 +7,7 @@ from hvm.rlp.transactions import (
 )
 from typing import Union, Optional # noqa: F401
 
+from hvm.constants import CREATE_CONTRACT_ADDRESS
 from hvm.vm.forks.boson.validation import validate_boson_transaction, \
     validate_boson_transaction_against_header
 
@@ -32,6 +33,8 @@ def validate_photon_transaction(account_db,
                 encode_hex(this_chain_address),
                 encode_hex(send_transaction.caller)
             ))
+
+
 
 
 def validate_photon_transaction_against_header(_vm, base_header, send_transaction):

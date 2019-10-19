@@ -214,10 +214,11 @@ class PhotonVM(VM):
         for computation in computations:
             msg = computation.msg
             transaction_context = computation.transaction_context
-            self.state.account_db.add_receivable_transaction(msg.resolved_to,
-                                                             transaction_context.send_tx_hash,
-                                                             block_header_hash,
-                                                             msg.is_create)
+            if not computation.is_error:
+                self.state.account_db.add_receivable_transaction(msg.resolved_to,
+                                                                 transaction_context.send_tx_hash,
+                                                                 block_header_hash,
+                                                                 msg.is_create)
 
         # Refunds
         for receive_transaction in receive_transactions:

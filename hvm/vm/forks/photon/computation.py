@@ -148,14 +148,27 @@ class PhotonComputation(BosonComputation):
                 computation_snapshot = self.state.snapshot()
                 initial_create_computation_call_nonce = self.state.execution_context.computation_call_nonce
 
+                # need to set this_chain_address to the deployed address
+                initial_this_chain_address = self.transaction_context.this_chain_address
+                self.transaction_context.this_chain_address = self.msg.create_address
+
+                # temporarily increase the balance on the receiver chain by the value amount
+                self.state.account_db.delta_balance(self.transaction_context.this_chain_address, self.msg.value)
+
                 computation = self.apply_computation(
                     self.state,
                     self.msg,
                     self.transaction_context,
                 )
 
+                # reset the changed variables
+                self.transaction_context.this_chain_address = initial_this_chain_address
+
                 if computation.is_error:
                     # This will revert the computation snapshot as well.
+                    self.logger.debug(
+                        "CREATE COMPUTATION FAILED ON SEND. NOT DEPLOYING."
+                    )
                     self.state.revert(snapshot)
                     self.state.execution_context.computation_call_nonce = computation_call_nonce_snapshot
                 else:

@@ -231,6 +231,7 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
         elif computation.transaction_context.is_receive:
             # this kind of receive transaction may include a nonzero gas refund. Must add it in now
             # It gets a refund if send has data and is not create. ie. there was a computation on receive
+
             if computation.transaction_context.is_computation_call_origin or (computation.msg.data != b'' and not computation.msg.is_create):
                 # New: we always process refunds after receiving a transaction originating in a computation call
                 gas_refund_amount = computation.get_gas_remaining_including_refunds()
