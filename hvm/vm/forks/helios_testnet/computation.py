@@ -166,6 +166,7 @@ class HeliosTestnetComputation(BaseComputation):
         if self.transaction_context.is_receive and not self.transaction_context.is_refund:
             # EIP161 nonce incrementation
             self.state.account_db.increment_nonce(self.msg.resolved_to)
+            self.execution_context.increment_computation_call_nonce()
 
         computation = self.apply_message(validate = validate)
 

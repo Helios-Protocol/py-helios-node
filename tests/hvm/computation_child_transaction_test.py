@@ -630,48 +630,26 @@ def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call
 
 
 @pytest.mark.parametrize(
-    'call_data, call_value, call_gas, gas_price, call_to, call_execute_on_send, error_expected, call_tx_succeedes, consumes_all_gas',
+    'call_value, error_expected, call_tx_succeedes',
     (
         (
-            encode_hex(pad32(b"123120371238719")),
             0,
-            100000,
-            1,
-            RECEIVER.public_key.to_canonical_address(),
-            False,
             False,
             True,
-            False
         ),
-        ( # code address is the same as the to.
-            encode_hex(pad32(b"123120371238719")),
-            0,
-            100000,
-            1,
-            RECEIVER3.public_key.to_canonical_address(),
+        ( # Sending value larger than on the chain. Contract deploys, but create call tx doesnt send.
+            10,
             False,
             False,
-            True,
-            False
-        ),
-        ( # the surrogatecall will have execute on send
-            encode_hex(pad32(b"123120371238719")),
-            0,
-            100000,
-            1,
-            RECEIVER3.public_key.to_canonical_address(),
-            True,
-            False,
-            True,
-            False
         ),
 
     )
 )
-def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call_gas, gas_price, call_to, call_execute_on_send, error_expected, call_tx_succeedes, consumes_all_gas):
+def test_child_transaction_from_create_opcode(call_value, error_expected, call_tx_succeedes):
     tx_gas = 20000000
     tx_value = 5
-    call_code_address = RECEIVER3.public_key.to_canonical_address()
+    gas_price = 1
+    call_data = encode_hex(pad32(b"123120371238719"))
     code = assemble(
         # store call_data into memory
         opcode_values.PUSH32,
@@ -685,19 +663,11 @@ def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call
         encode_hex(pad32(int_to_big_endian(32))),  # memory_in_length
         opcode_values.PUSH32,
         encode_hex(pad32(int_to_big_endian(0))),  # memory_in_start
-        opcode_values.PUSH20,
-        call_to,  # to
-        opcode_values.PUSH1,
-        encode_hex(int_to_big_endian(1 if call_execute_on_send else 0)),  # execute on send
         opcode_values.PUSH32,
         encode_hex(pad32(int_to_big_endian(call_value))),  # value
-        opcode_values.PUSH20,
-        call_code_address,  # code_address
-        opcode_values.PUSH32,
-        encode_hex(pad32(int_to_big_endian(call_gas))),  # gas
 
         # make the call
-        opcode_values.SURROGATECALL,  # call
+        opcode_values.CREATE,  # create
     )
 
     testdb = MemoryDB()
@@ -712,6 +682,8 @@ def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call
         value=tx_value,
         data=code,
     )
+
+
 
     sender_initial_balance = sender_chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
@@ -734,9 +706,6 @@ def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call
 
         sender_final_balance = sender_chain.get_vm().state.account_db.get_balance( TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
-        if consumes_all_gas:
-            assert((sender_final_balance-sender_initial_balance) == (tx_value + tx_gas*gas_price))
-
         deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
         receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
         receiver_chain.populate_queue_block_with_receive_tx()
@@ -747,6 +716,13 @@ def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call
 
         sender_block = sender_chain.import_current_queue_block()
         deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+
+        computation_call_nonce = 1
+        call_expected_contract_address = generate_contract_address(
+            deploy_address,
+            computation_call_nonce,
+        )
+
         receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
         receiver_chain.populate_queue_block_with_receive_tx()
 
@@ -758,20 +734,156 @@ def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call
 
             assert (generated_computation_tx.value == call_value)
             assert (generated_computation_tx.gas_price == gas_price)
-            assert (generated_computation_tx.to == call_to)
+            assert (generated_computation_tx.to == CREATE_CONTRACT_ADDRESS)
             assert (generated_computation_tx.data == decode_hex(call_data))
             assert (generated_computation_tx.caller == deploy_address)
             assert (generated_computation_tx.origin == TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-            assert (generated_computation_tx.execute_on_send == call_execute_on_send)
+            assert (generated_computation_tx.execute_on_send == False)
 
 
             # things that change for other kinds of calls
-            if call_code_address == call_to:
-                # If the code address is the recipient of the transaction, then code address is left blank because
-                # it will already be executing the code at the recipient chain.
-                assert (generated_computation_tx.code_address == b'')
-            else:
-                assert (generated_computation_tx.code_address == call_code_address)
-            assert (generated_computation_tx.create_address == b'')
+            assert (generated_computation_tx.code_address == b'')
+            assert (generated_computation_tx.create_address == call_expected_contract_address)
         else:
             assert (len(receiver_block.transactions) == 0)
+
+# test_child_transaction_from_create_opcode(
+#     10,
+#     False,
+#     False,
+#     False
+# )
+
+
+@pytest.mark.parametrize(
+    'call_value, error_expected, call_tx_succeedes',
+    (
+        (
+            0,
+            False,
+            True,
+        ),
+        ( # Sending value larger than on the chain. Contract deploys, but create call tx doesnt send.
+            10,
+            False,
+            False,
+        ),
+
+    )
+)
+def test_child_transaction_from_create2_opcode(call_value, error_expected, call_tx_succeedes):
+    tx_gas = 20000000
+    tx_value = 5
+    gas_price = 1
+    call_data = encode_hex(pad32(b"123120371238719"))
+    salt = encode_hex(pad32(int_to_big_endian(1337)))
+    code = assemble(
+        # store call_data into memory
+        opcode_values.PUSH32,
+        call_data,  # value
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(0))),  # start position
+        opcode_values.MSTORE,
+
+        # store call parameters in stack
+        opcode_values.PUSH32,
+        salt,  # salt
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(32))),  # memory_in_length
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(0))),  # memory_in_start
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(call_value))),  # value
+
+        # make the call
+        opcode_values.CREATE2,  # create
+    )
+
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+
+    sender_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    sender_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=gas_price,
+        gas=tx_gas,
+        to=CREATE_CONTRACT_ADDRESS,
+        value=tx_value,
+        data=code,
+    )
+
+
+
+    sender_initial_balance = sender_chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+    #
+    # Checks on the transaction that was generated by the computation
+    #
+    if error_expected == 'hard_error':
+        # We expect error on send, and the block wont send.
+        with pytest.raises(Exception):
+            sender_block = sender_chain.import_current_queue_block()
+            deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+            receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+            receiver_chain.populate_queue_block_with_receive_tx()
+
+    elif error_expected == 'soft_error':
+        # we expect a vm error on send, it will use all the gas but still import the block.
+        # We will raise an error when trying to receive the transaction because there is no transaction to receive.
+
+        sender_block = sender_chain.import_current_queue_block()
+
+        sender_final_balance = sender_chain.get_vm().state.account_db.get_balance( TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+        deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain.populate_queue_block_with_receive_tx()
+
+        with pytest.raises(Exception):
+            receiver_block = receiver_chain.import_current_queue_block()
+    else:
+
+        sender_block = sender_chain.import_current_queue_block()
+        deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
+
+        call_expected_contract_address = generate_safe_contract_address(
+            deploy_address,
+            1337,
+            decode_hex(call_data)
+        )
+
+        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain.populate_queue_block_with_receive_tx()
+
+        receiver_block = receiver_chain.import_current_queue_block()
+        if call_tx_succeedes:
+            assert(len(receiver_block.transactions) == 1)
+
+            generated_computation_tx = receiver_block.transactions[0]
+
+            assert (generated_computation_tx.value == call_value)
+            assert (generated_computation_tx.gas_price == gas_price)
+            assert (generated_computation_tx.to == CREATE_CONTRACT_ADDRESS)
+            assert (generated_computation_tx.data == decode_hex(call_data))
+            assert (generated_computation_tx.caller == deploy_address)
+            assert (generated_computation_tx.origin == TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+            assert (generated_computation_tx.execute_on_send == False)
+
+
+            # things that change for other kinds of calls
+            assert (generated_computation_tx.code_address == b'')
+            assert (generated_computation_tx.create_address == call_expected_contract_address)
+        else:
+            assert (len(receiver_block.transactions) == 0)
+
+# test_child_transaction_from_create2_opcode(
+#     10,
+#     False,
+#     False,
+#     False
+# )
+
+
+#
+#
+#
