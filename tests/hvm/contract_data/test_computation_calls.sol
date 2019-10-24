@@ -16,7 +16,7 @@ contract Test {
                                         execute_on_send,      //Execute on send?
                                         call_to,   //To addr
                                         x,    //Inputs are stored at location x
-                                        0x24 //Inputs are 36 bytes long
+                                        0x04 //Inputs are 4 bytes long
                                         )
 
         }
@@ -34,7 +34,7 @@ contract Test {
                                 token_contract_address, //Delegated token contract address
                                 call_value,       //Value
                                 x,    //Inputs are stored at location x
-                                0x24, //Inputs are 36 bytes long,
+                                0x04, //Inputs are 4 bytes long,
                                 x, //Store output over input (saves space)
                                 0x20 //Outputs are 32 bytes long
                                 )
@@ -52,18 +52,43 @@ contract Test {
         call_to.send.gas(call_gas)(call_value);
     }
 
-    function test_create(uint256 call_value, uint256 call_gas) public {
+    //also check to make sure they return the address
+    function test_create(uint256 call_value, uint256 call_gas) public returns (address){
+
+        bytes4 data = bytes4(keccak256("random data")); //Function signature
+        address contract_address;
 
         assembly {
             let x := mload(0x40)   //Find empty storage location using "free memory pointer"
+            mstore(x,data) //Place signature at beginning of empty storage
 
-            let success := create(call_value,
+            let contract_address := create(call_value,
                                 x,    //Inputs are stored at location x
-                                0x24, //Inputs are 36 bytes long,
-                                x, //Store output over input (saves space)
-                                0x20 //Outputs are 32 bytes long
+                                0x24 //Inputs are 36 bytes long,
                                 )
 
         }
+        return contract_address;
+    }
+
+    function test_create2(uint256 call_value, uint256 call_gas) public returns (address){
+
+        bytes4 data = bytes4(keccak256("random data")); //Function signature
+        bytes32 salt = bytes4(keccak256("random salt")); //Function signature
+        address contract_address;
+
+        assembly {
+            let x := mload(0x40)   //Find empty storage location using "free memory pointer"
+            mstore(x,data) //Place signature at beginning of empty storage
+
+            let contract_address := create2(call_value,
+                                        x,    //Inputs are stored at location x
+                                        0x24, //Inputs are 36 bytes long,
+                                        salt
+                                        )
+
+
+        }
+        return contract_address;
     }
 }
