@@ -891,123 +891,130 @@ def test_child_transaction_from_create2_opcode(call_value, error_expected, call_
 def deploy_test_contract_to_database():
     absolute_dir = os.path.dirname(os.path.realpath(__file__))
     testdb = LevelDB(absolute_dir + "/predefined_databases/test_contract")
+    testdb.destroy_db()
+    testdb = LevelDB(absolute_dir + "/predefined_databases/test_contract")
+    create_predefined_blockchain_database(testdb)
     deployed_contract_address, contract_interface = deploy_contract(testdb, 'test_computation_calls', 'Test')
     print("Test contract deployed to {}".format(encode_hex(deployed_contract_address)))
 
-deploy_test_contract_to_database()
+# deploy_test_contract_to_database()
+# exit()
 
-# def test_call_from_compiled():
-#     testdb = MemoryDB()
-#     create_predefined_blockchain_database(testdb)
-#
-#     # deploy the contract
-#     w3 = Web3()
-#
-#     max_gas = 20000000
-#
-#     contract_interface = compile_and_get_contract_interface(testdb, 'test_computation_calls', 'Test')
-#
-#     #
-#     # Mint some coins
-#     #
-#     chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
-#
-#     Test = w3.hls.contract(
-#         address=Web3.toChecksumAddress(deployed_contract_address),
-#         abi=contract_interface['abi']
-#     )
-#
-#     w3_tx = Test.functions.test_call(expected_balance).buildTransaction(W3_TX_DEFAULTS)
-#
-#     chain.create_and_sign_transaction_for_queue_block(
-#         gas_price=0x01,
-#         gas=max_gas,
-#         to=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-#         value=0,
-#         data=decode_hex(w3_tx['data']),
-#         execute_on_send=True,
-#         code_address = deployed_contract_address
-#     )
-#
-#     print("Minting some coins locally")
-#
-#     chain.import_current_queue_block()
-#
-#     #
-#     # Check local balance
-#     #
-#
-#     w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
-#     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-#     result = chain.generate_tx_and_get_result(decode_hex(w3_tx['data']),
-#                                               from_address=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-#                                               to_address=deployed_contract_address)
-#
-#     print("local balance")
-#     print(big_endian_to_int(result))
-#     assert (big_endian_to_int(result) == expected_balance)
-#
-#     #
-#     # Send tokens to another address
-#     #
-#     print("waiting {} seconds before importing next block".format(min_time_between_blocks))
-#     time.sleep(min_time_between_blocks)
-#
-#     send_balance = 100
-#     w3_tx = HeliosDelegatedToken.functions.send(send_balance).buildTransaction(W3_TX_DEFAULTS)
-#
-#     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
-#     chain.create_and_sign_transaction_for_queue_block(
-#         gas_price=0x01,
-#         gas=max_gas,
-#         to=RECEIVER.public_key.to_canonical_address(),
-#         value=0,
-#         data=decode_hex(w3_tx['data']),
-#         execute_on_send=True,
-#         code_address = deployed_contract_address,
-#     )
-#
-#     print("Sending coins")
-#
-#     chain.import_current_queue_block()
-#
-#     print("Receiving coins")
-#
-#     chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
-#     chain.populate_queue_block_with_receive_tx()
-#     chain.import_current_queue_block()
-#
-#
-#     #
-#     # Check local balance
-#     #
-#
-#     w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
-#     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-#     result = chain.generate_tx_and_get_result(decode_hex(w3_tx['data']),
-#                                               from_address=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-#                                               to_address=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-#                                               code_address = deployed_contract_address)
-#
-#     print("local balance")
-#     print(big_endian_to_int(result))
-#     assert (big_endian_to_int(result) == expected_balance - send_balance)
-#
-#     #
-#     # Check receiver balance
-#     #
-#
-#     w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
-#     chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address())
-#     result = chain.generate_tx_and_get_result(decode_hex(w3_tx['data']),
-#                                               from_address=RECEIVER.public_key.to_canonical_address(),
-#                                               to_address=RECEIVER.public_key.to_canonical_address(),
-#                                               code_address = deployed_contract_address)
-#
-#     print("receiver balance")
-#     print(big_endian_to_int(result))
-#     assert (big_endian_to_int(result) == send_balance)
-#
-#
-#
-# # test_surrogate_call()
+
+
+def test_call_from_compiled():
+    # testdb = MemoryDB()
+    # create_predefined_blockchain_database(testdb)
+
+    absolute_dir = os.path.dirname(os.path.realpath(__file__))
+    testdb = ReadOnlyDB(LevelDB(absolute_dir + "/predefined_databases/test_contract"))
+    deployed_contract_address = decode_hex('0xde4d82cbf59478edc432e03fe29f5930b14a4dd8')
+
+    w3 = Web3()
+
+    max_gas = 20000000
+
+    contract_interface = compile_and_get_contract_interface('test_computation_calls', 'Test')
+
+    tx_value = 1000
+    call_to = RECEIVER.public_key.to_canonical_address()
+    call_code_address = RECEIVER2.public_key.to_canonical_address()
+    call_value = 100
+    call_execute_on_send = 1
+    call_gas = 100000
+
+
+    #
+    # Test call
+    #
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    Test = w3.hls.contract(
+        address=Web3.toChecksumAddress(deployed_contract_address),
+        abi=contract_interface['abi']
+    )
+
+    w3_tx = Test.functions.test_call(call_to, call_value, call_gas).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=tx_value,
+        data=decode_hex(w3_tx['data']),
+    )
+
+    chain.import_current_queue_block()
+
+    receiver_chain = TestnetChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY)
+    receiver_chain.populate_queue_block_with_receive_tx()
+
+    receiver_block = receiver_chain.import_current_queue_block()
+
+    print(receiver_block.transactions)
+
+
+
+
+
+test_call_from_compiled()
+
+
+
+def test_surrogatecall_from_compiled():
+    # testdb = MemoryDB()
+    # create_predefined_blockchain_database(testdb)
+
+    absolute_dir = os.path.dirname(os.path.realpath(__file__))
+    testdb = ReadOnlyDB(LevelDB(absolute_dir + "/predefined_databases/test_contract"))
+    deployed_contract_address = decode_hex('0xde4d82cbf59478edc432e03fe29f5930b14a4dd8')
+
+    w3 = Web3()
+
+    max_gas = 20000000
+
+    contract_interface = compile_and_get_contract_interface('test_computation_calls', 'Test')
+
+    tx_value = 1000
+    call_to = RECEIVER.public_key.to_canonical_address()
+    call_code_address = RECEIVER2.public_key.to_canonical_address()
+    call_value = 100
+    call_execute_on_send = True
+    call_gas = 100000
+
+
+    #
+    # Test call
+    #
+    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+
+    Test = w3.hls.contract(
+        address=Web3.toChecksumAddress(deployed_contract_address),
+        abi=contract_interface['abi']
+    )
+
+
+    w3_tx = Test.functions.test_surrogatecall(call_code_address, call_to, call_execute_on_send, call_value, call_gas).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=0x01,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=tx_value,
+        data=decode_hex(w3_tx['data']),
+    )
+
+    chain.import_current_queue_block()
+
+    receiver_chain = TestnetChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY)
+    receiver_chain.populate_queue_block_with_receive_tx()
+
+    receiver_block = receiver_chain.import_current_queue_block()
+
+    print(receiver_block.transactions)
+
+
+
+
+
+# test_surrogatecall_from_compiled()

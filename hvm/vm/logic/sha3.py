@@ -11,7 +11,7 @@ def sha3(computation):
 
     computation.extend_memory(start_position, size)
 
-    sha3_bytes = computation.memory_read(start_position, size)
+    sha3_bytes = computation.memory_read_bytes(start_position, size)
     word_count = ceil32(len(sha3_bytes)) // 32
 
     gas_cost = constants.GAS_SHA3WORD * word_count
