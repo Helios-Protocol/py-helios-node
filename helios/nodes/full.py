@@ -8,6 +8,7 @@ from hp2p.peer import BasePeerPool
 from helios.config import ChainConfig
 from helios.extensibility import PluginManager
 from helios.server import FullServer
+from hvm.db.backends.base import BaseDB
 
 from .base import Node
 
@@ -15,6 +16,7 @@ from eth_keys.datatypes import PrivateKey
 from eth_typing import Address
 
 class FullNode(Node):
+    _db: BaseDB = None
     _chain: AsyncChain = None
     _p2p_server: FullServer = None
 
@@ -31,13 +33,22 @@ class FullNode(Node):
 
         self.notify_resource_available()
 
+    def get_db(self) -> BaseDB:
+        if self._db is None:
+            self._db = self.db_manager.get_db()
 
+        return self._db
 
     def get_chain(self) -> AsyncChain:
         if self._chain is None:
-            self._chain = self.chain_class(self.db_manager.get_db(), self.wallet_address)  # type: ignore
+            self._chain = self.chain_class(self.get_db(), self.wallet_address)  # type: ignore
 
         return self._chain
+
+    def get_new_chain(self, chain_address: Address=None, private_key:PrivateKey = None) -> AsyncChain:
+        if chain_address is None:
+            chain_address = self.wallet_address
+        return self.chain_class(self.get_db(), chain_address, private_key)
 
     def get_new_private_chain(self, chain_address: Address = None) -> AsyncChain:
         '''
@@ -53,10 +64,7 @@ class FullNode(Node):
         return self.get_new_chain(chain_address = chain_address,
                                   private_key = self.chain_config.node_private_helios_key)
 
-    def get_new_chain(self, chain_address: Address=None, private_key:PrivateKey = None) -> AsyncChain:
-        if chain_address is None:
-            chain_address = self.wallet_address
-        return self.chain_class(self.db_manager.get_db(), chain_address, private_key)
+
 
 
     def get_p2p_server(self) -> FullServer:

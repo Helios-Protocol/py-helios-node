@@ -113,7 +113,7 @@ class ChainConfig:
         self.network_startup_node = network_startup_node
         self._disable_smart_contract_chain_manager = disable_smart_contract_chain_manager
         self._network_id = network_id
-        self.max_peers = max_peers
+
         self.sync_mode = sync_mode
         self.port = port
         self.rpc_port = rpc_port
@@ -131,6 +131,8 @@ class ChainConfig:
 
         if self.node_type == 4 and max_peers == 25:
             max_peers = DEFAULT_MAX_PEERS_BOOTNODE
+
+        self.max_peers = max_peers
 
         if helios_root_dir is not None:
             self.helios_root_dir = helios_root_dir
