@@ -99,7 +99,9 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
 
             # this is the default gas fee for the send tx that needs to be subtracted on the receive of a smart contract
             # Buy Gas
-            self.vm_state.account_db.delta_balance(send_transaction.sender, -1 * gas_fee)
+            if not transaction_context.is_computation_call_origin:
+                # if the send transaction is created by a computation, then gas is already paid for
+                self.vm_state.account_db.delta_balance(transaction_context.this_chain_address, -1 * gas_fee)
 
             # Increment Nonce
             self.vm_state.account_db.increment_nonce(send_transaction.sender)
@@ -280,7 +282,7 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
                         encode_hex(computation.msg.sender),
                     )
 
-                    self.vm_state.account_db.delta_balance(computation.msg.sender, gas_refund_amount)
+                    self.vm_state.account_db.delta_balance(computation.transaction_context.this_chain_address, gas_refund_amount)
 
                 # In order to keep the state consistent with the block headers, we want the newly created smart contract chain
                 # to have an empty state. The smart contract data will be stored when the recieve transaction is executed.

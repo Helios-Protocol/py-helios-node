@@ -21,7 +21,7 @@ from hvm.utils.spoof import (
 
 from hvm.types import Timestamp
 
-
+from hvm.constants import GAS_CALLSTIPEND
 
 from hvm.db.backends.level import LevelDB
 from hvm.db.backends.memory import MemoryDB
@@ -917,27 +917,31 @@ def test_call_from_compiled():
     contract_interface = compile_and_get_contract_interface('test_computation_calls', 'Test')
 
     tx_value = 1000
+    tx_gas_price = 1
+
     call_to = RECEIVER.public_key.to_canonical_address()
-    call_code_address = RECEIVER2.public_key.to_canonical_address()
     call_value = 100
-    call_execute_on_send = 1
     call_gas = 100000
+    call_data = ZERO_HASH32
 
 
     #
     # Test call
     #
+
+
     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
 
+    origin_initial_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     Test = w3.hls.contract(
         address=Web3.toChecksumAddress(deployed_contract_address),
         abi=contract_interface['abi']
     )
 
-    w3_tx = Test.functions.test_call(call_to, call_value, call_gas).buildTransaction(W3_TX_DEFAULTS)
+    w3_tx = Test.functions.test_call(call_to, call_value, call_gas, call_data).buildTransaction(W3_TX_DEFAULTS)
 
     chain.create_and_sign_transaction_for_queue_block(
-        gas_price=0x01,
+        gas_price=tx_gas_price,
         gas=max_gas,
         to=deployed_contract_address,
         value=tx_value,
@@ -951,9 +955,40 @@ def test_call_from_compiled():
 
     receiver_block = receiver_chain.import_current_queue_block()
 
-    print(receiver_block.transactions)
+    assert(len(receiver_block.transactions)==1)
 
+    computation_call_tx = receiver_block.transactions[0]
 
+    print(computation_call_tx.as_dict())
+
+    assert (computation_call_tx['gas'] == call_gas + GAS_CALLSTIPEND)
+    assert (computation_call_tx['to'] == call_to)
+    assert (computation_call_tx['gas_price'] == tx_gas_price)
+    assert (computation_call_tx['value'] == call_value)
+    assert (computation_call_tx['data'] == call_data)
+    assert (computation_call_tx['caller'] == deployed_contract_address)
+    assert (computation_call_tx['origin'] == TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+
+    # things that change for surrogate
+    assert (computation_call_tx['code_address'] == b'')
+    assert (computation_call_tx['create_address'] == b'')
+    assert (computation_call_tx['execute_on_send'] == False)
+
+    remaining_balance_on_contract = receiver_chain.get_vm().state.account_db.get_balance(deployed_contract_address)
+    assert(remaining_balance_on_contract == tx_value-call_value)
+
+    origin_remaining_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    print(origin_remaining_balance-origin_initial_balance)
+    print(max_gas*tx_gas_price+tx_value)
+    print(max_gas*tx_gas_price+tx_value + (origin_remaining_balance-origin_initial_balance))
+    #assert (origin_remaining_balance == origin_initial_balance - call_value)
+
+    # If there is a send tx on a smart contract chain, it must be computation call origin.
+    # Additionally, when processing send transactions of computation call origin, the gas has already been paid for.
+    # we cannot subtract the gas from any accounts.
+    #
+    #
+    #
 
 
 
