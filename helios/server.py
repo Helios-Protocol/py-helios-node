@@ -319,6 +319,9 @@ class BaseServer(BaseService):
         if self.chain_config.node_type != 4 and total_peers > int(self.peer_pool.max_peers*DIAL_IN_OUT_RATIO) and inbound_peer_count / total_peers > DIAL_IN_OUT_RATIO:
             # make sure to have at least 1/4 outbound connections
             await peer.disconnect(DisconnectReason.too_many_peers)
+        elif total_peers >= self.peer_pool.max_peers:
+            # Do this no matter what the inbound outbound ratio is
+            await peer.disconnect(DisconnectReason.too_many_peers)
         else:
             # We use self.wait() here as a workaround for
             # https://github.com/ethereum/py-evm/issues/670.

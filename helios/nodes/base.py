@@ -35,6 +35,8 @@ from eth_typing import Address
 
 from eth_keys.datatypes import PrivateKey
 
+from hvm.db.backends.base import BaseDB
+
 
 class Node(BaseService):
     """
@@ -60,6 +62,10 @@ class Node(BaseService):
 
         self._chain_head_db = self._db_manager.get_chain_head_db()  # type: ignore
         self._jsonrpc_ipc_path: Path = chain_config.jsonrpc_ipc_path
+
+    @abstractmethod
+    def get_db(self) -> BaseDB:
+        raise NotImplementedError("Node classes must implement this method")
 
     @abstractmethod
     def get_chain(self) -> AsyncChain:
