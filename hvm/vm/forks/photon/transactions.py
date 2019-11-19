@@ -2,7 +2,7 @@ import functools
 
 from eth_typing import Address
 from eth_utils import int_to_big_endian
-from hvm.constants import GAS_TX, CREATE_CONTRACT_ADDRESS
+from hvm.constants import GAS_TX, CREATE_CONTRACT_ADDRESS, GAS_TXCREATE, GAS_TXDATAZERO, GAS_TXDATANONZERO
 from hvm.exceptions import ValidationError
 from hvm.vm.forks.boson import BosonTransaction, BosonReceiveTransaction
 from rlp_cython.sedes import (
@@ -105,7 +105,8 @@ class PhotonTransaction(BosonTransaction):
 
         super(PhotonTransaction, self).validate()
 
-
+    def get_intrinsic_gas(self):
+        return _get_photon_intrinsic_gas(self)
 
 
 # This is a create
@@ -115,3 +116,16 @@ class PhotonReceiveTransaction(BosonReceiveTransaction):
     pass
     
 
+def _get_photon_intrinsic_gas(transaction):
+    num_zero_bytes = transaction.data.count(b'\x00')
+    num_non_zero_bytes = len(transaction.data) - num_zero_bytes
+    if transaction.is_create:
+        create_cost = GAS_TXCREATE
+    else:
+        create_cost = 0
+    return (
+        GAS_TX +
+        num_zero_bytes * GAS_TXDATAZERO +
+        num_non_zero_bytes * GAS_TXDATANONZERO +
+        create_cost
+    )
