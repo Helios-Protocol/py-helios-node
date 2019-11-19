@@ -71,7 +71,7 @@ from helios.sync.full.service import FullNodeSyncer
 from hp2p.consensus import Consensus
 from hp2p.smart_contract_chain_manager import SmartContractChainManager
 
-DIAL_IN_OUT_RATIO = 0.5
+DIAL_IN_OUT_RATIO = 1
 
 
 ANY_PEER_POOL = Union[HLSPeerPool]
