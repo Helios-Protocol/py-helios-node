@@ -71,7 +71,7 @@ from helios.sync.full.service import FullNodeSyncer
 from hp2p.consensus import Consensus
 from hp2p.smart_contract_chain_manager import SmartContractChainManager
 
-DIAL_IN_OUT_RATIO = 1
+DIAL_IN_OUT_RATIO = 0.75
 
 
 ANY_PEER_POOL = Union[HLSPeerPool]
@@ -316,16 +316,13 @@ class BaseServer(BaseService):
             in self.peer_pool.connected_nodes.values()
             if peer.inbound
         ])
-        if self.chain_config.node_type != 4 and total_peers > int(self.peer_pool.max_peers*DIAL_IN_OUT_RATIO) and inbound_peer_count / total_peers > DIAL_IN_OUT_RATIO:
-            # make sure to have at least 1/4 outbound connections
-            await peer.disconnect(DisconnectReason.too_many_peers)
-        elif total_peers >= self.peer_pool.max_peers:
-            # Do this no matter what the inbound outbound ratio is
-            await peer.disconnect(DisconnectReason.too_many_peers)
-        else:
-            # We use self.wait() here as a workaround for
-            # https://github.com/ethereum/py-evm/issues/670.
-            await self.wait(self.do_handshake(peer))
+        # if self.chain_config.node_type != 4 and total_peers > 1 and inbound_peer_count / total_peers > DIAL_IN_OUT_RATIO:
+        #     # make sure to have at least 1/4 outbound connections
+        #     await peer.disconnect(DisconnectReason.too_many_peers)
+        # else:
+        # We use self.wait() here as a workaround for
+        # https://github.com/ethereum/py-evm/issues/670.
+        await self.wait(self.do_handshake(peer))
 
     async def do_handshake(self, peer: BasePeer) -> None:
         await peer.do_p2p_handshake()

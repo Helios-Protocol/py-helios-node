@@ -44,10 +44,10 @@ COMPLETION_TIMEOUT = 5
 
 MAINNET_BOOTNODES = (
                      'enode://16a5d307b0152d3e3e49e8b1f2f08c403a7b8b2f27667ae0ef10486019326b71c50fac7b2cfc6c278ca6abc54bf8e81e376a6a82996ffaea599aea85c6f5f831@142.58.49.25:30303',
-                    'enode://a8dc7d11801fceb6018df377bc37bad5d4f580d1c36c57b1055595daaed54f7ec15ba1c247b317db1b5d37e439de07e42dbc5ae037dd90f6e77e4c69453c5f0d@142.58.122.209:30303',
-                    'enode://1e95a05d9601763786055cd48e21c883be82981acb1db56e8e5f8e9bae68697e322266b749d3014bf1d21884d90907c6846dab9e0fbe73a56bbeb04e49a486e0@50.68.92.147:30303',
-                    'enode://23ac1a7e9389d549b05d8c5596478276bc2d840a25a6e890fbb1d25e7c953e1156ddac284983ec85c057ac9f5d13c0992a16ffd9a2d938bc23e4d75ef3d48a69@199.192.28.100:30303',
-                    'enode://23ac1a7e9389d549b05d8c5596478276bc2d840a25a6e890fbb1d25e7c953e1156ddac284983ec85c057ac9f5d13c0992a16ffd9a2d938bc23e4d75ef3d48a69@199.193.6.184:30303'
+                    #'enode://a8dc7d11801fceb6018df377bc37bad5d4f580d1c36c57b1055595daaed54f7ec15ba1c247b317db1b5d37e439de07e42dbc5ae037dd90f6e77e4c69453c5f0d@142.58.122.209:30303',
+                    #'enode://1e95a05d9601763786055cd48e21c883be82981acb1db56e8e5f8e9bae68697e322266b749d3014bf1d21884d90907c6846dab9e0fbe73a56bbeb04e49a486e0@50.68.92.147:30303',
+                    #'enode://23ac1a7e9389d549b05d8c5596478276bc2d840a25a6e890fbb1d25e7c953e1156ddac284983ec85c057ac9f5d13c0992a16ffd9a2d938bc23e4d75ef3d48a69@199.192.28.100:30303',
+                    #'enode://23ac1a7e9389d549b05d8c5596478276bc2d840a25a6e890fbb1d25e7c953e1156ddac284983ec85c057ac9f5d13c0992a16ffd9a2d938bc23e4d75ef3d48a69@199.193.6.184:30303'
 )
 ROPSTEN_BOOTNODES = ()
 DISCOVERY_V5_BOOTNODES = ()
@@ -109,6 +109,38 @@ SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD = 2 # The amount of time between each main 
 # When doing a fast sync, it will try to sync up until this many seconds ago.
 TIME_OFFSET_TO_FAST_SYNC_TO = 24*60*60
 
+#
+# Kademlia Constants
+#
+
+# number of bits per hop
+KADEMLIA_BITS_PER_HOP = 8
+
+# bucket size for kademlia routing table
+KADEMLIA_BUCKET_SIZE = 16
+
+# round trip message timout
+KADEMLIA_REQUEST_TIMEOUT = 7.2
+
+# Amount of time to consider a bucket idle
+KADEMLIA_IDLE_BUCKET_REFRESH_INTERVAL = 3600
+
+# Number of parallele `find_node` lookups that can be in progress
+KADEMLIA_FIND_CONCURRENCY = 3
+
+# Size of public keys in bits
+KADEMLIA_PUBLIC_KEY_SIZE = 512
+
+# Size of a node id in bits
+KADEMLIA_ID_SIZE = 256
+
+# Maximum node `id` for a kademlia node
+KADEMLIA_MAX_NODE_ID = (2 ** KADEMLIA_ID_SIZE) - 1
 
 
+# Reserved command length for the base `p2p` protocol
+# - https://github.com/ethereum/devp2p/blob/master/rlpx.md#message-id-based-multiplexing
+P2P_PROTOCOL_COMMAND_LENGTH = 16
 
+# RLPx header data
+RLPX_HEADER_DATA = b'\xc2\x80\x80'  # rlp.encode([0, 0])

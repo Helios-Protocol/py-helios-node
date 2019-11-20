@@ -5,6 +5,7 @@ listening nodes.
 
 More information at https://github.com/ethereum/devp2p/blob/master/rlpx.md#node-discovery
 """
+from hp2p import constants
 import asyncio
 import collections
 import contextlib
@@ -225,7 +226,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             got_ping = False
             try:
                 got_ping = await self.cancel_token.cancellable_wait(
-                    event.wait(), timeout=kademlia.k_request_timeout)
+                    event.wait(), timeout=constants.KADEMLIA_REQUEST_TIMEOUT)
                 self.logger.trace('got expected ping from %s', remote)
             except TimeoutError:
                 self.logger.trace('timed out waiting for ping from %s', remote)
@@ -252,7 +253,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             got_pong = False
             try:
                 got_pong = await self.cancel_token.cancellable_wait(
-                    event.wait(), timeout=kademlia.k_request_timeout)
+                    event.wait(), timeout=constants.KADEMLIA_REQUEST_TIMEOUT)
                 self.logger.trace('got expected pong with token %s', encode_hex(token))
             except TimeoutError:
                 self.logger.trace(
@@ -276,17 +277,17 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             # This callback is expected to be called multiple times because nodes usually
             # split the neighbours replies into multiple packets, so we only call event.set() once
             # we've received enough neighbours.
-            if len(neighbours) >= kademlia.k_bucket_size:
+            if len(neighbours) >= constants.KADEMLIA_BUCKET_SIZE:
                 event.set()
 
         with self.neighbours_callbacks.acquire(remote, process):
             try:
                 await self.cancel_token.cancellable_wait(
-                    event.wait(), timeout=kademlia.k_request_timeout)
+                    event.wait(), timeout=constants.KADEMLIA_REQUEST_TIMEOUT)
                 self.logger.trace('got expected neighbours response from %s', remote)
             except TimeoutError:
                 self.logger.trace(
-                    'timed out waiting for %d neighbours from %s', kademlia.k_bucket_size, remote)
+                    'timed out waiting for %d neighbours from %s', constants.KADEMLIA_BUCKET_SIZE, remote)
 
         return tuple(n for n in neighbours if n != self.this_node)
 
@@ -332,7 +333,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
 
         def _exclude_if_asked(nodes: Iterable[kademlia.Node]) -> List[kademlia.Node]:
             nodes_to_ask = list(set(nodes).difference(nodes_asked))
-            return kademlia.sort_by_distance(nodes_to_ask, node_id)[:kademlia.k_find_concurrency]
+            return kademlia.sort_by_distance(nodes_to_ask, node_id)[:constants.KADEMLIA_FIND_CONCURRENCY]
 
         closest = self.routing.neighbours(node_id)
         self.logger.debug("starting lookup; initial neighbours: %s", closest)
@@ -348,14 +349,14 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             ))
             for candidates in results:
                 closest.extend(candidates)
-            closest = kademlia.sort_by_distance(closest, node_id)[:kademlia.k_bucket_size]
+            closest = kademlia.sort_by_distance(closest, node_id)[:constants.KADEMLIA_BUCKET_SIZE]
             nodes_to_ask = _exclude_if_asked(closest)
 
         self.logger.debug("lookup finished for %s: %s", node_id, closest)
         return tuple(closest)
 
     async def lookup_random(self) -> Tuple[kademlia.Node, ...]:
-        return await self.lookup(random.randint(0, kademlia.k_max_node_id))
+        return await self.lookup(random.randint(0, constants.KADEMLIA_MAX_NODE_ID))
 
     def get_random_bootnode(self) -> Iterator[kademlia.Node]:
         if self.bootstrap_nodes:
@@ -394,30 +395,28 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         self.transport = cast(asyncio.DatagramTransport, transport)
 
     async def bootstrap(self) -> None:
-        self.logger.info("boostrapping with %s", self.bootstrap_nodes)
-        async with self.bootstrap_lock:
-            try:
-                nodes_to_bond_with = self.bootstrap_nodes
-                any_bonded = False
-                for node_to_bond_with in nodes_to_bond_with:
-                    self.logger.debug("Attempting to bootstrap with node {}".format(node_to_bond_with))
-                    for i in range(10):
-                        bonded = await self.bond(node_to_bond_with)
-                        if bonded:
-                            self.logger.debug("Successfully bootstrapped with node {}".format(node_to_bond_with))
-                            any_bonded = True
-                            break
+        for node in self.bootstrap_nodes:
+            uri = node.uri()
+            pubkey, _, uri_tail = uri.partition('@')
+            pubkey_head = pubkey[:16]
+            pubkey_tail = pubkey[-8:]
+            self.logger.debug("full-bootnode: %s", uri)
+            self.logger.debug("bootnode: %s...%s@%s", pubkey_head, pubkey_tail, uri_tail)
 
-                        self.logger.debug("Cannot bootstrap with node because we are waiting for a ping or a pong from them. Will retry in 5 seconds")
-                        await asyncio.sleep(5)
-
-
-                if not any_bonded:
-                    self.logger.info("Failed to bond with bootstrap nodes %s", self.bootstrap_nodes)
-                    return
-                await self.lookup_random()
-            except OperationCancelled as e:
-                self.logger.info("Bootstrapping cancelled: %s", e)
+        try:
+            bonding_queries = (
+                self.bond(n)
+                for n
+                in self.bootstrap_nodes
+                if (not self.ping_callbacks.locked(n) and not self.pong_callbacks.locked(n))
+            )
+            bonded = await asyncio.gather(*bonding_queries)
+            if not any(bonded):
+                self.logger.info("Failed to bond with bootstrap nodes %s", self.bootstrap_nodes)
+                return
+            await self.lookup_random()
+        except OperationCancelled as e:
+            self.logger.info("Bootstrapping cancelled: %s", e)
 
     async def bootstrap_if_needed(self) -> None:
         connected_to_bootstrap = False
@@ -525,7 +524,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
 
     def send_find_node_v4(self, node: kademlia.Node, target_node_id: int) -> None:
         node_id = int_to_big_endian(
-            target_node_id).rjust(kademlia.k_pubkey_size // 8, b'\0')
+            target_node_id).rjust(constants.KADEMLIA_PUBLIC_KEY_SIZE // 8, b'\0')
         self.logger.trace('>>> find_node to %s', node)
         message = _pack_v4(CMD_FIND_NODE.id, tuple([node_id]), self.privkey)
         self.send(node, message)
@@ -749,7 +748,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
 
     def send_find_node_v5(self, node: kademlia.Node, target_node_id: int) -> None:
         node_id = int_to_big_endian(
-            target_node_id).rjust(kademlia.k_pubkey_size // 8, b'\0')
+            target_node_id).rjust(constants.KADEMLIA_PUBLIC_KEY_SIZE // 8, b'\0')
         self.logger.trace('>>> find_node to %s', node)
         message = _pack_v5(CMD_FIND_NODE.id, (node_id, _get_msg_expiration()), self.privkey)
         self.send_v5(node, message)
@@ -805,7 +804,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         with self.topic_nodes_callbacks.acquire(remote, process):
             try:
                 await self.cancel_token.cancellable_wait(
-                    event.wait(), timeout=kademlia.k_request_timeout)
+                    event.wait(), timeout=constants.KADEMLIA_REQUEST_TIMEOUT)
             except TimeoutError:
                 # A timeout here just means we didn't get at least MAX_ENTRIES_PER_TOPIC nodes,
                 # but we'll still process the ones we get.
@@ -961,7 +960,7 @@ class DiscoveryByTopicProtocol(DiscoveryProtocol):
         for node in seen_nodes:
             self.topic_table.add_node(node, self.topic)
 
-        if len(seen_nodes) < kademlia.k_bucket_size:
+        if len(seen_nodes) < constants.KADEMLIA_BUCKET_SIZE:
             # Not enough nodes were found for our topic, so perform a regular kademlia lookup for
             # a random node ID.
             extra_nodes = await super().lookup_random()
@@ -1132,7 +1131,7 @@ def _get_max_neighbours_per_packet() -> int:
     # Use an IPv6 address here as we're interested in the size of the biggest possible node
     # representation.
     addr = kademlia.Address('::1', 30303, 30303)
-    node_data = addr.to_endpoint() + [b'\x00' * (kademlia.k_pubkey_size // 8)]
+    node_data = addr.to_endpoint() + [b'\x00' * (constants.KADEMLIA_PUBLIC_KEY_SIZE // 8)]
     neighbours = [node_data]
     expiration = rlp.sedes.big_endian_int.serialize(_get_msg_expiration())
     payload = rlp.encode([neighbours] + [expiration])
@@ -1209,7 +1208,7 @@ def _unpack_v5(message: bytes) -> Tuple[datatypes.PublicKey, int, Tuple[Any, ...
 class CallbackLock:
     def __init__(self,
                  callback: Callable[..., Any],
-                 timeout: float=2 * kademlia.k_request_timeout) -> None:
+                 timeout: float=2 * constants.KADEMLIA_REQUEST_TIMEOUT) -> None:
         self.callback = callback
         self.timeout = timeout
         self.created_at = time.time()
