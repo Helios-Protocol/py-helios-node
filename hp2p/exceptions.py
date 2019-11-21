@@ -23,6 +23,11 @@ class PeerConnectionLost(BaseP2PError):
     """
     pass
 
+class IneligiblePeer(BaseP2PError):
+    """
+    Raised when a peer is not a valid connection candidate.
+    """
+    pass
 
 class HandshakeFailure(BaseP2PError):
     """

@@ -12,7 +12,7 @@ deps = {
         "eth-bloom>=1.0.3,<2.0.0",
         "eth-keys>=0.2.0b3,<1.0.0",
         "eth-typing>=2.0.0,<3.0.0",
-        "eth-utils>=1.2.0,<2.0.0",
+        "eth-utils>=1.7,<2",
         "lru-dict>=1.1.6",
         "py-ecc>=1.4.2,<2.0.0",
         "pyethash>=0.1.27,<1.0.0",
@@ -20,6 +20,7 @@ deps = {
         "sortedcontainers>=2.0.4",
         "pbkdf2>=1.3",
         "rlp-cython>=2.1.6",
+        "dataclasses>=0.6, <1;python_version<'3.7'",
     ],
     # The hvm-extra sections is for libraries that the hvm does not
     # explicitly need to function and hence should not depend on.
