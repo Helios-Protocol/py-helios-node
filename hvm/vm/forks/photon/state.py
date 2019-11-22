@@ -55,8 +55,6 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
             # Setup VM Message
             message_gas = send_transaction.gas - send_transaction.intrinsic_gas
 
-            print("message_gas {}".format(message_gas))
-
             refund_amount = 0
 
             if transaction_context.is_create_tx:

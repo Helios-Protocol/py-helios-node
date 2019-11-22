@@ -277,33 +277,7 @@ class Call(BaseCall):
             computation.stack_push_int(1)
 
 
-class SurrogateCall(Call):
-    def get_call_params(self, computation):
-        gas = computation.stack_pop1_int()
-        code_address = force_bytes_to_address(computation.stack_pop1_bytes())
-        value = computation.stack_pop1_int()
-        execute_on_send = bool(computation.stack_pop1_int())
-        to = force_bytes_to_address(computation.stack_pop1_bytes())
 
-        (
-            memory_input_start_position,
-            memory_input_size
-        ) = computation.stack_pop_ints(num_items=2)
-
-        return (
-            gas,
-            value,
-            to,
-            None,  # sender
-            code_address,  # code_address
-            memory_input_start_position,
-            memory_input_size,
-            None,
-            None,
-            True,  # should_transfer_value,
-            computation.msg.is_static,
-            execute_on_send
-        )
 
 
 class CallCode(BaseCall):
@@ -408,6 +382,9 @@ def max_child_gas_eip150(gas):
     return gas - (gas // 64)
 
 
+#
+# Added GAS_TX to gas
+#
 def compute_eip150_msg_gas(computation, gas, extra_gas, value, mnemonic, callstipend):
     if computation.get_gas_remaining() < extra_gas:
         # It feels wrong to raise an OutOfGas exception outside of GasMeter,
@@ -420,8 +397,8 @@ def compute_eip150_msg_gas(computation, gas, extra_gas, value, mnemonic, callsti
     gas = min(
         gas,
         max_child_gas_eip150(computation.get_gas_remaining() - extra_gas))
-    total_fee = gas + extra_gas
-    child_msg_gas = gas + (callstipend if value else 0)
+    total_fee = gas + extra_gas + GAS_TX
+    child_msg_gas = gas + (callstipend if value else 0) + GAS_TX
     return child_msg_gas, total_fee
 
 
@@ -493,3 +470,30 @@ class StaticCallHelios(StaticCall):
 class CallHelios(CallByzantium):
     pass
 
+class SurrogateCall(CallHelios):
+    def get_call_params(self, computation):
+        gas = computation.stack_pop1_int()
+        code_address = force_bytes_to_address(computation.stack_pop1_bytes())
+        value = computation.stack_pop1_int()
+        execute_on_send = bool(computation.stack_pop1_int())
+        to = force_bytes_to_address(computation.stack_pop1_bytes())
+
+        (
+            memory_input_start_position,
+            memory_input_size
+        ) = computation.stack_pop_ints(num_items=2)
+
+        return (
+            gas,
+            value,
+            to,
+            None,  # sender
+            code_address,  # code_address
+            memory_input_start_position,
+            memory_input_size,
+            None,
+            None,
+            True,  # should_transfer_value,
+            computation.msg.is_static,
+            execute_on_send
+        )
