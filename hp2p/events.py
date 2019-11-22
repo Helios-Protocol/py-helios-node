@@ -5,6 +5,10 @@ from typing import (
     TYPE_CHECKING
 )
 
+from dataclasses import (
+    dataclass,
+)
+
 from lahja import (
     BaseEvent,
     BaseRequestResponseEvent,
@@ -116,3 +120,4 @@ class NewBlockEvent(BaseRequestResponseEvent[NoResponse]):
     @staticmethod
     def expected_response_type() -> Type[NoResponse]:
         return NoResponse
+
