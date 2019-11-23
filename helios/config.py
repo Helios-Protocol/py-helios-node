@@ -13,6 +13,9 @@ from typing import (
 
 from eth_keys import keys
 from eth_keys.datatypes import PrivateKey
+
+
+from hvm.chains.hypothesis import HYPOTHESIS_NETWORK_ID
 from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
@@ -505,10 +508,12 @@ class ChainConfig:
             MainnetFullNode,
         )
         from helios.nodes.testnet import TestnetFullNode
-
+        from helios.nodes.hypothesis import HypothesisFullNode
         if self.sync_mode == SYNC_FULL:
             if self.network_id == MAINNET_NETWORK_ID:
                 return MainnetFullNode
+            elif self.network_id == HYPOTHESIS_NETWORK_ID:
+                return HypothesisFullNode
             elif self.network_id == TESTNET_NETWORK_ID:
                 return TestnetFullNode
             else:

@@ -23,6 +23,7 @@ from hvm import (
 from hvm.chains.base import (
     BaseChain
 )
+from hvm.chains.hypothesis import HYPOTHESIS_NETWORK_ID, HypothesisChain
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
@@ -109,6 +110,8 @@ def is_data_dir_initialized(chain_config: ChainConfig) -> bool:
 def is_database_initialized(chaindb: AsyncChainDB, chain_config) -> bool:
     if chain_config.network_id == MAINNET_NETWORK_ID:
         genesis_wallet_address = GENESIS_WALLET_ADDRESS
+    elif chain_config.network_id == HYPOTHESIS_NETWORK_ID:
+        genesis_wallet_address = GENESIS_WALLET_ADDRESS
     elif chain_config.network_id == TESTNET_NETWORK_ID:
         genesis_wallet_address = TESTNET_GENESIS_WALLET_ADDRESS
     try:
@@ -167,7 +170,7 @@ def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> Non
     try:
         chaindb.get_canonical_head(chain_address= GENESIS_WALLET_ADDRESS)
     except CanonicalHeadNotFound:
-        if chain_config.network_id == MAINNET_NETWORK_ID:
+        if chain_config.network_id == MAINNET_NETWORK_ID or chain_config.network_id == HYPOTHESIS_NETWORK_ID:
             MainnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
             if chain_config.network_startup_node:
                 # add the initial startup transactions
@@ -297,6 +300,8 @@ def get_chain_manager(chain_config: ChainConfig, base_db: AsyncBaseDB, instance 
     # There might be a performance savings by doing the threaded work in this process to avoid one process hop.
     if chain_config.network_id == MAINNET_NETWORK_ID:
         chain_class = MainnetChain
+    elif chain_config.network_id == HYPOTHESIS_NETWORK_ID:
+        chain_class = HypothesisChain
     elif chain_config.network_id == TESTNET_NETWORK_ID:
         chain_class = TestnetChain
     else:

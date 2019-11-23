@@ -13,6 +13,8 @@ from typing import (
 )
 
 from cancel_token import CancelToken
+
+from hvm.chains.hypothesis import HYPOTHESIS_NETWORK_ID
 from hvm.db.read_only import ReadOnlyDB
 from lahja import (
     EventBus,
@@ -96,7 +98,7 @@ from helios.utils.version import (
 from hvm.tools.logging import TRACE_LEVEL_NUM
 from helios.utils.db_proxy import create_db_manager
 
-PRECONFIGURED_NETWORKS = {MAINNET_NETWORK_ID, TESTNET_NETWORK_ID}
+PRECONFIGURED_NETWORKS = {MAINNET_NETWORK_ID, HYPOTHESIS_NETWORK_ID, TESTNET_NETWORK_ID}
 
 HELIOS_HEADER = (
     "\n"    

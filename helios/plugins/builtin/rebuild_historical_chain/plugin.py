@@ -14,6 +14,7 @@ from helios.extensibility import (
 from helios.utils.ipc import (
     kill_process_id_gracefully,
 )
+from hvm.chains.hypothesis import HYPOTHESIS_NETWORK_ID
 from hvm.constants import ZERO_ADDRESS
 from hvm.db.backends.level import LevelDB
 
@@ -58,6 +59,8 @@ class RebuildHistoricalChainPlugin(BaseMainProcessPlugin):
 
         if chain_config.network_id == MAINNET_NETWORK_ID:
             chain_class = MainnetChain
+        elif chain_config.network_id == HYPOTHESIS_NETWORK_ID:
+            chain_class = HypothesisChain
         elif chain_config.network_id == TESTNET_NETWORK_ID:
             chain_class = TestnetChain
         else:

@@ -15,6 +15,7 @@ from eth_utils import (
 from eth_keys import keys
 from eth_keys.datatypes import PrivateKey
 
+from hvm.chains.hypothesis import HYPOTHESIS_NETWORK_ID
 from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
 )
@@ -29,6 +30,7 @@ from helios.constants import SYNC_LIGHT
 
 DEFAULT_DATA_DIRS = {
     MAINNET_NETWORK_ID: 'mainnet',
+    HYPOTHESIS_NETWORK_ID: 'hypothesis',
     TESTNET_NETWORK_ID: 'testnet'
 }
 
