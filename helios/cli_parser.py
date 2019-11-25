@@ -216,7 +216,7 @@ networkid_parser = network_parser.add_mutually_exclusive_group()
 networkid_parser.add_argument(
     '--network-id',
     type=int,
-    help="Network identifier (1=Mainnet, 2=Testnet)",
+    help="Network identifier (1=Mainnet, 2=Testnet, 42=Hypothesis)",
     default=MAINNET_NETWORK_ID,
 )
 

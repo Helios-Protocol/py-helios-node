@@ -15,9 +15,11 @@ from eth_keys import keys
 from eth_keys.datatypes import PrivateKey
 
 
-from hvm.chains.hypothesis import HYPOTHESIS_NETWORK_ID
 from hvm.chains.mainnet import (
     MAINNET_NETWORK_ID,
+)
+from hvm.chains.hypothesis import (
+    HYPOTHESIS_NETWORK_ID,
 )
 from hvm.chains.testnet import TESTNET_NETWORK_ID
 
@@ -30,6 +32,7 @@ from helios.constants import (
 )
 from hp2p.constants import (
     MAINNET_BOOTNODES,
+    HYPOTHESIS_BOOTNODES,
     DEFAULT_MAX_PEERS_BOOTNODE)
 from helios.utils.chains import (
     construct_chain_config_params,
@@ -231,6 +234,11 @@ class ChainConfig:
                    self._bootstrap_nodes = tuple(
                        KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
                    )
+                elif self.network_id == HYPOTHESIS_NETWORK_ID:
+                   self._bootstrap_nodes = tuple(
+                       KademliaNode.from_uri(enode) for enode in HYPOTHESIS_BOOTNODES
+                   )
+
         return self._bootstrap_nodes
 
     @property
