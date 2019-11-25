@@ -94,16 +94,9 @@ from helios.rpc.format import block_to_dict
 import eth_keyfile
 
 import sys
-sys.path.append('/d:/Google Drive/forex/blockchain_coding/Helios/prototype desktop/helios_deploy/')
+sys.path.append('/d:/Google Drive/forex/blockchain_coding/Helios/prototype_laptop/helios_hypothesis_deploy/')
 from deploy_params import (
     genesis_private_key,
-    airdrop_private_key,
-    bounties_private_key,
-    exchange_listings_private_key,
-    dapp_incubator_private_key,
-    bootnode_1_private_key,
-    bootnode_2_private_key,
-    masternode_1_private_key,
 )
 
 def create_new_genesis_params_and_state():

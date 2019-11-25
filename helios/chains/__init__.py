@@ -23,7 +23,8 @@ from hvm import (
 from hvm.chains.base import (
     BaseChain
 )
-from hvm.chains.hypothesis import HYPOTHESIS_NETWORK_ID, HypothesisChain
+from hvm.chains.hypothesis import HYPOTHESIS_NETWORK_ID, HypothesisChain, HYPOTHESIS_GENESIS_PARAMS, \
+    HYPOTHESIS_GENESIS_STATE
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
@@ -170,11 +171,13 @@ def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> Non
     try:
         chaindb.get_canonical_head(chain_address= GENESIS_WALLET_ADDRESS)
     except CanonicalHeadNotFound:
-        if chain_config.network_id == MAINNET_NETWORK_ID or chain_config.network_id == HYPOTHESIS_NETWORK_ID:
+        if chain_config.network_id == MAINNET_NETWORK_ID:
             MainnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
             if chain_config.network_startup_node:
                 # add the initial startup transactions
                 create_mainnet_genesis_transactions(chaindb.db)
+        elif chain_config.network_id == HYPOTHESIS_NETWORK_ID:
+            MainnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, HYPOTHESIS_GENESIS_PARAMS, HYPOTHESIS_GENESIS_STATE)
         elif chain_config.network_id == TESTNET_NETWORK_ID:
             TestnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE)
         else:

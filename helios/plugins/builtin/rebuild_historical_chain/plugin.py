@@ -26,10 +26,7 @@ from hvm.chains.base import (
     BaseChain
 )
 from hvm.chains.mainnet import (
-    MAINNET_GENESIS_PARAMS,
-    MAINNET_GENESIS_STATE,
     MAINNET_NETWORK_ID,
-    GENESIS_WALLET_ADDRESS,
 )
 from hvm.chains.testnet import (
     TESTNET_GENESIS_PARAMS,

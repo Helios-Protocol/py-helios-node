@@ -1,8 +1,6 @@
 from hvm import MainnetChain
 from hvm import constants
 from hvm.chains.mainnet import (
-    MAINNET_GENESIS_PARAMS,
-    MAINNET_GENESIS_STATE,
     GENESIS_PRIVATE_KEY_FOR_TESTNET,
 )
 

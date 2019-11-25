@@ -681,7 +681,7 @@ def add_random_transactions_to_db_for_time_window(base_db, start_time, end_time,
 
 def create_mainnet_genesis_transactions(base_db):
     import sys
-    sys.path.append('/d:/Google Drive/forex/blockchain_coding/Helios/prototype desktop/helios_deploy/')
+    sys.path.append('')
     from deploy_params import (
         genesis_private_key,
         airdrop_private_key,

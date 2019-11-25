@@ -231,13 +231,14 @@ class ChainConfig:
 
             else:
                 if self.network_id == MAINNET_NETWORK_ID:
-                   self._bootstrap_nodes = tuple(
-                       KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES
-                   )
+                    self._bootstrap_nodes = [KademliaNode.from_uri(enode) for enode in MAINNET_BOOTNODES]
+                    self._bootstrap_nodes = [node for node in self._bootstrap_nodes if node.pubkey != self.nodekey_public]
+                    self._bootstrap_nodes = tuple(self._bootstrap_nodes)
                 elif self.network_id == HYPOTHESIS_NETWORK_ID:
-                   self._bootstrap_nodes = tuple(
-                       KademliaNode.from_uri(enode) for enode in HYPOTHESIS_BOOTNODES
-                   )
+                    self._bootstrap_nodes = [KademliaNode.from_uri(enode) for enode in HYPOTHESIS_BOOTNODES]
+                    self._bootstrap_nodes = [node for node in self._bootstrap_nodes if node.pubkey != self.nodekey_public]
+                    self._bootstrap_nodes = tuple(self._bootstrap_nodes)
+                   
 
         return self._bootstrap_nodes
 

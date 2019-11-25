@@ -26,7 +26,7 @@ from hvm.types import Timestamp
 
 from eth_utils import to_wei
 
-MAINNET_VM_CONFIGURATION = (
+HYPOTHESIS_VM_CONFIGURATION = (
     (HELIOS_TESTNET_TIMESTAMP, HeliosTestnetVM),
     (BOSON_TIMESTAMP, BosonVM),
     (PHOTON_TIMESTAMP, PhotonVM),
@@ -36,11 +36,12 @@ MAINNET_VM_CONFIGURATION = (
 HYPOTHESIS_NETWORK_ID = 42
 
 
-MAINNET_GENESIS_PARAMS = {'chain_address': b'k\xfa\xf9\x95\xff\xce{\xe6\xe3\x07=\xc8\xaa\xf4^D\\\xf24\xe2', 'parent_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receive_transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receipt_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'bloom': 0, 'block_number': 0, 'gas_limit': 31415926, 'gas_used': 0, 'timestamp': 1556733839, 'extra_data': b'', 'reward_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'account_hash': b'\xd4\x9cGEs\xf6\x94d\xc1\x7ffQ\xfa\xe8M\x97\xbc\x174$\xcf\xbc\x85\xcfA\xe0\x03\x1d@V\x07k', 'account_balance': 350000000000000000000000000, 'v': 37, 'r': 93839323543945068717442670765493545859312542496119552239371011239431804284394, 's': 52575047971246554922163349509335225657857819685884165799268239475836117657622}
+HYPOTHESIS_GENESIS_PARAMS = {'chain_address': b'\xa5\x15\xd1\x11GH\xe6\xfa(\xe7\xbdD\xb9\x89\x0e\xe6i\x94\xb2o', 'parent_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receive_transaction_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'receipt_root': b'V\xe8\x1f\x17\x1b\xccU\xa6\xff\x83E\xe6\x92\xc0\xf8n[H\xe0\x1b\x99l\xad\xc0\x01b/\xb5\xe3c\xb4!', 'bloom': 0, 'block_number': 0, 'gas_limit': 31415926, 'gas_used': 0, 'timestamp': 1556733839, 'extra_data': b'', 'reward_hash': b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', 'account_hash': b'\xd4\x9cGEs\xf6\x94d\xc1\x7ffQ\xfa\xe8M\x97\xbc\x174$\xcf\xbc\x85\xcfA\xe0\x03\x1d@V\x07k', 'account_balance': 350000000000000000000000000, 'v': 38, 'r': 98993327816995772339279650861033950674767983733653681604149206753558269330751, 's': 20489050957361419997728663043577841862036780260135648866845650054543579818688}
+
 
 #this state and header must go together to be valid.
-MAINNET_GENESIS_STATE = {
-    MAINNET_GENESIS_PARAMS['chain_address']: {
+HYPOTHESIS_GENESIS_STATE = {
+    HYPOTHESIS_GENESIS_PARAMS['chain_address']: {
         "balance": to_wei(350000000, 'ether'),
         "code": b"",
         "nonce": 0,
@@ -48,14 +49,14 @@ MAINNET_GENESIS_STATE = {
     }
 }
 
-GENESIS_WALLET_ADDRESS = MAINNET_GENESIS_PARAMS['chain_address']
+GENESIS_WALLET_ADDRESS = HYPOTHESIS_GENESIS_PARAMS['chain_address']
 
 class BaseHypothesisChain:
     faucet_private_key: PrivateKey = keys.PrivateKey(TESTNET_FAUCET_PRIVATE_KEY)
-    vm_configuration: Tuple[Tuple[Timestamp, Type[BaseVM]]] = MAINNET_VM_CONFIGURATION
+    vm_configuration: Tuple[Tuple[Timestamp, Type[BaseVM]]] = HYPOTHESIS_VM_CONFIGURATION
     network_id: int = HYPOTHESIS_NETWORK_ID
-    genesis_wallet_address: Address = MAINNET_GENESIS_PARAMS['chain_address']
-    genesis_block_timestamp: Timestamp = MAINNET_GENESIS_PARAMS['timestamp']
+    genesis_wallet_address: Address = HYPOTHESIS_GENESIS_PARAMS['chain_address']
+    genesis_block_timestamp: Timestamp = HYPOTHESIS_GENESIS_PARAMS['timestamp']
 
 class HypothesisChain(BaseHypothesisChain, Chain):
     pass
