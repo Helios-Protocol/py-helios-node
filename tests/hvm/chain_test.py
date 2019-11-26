@@ -6,7 +6,7 @@ from pprint import pprint
 
 import pytest
 
-from hvm import constants
+from hvm import constants, HypothesisChain
 
 from hvm import TestnetChain
 from hvm.chains.testnet import (
@@ -716,7 +716,7 @@ def test_import_chain():
         import_chain(testdb1, testdb2)
 
 
-test_import_chain()
+#test_import_chain()
 
 
 # def import_chronological_block_window(testdb1, testdb2):
@@ -1587,10 +1587,35 @@ def test_get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp()
 # test_get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp()
 # sys.exit()
 
+def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp():
+    testdb = LevelDB('/home/tommy/.local/share/helios/hypothesis/chain/full')
+    sender_chain = HypothesisChain(testdb, SENDER.public_key.to_canonical_address(), SENDER)
+
+    genesis_chain = HypothesisChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    # genesis_chain.create_and_sign_transaction_for_queue_block(
+    #                 gas_price=0x01,
+    #                 gas=0x0c3500,
+    #                 to=RECEIVER.public_key.to_canonical_address(),
+    #                 value=1,
+    #                 data=b"",
+    #                 v=0,
+    #                 r=0,
+    #                 s=0
+    #                 )
+    # genesis_chain.import_current_queue_block()
+
+    # receiver_chain = HypothesisChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+    # receiver_chain.populate_queue_block_with_receive_tx()
+    block = genesis_chain.get_block_by_number(1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    print(block.as_dict())
+
+get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp()
+exit()
+
 
 def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp():
     #testdb = LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full')
-    testdb = LevelDB('/WWW/.local/share/helios/mainnet/chain/full')
+    testdb = LevelDB('/home/tommy/.local/share/helios/mainnet/chain/full')
     #testdb = JournalDB(testdb)
 
 

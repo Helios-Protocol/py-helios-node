@@ -24,7 +24,7 @@ from hvm.chains.base import (
     BaseChain
 )
 from hvm.chains.hypothesis import HYPOTHESIS_NETWORK_ID, HypothesisChain, HYPOTHESIS_GENESIS_PARAMS, \
-    HYPOTHESIS_GENESIS_STATE
+    HYPOTHESIS_GENESIS_STATE, HYPOTHESIS_GENESIS_WALLET_ADDRESS
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
@@ -35,7 +35,7 @@ from hvm.chains.testnet import (
     TESTNET_GENESIS_PARAMS,
     TESTNET_GENESIS_STATE,
     TESTNET_NETWORK_ID,
-    GENESIS_WALLET_ADDRESS as TESTNET_GENESIS_WALLET_ADDRESS,
+    TESTNET_GENESIS_WALLET_ADDRESS,
 )
 
 from hvm.db.backends.base import BaseAtomicDB
@@ -112,7 +112,7 @@ def is_database_initialized(chaindb: AsyncChainDB, chain_config) -> bool:
     if chain_config.network_id == MAINNET_NETWORK_ID:
         genesis_wallet_address = GENESIS_WALLET_ADDRESS
     elif chain_config.network_id == HYPOTHESIS_NETWORK_ID:
-        genesis_wallet_address = GENESIS_WALLET_ADDRESS
+        genesis_wallet_address = HYPOTHESIS_GENESIS_WALLET_ADDRESS
     elif chain_config.network_id == TESTNET_NETWORK_ID:
         genesis_wallet_address = TESTNET_GENESIS_WALLET_ADDRESS
     try:
@@ -168,24 +168,21 @@ def initialize_data_dir(chain_config: ChainConfig) -> None:
 
 
 def initialize_database(chain_config: ChainConfig, chaindb: AsyncChainDB) -> None:
-    try:
-        chaindb.get_canonical_head(chain_address= GENESIS_WALLET_ADDRESS)
-    except CanonicalHeadNotFound:
-        if chain_config.network_id == MAINNET_NETWORK_ID:
-            MainnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
-            if chain_config.network_startup_node:
-                # add the initial startup transactions
-                create_mainnet_genesis_transactions(chaindb.db)
-        elif chain_config.network_id == HYPOTHESIS_NETWORK_ID:
-            MainnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, HYPOTHESIS_GENESIS_PARAMS, HYPOTHESIS_GENESIS_STATE)
-        elif chain_config.network_id == TESTNET_NETWORK_ID:
-            TestnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE)
-        else:
-            # TODO: add genesis data to ChainConfig and if it's present, use it
-            # here to initialize the chain.
-            raise NotImplementedError(
-                "Only the mainnet and ropsten chains are currently supported"
-            )
+    if chain_config.network_id == MAINNET_NETWORK_ID:
+        MainnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, MAINNET_GENESIS_PARAMS, MAINNET_GENESIS_STATE)
+        if chain_config.network_startup_node:
+            # add the initial startup transactions
+            create_mainnet_genesis_transactions(chaindb.db)
+    elif chain_config.network_id == HYPOTHESIS_NETWORK_ID:
+        MainnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, HYPOTHESIS_GENESIS_PARAMS, HYPOTHESIS_GENESIS_STATE)
+    elif chain_config.network_id == TESTNET_NETWORK_ID:
+        TestnetChain.from_genesis(chaindb.db, chain_config.node_wallet_address, TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE)
+    else:
+        # TODO: add genesis data to ChainConfig and if it's present, use it
+        # here to initialize the chain.
+        raise NotImplementedError(
+            "Only the mainnet and ropsten chains are currently supported"
+        )
 
 
 class TracebackRecorder:

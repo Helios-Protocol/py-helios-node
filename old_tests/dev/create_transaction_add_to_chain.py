@@ -7,7 +7,7 @@ from pprint import pprint
 
 from hvm import constants
 
-from hvm import MainnetChain
+from hvm import MainnetChain, HypothesisChain
 from hvm.chains.mainnet import (
     MAINNET_GENESIS_PARAMS,
     MAINNET_GENESIS_STATE,
@@ -99,7 +99,7 @@ from deploy_params import (
     genesis_private_key,
 )
 
-def create_new_genesis_params_and_state():
+def create_new_genesis_params_and_state(network_id = 1):
     #
     # GENESIS STATE, HEADER PARAMS
     #
@@ -135,10 +135,18 @@ def create_new_genesis_params_and_state():
     }
 
     testdb1 = MemoryDB()
-    genesis_header = MainnetChain.create_genesis_header(testdb1,
+
+    if network_id == 1:
+        genesis_header = MainnetChain.create_genesis_header(testdb1,
                                                         new_genesis_private_key.public_key.to_canonical_address(),
                                                         new_genesis_private_key, new_mainnet_genesis_params,
                                                         new_genesis_state)
+    elif network_id == 42:
+        genesis_header = HypothesisChain.create_genesis_header(testdb1,
+                                                        new_genesis_private_key.public_key.to_canonical_address(),
+                                                        new_genesis_private_key, new_mainnet_genesis_params,
+                                                        new_genesis_state)
+
 
     print()
     print("New completed and signed genesis header params")
@@ -198,7 +206,7 @@ def create_new_genesis_params_and_state():
 
 
 
-create_new_genesis_params_and_state()
+create_new_genesis_params_and_state(network_id=42)
 exit()
 
 def create_block_params():

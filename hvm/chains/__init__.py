@@ -4,6 +4,9 @@ from .base import (  # noqa: F401
 from .mainnet import (  # noqa: F401
     MainnetChain,
 )
+from .hypothesis import (  # noqa: F401
+    HypothesisChain,
+)
 from .testnet import (  # noqa: F401
     TestnetChain,
 )

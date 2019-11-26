@@ -14,6 +14,7 @@ setup_trace_logging()
 from hvm.chains import (  # noqa: F401
     Chain,
     MainnetChain,
+    HypothesisChain,
     TestnetChain,
 )
 

@@ -32,7 +32,6 @@ from hvm.chains.testnet import (
     TESTNET_GENESIS_PARAMS,
     TESTNET_GENESIS_STATE,
     TESTNET_NETWORK_ID,
-    GENESIS_WALLET_ADDRESS as TESTNET_GENESIS_WALLET_ADDRESS,
 )
 
 class RebuildHistoricalChainPlugin(BaseMainProcessPlugin):
