@@ -487,7 +487,8 @@ class Hls(RPCModule):
 
         encoded_micro_block = decode_hex(encoded_micro_block)
 
-        micro_block = rlp.decode(encoded_micro_block, sedes=chain.get_vm().micro_block_class)
+        # Assume this is using the vm for this timestamp. It should be if its coming in on the RPC
+        micro_block = rlp.decode(encoded_micro_block, sedes=chain.get_vm(timestamp=Timestamp(int(time.time()))).micro_block_class)
 
         block_class = self._chain_class.get_vm_class_for_block_timestamp(timestamp = micro_block.header.timestamp).get_block_class()
 

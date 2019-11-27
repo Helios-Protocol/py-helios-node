@@ -21,6 +21,7 @@ from eth_typing import (
 
 from eth_hash.auto import keccak
 
+from hvm.constants import CREATE_CONTRACT_ADDRESS
 from hvm.exceptions import (
     ValidationError,
 )
@@ -76,6 +77,22 @@ class BaseTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         ('r', big_endian_int),
         ('s', big_endian_int),
     ]
+
+    # Variables for compatability with future VMs
+    created_by_computation: bool = False
+    caller: bytes = b''
+    origin: bytes = b''
+    code_address: bytes = b''
+    create_address: bytes = b''
+    execute_on_send: bool = False
+
+    @property
+    def refund_address(self) -> Address:
+        return self.sender
+
+    @property
+    def is_create(self) -> bool:
+        return self.to == CREATE_CONTRACT_ADDRESS
 
     @classmethod
     def from_base_transaction(cls, transaction: 'BaseTransaction') -> 'BaseTransaction':
@@ -161,6 +178,9 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         ('remaining_refund', big_endian_int)
     ]
 
+    # Variable to temporarily hold the send transaction while importing. Note, this can be another receive transaction if this is a refund.
+    referenced_send_transaction: BaseTransaction = None
+
     @classmethod
     def from_base_transaction(cls, transaction: 'BaseReceiveTransaction') -> 'BaseReceiveTransaction':
         return rlp.decode(rlp.encode(transaction), sedes=cls)
@@ -168,6 +188,7 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
     @property
     def hash(self) -> bytes:
         return keccak(rlp.encode(self))
+
 
 
     # +-------------------------------------------------------------+

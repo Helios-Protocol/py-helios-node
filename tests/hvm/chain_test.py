@@ -1591,7 +1591,7 @@ def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp():
     testdb = LevelDB('/home/tommy/.local/share/helios/hypothesis/chain/full')
     sender_chain = HypothesisChain(testdb, SENDER.public_key.to_canonical_address(), SENDER)
 
-    genesis_chain = HypothesisChain(testdb, GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), GENESIS_PRIVATE_KEY)
+    genesis_chain = HypothesisChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
     # genesis_chain.create_and_sign_transaction_for_queue_block(
     #                 gas_price=0x01,
     #                 gas=0x0c3500,
@@ -1606,11 +1606,11 @@ def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp():
 
     # receiver_chain = HypothesisChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
     # receiver_chain.populate_queue_block_with_receive_tx()
-    block = genesis_chain.get_block_by_number(1, GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    block = genesis_chain.get_block_by_number(1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
     print(block.as_dict())
 
-get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp()
-exit()
+# get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp()
+# exit()
 
 
 def get_block_hashes_that_are_new_for_this_historical_root_hash_timestamp():
@@ -2079,6 +2079,58 @@ def test_import_block_reverse_transactions():
 
 # test_import_block_reverse_transactions()
 # exit()
+
+
+def test_populate_referenced_transactions():
+    testdb1 = MemoryDB()
+
+    TestnetChain.from_genesis(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PARAMS, TESTNET_GENESIS_STATE, TESTNET_GENESIS_PRIVATE_KEY)
+
+    create_predefined_blockchain_database(testdb1)
+
+    sender_chain = TestnetChain(testdb1, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),TESTNET_GENESIS_PRIVATE_KEY)
+
+    sender_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=2100000,
+        to=RECEIVER.public_key.to_canonical_address(),
+        value=10000,
+        data=b"asdafjsafdlkjsafdljask", #add data so it carries the gas and refunds later
+        v=0,
+        r=0,
+        s=0
+    )
+
+    sender_chain.import_current_queue_block()
+
+    #receive tx
+    receiver_chain = TestnetChain(testdb1, RECEIVER.public_key.to_canonical_address(),RECEIVER)
+    receiver_chain.populate_queue_block_with_receive_tx()
+    receiver_chain.import_current_queue_block()
+
+    #receive refund
+    sender_chain.populate_queue_block_with_receive_tx()
+    min_time_between_blocks = sender_chain.get_vm(timestamp = Timestamp(int(time.time()))).min_time_between_blocks
+    print("Waiting {} seconds before importing the next block".format(min_time_between_blocks))
+    time.sleep(min_time_between_blocks)
+    final_block = sender_chain.import_current_queue_block()
+
+    assert(final_block.receive_transactions[0].referenced_send_transaction == None)
+
+    sender_chain.populate_referenced_transactions(final_block.receive_transactions)
+
+    refund_transaction = final_block.receive_transactions[0]
+
+    assert(refund_transaction.referenced_send_transaction.hash == refund_transaction.send_transaction_hash)
+
+    receive_transaction = refund_transaction.referenced_send_transaction
+
+    assert(receive_transaction.referenced_send_transaction.hash == receive_transaction.send_transaction_hash)
+
+
+
+test_populate_referenced_transactions()
+exit()
 
 #
 # def test_chronological_block_initialization_2():

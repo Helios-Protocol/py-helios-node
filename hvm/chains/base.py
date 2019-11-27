@@ -2050,10 +2050,14 @@ class Chain(BaseChain):
         else:
             queue_block = False
 
+        # this part checks to make sure the parent exists
         if not self.chaindb.is_block_unprocessed(block.header.parent_hash):
 
-            #this part checks to make sure the parent exists
             try:
+                # Load all of the send transactions that any receive transactions reference, and add them to the receive transaction objects.
+                # Needs to be done here, and not in the VM because the send transactions could be from blocks that require a different VM
+                self.populate_referenced_transactions(block.receive_transactions)
+
                 vm = self.get_vm(timestamp = block.header.timestamp)
                 self.logger.debug("importing block with vm {}".format(vm.__repr__()))
                 if queue_block:
@@ -2150,6 +2154,32 @@ class Chain(BaseChain):
 
         return return_block
 
+
+    def populate_referenced_transactions(self, receive_transactions: List[BaseReceiveTransaction]) -> List[BaseReceiveTransaction]:
+        # This function goes through the receive transactions and loads all of the transactions that sent to them, then adds them to the receive transaction object.
+        for i in range(len(receive_transactions)):
+            current_transaction = receive_transactions[i]
+            try:
+                while True:
+                    header = self.chaindb.get_block_header_by_hash(current_transaction.sender_block_hash)
+                    vm_class = self.get_vm_class_for_block_timestamp(header.timestamp)
+                    transaction_class = vm_class.get_transaction_class()
+                    receive_transaction_class = vm_class.get_receive_transaction_class()
+                    referenced_transaction = self.chaindb.get_transaction_by_hash(current_transaction.send_transaction_hash, transaction_class, receive_transaction_class)
+                    current_transaction.referenced_send_transaction = referenced_transaction
+
+                    # This referenced transaction could be another receive transaction. This occurs for refund transactions. If it is, populate its reference transaction too.
+                    # Continue this chain until we get to a send transaction.
+                    if current_transaction.is_refund:
+                        current_transaction = referenced_transaction
+                    else:
+                        break
+
+            except (HeaderNotFound, TransactionNotFound):
+                # Raise this now so that we can save it as unprocessed before trying to impor
+                raise ReceivableTransactionNotFound
+
+        return receive_transactions
 
     def import_all_unprocessed_descendants(self, block_hash, *args, **kwargs):
         # 1) get unprocessed children

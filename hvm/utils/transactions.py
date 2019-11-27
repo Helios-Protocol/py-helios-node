@@ -108,3 +108,4 @@ def extract_transaction_sender(transaction: Union[BaseTransaction, BaseReceiveTr
     public_key = signature.recover_public_key_from_msg(message)
     sender = public_key.to_canonical_address()
     return sender
+

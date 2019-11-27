@@ -458,8 +458,7 @@ class VM(BaseVM):
         :param transaction: to apply
         """
         # Lets make sure we have this receivable transaction in the account
-        receivable_tx_key = self.state.account_db.get_receivable_transaction(this_chain_address,
-                                                                             receive_transaction.send_transaction_hash)
+        receivable_tx_key = self.state.account_db.get_receivable_transaction(this_chain_address, receive_transaction.send_transaction_hash)
 
         # Very first thing, check to see if this transaction has been received before:
         try:
@@ -514,11 +513,12 @@ class VM(BaseVM):
                     if not is_receive:
                         raise ValidationError("This refund transaction references a send transaction. This is not allowed.")
 
-                    receive_transaction = self.chaindb.get_receive_transaction_by_index_and_block_hash(
-                        block_hash,
-                        index,
-                        self.get_receive_transaction_class(),
-                    )
+                    if refund_transaction.referenced_send_transaction is None:
+                        raise ValidationError("This refund transaction does not have a populated reference transaction. "
+                                              "The chain should have populated this. "
+                                              "Make sure the transaction wasn't copied somewhere without copying the reference transaction.")
+
+                    receive_transaction = refund_transaction.referenced_send_transaction
                 else:
                     refund_transaction = None
 
@@ -534,15 +534,15 @@ class VM(BaseVM):
                     raise ValidationError(
                         "This receive transaction references another receive transaction. This is not allowed.")
 
-                send_transaction = self.chaindb.get_transaction_by_index_and_block_hash(
-                    block_hash,
-                    index,
-                    self.get_transaction_class(),
-                )
+                if receive_transaction.referenced_send_transaction is None:
+                    raise ValidationError("This receive transaction does not have a populated reference transaction. "
+                                          "The chain should have populated this. "
+                                          "Make sure the transaction wasn't copied somewhere without copying the reference transaction.")
+
+                send_transaction = receive_transaction.referenced_send_transaction
 
             except TransactionNotFound:
                 raise ReceivableTransactionNotFound()
-
 
 
             # we assume past this point that, if it is a receive transaction, the send transaction exists in account
@@ -757,6 +757,19 @@ class VM(BaseVM):
 
         self.state.execution_context.computation_call_nonce = nonce
 
+    def copy_referenced_transactions(self, receive_transactions_from: List[BaseReceiveTransaction], receive_transactions_to: List[BaseReceiveTransaction]):
+        # This assumes the two lists are in order.
+        if len(receive_transactions_from) != len(receive_transactions_to):
+            raise ValidationError("The number of receive transactions has changed while importing the block. This shouldn't happen.")
+        for i in range(len(receive_transactions_from)):
+            current_transaction_from = receive_transactions_from[i]
+            current_transaction_to = receive_transactions_to[i]
+            current_transaction_to.referenced_send_transaction = current_transaction_from.referenced_send_transaction
+
+            if current_transaction_to.is_refund:
+                current_transaction_from = current_transaction_from.referenced_send_transaction
+                current_transaction_to = current_transaction_to.referenced_send_transaction
+                current_transaction_to.referenced_send_transaction = current_transaction_from.referenced_send_transaction
 
     def import_block(self, block: Union[BaseBlock, BaseQueueBlock], validate: bool = True, private_key: PrivateKey = None, **kwargs) -> BaseBlock:
         """
@@ -805,7 +818,8 @@ class VM(BaseVM):
 
         last_header, receipts, receive_computations, send_computations, processed_receive_transactions, computation_call_send_transactions = self.apply_all_transactions(block, private_key = private_key)
 
-
+        # Copy the referenced transactions for the rest of the code to use.
+        self.copy_referenced_transactions(block.receive_transactions, processed_receive_transactions)
 
         if is_queue_block:
             # need to add any new computation call send transactions to the list of send transactions

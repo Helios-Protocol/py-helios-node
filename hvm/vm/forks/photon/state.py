@@ -243,7 +243,8 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
                     gas_refund_amount,
                     encode_hex(computation.transaction_context.refund_address),
                 )
-                receive_transaction = receive_transaction.copy(remaining_refund=gas_refund_amount)
+
+                new_receive_transaction = receive_transaction.copy(remaining_refund=gas_refund_amount)
 
             return receive_transaction
         else:
