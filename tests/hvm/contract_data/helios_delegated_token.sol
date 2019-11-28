@@ -46,8 +46,18 @@ library SafeMath {
 }
 
 
+contract executeOnSend {
 
-contract HeliosDelegatedToken {
+    modifier onlyExecuteOnSend {
+        require(
+            tx.executeonsend == True,
+            "This function can only be used with transactions that execute on send."
+        );
+        _;
+    }
+}
+
+contract HeliosDelegatedToken is executeOnSend {
     using SafeMath for uint256;
     uint256 balance;
     event Mint(address indexed _address, uint256 value);
@@ -73,7 +83,7 @@ contract HeliosDelegatedToken {
         return balance;
     }
 
-    function send(uint256 amount) public {
+    function send(uint256 amount) public onlyExecuteOnSend {
         if(is_send()){
             emit IsSend(tx.origin, address(this), true);
             emit Balance(address(this), balance);
