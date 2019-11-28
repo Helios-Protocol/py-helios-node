@@ -8,4 +8,8 @@ WEBSOCKET_SSL_CERT_FILE_PATH = ''
 # The absolute path to your certificate keyfile.
 WEBSOCKET_SSL_KEY_FILE_PATH = ''
 
+# Do not edit below this line.
+ENABLE_FAUCET = False
+FAUCET_PRIVATE_KEY = ''
+
 # When you are done configuring this file, save it as helios_config.py in this directory.

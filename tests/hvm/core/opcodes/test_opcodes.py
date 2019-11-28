@@ -176,7 +176,7 @@ def test_add(vm_class, val1, val2, expected):
 @pytest.mark.parametrize(
     'vm_class, opcode_value, expected, expect_to_fail',
     (
-        (PhotonVM, opcode_values.COINBASE, b'\0' * 20, True),
+        (PhotonVM, opcode_values.EXECUTEONSEND, b'\0' * 20, True),
         # (opcode_values.TIMESTAMP, 1556826898),
         (PhotonVM, opcode_values.NUMBER, 0, False),
         (PhotonVM, opcode_values.DIFFICULTY, 17179869184, True),

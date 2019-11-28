@@ -73,7 +73,8 @@ SELFBALANCE = 0x47
 # Block Information
 #
 BLOCKHASH = 0x40
-COINBASE = 0x41
+#Coinbase was repalced with EXECUTEONSEND. It is a boolean that tells whether the transaction has execute on send = true
+EXECUTEONSEND = 0x41
 TIMESTAMP = 0x42
 NUMBER = 0x43
 DIFFICULTY = 0x44

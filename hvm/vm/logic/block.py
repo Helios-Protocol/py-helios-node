@@ -6,10 +6,6 @@ def blockhash(computation):
     raise DepreciatedVMFunctionality("blockhash has been removed.")
 
 
-def coinbase(computation):
-    raise NotImplementedError("Blocks on Helios Protocol do not have a coinbase.")
-
-
 def timestamp(computation):
     computation.stack_push_int(computation.state.timestamp)
 

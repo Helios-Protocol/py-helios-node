@@ -256,9 +256,9 @@ FRONTIER_OPCODES = {
         mnemonic=mnemonics.BLOCKHASH,
         gas_cost=constants.GAS_BLOCKHASH,
     ),
-    opcode_values.COINBASE: as_opcode(
-        logic_fn=block.coinbase,
-        mnemonic=mnemonics.COINBASE,
+    opcode_values.EXECUTEONSEND: as_opcode(
+        logic_fn=context.execute_on_send,
+        mnemonic=mnemonics.EXECUTEONSEND,
         gas_cost=constants.GAS_BASE,
     ),
     opcode_values.TIMESTAMP: as_opcode(

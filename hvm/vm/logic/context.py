@@ -31,6 +31,9 @@ def _push_balance_of_address(address: Address, computation: 'BaseComputation') -
 def origin(computation):
     computation.stack_push_bytes(computation.transaction_context.origin)
 
+def execute_on_send(computation):
+    val_int = 1 if computation.transaction_context.execute_on_send else 0
+    computation.stack_push_int(val_int)
 
 def address(computation):
     computation.stack_push_bytes(computation.transaction_context.this_chain_address)

@@ -12,6 +12,7 @@ from eth_utils import (
     from_wei,
 )
 
+from eth_keys import keys
 import time
 from hvm.rlp.transactions import BaseReceiveTransaction
 from helios.exceptions import BaseRPCError
@@ -52,7 +53,7 @@ from helios.rpc.modules import (  # type: ignore
 from hvm.constants import (
     TIME_BETWEEN_HEAD_HASH_SAVE,
     NUMBER_OF_HEAD_HASH_TO_SAVE,
-    BLOCK_TIMESTAMP_FUTURE_ALLOWANCE)
+    BLOCK_TIMESTAMP_FUTURE_ALLOWANCE, GAS_TX)
 
 from hvm.utils.headers import (
     compute_gas_limit,
@@ -712,31 +713,62 @@ class Hls(RPCModule):
     #
     #     return chains_dict
 
-    # @format_params(decode_hex)
-    # async def getFaucet(self, chain_address):
-    #     current_sync_stage_response = await self._event_bus.request(
-    #         CurrentSyncStageRequest()
-    #     )
-    #     if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
-    #         raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
-    #
-    #     chain_object = self.get_new_chain(self._chain_class.faucet_private_key.public_key.to_canonical_address(), private_key= self._chain_class.faucet_private_key)
-    #     receivable_transactions, _ = chain_object.get_receivable_transactions(chain_address)
-    #     total_receivable = 0
-    #     for tx in receivable_transactions:
-    #         total_receivable += tx.value
-    #
-    #     if (chain_object.get_vm().state.account_db.get_balance(chain_address) + total_receivable) < 5*10**18:
-    #         gas_price = int(to_wei(int(chain_object.chaindb.get_required_block_min_gas_price()+5), 'gwei'))
-    #         chain_object.create_and_sign_transaction_for_queue_block(
-    #             gas_price=gas_price,
-    #             gas=0x0c3500,
-    #             to=chain_address,
-    #             value=int(1*10**18),
-    #             data=b"",
-    #             v=0,
-    #             r=0,
-    #             s=0
-    #         )
-    #
-    #         chain_object.import_current_queue_block()
+    @format_params(decode_hex)
+    async def getFaucet(self, chain_address):
+        current_sync_stage_response = await self._event_bus.request(
+            CurrentSyncStageRequest()
+        )
+        if current_sync_stage_response.sync_stage < FULLY_SYNCED_STAGE_ID:
+            raise BaseRPCError("This node is still syncing with the network. Please wait until this node has synced.")
+
+        try:
+            from helios.helios_config import FAUCET_PRIVATE_KEY, ENABLE_FAUCET
+        except ImportError:
+            raise BaseRPCError("This node doesn't support the faucet.")
+
+        if FAUCET_PRIVATE_KEY == '' or not ENABLE_FAUCET:
+            raise BaseRPCError("This node doesn't support the faucet.")
+
+        faucet_private_key = keys.PrivateKey(decode_hex(FAUCET_PRIVATE_KEY))
+        chain_object = self.get_new_chain(faucet_private_key.public_key.to_canonical_address(), private_key= faucet_private_key)
+
+        # make the chain read only for creating the block. We don't want to actually import it here.
+        chain_object.enable_read_only_db()
+
+        receivable_transactions, _ = chain_object.get_receivable_transactions(chain_address)
+        total_receivable = 0
+        for tx in receivable_transactions:
+            total_receivable += tx.value
+
+        faucet_balance = chain_object.get_vm().state.account_db.get_balance(faucet_private_key.public_key.to_canonical_address())
+        if faucet_balance <= to_wei(2, 'ether'):
+            raise BaseRPCError("The faucet is currently paused. Please try again later.")
+
+        # Make sure it meets the average min gas price of the network. If it doesnt, then it won't reach consensus.
+        current_network_min_gas_price_response = await self._event_bus.request(
+            AverageNetworkMinGasPriceRequest()
+        )
+
+        network_min_gas_price = current_network_min_gas_price_response.min_gas_price
+        local_min_gas_price = chain_object.min_gas_db.get_required_block_min_gas_price()
+        actual_min_gas_price = max([network_min_gas_price, local_min_gas_price])
+
+        if (chain_object.get_vm().state.account_db.get_balance(chain_address) + total_receivable) > to_wei(5, 'ether'):
+            raise BaseRPCError("The selected account already has the maximum allowed HLS from the faucet.")
+
+        chain_object.create_and_sign_transaction_for_queue_block(
+            gas_price=to_wei(actual_min_gas_price+2, 'gwei'),
+            gas=GAS_TX,
+            to=chain_address,
+            value=to_wei(1, 'ether'),
+            data=b"",
+            v=0,
+            r=0,
+            s=0
+        )
+
+        new_block = chain_object.import_current_queue_block()
+
+        self._event_bus.broadcast(
+            NewBlockEvent(block=cast(P2PBlock, new_block), from_rpc=True)
+        )
