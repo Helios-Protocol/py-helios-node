@@ -32,7 +32,7 @@ def origin(computation):
     computation.stack_push_bytes(computation.transaction_context.origin)
 
 def execute_on_send(computation):
-    val_int = 1 if computation.transaction_context.execute_on_send else 0
+    val_int = 1 if computation.transaction_context.tx_execute_on_send else 0
     computation.stack_push_int(val_int)
 
 def address(computation):

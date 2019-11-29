@@ -1,12 +1,19 @@
 import os
+import time
+
+from helios.dev_tools import create_valid_block_at_timestamp
 from hvm import TestnetChain
 from hvm.chains.testnet import (
     TESTNET_GENESIS_PRIVATE_KEY,
-)
+    TestnetTesterChain)
 
 from eth_utils import (
     decode_hex,
     hexstr_if_str, to_bytes)
+from hvm.db.read_only import ReadOnlyDB
+from hvm.utils.address import generate_contract_address
+from hvm.vm.base import BaseVM
+from hvm.vm.forks import PhotonVM
 
 from solc import compile_files, get_solc_version
 
@@ -74,21 +81,21 @@ def format_receipt_for_web3_to_extract_events(receipt, tx_hash, chain):
         receipt_dict['logs'][i]['topics'] = list(map(hex_to_32_bit_int_bytes, receipt_dict['logs'][i]['topics']))
     return receipt_dict
 
-def import_all_pending_smart_contract_blocks(database):
-    chain = TestnetChain(database, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-                         TESTNET_GENESIS_PRIVATE_KEY)
+def import_all_pending_smart_contract_blocks(db, private_key = TESTNET_GENESIS_PRIVATE_KEY, vm_class: BaseVM = PhotonVM):
+    chain = TestnetTesterChain(db, private_key.public_key.to_canonical_address(), private_key, vm_class)
 
     # now we need to add the block to the smart contract
     list_of_smart_contracts = chain.get_vm().state.account_db.get_smart_contracts_with_pending_transactions()
     for airdrop_contract_address in list_of_smart_contracts:
-        chain = TestnetChain(database, airdrop_contract_address, TESTNET_GENESIS_PRIVATE_KEY)
+        chain = TestnetTesterChain(db, airdrop_contract_address, private_key, vm_class)
 
         chain.populate_queue_block_with_receive_tx()
         chain.import_current_queue_block()
     return list_of_smart_contracts
 
 
-def deploy_contract(db, base_filename:str, contract_name: str):
+def deploy_contract(db, base_filename:str, contract_name: str, deploy_private_key = TESTNET_GENESIS_PRIVATE_KEY, vm_class: BaseVM = PhotonVM):
+
     contract_interface = compile_and_get_contract_interface(base_filename, contract_name)
 
     # deploy the contract
@@ -102,9 +109,12 @@ def deploy_contract(db, base_filename:str, contract_name: str):
     # Build transaction to deploy the contract
     w3_tx1 = HeliosDelegatedToken.constructor().buildTransaction(W3_TX_DEFAULTS)
 
-    chain = TestnetChain(db, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
-    chain.create_and_sign_transaction_for_queue_block(
+    chain = TestnetTesterChain(db, deploy_private_key.public_key.to_canonical_address(), deploy_private_key, vm_class)
+
+    nonce = chain.get_vm().state.account_db.get_nonce(deploy_private_key.public_key.to_canonical_address())
+    transaction = chain.create_and_sign_transaction(
         gas_price=0x01,
+        nonce=nonce,
         gas=20000000,
         to=CREATE_CONTRACT_ADDRESS,
         value=0,
@@ -112,13 +122,31 @@ def deploy_contract(db, base_filename:str, contract_name: str):
     )
 
     print("deploying smart contract")
+    valid_block = create_valid_block_at_timestamp(db,
+                                    deploy_private_key,
+                                    [transaction],
+                                    timestamp = int(time.time() - vm_class.min_time_between_blocks),
+                                    vm_class = vm_class)
 
-    chain.import_current_queue_block()
+    chain.import_block(valid_block)
 
-    list_of_smart_contracts = import_all_pending_smart_contract_blocks(db)
-    deployed_contract_address = list_of_smart_contracts[0]
+    contract_address = generate_contract_address(deploy_private_key.public_key.to_canonical_address(), transaction.nonce)
 
-    return deployed_contract_address, contract_interface
+
+    smart_contract_chain = TestnetTesterChain(db, contract_address, deploy_private_key, vm_class)
+
+    receive_txs = smart_contract_chain.populate_queue_block_with_receive_tx()
+
+    valid_block = create_valid_block_at_timestamp(db,
+                                                  deploy_private_key,
+                                                  receive_transactions=receive_txs,
+                                                  timestamp=int(time.time() - vm_class.min_time_between_blocks),
+                                                  vm_class=vm_class,
+                                                  chain_address=contract_address)
+
+    smart_contract_chain.import_block(valid_block)
+
+    return contract_address, contract_interface
 
 def assemble(*codes):
     return b''.join(

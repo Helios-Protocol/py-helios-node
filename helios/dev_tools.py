@@ -19,6 +19,7 @@ from hvm.chains.testnet import (
 from hvm.db.backends.memory import MemoryDB
 from hvm.db.backends.level import LevelDB
 from hvm.db.journal import JournalDB
+from hvm.db.read_only import ReadOnlyDB
 from hvm.rlp.blocks import BaseQueueBlock
 from hvm.rlp.consensus import NodeStakingScore
 from hvm.rlp.transactions import BaseTransaction
@@ -229,7 +230,7 @@ def create_dev_test_random_blockchain_db_with_reward_blocks(base_db = None, num_
     return base_db
 
 
-def create_valid_block_at_timestamp(base_db, private_key, transactions = None, receive_transactions = None, reward_bundle = None, timestamp = None):
+def create_valid_block_at_timestamp(base_db, private_key, transactions = None, receive_transactions = None, reward_bundle = None, timestamp = None, vm_class = None, chain_address = None):
     '''
     Tries to create a valid block based in the invalid block. The transactions and reward bundle must already be valid
     :param base_db:
@@ -240,10 +241,17 @@ def create_valid_block_at_timestamp(base_db, private_key, transactions = None, r
     if timestamp == None:
         timestamp = int(time.time())
 
-    chain = TestnetTesterChain(JournalDB(base_db), private_key.public_key.to_canonical_address(), private_key)
-    chain.set_fixed_vm_for_timestamp(timestamp)
+    if chain_address is None:
+        chain_address = private_key.public_key.to_canonical_address()
+
+    chain = TestnetTesterChain(ReadOnlyDB(base_db), chain_address, private_key, vm_class)
+    if vm_class is None:
+        chain.set_fixed_vm_for_timestamp(timestamp)
 
     queue_block = chain.get_queue_block()
+    if receive_transactions is not None:
+        chain.populate_referenced_transactions(receive_transactions)
+
     queue_block = queue_block.copy(header = queue_block.header.copy(timestamp = timestamp),
                                    transactions=transactions,
                                    receive_transactions=receive_transactions,

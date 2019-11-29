@@ -2,6 +2,7 @@ from typing import Tuple, Type  # noqa: F401
 from eth_utils import decode_hex
 
 from hvm.constants import TESTNET_FAUCET_PRIVATE_KEY
+from hvm.db.backends.base import BaseDB
 from hvm.vm.forks.boson import BosonVM
 from .constants import (
     HELIOS_TESTNET_TIMESTAMP,
@@ -19,7 +20,7 @@ from hvm.vm.forks import (
 from eth_typing import Address
 
 from eth_keys import keys
-from eth_keys.datatypes import PrivateKey
+from eth_keys.datatypes import PrivateKey, BaseKey
 
 from hvm.types import Timestamp
 
@@ -64,6 +65,17 @@ class TestnetChain(BaseTestnetChain, Chain):
     pass
 
 class TestnetTesterChain(TestnetChain, Chain):
+    def __init__(self, base_db: BaseDB, wallet_address: Address, private_key: BaseKey = None, vm_class = None):
+        if vm_class is not None:
+            self.vm_configuration = ((0, vm_class),)
+
+        super(TestnetTesterChain, self).__init__(base_db, wallet_address, private_key)
+
+
+    def set_vm_class(self, vm_class: BaseVM):
+        self.vm_configuration = ((0, vm_class),)
+        self.reinitialize()
+
     def set_fixed_vm_for_timestamp(self, timestamp):
         '''
           Finds the correct VM for the given timestamp, and fixes the chain to that VM regardless of the block timestamp.

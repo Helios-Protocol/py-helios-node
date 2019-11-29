@@ -1,110 +1,86 @@
 pragma solidity ^0.5.11;
 
-/**
- * @title SafeMath
- * @dev Math operations with safety checks that throw on error
- */
-library SafeMath {
-   /**
-  * @dev Multiplies two numbers, throws on overflow.
-  */
-  function mul(uint256 a, uint256 b) internal pure returns (uint256 c) {
-    // Gas optimization: this is cheaper than asserting 'a' not being zero, but the
-    // benefit is lost if 'b' is also tested.
-    // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
-    if (a == 0) {
-      return 0;
-    }
-     c = a * b;
-    assert(c / a == b);
-    return c;
-  }
-   /**
-  * @dev Integer division of two numbers, truncating the quotient.
-  */
-  function div(uint256 a, uint256 b) internal pure returns (uint256) {
-    // assert(b > 0); // Solidity automatically throws when dividing by 0
-    // uint256 c = a / b;
-    // assert(a == b * c + a % b); // There is no case in which this doesn't hold
-    return a / b;
-  }
-   /**
-  * @dev Subtracts two numbers, throws on overflow (i.e. if subtrahend is greater than minuend).
-  */
-  function sub(uint256 a, uint256 b) internal pure returns (uint256) {
-    assert(b <= a);
-    return a - b;
-  }
-   /**
-  * @dev Adds two numbers, throws on overflow.
-  */
-  function add(uint256 a, uint256 b) internal pure returns (uint256 c) {
-    c = a + b;
-    assert(c >= a);
-    return c;
-  }
-}
+import "/helpers/smart_contract_chain.sol";
+import "/helpers/safe_math.sol";
+import "/helpers/execute_on_send.sol";
+import "/helpers/ownable.sol";
 
 
-contract executeOnSend {
-
-    modifier onlyExecuteOnSend {
-        require(
-            tx.executeonsend == True,
-            "This function can only be used with transactions that execute on send."
-        );
-        _;
-    }
-}
-
-contract HeliosDelegatedToken is executeOnSend {
+// Minting has to occur on smart contract chain because that is where the owner variable is stored.
+contract HeliosDelegatedToken is ExecuteOnSend, Ownable {
     using SafeMath for uint256;
-    uint256 balance;
-    event Mint(address indexed _address, uint256 value);
-    event IsSend(address indexed origin, address indexed _this, bool value);
-    event Balance(address indexed _address, uint256 value);
-    event Amount(address indexed _address, uint256 value);
 
-    function is_send() internal view returns (bool){
-        return address(tx.origin) == address(this);
+    // The balance of this token on the currently executing chain.
+    uint256 balance;
+
+    // Variables for the smart contract chain.
+    uint256 public constant totalSupply = 300000000 * (10 ** uint256(decimals));
+
+    /**
+    * @dev Mint tokens onto whatever chain the transaction is sent to
+    * This can only be initiated from this smart contract.
+    * This is usually only called in the constructor when the contract is deployed.
+    */
+    function mintTokens(uint256 amount) public onlyFromSmartContractChain{
+        balance = balance.add(amount);
     }
 
+    function sendMintTokens(address _to, uint256 amount) private {
+        bytes4 sig = bytes4(keccak256("mintTokens(uint256)")); //Function signature
+        address _this = address(this);
 
-    function mintSender(uint256 amount) public {
-        if(is_send()){
-            emit IsSend(tx.origin, address(this), true);
-            balance = balance.add(amount);
-        }else{
-            emit IsSend(tx.origin, address(this), false);
+        assembly {
+            let x := mload(0x40)   //Find empty storage location using "free memory pointer"
+            mstore(x,sig) //Place signature at beginning of empty storage (4 bytes)
+            mstore(add(x,0x04),amount) //Place first argument directly next to signature (32 byte int256)
+
+            let success := surrogatecall(100000, //100k gas
+                                        _this, //Delegated token contract address
+                                        0,       //Value
+                                        0,      //Execute on send?
+                                        _to,   //To addr
+                                        x,    //Inputs are stored at location x
+                                        0x24 //Inputs are 36 bytes long
+                                        )
+
         }
+
     }
 
     function getBalance() public view returns (uint256) {
         return balance;
     }
 
-    function send(uint256 amount) public onlyExecuteOnSend {
+    function transfer(uint256 amount) public requireExecuteOnSend {
         if(is_send()){
-            emit IsSend(tx.origin, address(this), true);
-            emit Balance(address(this), balance);
-            emit Amount(address(this), amount);
+            // This is the send side of the transaction. Here we subtract the amount from balance.
             require(amount <= balance);
             balance = balance.sub(amount);
 
         }else{
-            emit IsSend(tx.origin, address(this), false);
-            // Here need to check to make sure tx.is_send == true
+            // This is the receive side of the transaction. Here we add the amount to balance.
             balance = balance.add(amount);
         }
     }
 
 
-    function do_something(uint256 variable) public {
-        if(is_send()){
-            // Code to be executed on send
 
-        }else{
-            // Code to be executed on receive
-        }
+    /**
+    * @dev The Ownable constructor sets the original `owner` of the contract to the sender
+    * account.
+    */
+    constructor() public {
+
+        // Mint the entire supply of tokens on the msg.sender's chain using a surrogatecall.
+        // Here we are sending a surrogatecall transaction back to the owner. When the owner receives
+        // this transaction, their balance will be increased by totalSupply
+        address _this = address(this);
+        address _owner = msg.sender;
+        sendMintTokens(_owner, totalSupply);
+    }
+
+    // do not allow deposits
+    function() public{
+        revert();
     }
 }
