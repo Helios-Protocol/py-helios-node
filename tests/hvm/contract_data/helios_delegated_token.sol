@@ -7,13 +7,16 @@ import "/helpers/ownable.sol";
 
 
 // Minting has to occur on smart contract chain because that is where the owner variable is stored.
-contract HeliosDelegatedToken is ExecuteOnSend, Ownable {
+contract HeliosDelegatedToken is ExecuteOnSend, Ownable, SmartContractChain {
     using SafeMath for uint256;
 
     // The balance of this token on the currently executing chain.
     uint256 balance;
 
     // Variables for the smart contract chain.
+    string  public constant name = "My new token!";
+    string  public constant symbol = "token symbol";
+    uint8   public constant decimals = 18;
     uint256 public constant totalSupply = 300000000 * (10 ** uint256(decimals));
 
     /**
