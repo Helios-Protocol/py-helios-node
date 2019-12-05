@@ -271,9 +271,9 @@ FRONTIER_OPCODES = {
         mnemonic=mnemonics.NUMBER,
         gas_cost=constants.GAS_BASE,
     ),
-    opcode_values.DIFFICULTY: as_opcode(
-        logic_fn=block.difficulty,
-        mnemonic=mnemonics.DIFFICULTY,
+    opcode_values.CODEADDRESS: as_opcode(
+        logic_fn=context.code_address,
+        mnemonic=mnemonics.CODEADDRESS,
         gas_cost=constants.GAS_BASE,
     ),
     opcode_values.GASLIMIT: as_opcode(

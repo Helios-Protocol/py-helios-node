@@ -32,6 +32,7 @@ class SpoofAttributes:
                     "does not have a sender attribute.  SpoofTransaction will not attempt",
                     "to override the sender of a signed transaction.")
 
+
             overrides['sender'] = overrides['from_']
             overrides['get_sender'] = lambda: overrides['from_']
             for attr, value in SPOOF_ATTRIBUTES_DEFAULTS.items():

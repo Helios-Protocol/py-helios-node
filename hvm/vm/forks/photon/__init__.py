@@ -117,10 +117,10 @@ class PhotonVM(VM):
                                                                                         List[PhotonComputation],
                                                                                         List[PhotonReceiveTransaction],
                                                                                         List[PhotonTransaction]]:
-
+            
         # First, run all of the receive transactions
         last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, block.header)
-
+        
         current_nonce_for_computation_calls = None
 
         computation_call_send_transactions = []
@@ -171,7 +171,10 @@ class PhotonVM(VM):
                             encode_hex(new_tx.origin), encode_hex(new_tx.code_address), new_tx.execute_on_send
                         ))
 
-                        new_tx = new_tx.get_signed(private_key, self.network_id)
+                        if private_key is not None:
+                            # sign it only if a private key was given. Otherwise, this is not a queueblock
+                            new_tx = new_tx.get_signed(private_key, self.network_id)
+
 
                         computation_call_send_transactions.append(new_tx)
 
@@ -179,26 +182,17 @@ class PhotonVM(VM):
 
 
 
-        # TODO: then create the new transactions and add them to the block. But only add them if they don't already exist there.
-        # Only add them to the block if it is a queueblock. Otherwise, just check to make sure all tx params are identical except
-        # for the signature.
-        # Need a check - send transactions can only originate from a computation. If there are more send transactions than
-        # came out of these computations - it is an invalid block.
-        #
-        # When processing send transactions on a smart contract, subtract value like normal. But we have to make sure that the
-        # transaction originated from code on this chain. NO - we dont process normally, because the signing sender wont be the one paying
-        # It needs to subtract any value from this smart contract account instead.
-        #
-        # We also need to make sure the VM doesnt subtract any gas for these transactions. The gas has already been subtracted.
-        #
-        # Who is going to sign these transactions? The sender needs to be the person who sent the first transaction so that they
-        # can be correctly refunded. But they arent here to sign it... Add another field to the transaction for refund address?
-
-
         if len(computation_call_send_transactions) > 0:
-            normal_send_transactions, _ = self.separate_normal_transactions_and_computation_calls(block.transactions)
-            normal_send_transactions.extend(computation_call_send_transactions)
-            send_transactions = normal_send_transactions
+            if private_key is not None:
+                # the new computation transactions have been signed. Proceed with the new ones.
+                normal_send_transactions, _ = self.separate_normal_transactions_and_computation_calls(block.transactions)
+                normal_send_transactions.extend(computation_call_send_transactions)
+                send_transactions = normal_send_transactions
+            else:
+                # The new computation transactions have not been signed. Import the block with the existing transactions,
+                # but return the unsigned computation transactions to be verified that they are identical other 
+                # than the signature.
+                send_transactions = block.transactions
         else:
             send_transactions = block.transactions
 

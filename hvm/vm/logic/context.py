@@ -1,4 +1,6 @@
 from eth_typing import Address
+from eth_utils import encode_hex
+
 from hvm import constants
 from hvm.exceptions import (
     OutOfBoundsRead,
@@ -38,6 +40,8 @@ def execute_on_send(computation):
 def address(computation):
     computation.stack_push_bytes(computation.transaction_context.this_chain_address)
 
+def code_address(computation):
+    computation.stack_push_bytes(computation.transaction_context.tx_code_address)
 
 def caller(computation):
     computation.stack_push_bytes(computation.msg.sender)

@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from multiprocessing import Queue  # noqa: F401
 
 LOG_BACKUP_COUNT = 10
-LOG_MAX_MB = 5
+LOG_MAX_MB = 10
 
 
 class HeliosLogFormatter(logging.Formatter):
@@ -125,7 +125,7 @@ def setup_helios_file_and_queue_logging(
 
     handler_file = RotatingFileHandler(
         str(chain_config.logfile_path),
-        maxBytes=(10000000 * LOG_MAX_MB),
+        maxBytes=(1000000 * LOG_MAX_MB),
         backupCount=LOG_BACKUP_COUNT
     )
 

@@ -1,9 +1,9 @@
 pragma solidity ^0.5.11;
 
-import "/helpers/smart_contract_chain.sol";
-import "/helpers/safe_math.sol";
-import "/helpers/execute_on_send.sol";
-import "/helpers/ownable.sol";
+import "./helpers/smart_contract_chain.sol";
+import "./helpers/safe_math.sol";
+import "./helpers/execute_on_send.sol";
+import "./helpers/ownable.sol";
 
 
 // Minting has to occur on smart contract chain because that is where the owner variable is stored.
@@ -54,7 +54,7 @@ contract HeliosDelegatedToken is ExecuteOnSend, Ownable, SmartContractChain {
         return balance;
     }
 
-    function transfer(uint256 amount) public requireExecuteOnSend {
+    function transfer(uint256 amount) public requireExecuteOnSendTx {
         if(is_send()){
             // This is the send side of the transaction. Here we subtract the amount from balance.
             require(amount <= balance);
@@ -83,7 +83,7 @@ contract HeliosDelegatedToken is ExecuteOnSend, Ownable, SmartContractChain {
     }
 
     // do not allow deposits
-    function() public{
+    function() external{
         revert();
     }
 }

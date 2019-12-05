@@ -21,6 +21,7 @@ def get_value_from_storage(computation, slot, from_journal = True):
                 from_journal=from_journal
             )
         else:
+
             # Save it in the storage allocated for the original contract address
             current_value = computation.state.account_db.get_external_smart_contract_storage(
                 address=computation.transaction_context.this_chain_address,
@@ -28,6 +29,15 @@ def get_value_from_storage(computation, slot, from_journal = True):
                 slot=slot,
                 from_journal=from_journal
             )
+            # print("LOADING VALUE {} \n"
+            #       "address {} \n"
+            #       "smart_contract_address {} \n"
+            #       "slot {} \n"
+            #       "from_journal {} ".format(current_value,
+            #                                 encode_hex(computation.transaction_context.this_chain_address),
+            #                                 encode_hex(computation.transaction_context.smart_contract_storage_address),
+            #                                 slot,
+            #                                 from_journal))
 
     else:
         current_value = computation.state.account_db.get_storage(
@@ -55,6 +65,14 @@ def set_value_to_storage(computation, slot, value):
                 slot=slot,
                 value=value,
             )
+
+            # print("SETTING VALUE {} \n"
+            #       "address {} \n"
+            #       "smart_contract_address {} \n"
+            #       "slot {} ".format(value,
+            #                                 encode_hex(computation.transaction_context.this_chain_address),
+            #                                 encode_hex(computation.transaction_context.smart_contract_storage_address),
+            #                                 slot))
 
     else:
         computation.state.account_db.set_storage(

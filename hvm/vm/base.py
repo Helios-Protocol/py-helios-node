@@ -344,6 +344,13 @@ class VM(BaseVM):
             class_name=self.__class__.__name__
         )
 
+    @classmethod
+    def with_zero_min_time_between_blocks(cls):
+        new_class = cls
+        new_class.min_time_between_blocks = 0
+        return new_class
+
+
     #
     # Logging
     #

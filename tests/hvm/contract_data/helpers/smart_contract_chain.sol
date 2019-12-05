@@ -28,7 +28,7 @@ contract SmartContractChain {
 
     modifier onlyFromSmartContractChain {
         require(
-            msg.sender == smartContractAddress,
+            msg.sender == smartContractAddress || msg.sender == tx.codeaddress,
             "This function can only be executed when sent from the smart contract chain."
         );
         _;
