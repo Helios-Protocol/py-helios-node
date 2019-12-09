@@ -141,6 +141,9 @@ async def handshake(remote: Node, factory: 'BasePeerFactory') -> 'BasePeer':
          ) = await auth.handshake(remote, factory.privkey, factory.cancel_token)
     except (ConnectionRefusedError, OSError) as e:
         raise UnreachablePeer(f"Can't reach {remote!r}") from e
+    except TimeoutError as e:
+        raise HandshakeFailure(f"TimeoutError, can't reach {remote!r}") from e
+
     connection = PeerConnection(
         reader=reader,
         writer=writer,
