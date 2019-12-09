@@ -141,8 +141,7 @@ async def handshake(remote: Node, factory: 'BasePeerFactory') -> 'BasePeer':
          ) = await auth.handshake(remote, factory.privkey, factory.cancel_token)
     except (ConnectionRefusedError, OSError) as e:
         raise UnreachablePeer(f"Can't reach {remote!r}") from e
-    except TimeoutError as e:
-        raise HandshakeFailure(f"TimeoutError, can't reach {remote!r}") from e
+
 
     connection = PeerConnection(
         reader=reader,
@@ -985,6 +984,9 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
         except asyncio.CancelledError:
             # no need to log this exception, this is expected
             raise
+        except TimeoutError as e:
+            self.logger.debug("Could not complete handshake with %r: %s", remote, repr(e))
+            raise UnreachablePeer()
         except Exception:
             self.logger.exception("Unexpected error during auth/p2p handshake with %r", remote)
             raise
