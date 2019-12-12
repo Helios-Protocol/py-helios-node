@@ -171,7 +171,7 @@ def call_on_chain(testdb, from_address, chain_address, data, code_address = b'',
         return result
 
 
-def test_mint_tokens():
+def test_initial_deploy_min_and_re_mint_tokens():
     testdb = MemoryDB()
     create_predefined_blockchain_database(testdb)
 
@@ -236,7 +236,232 @@ def test_mint_tokens():
     chain.populate_queue_block_with_receive_tx()
     chain.import_current_queue_block()
 
+    #
+    # Make sure the balance is still total_supply
+    #
+
+    # getting balance on sender chain
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+
+    balance = call_on_chain(testdb,
+                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                            decode_hex(w3_tx['data']),
+                            deployed_contract_address)
+
+    assert (total_supply == balance)
 
 
-test_mint_tokens()
+#test_initial_deploy_min_and_re_mint_tokens()
+
+
+def test_valid_transfer():
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+
+    # deploy the contract
+    deployed_contract_address, contract_interface = deploy_contract(testdb, 'helios_delegated_token.sol',
+                                                                    'HeliosDelegatedToken', TESTNET_GENESIS_PRIVATE_KEY)
+
+    w3 = Web3()
+    max_gas = 20000000
+    send_amount = 10000
+
+    #
+    # The deploy address should have received a new transaction to mint tokens. Import it.
+    #
+    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                               TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    chain.populate_queue_block_with_receive_tx()
+    block = chain.import_current_queue_block()
+    chain.get_transaction_by_hash(block.receive_transactions[0].send_transaction_hash)
+
+    #
+    # Send tokens with execute on send
+    #
+    HeliosDelegatedToken = w3.hls.contract(
+        address=Web3.toChecksumAddress(deployed_contract_address),
+        abi=contract_interface['abi']
+    )
+
+    w3_tx = HeliosDelegatedToken.functions.transfer(send_amount).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=RECEIVER2.public_key.to_canonical_address(),
+        value=0,
+        data=decode_hex(w3_tx['data']),
+        code_address=deployed_contract_address,
+        execute_on_send=True,
+    )
+    chain.import_current_queue_block()
+
+    #
+    # Receive tokens
+    #
+    receiver_2_chain = TestnetTesterChain(testdb, RECEIVER2.public_key.to_canonical_address(), RECEIVER2,
+                                          PhotonVM.with_zero_min_time_between_blocks())
+    receiver_2_chain.populate_queue_block_with_receive_tx()
+    receiver_2_chain.import_current_queue_block()
+
+    #
+    # Check sender balance
+    #
+
+    # getting total supply from the smart contract chain
+    w3_tx = HeliosDelegatedToken.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
+
+    total_supply = call_on_chain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                 deployed_contract_address, decode_hex(w3_tx['data']))
+
+    # getting balance on sender chain
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+
+    balance = call_on_chain(testdb,
+                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                            decode_hex(w3_tx['data']),
+                            deployed_contract_address)
+
+    assert (balance == total_supply - send_amount)
+
+    #
+    # Check receiver balance
+    #
+
+    balance = call_on_chain(testdb,
+                            RECEIVER2.public_key.to_canonical_address(),
+                            RECEIVER2.public_key.to_canonical_address(),
+                            decode_hex(w3_tx['data']),
+                            deployed_contract_address)
+
+    assert (balance == send_amount)
+
+
+test_valid_transfer()
+
+
+def test_invalid_transfers():
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+
+    # deploy the contract
+    deployed_contract_address, contract_interface = deploy_contract(testdb, 'helios_delegated_token.sol', 'HeliosDelegatedToken', TESTNET_GENESIS_PRIVATE_KEY)
+
+    w3 = Web3()
+    max_gas = 20000000
+    send_amount = 10000
+
+    #
+    # The deploy address should have received a new transaction to mint tokens. Import it.
+    #
+    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    chain.populate_queue_block_with_receive_tx()
+    block = chain.import_current_queue_block()
+    chain.get_transaction_by_hash(block.receive_transactions[0].send_transaction_hash)
+
+    #
+    # Send tokens without execute on send. Nothing should happen
+    #
+    HeliosDelegatedToken = w3.hls.contract(
+        address=Web3.toChecksumAddress(deployed_contract_address),
+        abi=contract_interface['abi']
+    )
+
+    w3_tx = HeliosDelegatedToken.functions.transfer(send_amount).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=RECEIVER2.public_key.to_canonical_address(),
+        value=0,
+        data=decode_hex(w3_tx['data']),
+        code_address=deployed_contract_address,
+    )
+    chain.import_current_queue_block()
+
+
+    #
+    # Receive tokens
+    #
+    receiver_2_chain = TestnetTesterChain(testdb, RECEIVER2.public_key.to_canonical_address(), RECEIVER2, PhotonVM.with_zero_min_time_between_blocks())
+    receiver_2_chain.populate_queue_block_with_receive_tx()
+    receiver_2_chain.import_current_queue_block()
+
+    #
+    # Check sender balance
+    #
+
+    # getting total supply from the smart contract chain
+    w3_tx = HeliosDelegatedToken.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
+
+    total_supply = call_on_chain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), deployed_contract_address, decode_hex(w3_tx['data']))
+
+    # getting balance on sender chain
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+
+    balance = call_on_chain(testdb,
+                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                            decode_hex(w3_tx['data']),
+                            deployed_contract_address)
+
+
+    assert (balance == total_supply)
+
+    #
+    # Check receiver balance
+    #
+
+    balance = call_on_chain(testdb,
+                            RECEIVER2.public_key.to_canonical_address(),
+                            RECEIVER2.public_key.to_canonical_address(),
+                            decode_hex(w3_tx['data']),
+                            deployed_contract_address)
+    assert (balance == 0)
+
+    #
+    # Try to send more than the balance. receiver2's balance is 0
+    #
+
+    w3_tx = HeliosDelegatedToken.functions.transfer(send_amount).buildTransaction(W3_TX_DEFAULTS)
+
+    receiver_2_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        value=0,
+        data=decode_hex(w3_tx['data']),
+        code_address=deployed_contract_address,
+        execute_on_send = True,
+    )
+    receiver_2_chain.import_current_queue_block()
+
+
+    # getting balance on sender chain
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+
+    balance = call_on_chain(testdb,
+                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                            decode_hex(w3_tx['data']),
+                            deployed_contract_address)
+
+    assert (balance == total_supply)
+
+    #
+    # Check receiver balance
+    #
+
+    balance = call_on_chain(testdb,
+                            RECEIVER2.public_key.to_canonical_address(),
+                            RECEIVER2.public_key.to_canonical_address(),
+                            decode_hex(w3_tx['data']),
+                            deployed_contract_address)
+    assert (balance == 0)
+
+#test_invalid_transfers()
+
+
 

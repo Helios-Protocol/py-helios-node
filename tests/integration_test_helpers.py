@@ -142,7 +142,7 @@ def ensure_blockchain_databases_identical(base_db_1, base_db_2):
 
 
 
-W3_TX_DEFAULTS = {'gas': 0, 'gasPrice': 0, 'chainId': 0}
+
 
 def ensure_chronological_chain_matches_canonical(chain):
     #
