@@ -28,7 +28,7 @@ from helios.chains.coro import (
 )
 from helios.protocol.common.datastructures import ConnectedNodesInfo
 from hvm.constants import (
-    CREATE_CONTRACT_ADDRESS)
+    CREATE_CONTRACT_ADDRESS, ZERO_ADDRESS)
 from hvm.exceptions import TransactionNotFound
 from hvm.rlp.blocks import (
     BaseBlock
@@ -43,6 +43,8 @@ from hvm.rlp.transactions import (
     BaseReceiveTransaction
 )
 from hvm.utils.address import generate_contract_address
+from hvm.utils.spoof import SpoofTransaction
+from hvm.vm.forks import PhotonVM
 
 
 def underscore_to_camel_case(input_string:str) -> str:
@@ -261,11 +263,13 @@ hexstr_to_int = functools.partial(int, base=16)
 TRANSACTION_NORMALIZER = {
     'data': decode_hex,
     'from': decode_hex,
+    'codeAddress': decode_hex,
     'gas': hexstr_to_int,
     'gasPrice': hexstr_to_int,
     'nonce': hexstr_to_int,
     'to': decode_hex,
     'value': hexstr_to_int,
+
 }
 
 SAFE_TRANSACTION_DEFAULTS = {
@@ -361,3 +365,55 @@ def decode_hex_if_str(value: Any) -> Any:
 
 
 remove_leading_zeros = compose(hex, functools.partial(int, base=16))
+
+
+def dict_to_spoof_transaction(
+        chain,
+        header,
+        transaction_dict,
+) -> SpoofTransaction:
+    """
+    Convert dicts used in calls & gas estimates into a spoof transaction
+    """
+
+    txn_dict = normalize_transaction_dict(transaction_dict)
+    sender = txn_dict.get('from', ZERO_ADDRESS)
+    vm = chain.get_vm(header)
+
+    if 'nonce' in txn_dict:
+        nonce = txn_dict['nonce']
+    else:
+        nonce = vm.state.account_db.get_nonce(sender)
+
+    gas_price = txn_dict.get('gasPrice', 0)
+    gas = txn_dict.get('gas', header.gas_limit)
+
+    if isinstance(vm, PhotonVM):
+        # This is photon or newer
+        code_address = txn_dict['codeAddress'] if "codeAddress" in txn_dict else b''
+        transaction = chain.create_transaction(
+            nonce=nonce,
+            gas_price=gas_price,
+            gas=gas,
+            to=txn_dict['to'],
+            value=txn_dict['value'],
+            data=txn_dict['data'],
+            code_address=code_address,
+            v=0,
+            r=0,
+            s=0
+        )
+    else:
+        # This is pre-photon
+        transaction = chain.create_transaction(
+            nonce=nonce,
+            gas_price=gas_price,
+            gas=gas,
+            to=txn_dict['to'],
+            value=txn_dict['value'],
+            data=txn_dict['data'],
+            v=0,
+            r=0,
+            s=0
+        )
+    return SpoofTransaction(transaction, from_=sender)

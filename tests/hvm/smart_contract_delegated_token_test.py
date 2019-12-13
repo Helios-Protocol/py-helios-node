@@ -4,6 +4,8 @@ import random
 import time
 import sys
 from pprint import pprint
+
+import eth_keyfile
 from hvm.db.read_only import ReadOnlyDB
 
 from hvm import constants
@@ -306,37 +308,46 @@ def test_valid_transfer():
     receiver_2_chain.import_current_queue_block()
 
     #
-    # Check sender balance
+    # Make sure there is a refund to sender
     #
+    receivable_transactions = chain.create_receivable_transactions()
+    print(receivable_transactions)
 
-    # getting total supply from the smart contract chain
-    w3_tx = HeliosDelegatedToken.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
 
-    total_supply = call_on_chain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-                                 deployed_contract_address, decode_hex(w3_tx['data']))
-
-    # getting balance on sender chain
-    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
-
-    balance = call_on_chain(testdb,
-                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-                            decode_hex(w3_tx['data']),
-                            deployed_contract_address)
-
-    assert (balance == total_supply - send_amount)
-
+    # #
+    # # Check sender balance
+    # #
     #
-    # Check receiver balance
+    # # getting total supply from the smart contract chain
+    # w3_tx = HeliosDelegatedToken.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
     #
+    # total_supply = call_on_chain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+    #                              deployed_contract_address, decode_hex(w3_tx['data']))
+    #
+    # # getting balance on sender chain
+    # w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+    #
+    # balance = call_on_chain(testdb,
+    #                         TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+    #                         TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+    #                         decode_hex(w3_tx['data']),
+    #                         deployed_contract_address)
+    #
+    # assert (balance == total_supply - send_amount)
+    #
+    # #
+    # # Check receiver balance
+    # #
+    #
+    # balance = call_on_chain(testdb,
+    #                         RECEIVER2.public_key.to_canonical_address(),
+    #                         RECEIVER2.public_key.to_canonical_address(),
+    #                         decode_hex(w3_tx['data']),
+    #                         deployed_contract_address)
+    #
+    # assert (balance == send_amount)
 
-    balance = call_on_chain(testdb,
-                            RECEIVER2.public_key.to_canonical_address(),
-                            RECEIVER2.public_key.to_canonical_address(),
-                            decode_hex(w3_tx['data']),
-                            deployed_contract_address)
 
-    assert (balance == send_amount)
 
 
 test_valid_transfer()
@@ -464,4 +475,75 @@ def test_invalid_transfers():
 #test_invalid_transfers()
 
 
+def test_hypothesis_database():
+    testdb = LevelDB('/home/tommy/hypothesis_database/full')
 
+    max_gas = 20000000
+    send_amount = 10000
+
+    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+
+    contract_interface = compile_and_get_contract_interface('helios_delegated_token.sol', 'HeliosDelegatedToken')
+    deployed_contract_address = decode_hex('0x3256033babc1febe99340de5d8092592ccf4321c')
+    w3 = Web3()
+
+    HeliosDelegatedToken = w3.hls.contract(
+        address=Web3.toChecksumAddress(deployed_contract_address),
+        abi=contract_interface['abi']
+    )
+
+    # getting total supply from the smart contract chain
+    w3_tx = HeliosDelegatedToken.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
+
+    total_supply = call_on_chain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), deployed_contract_address, decode_hex(w3_tx['data']))
+
+    print("total_supply")
+    print(total_supply)
+    # getting balance on sender chain
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+
+    balance = call_on_chain(testdb,
+                            decode_hex('0xaD6872B6f67aCAA3148C0Ccc49E7c4dE48B0becA'),
+                            decode_hex('0xaD6872B6f67aCAA3148C0Ccc49E7c4dE48B0becA'),
+                            decode_hex(w3_tx['data']),
+                            deployed_contract_address)
+
+    print('balance')
+    print(balance)
+
+    absolute_keystore_path = '/d:/Google Drive/forex/blockchain_coding/Helios/prototype_laptop/helios-code-examples/web3_py/deploy_token/test_keystore.txt'  # path to your keystore file
+    keystore_password = 'LVTxfhwY4PvUEK8h'  # your keystore password
+    private_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(absolute_keystore_path, keystore_password))
+
+    # Create a new account to send it to
+    new_account = w3.hls.account.create()
+    new_private_key = new_account._key_obj
+
+    amount_to_transfer = 1000
+
+    w3_tx1 = HeliosDelegatedToken.functions.transfer(amount_to_transfer).buildTransaction(W3_TX_DEFAULTS)
+    
+    deployed_chain = TestnetTesterChain(testdb, private_key.public_key.to_canonical_address(), private_key, PhotonVM.with_zero_min_time_between_blocks())
+
+    deployed_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=new_private_key.public_key.to_canonical_address(),
+        value=0,
+        data=decode_hex(w3_tx['data']),
+        code_address=deployed_contract_address,
+        execute_on_send=True,
+    )
+    
+    transaction = {
+        'to': new_private_key.public_key.to_canonical_address(),
+        'gas': 20000000,  # make sure this is enough to cover deployment
+        'value': 0,
+        'chainId': 42,
+        'data': w3_tx1['data'],
+        'codeAddress': deployed_contract_address,  # The code address tells it where the smart contract code is.
+    }
+    
+    
+
+#test_hypothesis_database()

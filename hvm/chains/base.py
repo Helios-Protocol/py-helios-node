@@ -1480,6 +1480,7 @@ class Chain(BaseChain):
             raise ValidationError("Cannot specify at_header and at_timestamp together.")
 
         vm = self.get_vm(header = at_header, timestamp = at_timestamp)
+        vm.min_time_between_blocks = 0
         computation = vm.compute_single_transaction(transaction)
 
         computation.raise_if_error()

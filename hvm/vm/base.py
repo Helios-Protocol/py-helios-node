@@ -121,6 +121,11 @@ class BaseVM(Configurable, metaclass=ABCMeta):
     def __init__(self, header, chaindb):
         pass
 
+    @classmethod
+    @abstractmethod
+    def with_zero_min_time_between_blocks(cls) -> Type['BaseVM']:
+        raise NotImplementedError("VM classes must implement this method")
+
     #
     # Logging
     #
@@ -345,7 +350,7 @@ class VM(BaseVM):
         )
 
     @classmethod
-    def with_zero_min_time_between_blocks(cls):
+    def with_zero_min_time_between_blocks(cls) -> Type[BaseVM]:
         new_class = cls
         new_class.min_time_between_blocks = 0
         return new_class

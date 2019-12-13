@@ -6,6 +6,7 @@ from typing import (
 from eth_utils import (
     is_address,
 )
+from helios.rpc.format import underscore_to_camel_case
 
 from hvm.vm.base import (
     BaseVM,
@@ -24,6 +25,8 @@ def validate_transaction_gas_estimation_dict(transaction_dict: Dict[str, Any], v
     all_keys = set(transaction_class._meta.field_names)
     allowed_keys = all_keys.difference(FORBIDDEN_KEYS).union(DERIVED_KEYS)
     spec_keys = set(RENAMED_KEYS.get(field_name, field_name) for field_name in allowed_keys)
+    spec_keys = set([underscore_to_camel_case(key) for key in spec_keys])
+
 
     superfluous_keys = set(transaction_dict).difference(spec_keys)
 

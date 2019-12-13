@@ -1,4 +1,4 @@
-pragma solidity ^0.5.11;
+pragma solidity ^100.5.11;
 import "./smart_contract_chain.sol";
 import "./execute_on_send.sol";
 

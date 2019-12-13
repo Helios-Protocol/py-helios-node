@@ -551,8 +551,13 @@ class AccountDB(BaseAccountDB):
     def account_exists(self, address):
         validate_canonical_address(address, title="Storage Address")
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
-        
-        return self._journaldb.get(account_lookup_key, b'') != b''
+
+        try:
+            rlp_account = self._journaldb[account_lookup_key]
+            return True
+        except KeyError:
+            return False
+
 
     def touch_account(self, address):
         validate_canonical_address(address, title="Storage Address")
@@ -586,11 +591,12 @@ class AccountDB(BaseAccountDB):
 
     def _get_account_version(self, address_or_hash: Union[Address, Hash32]) -> int:
         account_version_lookup_key = SchemaV1.make_account_version_lookup_key(address_or_hash)
-        account_version_encoded = self._journaldb.get(account_version_lookup_key, b'')
-        if account_version_encoded:
+        try:
+            account_version_encoded = self._journaldb[account_version_lookup_key]
             return rlp.decode(account_version_encoded, sedes=rlp.sedes.f_big_endian_int)
-        else:
+        except KeyError:
             return -1
+
 
     def _set_account_version(self, address_or_hash: Union[Address, Hash32], version: int) -> None:
         self.logger.debug('Saving account or hash {} as version {}'.format(encode_hex(address_or_hash), self.version))
@@ -630,7 +636,10 @@ class AccountDB(BaseAccountDB):
 
     def _get_account(self, address: Address, save_upgraded_account = True) -> Account:
         account_lookup_key = SchemaV1.make_account_lookup_key(address)
-        rlp_account = self._journaldb.get(account_lookup_key, b'')
+        try:
+            rlp_account = self._journaldb[account_lookup_key]
+        except KeyError:
+            rlp_account = b''
         account_version = self._get_account_version(address)
         account = self._decode_and_upgrade_account(rlp_account, address, account_version, save_upgraded_account)
 

@@ -1,4 +1,4 @@
-pragma solidity ^0.5.11;
+pragma solidity ^100.5.11;
 /**
  * @title ExecuteOnSend
  * @dev The ExecuteOnSend contract gives a function modifier that requires the transaction to

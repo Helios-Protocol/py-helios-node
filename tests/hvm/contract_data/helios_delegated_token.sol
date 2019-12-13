@@ -1,4 +1,4 @@
-pragma solidity ^0.5.11;
+pragma solidity ^100.5.11;
 
 import "./helpers/smart_contract_chain.sol";
 import "./helpers/safe_math.sol";

@@ -12,6 +12,8 @@ from eth_utils import (
     from_wei,
 )
 
+from pprint import pprint
+
 from eth_keys import keys
 import time
 from hvm.rlp.transactions import BaseReceiveTransaction
@@ -28,7 +30,8 @@ from helios.rpc.format import (
     decode_hex_if_str,
     receive_transaction_to_dict,
     connected_nodes_to_dict,
-    normalize_transaction_dict,)
+    normalize_transaction_dict,
+    dict_to_spoof_transaction,)
 import rlp_cython as rlp
 from helios.sync.common.constants import FULLY_SYNCED_STAGE_ID
 
@@ -83,6 +86,7 @@ from hp2p.events import NewBlockEvent, StakeFromBootnodeRequest, CurrentSyncStag
 from eth_typing import Address
 
 from hvm.rlp.consensus import StakeRewardBundle
+from hvm.vm.forks import PhotonVM
 from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock
 
 def account_db_at_block(chain, chain_address, at_block):
@@ -98,41 +102,6 @@ def account_db_at_block(chain, chain_address, at_block):
         vm.state.account_db.revert_to_account_from_hash(account_hash, chain_address)
         return vm.state.account_db
 
-
-
-def dict_to_spoof_transaction(
-        chain,
-        header,
-        transaction_dict,
-        ) -> SpoofTransaction:
-    """
-    Convert dicts used in calls & gas estimates into a spoof transaction
-    """
-
-    txn_dict = normalize_transaction_dict(transaction_dict)
-    sender = txn_dict.get('from', ZERO_ADDRESS)
-
-    if 'nonce' in txn_dict:
-        nonce = txn_dict['nonce']
-    else:
-        vm = chain.get_vm(header)
-        nonce = vm.state.account_db.get_nonce(sender)
-
-    gas_price = txn_dict.get('gasPrice', 0)
-    gas = txn_dict.get('gas', header.gas_limit)
-
-    transaction = chain.create_transaction(
-        nonce=nonce,
-        gas_price=gas_price,
-        gas=gas,
-        to=txn_dict['to'],
-        value=txn_dict['value'],
-        data=txn_dict['data'],
-        v=0,
-        r=0,
-        s=0
-    )
-    return SpoofTransaction(transaction, from_=sender)
 
 def get_header(chain, at_block, chain_address):
     if at_block == 'latest':
@@ -176,11 +145,13 @@ class Hls(RPCModule):
     async def call(self, txn_dict: Dict[str, Any], at_block: Union[str, int]) -> str:
         if 'from' not in txn_dict:
             raise BaseRPCError("hls_call requires from and to dict keys in the transaction dict.")
+
         chain_address = decode_hex(txn_dict['from'])
         chain = self.get_new_chain(chain_address)
         header = get_header(chain, at_block, chain_address)
         validate_transaction_call_dict(txn_dict, chain.get_vm(header))
         transaction = dict_to_spoof_transaction(chain, header, txn_dict)
+
         result = chain.get_transaction_result(transaction, header)
         return encode_hex(result)
 

@@ -75,7 +75,7 @@ from hvm.vm.forks.helios_testnet.blocks import HeliosMicroBlock, HeliosTestnetBl
 
 
 
-
+W3_TX_DEFAULTS = {'gas': 0, 'gasPrice': 0, 'chainId': 1}
 
 def get_primary_node_private_helios_key(instance_number = 0):
     return keys.PrivateKey(random_private_keys[instance_number])
@@ -139,6 +139,7 @@ def ensure_blockchain_databases_identical(base_db_1, base_db_2):
             assert_var_1 = node_1.chaindb.get_all_descendant_block_hashes(node_1_chain[i].hash)
             assert_var_2 = node_2.chaindb.get_all_descendant_block_hashes(node_2_chain[i].hash)
             assert ( assert_var_1==assert_var_2 )
+
 
 
 

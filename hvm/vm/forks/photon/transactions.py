@@ -1,6 +1,7 @@
 import functools
 
-from eth_typing import Address
+from eth_hash.auto import keccak
+from eth_typing import Address, Hash32
 from eth_utils import int_to_big_endian
 from hvm.constants import GAS_TX, CREATE_CONTRACT_ADDRESS, GAS_TXCREATE, GAS_TXDATAZERO, GAS_TXDATANONZERO
 from hvm.exceptions import ValidationError
@@ -113,7 +114,15 @@ class PhotonTransaction(BosonTransaction):
 
 
 class PhotonReceiveTransaction(BosonReceiveTransaction):
-    pass
+
+    @property
+    def hash(self) -> Hash32:
+        # We don't include refund amount in the hash so that the online wallet can create the transaction root
+        # and the vm can add a refund, and the root will remain the same.
+        transaction_parts = rlp.decode(rlp.encode(self), use_list=True)
+        transaction_parts_for_hash = transaction_parts[:-1]
+        message = rlp.encode(transaction_parts_for_hash)
+        return keccak(message)
     
 
 def _get_photon_intrinsic_gas(transaction):
