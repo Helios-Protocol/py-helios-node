@@ -163,3 +163,8 @@ class SchemaV1(BaseSchema):
     def make_min_gas_system_last_pid_time_key() -> bytes:
         # require that it is mod of 1000 seconds
         return b'make_min_gas_system_last_pid_time_key'
+
+    @staticmethod
+    def make_transaction_refund_amount_lookup(tx_hash: Hash32) -> bytes:
+        key = b'tx_refund_amount:%b' % (tx_hash)
+        return key

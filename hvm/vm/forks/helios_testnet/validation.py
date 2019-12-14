@@ -27,11 +27,11 @@ def validate_helios_testnet_transaction(account_db,
         #this is a refund transaction
         if refund_receive_transaction.is_refund is False:
             raise ValidationError(
-                'Only refund transactions can be used for a refund. On this transaction is_from_refund = False.')
+                'Only refund transactions can be used for a refund. On this transaction is_refund = False.')
 
-        if refund_receive_transaction.remaining_refund != 0:
+        if refund_receive_transaction.refund_amount == 0:
             raise ValidationError(
-                'Refund transactions must have 0 remaining refund')
+                'Refund transactions must have nonzero refund amount')
 
         if send_transaction.sender != this_chain_address:
             raise ValidationError(

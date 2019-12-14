@@ -42,7 +42,7 @@ from hvm.validation import (
     validate_is_bytes,
     validate_uint256,
     validate_canonical_address,
-)
+    validate_word)
 
 from hvm.utils.numeric import (
     int_to_big_endian,
@@ -126,7 +126,12 @@ class BaseAccountDB(metaclass=ABCMeta):
         raise NotImplementedError("Must be implemented by subclasses")
 
     @abstractmethod
-    def add_receivable_transaction(self, address: Address, transaction_hash: Hash32, sender_block_hash: Hash32) -> None:
+    def add_receivable_transaction(self,
+                                   address: Address,
+                                   transaction_hash: Hash32,
+                                   sender_block_hash: Hash32,
+                                   is_contract_deploy: bool = False,
+                                   refund_amount=0) -> None:
         raise NotImplementedError("Must be implemented by subclasses")
 
     @abstractmethod
@@ -139,6 +144,17 @@ class BaseAccountDB(metaclass=ABCMeta):
 
     @abstractmethod
     def get_nonce(self, address: Address) -> int:
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    #
+    # Gas refunds
+    #
+    @abstractmethod
+    def save_refund_amount_for_transaction(self, tx_hash: Hash32, refund_amount: int) -> None:
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def get_refund_amount_for_transaction(self, tx_hash: Hash32) -> int:
         raise NotImplementedError("Must be implemented by subclasses")
 
     #
@@ -405,8 +421,16 @@ class AccountDB(BaseAccountDB):
         validate_canonical_address(address, title="Wallet Address")
         for tx_key in transaction_keys:
             self.add_receivable_transaction(address, tx_key.transaction_hash, tx_key.sender_block_hash)
-            
-    def add_receivable_transaction(self, address: Address, transaction_hash: Hash32, sender_block_hash: Hash32, is_contract_deploy:bool = False) -> None:
+
+
+
+
+    def add_receivable_transaction(self,
+                                   address: Address,
+                                   transaction_hash: Hash32,
+                                   sender_block_hash: Hash32,
+                                   is_contract_deploy:bool = False,
+                                   refund_amount = 0) -> None:
         self.logger.debug("Adding receivable transaction {} to address {}".format(encode_hex(transaction_hash), encode_hex(address)))
         validate_canonical_address(address, title="Wallet Address")
         validate_is_bytes(transaction_hash, title="Transaction Hash")
@@ -422,6 +446,8 @@ class AccountDB(BaseAccountDB):
 
         receivable_transactions.append(TransactionKey(transaction_hash, sender_block_hash))
         self.save_receivable_transactions(address, receivable_transactions)
+
+        self.save_refund_amount_for_transaction(transaction_hash, refund_amount)
 
         #finally, if this is a smart contract, lets add it to the list of smart contracts with pending transactions
         if is_contract_deploy or self.get_code_hash(address) != EMPTY_SHA3:
@@ -457,7 +483,28 @@ class AccountDB(BaseAccountDB):
                 self.logger.debug("Removing address from list of smart contracts with pending transactions")
                 self._remove_address_from_smart_contracts_with_pending_transactions(address)
     
-    
+    #
+    # Gas refunds
+    #
+    def save_refund_amount_for_transaction(self, tx_hash: Hash32, refund_amount: int) -> None:
+        if refund_amount > 0:
+            validate_word(tx_hash, title="tx_hash")
+            validate_uint256(refund_amount, title="refund_amount")
+            lookup_key = SchemaV1.make_transaction_refund_amount_lookup(tx_hash)
+
+            encoded = rlp.encode(refund_amount, sedes=rlp.sedes.big_endian_int)
+            self._journaldb[lookup_key] = encoded
+
+    def get_refund_amount_for_transaction(self, tx_hash: Hash32) -> int:
+        lookup_key = SchemaV1.make_transaction_refund_amount_lookup(tx_hash)
+        try:
+            encoded = self._journaldb[lookup_key]
+            decoded = rlp.decode(encoded, sedes=rlp.sedes.big_endian_int)
+            return decoded
+        except KeyError:
+            return 0
+
+
     #
     # Code
     #

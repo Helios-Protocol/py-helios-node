@@ -196,7 +196,7 @@ def receive_transaction_to_dict(transaction: BaseReceiveTransaction, chain: Asyn
 
     if transaction.is_refund:
         send_transaction = chain.get_canonical_transaction(originating_transaction.send_transaction_hash)
-        value = originating_transaction.remaining_refund
+        value = transaction.refund_amount
         to = send_transaction.sender
     else:
         send_transaction = originating_transaction

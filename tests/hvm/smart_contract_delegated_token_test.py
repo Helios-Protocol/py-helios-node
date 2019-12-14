@@ -310,42 +310,42 @@ def test_valid_transfer():
     #
     # Make sure there is a refund to sender
     #
-    receivable_transactions = chain.create_receivable_transactions()
-    print(receivable_transactions)
+    chain.populate_queue_block_with_receive_tx()
+    chain.import_current_queue_block()
 
 
-    # #
-    # # Check sender balance
-    # #
     #
-    # # getting total supply from the smart contract chain
-    # w3_tx = HeliosDelegatedToken.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
+    # Check sender balance
     #
-    # total_supply = call_on_chain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-    #                              deployed_contract_address, decode_hex(w3_tx['data']))
+
+    # getting total supply from the smart contract chain
+    w3_tx = HeliosDelegatedToken.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
+
+    total_supply = call_on_chain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                 deployed_contract_address, decode_hex(w3_tx['data']))
+
+    # getting balance on sender chain
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+
+    balance = call_on_chain(testdb,
+                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                            TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                            decode_hex(w3_tx['data']),
+                            deployed_contract_address)
+
+    assert (balance == total_supply - send_amount)
+
     #
-    # # getting balance on sender chain
-    # w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+    # Check receiver balance
     #
-    # balance = call_on_chain(testdb,
-    #                         TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-    #                         TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-    #                         decode_hex(w3_tx['data']),
-    #                         deployed_contract_address)
-    #
-    # assert (balance == total_supply - send_amount)
-    #
-    # #
-    # # Check receiver balance
-    # #
-    #
-    # balance = call_on_chain(testdb,
-    #                         RECEIVER2.public_key.to_canonical_address(),
-    #                         RECEIVER2.public_key.to_canonical_address(),
-    #                         decode_hex(w3_tx['data']),
-    #                         deployed_contract_address)
-    #
-    # assert (balance == send_amount)
+
+    balance = call_on_chain(testdb,
+                            RECEIVER2.public_key.to_canonical_address(),
+                            RECEIVER2.public_key.to_canonical_address(),
+                            decode_hex(w3_tx['data']),
+                            deployed_contract_address)
+
+    assert (balance == send_amount)
 
 
 

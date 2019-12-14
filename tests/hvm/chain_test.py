@@ -804,7 +804,7 @@ def test_importing_p2p_type_block():
         receive_transaction = P2PReceiveTransaction(sender_block_hash=ZERO_HASH32,
                                                     send_transaction_hash=ZERO_HASH32,
                                                     is_refund = False,
-                                                    remaining_refund = 0)
+                                                    refund_amount = 0)
         receive_transactions.append(receive_transaction)
 
     reward_bundle = StakeRewardBundle()

@@ -73,17 +73,11 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
                                       this_chain_address=this_chain_address)
 
         transaction_context = self.get_transaction_context(send_transaction, this_chain_address, receive_transaction, refund_transaction)
-        message = self.build_evm_message(send_transaction, transaction_context, receive_transaction)
+        message = self.build_evm_message(send_transaction, transaction_context, receive_transaction, refund_transaction)
         computation = self.build_computation(message, transaction_context, validate)
-        first_computation = computation
         finalized_computation = self.finalize_computation(send_transaction, computation)
 
-        processed_transaction = self.add_possible_refunds_to_currently_executing_transaction(send_transaction,
-                                                                                            finalized_computation,
-                                                                                            receive_transaction,
-                                                                                            refund_transaction)
-
-        return finalized_computation, processed_transaction
+        return finalized_computation
 
     def perform_transaction_computation(self, send_transaction: Union[BaseTransaction, SpoofTransaction], this_chain_address: Address) -> 'BaseComputation':
         '''
@@ -119,7 +113,8 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
     def build_evm_message(self,
                           send_transaction: BaseTransaction,
                           transaction_context: 'BaseTransactionContext',
-                          receive_transaction: BaseReceiveTransaction = None) -> Message:
+                          receive_transaction: BaseReceiveTransaction = None,
+                          refund_transaction: BaseReceiveTransaction = None) -> Message:
         raise NotImplementedError()
 
     @abstractmethod
@@ -130,14 +125,6 @@ class BaseTransactionExecutor(metaclass=ABCMeta):
     def finalize_computation(send_transaction: BaseTransaction, computation: 'BaseComputation') -> 'BaseComputation':
         raise NotImplementedError()
 
-    @abstractmethod
-    def add_possible_refunds_to_currently_executing_transaction(self,
-                            send_transaction: BaseTransaction,
-                            computation: 'BaseComputation',
-                            receive_transaction: BaseReceiveTransaction = None,
-                            refund_transaction: BaseReceiveTransaction = None,
-                            ) -> Union[BaseTransaction, BaseReceiveTransaction]:
-        raise NotImplementedError()
 
 class BaseState(Configurable, metaclass=ABCMeta):
     """
@@ -326,9 +313,9 @@ class BaseState(Configurable, metaclass=ABCMeta):
         :param transaction: the transaction to apply
         :return: the new state root, and the computation
         """
-        computation, processed_transaction = self.execute_transaction(send_transaction, this_chain_address, receive_transaction, refund_transaction, validate = validate)
+        computation = self.execute_transaction(send_transaction, this_chain_address, receive_transaction, refund_transaction, validate = validate)
         
-        return computation, processed_transaction
+        return computation
 
     def apply_reward_bundle(self, reward_bundle:StakeRewardBundle, wallet_address: Address) -> None:
         total_amount = (reward_bundle.reward_type_1.amount +

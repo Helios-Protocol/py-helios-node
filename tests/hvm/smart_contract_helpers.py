@@ -15,7 +15,7 @@ from hvm.utils.address import generate_contract_address
 from hvm.vm.base import BaseVM
 from hvm.vm.forks import PhotonVM
 
-from solc import compile_files, get_solc_version
+from helios_solc import compile_files, get_solc_version
 
 from pathlib import Path
 
@@ -23,15 +23,14 @@ home = str(Path.home())
 
 # os.environ["SOLC_BINARY"] = home + "/.py-solc/solc-v0.4.25/bin/solc"
 #os.environ["SOLC_BINARY"] = home + "/solidity/cmake-build-debug/solc/solc"
-os.environ["SOLC_BINARY"] = home + "/solidity/build/solc/solc"
+os.environ["SOLC_BINARY"] = home + "/.py-helios-solc/solc-v100.5.12/bin/solc"
 
 try:
-    get_solc_version()
+    solc_version = get_solc_version()
 except Exception:
     print("Solc not found. Installing")
-    from solc import install_solc
-    install_solc('v0.4.25')
-
+    from helios_solc import install_solc
+    install_solc('v100.5.12')
 
 from helios_web3 import HeliosWeb3 as Web3
 

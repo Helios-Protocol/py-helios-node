@@ -1199,7 +1199,8 @@ class Chain(BaseChain):
         return transactions, tx_keys
 
     def create_receivable_transactions(self) -> List[BaseReceiveTransaction]:
-        tx_keys = self.get_vm().state.account_db.get_receivable_transactions(self.wallet_address)
+        vm = self.get_vm()
+        tx_keys = vm.state.account_db.get_receivable_transactions(self.wallet_address)
         if len(tx_keys) == 0:
             return []
 
@@ -1207,11 +1208,13 @@ class Chain(BaseChain):
         for tx_key in tx_keys:
             #find out if it is a receive or a refund
             block_hash, index, is_receive = self.chaindb.get_transaction_index(tx_key.transaction_hash)
+            refund_amount = vm.state.account_db.get_refund_amount_for_transaction(tx_key.transaction_hash)
 
             re_tx = self.get_vm().create_receive_transaction(
                     sender_block_hash = tx_key.sender_block_hash,
                     send_transaction_hash=tx_key.transaction_hash,
                     is_refund=is_receive,
+                    refund_amount=refund_amount,
                     )
 
             receive_transactions.append(re_tx)
