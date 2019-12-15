@@ -46,7 +46,7 @@ from eth_utils import (
     to_checksum_address)
 from helios.dev_tools import create_dev_test_random_blockchain_database, \
     create_dev_test_blockchain_database_with_given_transactions, create_new_genesis_params_and_state, \
-    create_predefined_blockchain_database
+    create_predefined_blockchain_database, create_valid_block_at_timestamp
 from eth_keys import keys
 from sys import exit
 
@@ -95,8 +95,7 @@ from helios_web3 import HeliosWeb3 as Web3
 
 from tests.integration_test_helpers import W3_TX_DEFAULTS
 
-from hvm.constants import CREATE_CONTRACT_ADDRESS
-
+from hvm.constants import CREATE_CONTRACT_ADDRESS, GAS_TX
 
 #for testing purposes we will just have the primary private key hardcoded
 #TODO: save to encrypted json file
@@ -350,7 +349,7 @@ def test_valid_transfer():
 
 
 
-test_valid_transfer()
+#test_valid_transfer()
 
 
 def test_invalid_transfers():
@@ -476,74 +475,48 @@ def test_invalid_transfers():
 
 
 def test_hypothesis_database():
-    testdb = LevelDB('/home/tommy/hypothesis_database/full')
-
+    testdb = LevelDB('/home/tommy/temp/full')
+    testdb = JournalDB(testdb)
     max_gas = 20000000
     send_amount = 10000
 
     chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
 
-    contract_interface = compile_and_get_contract_interface('helios_delegated_token.sol', 'HeliosDelegatedToken')
-    deployed_contract_address = decode_hex('0x3256033babc1febe99340de5d8092592ccf4321c')
-    w3 = Web3()
 
-    HeliosDelegatedToken = w3.hls.contract(
-        address=Web3.toChecksumAddress(deployed_contract_address),
-        abi=contract_interface['abi']
-    )
-
-    # getting total supply from the smart contract chain
-    w3_tx = HeliosDelegatedToken.functions.totalSupply().buildTransaction(W3_TX_DEFAULTS)
-
-    total_supply = call_on_chain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), deployed_contract_address, decode_hex(w3_tx['data']))
-
-    print("total_supply")
-    print(total_supply)
-    # getting balance on sender chain
-    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
-
-    balance = call_on_chain(testdb,
-                            decode_hex('0xaD6872B6f67aCAA3148C0Ccc49E7c4dE48B0becA'),
-                            decode_hex('0xaD6872B6f67aCAA3148C0Ccc49E7c4dE48B0becA'),
-                            decode_hex(w3_tx['data']),
-                            deployed_contract_address)
-
-    print('balance')
-    print(balance)
-
-    absolute_keystore_path = '/d:/Google Drive/forex/blockchain_coding/Helios/prototype_laptop/helios-code-examples/web3_py/deploy_token/test_keystore.txt'  # path to your keystore file
+    absolute_keystore_path = '/d:/Google Drive/forex/blockchain_coding/Helios/prototype desktop/helios-code-examples/web3_py/deploy_token/test_keystore.txt'  # path to your keystore file
     keystore_password = 'LVTxfhwY4PvUEK8h'  # your keystore password
     private_key = keys.PrivateKey(eth_keyfile.extract_key_from_keyfile(absolute_keystore_path, keystore_password))
 
-    # Create a new account to send it to
-    new_account = w3.hls.account.create()
-    new_private_key = new_account._key_obj
+    print(private_key.public_key.to_checksum_address())
 
-    amount_to_transfer = 1000
+    deployer_chain = TestnetTesterChain(testdb, private_key.public_key.to_canonical_address(), private_key, PhotonVM.with_zero_min_time_between_blocks())
 
-    w3_tx1 = HeliosDelegatedToken.functions.transfer(amount_to_transfer).buildTransaction(W3_TX_DEFAULTS)
-    
-    deployed_chain = TestnetTesterChain(testdb, private_key.public_key.to_canonical_address(), private_key, PhotonVM.with_zero_min_time_between_blocks())
+    receivable_tx = deployer_chain.create_receivable_transactions()
+    refund_tx = receivable_tx[0]
+    receive_tx = chain.get_transaction_by_hash(refund_tx.send_transaction_hash)
+    send_tx = chain.get_transaction_by_hash(receive_tx.send_transaction_hash)
 
-    deployed_chain.create_and_sign_transaction_for_queue_block(
-        gas_price=1,
-        gas=max_gas,
-        to=new_private_key.public_key.to_canonical_address(),
-        value=0,
-        data=decode_hex(w3_tx['data']),
-        code_address=deployed_contract_address,
-        execute_on_send=True,
-    )
-    
-    transaction = {
-        'to': new_private_key.public_key.to_canonical_address(),
-        'gas': 20000000,  # make sure this is enough to cover deployment
-        'value': 0,
-        'chainId': 42,
-        'data': w3_tx1['data'],
-        'codeAddress': deployed_contract_address,  # The code address tells it where the smart contract code is.
-    }
-    
-    
+    print(encode_hex(send_tx.origin))
+    fucked_block = chain.get_block_by_hash(receive_tx.sender_block_hash)
+    print(encode_hex(fucked_block.header.chain_address))
+    print(encode_hex(fucked_block.transactions[0].sender))
+
+    print('ZZZZZZZZZZZZZZ')
+    print(encode_hex(chain.chaindb.get_chain_wallet_address_for_block_hash(receive_tx.sender_block_hash)))
+    print(encode_hex(receive_tx.hash))
+    print(encode_hex(send_tx.sender))
+
+    deployer_chain.populate_queue_block_with_receive_tx()
+    deployer_chain.queue_block = deployer_chain.queue_block.copy(receive_transactions=[receivable_tx[0]])
+    deployer_chain.import_current_queue_block()
+
+    # receivable_tx = deployer_chain.create_receivable_transactions()
+    #
+    # for tx in receivable_tx:
+    #     print(encode_hex(tx.sender_block_hash), encode_hex(tx.send_transaction_hash))
+    #
+    # tx = chain.get_transaction_by_hash(decode_hex('0xf71997b72e4b6e74e24984e61f47c3ecd0e0f2551c7f4062f530f5917aca2417'))
+    # print(tx.as_dict())
 
 #test_hypothesis_database()
+

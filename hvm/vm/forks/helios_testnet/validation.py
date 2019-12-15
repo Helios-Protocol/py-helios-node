@@ -1,4 +1,5 @@
 from eth_typing import Address
+from eth_utils import encode_hex
 
 from hvm.exceptions import (
     ValidationError,
@@ -33,9 +34,7 @@ def validate_helios_testnet_transaction(account_db,
             raise ValidationError(
                 'Refund transactions must have nonzero refund amount')
 
-        if send_transaction.sender != this_chain_address:
-            raise ValidationError(
-                'Refunds can only go back to the original chain that sent the initial transaction')
+
 
     elif receive_transaction is not None:
         #this is a receive transaction

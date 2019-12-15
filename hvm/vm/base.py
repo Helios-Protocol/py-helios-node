@@ -518,14 +518,7 @@ class VM(BaseVM):
                     #this is a refund transaction. We need to load the receive_transaction containing the refund and the send_transaction
                     refund_transaction = receive_transaction
 
-                    # Make sure the refund amount is the same as we computed
-                    local_refund_amount = self.state.account_db.get_refund_amount_for_transaction(receive_transaction.hash)
-                    if refund_transaction.refund_amount != local_refund_amount:
-                        raise ValidationError("The refund transaction refund_amount does not match the refund amount that we calculated locally. "
-                                              "Refund amount given: {} | refund amount calculated locally: {}".format(
-                            refund_transaction.refund_amount,
-                            local_refund_amount
-                        ))
+                    
 
                     block_hash, index, is_receive = self.chaindb.get_transaction_index(refund_transaction.send_transaction_hash)
 
@@ -541,6 +534,16 @@ class VM(BaseVM):
                                               "Make sure the transaction wasn't copied somewhere without copying the reference transaction.")
 
                     receive_transaction = refund_transaction.referenced_send_transaction
+                    
+                    # Make sure the refund amount is the same as we computed
+                    local_refund_amount = self.state.account_db.get_refund_amount_for_transaction(receive_transaction.hash)
+                    if refund_transaction.refund_amount != local_refund_amount:
+                        raise ValidationError("The refund transaction refund_amount does not match the refund amount that we calculated locally. "
+                                              "Refund amount given: {} | refund amount calculated locally: {} | receive transaction hash: {}".format(
+                            refund_transaction.refund_amount,
+                            local_refund_amount,
+                            encode_hex(receive_transaction.hash)
+                        ))
                 else:
                     refund_transaction = None
 

@@ -488,6 +488,7 @@ class AccountDB(BaseAccountDB):
     #
     def save_refund_amount_for_transaction(self, tx_hash: Hash32, refund_amount: int) -> None:
         if refund_amount > 0:
+            self.logger.debug("SAVING REFUND AMOUNT {} FOR TX HASH {}".format(refund_amount, encode_hex(tx_hash)))
             validate_word(tx_hash, title="tx_hash")
             validate_uint256(refund_amount, title="refund_amount")
             lookup_key = SchemaV1.make_transaction_refund_amount_lookup(tx_hash)
@@ -496,6 +497,7 @@ class AccountDB(BaseAccountDB):
             self._journaldb[lookup_key] = encoded
 
     def get_refund_amount_for_transaction(self, tx_hash: Hash32) -> int:
+        self.logger.debug("GETTING REFUND AMOUNT FOR TX HASH {}".format(encode_hex(tx_hash)))
         lookup_key = SchemaV1.make_transaction_refund_amount_lookup(tx_hash)
         try:
             encoded = self._journaldb[lookup_key]
