@@ -87,6 +87,11 @@ class PhotonAccountDB(AccountDB):
     #
 
     def get_external_smart_contract_storage(self, address: Address, smart_contract_address: Address, slot: int, from_journal = True) -> bytes:
+        if address == smart_contract_address:
+            # External smart contract storage for the same chain is just normal storage
+            self.logger.debug("Redirecting get_external_smart_contract_storage to get_storage for address {}".format(encode_hex(address)))
+            return self.get_storage(address, slot, from_journal)
+
         validate_canonical_address(address, title="Storage Address")
         validate_canonical_address(smart_contract_address, title="smart_contract_address")
         validate_uint256(slot, title="Storage Slot")
@@ -118,6 +123,7 @@ class PhotonAccountDB(AccountDB):
         else:
             to_return = 0
 
+        self.logger.debug("getting smart contract storage for address {} | smart_contract_address {} | slot {} | value {}".format(encode_hex(address), encode_hex(smart_contract_address), slot, to_return))
         if not from_journal:
             self._journaldb = orig_journal_db
 
@@ -125,6 +131,11 @@ class PhotonAccountDB(AccountDB):
 
 
     def set_external_smart_contract_storage(self, address: Address, smart_contract_address: Address, slot: int, value: int) -> None:
+        if address == smart_contract_address:
+            # External smart contract storage for the same chain is just normal storage
+            self.logger.debug("Redirecting set_external_smart_contract_storage to set_storage for address {}".format(encode_hex(address)))
+            return self.set_storage(address, slot, value)
+
         validate_uint256(value, title="Storage Value")
         validate_uint256(slot, title="Storage Slot")
         validate_canonical_address(address, title="Storage Address")
@@ -147,9 +158,10 @@ class PhotonAccountDB(AccountDB):
             storage[slot_as_key] = encoded_value
         else:
             del storage[slot_as_key]
-
+    
         external_smart_contract_storage_roots[smart_contract_address] = storage.root_hash
-
+        
+        self.logger.debug("setting smart contract storage for address {} | smart_contract_address {} | slot {} | value {}".format(encode_hex(address), encode_hex(smart_contract_address), slot, value))
         self._set_account(address, account.copy(external_smart_contract_storage_root=external_smart_contract_storage_roots.root_hash))
 
 

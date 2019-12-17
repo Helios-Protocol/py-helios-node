@@ -143,10 +143,11 @@ class Hls(RPCModule):
 
     @format_params(identity, to_int_if_hex)
     async def call(self, txn_dict: Dict[str, Any], at_block: Union[str, int]) -> str:
-        if 'from' not in txn_dict:
+        if 'from' not in txn_dict or 'to' not in txn_dict:
             raise BaseRPCError("hls_call requires from and to dict keys in the transaction dict.")
 
-        chain_address = decode_hex(txn_dict['from'])
+        # Execute on the chain being sent to.
+        chain_address = decode_hex(txn_dict['to'])
         chain = self.get_new_chain(chain_address)
         header = get_header(chain, at_block, chain_address)
         validate_transaction_call_dict(txn_dict, chain.get_vm(header))

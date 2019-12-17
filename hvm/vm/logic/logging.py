@@ -39,7 +39,7 @@ def log_XX(computation, topic_count):
           "topics: {} | data: {}".format(
         encode_hex(computation.transaction_context.this_chain_address),
         topics,
-        to_int(log_data)
+        log_data
     ))
 
 
