@@ -468,6 +468,23 @@ def test_from_journal():
 
 
 
+def test_save_and_retreive_refund_amount():
+    test_hash = ZERO_HASH32
+    test_amount = 1337
+
+    testdb = MemoryDB()
+    photon_account_db = PhotonAccountDB(testdb)
+
+    photon_account_db.save_refund_amount_for_transaction(test_hash, test_amount)
+
+    refund_amount = photon_account_db.get_refund_amount_for_transaction(test_hash)
+
+    assert(refund_amount==test_amount)
+
+    refund_amount_for_unknown_tx = photon_account_db.get_refund_amount_for_transaction(BLANK_ROOT_HASH)
+
+    assert(refund_amount_for_unknown_tx==0)
+
 
 
 # test_upgrade_from_depreciated_photon()
@@ -479,3 +496,4 @@ def test_from_journal():
 # test_photon_account_db_smart_contract_storage()
 # test_photon_account_db_save_root_hash()
 # test_from_journal()
+# test_save_and_retreive_refund_amount()

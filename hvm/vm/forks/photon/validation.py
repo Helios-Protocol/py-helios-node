@@ -23,6 +23,14 @@ def validate_photon_transaction(account_db,
                                this_chain_address,
                                receive_transaction,
                                refund_receive_transaction)
+    if refund_receive_transaction is not None:
+        if send_transaction.refund_address != this_chain_address:
+            raise ValidationError(
+                'Refunds can only go back to the original chain that sent the initial transaction.'
+                'Original chain to send the transaction: {} | this chain address: {}'.format(
+                    encode_hex(send_transaction.refund_addres),
+                    encode_hex(this_chain_address)
+                ))
 
     if receive_transaction is None and refund_receive_transaction is None:
         # This is a send transaction

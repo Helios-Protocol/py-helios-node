@@ -107,13 +107,14 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
     def build_evm_message(self,
                           send_transaction: BaseTransaction,
                           transaction_context: BaseTransactionContext,
-                          receive_transaction: BaseReceiveTransaction = None) -> Message:
+                          receive_transaction: BaseReceiveTransaction = None,
+                          refund_transaction: BaseReceiveTransaction = None) -> Message:
         if transaction_context.is_refund == True:
 
             # Setup VM Message
             message_gas = 0
 
-            refund_amount = receive_transaction.remaining_refund
+            refund_amount = refund_transaction.refund_amount
 
             contract_address = None
             data = b''
@@ -333,45 +334,6 @@ class HeliosTestnetTransactionExecutor(BaseTransactionExecutor):
                     self.vm_state.account_db.delete_account(account)
     
         return computation
-
-    def add_possible_refunds_to_currently_executing_transaction(self,
-                            send_transaction: BaseTransaction,
-                            computation: 'BaseComputation',
-                            receive_transaction: BaseReceiveTransaction = None,
-                            refund_transaction: BaseReceiveTransaction = None,
-                            ) -> Union[BaseTransaction, BaseReceiveTransaction]:
-        '''
-        Receive transactions that have computation will have to refund any leftover gas. This refund amount depends
-        on the computation which is why it is processed here and added the receive tx.
-
-        :param send_transaction:
-        :param computation:
-        :param receive_transaction:
-        :param refund_transaction:
-        :return:
-        '''
-        if computation.transaction_context.is_refund:
-            # this kind of receive transaction will always have 0 remaining refund so it doesnt need to be modified
-            return refund_transaction
-
-        elif computation.transaction_context.is_receive:
-            # this kind of receive transaction may include a nonzero gas refund. Must add it in now
-            # It gets a refund if send has data and is not create. ie. there was a computation on receive
-            if computation.msg.data != b'' and not computation.msg.is_create:
-
-                gas_refund_amount = computation.get_gas_remaining_including_refunds()
-
-                self.vm_state.logger.debug(
-                    'SAVING REFUND TO RECEIVE TX: %s -> %s',
-                    gas_refund_amount,
-                    encode_hex(computation.msg.sender),
-                )
-                receive_transaction = receive_transaction.copy(remaining_refund = gas_refund_amount)
-
-            return receive_transaction
-        else:
-            #this is a send transaction. Refunds are only possible on receive tx. So send it back unmodified
-            return send_transaction
 
 
 

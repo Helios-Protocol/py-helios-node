@@ -31,12 +31,13 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
     def build_evm_message(self,
                           send_transaction: PhotonTransaction,
                           transaction_context: PhotonTransactionContext,
-                          receive_transaction: PhotonReceiveTransaction = None) -> Message:
+                          receive_transaction: PhotonReceiveTransaction = None,
+                          refund_transaction: PhotonReceiveTransaction = None) -> Message:
         if transaction_context.is_refund == True:
 
             # Setup VM Message
             message_gas = 0
-            refund_amount = receive_transaction.remaining_refund
+            refund_amount = refund_transaction.refund_amount
             create_address = None
             data = b''
             code = b''
@@ -209,47 +210,6 @@ class PhotonTransactionExecutor(BosonTransactionExecutor):
             tx_execute_on_send=send_transaction.execute_on_send,
             has_data = False if send_transaction.data == b'' else True
         )
-
-    def add_possible_refunds_to_currently_executing_transaction(self,
-                                                                send_transaction: PhotonTransaction,
-                                                                computation: PhotonComputation,
-                                                                receive_transaction: PhotonReceiveTransaction = None,
-                                                                refund_transaction: PhotonReceiveTransaction = None,
-                                                                ) -> Union[PhotonTransaction, PhotonReceiveTransaction]:
-        '''
-        Receive transactions that have computation will have to refund any leftover gas. This refund amount depends
-        on the computation which is why it is processed here and added the receive tx.
-
-        :param send_transaction:
-        :param computation:
-        :param receive_transaction:
-        :param refund_transaction:
-        :return:
-        '''
-        if computation.transaction_context.is_refund:
-            # this kind of receive transaction will always have 0 remaining refund so it doesnt need to be modified
-            return refund_transaction
-
-        elif computation.transaction_context.is_receive:
-            # this kind of receive transaction may include a nonzero gas refund. Must add it in now
-            # It gets a refund if send has data and is not create. ie. there was a computation on receive
-
-            if computation.transaction_context.is_computation_call_origin or (computation.msg.data != b'' and not computation.msg.is_create):
-                # New: we always process refunds after receiving a transaction originating in a computation call
-                gas_refund_amount = computation.get_gas_remaining_including_refunds()
-
-                self.vm_state.logger.debug(
-                    'SAVING REFUND TO RECEIVE TX: %s -> %s',
-                    gas_refund_amount,
-                    encode_hex(computation.transaction_context.refund_address),
-                )
-
-                receive_transaction = receive_transaction.copy(remaining_refund=gas_refund_amount)
-
-            return receive_transaction
-        else:
-            # this is a send transaction. Refunds are only possible on receive tx. So send it back unmodified
-            return send_transaction
 
 
     def finalize_computation(self, send_transaction: PhotonTransaction, computation: PhotonComputation) -> PhotonComputation:

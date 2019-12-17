@@ -152,8 +152,7 @@ class BaseVM(Configurable, metaclass=ABCMeta):
                                this_chain_address: Address,
                                validate: bool = True) -> Tuple[Optional[BlockHeader],
                                                                Optional[Receipt],
-                                                               BaseComputation,
-                                                               Optional[BaseReceiveTransaction]]:
+                                                               BaseComputation]:
         raise NotImplementedError("VM classes must implement this method")
 
     @abstractmethod
@@ -288,7 +287,10 @@ class BaseVM(Configurable, metaclass=ABCMeta):
         raise NotImplementedError("VM classes must implement this method")
 
     @abstractmethod
-    def save_recievable_transactions(self, block_header_hash: Hash32, computations: List[BaseComputation]) -> None:
+    def save_recievable_transactions(self,
+                                     block_header_hash: Hash32,
+                                     send_computations: List[BaseComputation],
+                                     receive_computations: List[BaseComputation]) -> None:
         raise NotImplementedError("VM classes must implement this method")
 
 
@@ -403,19 +405,19 @@ class VM(BaseVM):
     #
     # Execution
     #
-    def apply_all_transactions(self, block: BaseBlock, private_key: PrivateKey = None) -> Tuple[BaseBlockHeader, List[Receipt], List[BaseComputation], List[BaseComputation], List[BaseReceiveTransaction], List[BaseTransaction]]:
+    def apply_all_transactions(self, block: BaseBlock, private_key: PrivateKey = None) -> Tuple[BaseBlockHeader, List[Receipt], List[BaseComputation], List[BaseComputation], List[BaseTransaction]]:
 
         #run all of the transactions.
         last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, block.header)
 
 
         #then run all receive transactions
-        last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, last_header)
+        last_header, receive_receipts, receive_computations = self._apply_all_receive_transactions(block.receive_transactions, last_header)
 
         # then combine
         receipts.extend(receive_receipts)
 
-        return last_header, receipts, receive_computations, send_computations, processed_receive_transactions, []
+        return last_header, receipts, receive_computations, send_computations, []
 
     def apply_send_transaction(self,
                                header: BlockHeader,
@@ -437,7 +439,7 @@ class VM(BaseVM):
             self.validate_transaction_against_header(header, send_transaction=send_transaction)
 
 
-        computation, _ = self.state.apply_transaction(send_transaction = send_transaction,
+        computation = self.state.apply_transaction(send_transaction = send_transaction,
                                                    this_chain_address = this_chain_address,
                                                    receive_transaction = receive_transaction,
                                                    validate = validate)
@@ -460,8 +462,7 @@ class VM(BaseVM):
                                this_chain_address: Address,
                                validate: bool = True) -> Tuple[Optional[BlockHeader],
                                                                Optional[Receipt],
-                                                               BaseComputation,
-                                                               Optional[BaseReceiveTransaction]]:
+                                                               BaseComputation]:
         """
         Apply the transaction to the current block. This is a wrapper around
         :func:`~hvm.vm.state.State.apply_transaction` with some extra orchestration logic.
@@ -517,6 +518,8 @@ class VM(BaseVM):
                     #this is a refund transaction. We need to load the receive_transaction containing the refund and the send_transaction
                     refund_transaction = receive_transaction
 
+                    
+
                     block_hash, index, is_receive = self.chaindb.get_transaction_index(refund_transaction.send_transaction_hash)
 
                     if block_hash != refund_transaction.sender_block_hash:
@@ -531,6 +534,16 @@ class VM(BaseVM):
                                               "Make sure the transaction wasn't copied somewhere without copying the reference transaction.")
 
                     receive_transaction = refund_transaction.referenced_send_transaction
+                    
+                    # Make sure the refund amount is the same as we computed
+                    local_refund_amount = self.state.account_db.get_refund_amount_for_transaction(receive_transaction.hash)
+                    if refund_transaction.refund_amount != local_refund_amount:
+                        raise ValidationError("The refund transaction refund_amount does not match the refund amount that we calculated locally. "
+                                              "Refund amount given: {} | refund amount calculated locally: {} | receive transaction hash: {}".format(
+                            refund_transaction.refund_amount,
+                            local_refund_amount,
+                            encode_hex(receive_transaction.hash)
+                        ))
                 else:
                     refund_transaction = None
 
@@ -558,7 +571,7 @@ class VM(BaseVM):
 
 
             # we assume past this point that, if it is a receive transaction, the send transaction exists in account
-            computation, processed_transaction = self.state.apply_transaction(send_transaction=send_transaction,
+            computation = self.state.apply_transaction(send_transaction=send_transaction,
                                                        this_chain_address=this_chain_address,
                                                        receive_transaction=receive_transaction,
                                                        refund_transaction=refund_transaction,
@@ -567,9 +580,9 @@ class VM(BaseVM):
             if validate:
                 receipt = self.make_receipt(header, computation, send_transaction, receive_transaction, refund_transaction)
                 new_header = self.apply_receipt_to_header(header, receipt)
-                return new_header, receipt, computation, processed_transaction
+                return new_header, receipt, computation
             else:
-                return None, None, computation, processed_transaction
+                return None, None, computation
 
     def _apply_reward_bundle(self, reward_bundle: StakeRewardBundle, block_timestamp: Timestamp, wallet_address: Address, validate = True) -> None:
 
@@ -696,33 +709,30 @@ class VM(BaseVM):
                 computations.append(computation)
             return result_header, [], computations
 
-    def _apply_all_receive_transactions(self, transactions, base_header, validate=True) -> Tuple[BlockHeader, List[Receipt], List[BaseComputation], List[BaseReceiveTransaction]]:
+    def _apply_all_receive_transactions(self, transactions, base_header, validate=True) -> Tuple[BlockHeader, List[Receipt], List[BaseComputation]]:
         receipts = []
         previous_header = base_header
         result_header = base_header
         computations = []
-        processed_receive_transactions = []
 
         this_chain_address = base_header.chain_address
         if validate:
             for transaction in transactions:
-                result_header, receipt, computation, processed_receive_tx = self.apply_receive_transaction(previous_header, transaction,
+                result_header, receipt, computation = self.apply_receive_transaction(previous_header, transaction,
                                                                                   this_chain_address,
                                                                                   validate=validate)
 
                 previous_header = result_header
                 receipts.append(receipt)
                 computations.append(computation)
-                processed_receive_transactions.append(processed_receive_tx)
 
-            return result_header, receipts, computations, processed_receive_transactions
+            return result_header, receipts, computations
         else:
             for transaction in transactions:
-                result_header, receipt, computation, processed_receive_tx = self.apply_receive_transaction(previous_header, transaction,
+                result_header, receipt, computation = self.apply_receive_transaction(previous_header, transaction,
                                                                                   validate=validate)
                 computations.append(computation)
-                processed_receive_transactions.append(processed_receive_tx)
-            return result_header, [], computations, processed_receive_transactions
+            return result_header, [], computations
 
 
 
@@ -828,10 +838,7 @@ class VM(BaseVM):
         # We don't need to refresh the state because it should have just been created for this block.
         # self.refresh_state()
 
-        last_header, receipts, receive_computations, send_computations, processed_receive_transactions, computation_call_send_transactions = self.apply_all_transactions(block, private_key = private_key)
-
-        # Copy the referenced transactions for the rest of the code to use.
-        self.copy_referenced_transactions(block.receive_transactions, processed_receive_transactions)
+        last_header, receipts, receive_computations, send_computations, computation_call_send_transactions = self.apply_all_transactions(block, private_key = private_key)
 
         if is_queue_block:
             # need to add any new computation call send transactions to the list of send transactions
@@ -854,7 +861,7 @@ class VM(BaseVM):
         receipt_root_hash, _ = self.save_items_to_db_as_trie(receipts)
 
         # Receive tx
-        receive_tx_root_hash, _ = self.save_items_to_db_as_trie(processed_receive_transactions)
+        receive_tx_root_hash, _ = self.save_items_to_db_as_trie(block.receive_transactions)
 
         # Reward bundle
         if block.reward_bundle is None:
@@ -869,7 +876,6 @@ class VM(BaseVM):
         account_balance = self.state.account_db.get_balance(block.header.chain_address)
 
         block = block.copy(
-            receive_transactions = processed_receive_transactions,
             header=last_header.copy(
                 transaction_root=sent_tx_root_hash,
                 receipt_root=receipt_root_hash,
@@ -901,7 +907,7 @@ class VM(BaseVM):
         #save all send transactions in the state as receivable
         #we have to do this at the end here because the block hash is still changing when transactions are being processed.
 
-        self.save_recievable_transactions(block.header.hash, send_computations, processed_receive_transactions)
+        self.save_recievable_transactions(block.header.hash, send_computations, receive_computations)
 
         if validate:
             # Perform validation
@@ -916,7 +922,10 @@ class VM(BaseVM):
 
         
 
-    def save_recievable_transactions(self,block_header_hash: Hash32, computations: List[BaseComputation], receive_transactions: List[BaseReceiveTransaction]) -> None:
+    def save_recievable_transactions(self,
+                                     block_header_hash: Hash32,
+                                     send_computations: List[BaseComputation],
+                                     receive_computations: List[BaseComputation]) -> None:
         '''
         Saves send transactions as receivable. This requires the computations to cover transactions that deploy a contract to a new storage address.
         In that case, we need the computation to know what the storage address is.
@@ -926,7 +935,7 @@ class VM(BaseVM):
         :param receive_transactions:
         :return:
         '''
-        for computation in computations:
+        for computation in send_computations:
             msg = computation.msg
             transaction_context = computation.transaction_context
             if not computation.is_error:
@@ -935,14 +944,7 @@ class VM(BaseVM):
                                                                  block_header_hash,
                                                                  msg.is_create)
 
-        for receive_transaction in receive_transactions:
-            if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:
-                sender_chain_address = self.chaindb.get_chain_wallet_address_for_block_hash(receive_transaction.sender_block_hash)
-                self.logger.debug("SAVING RECEIVABLE REFUND TX WITH HASH {} ON CHAIN {}: {}".format(encode_hex(receive_transaction.hash), encode_hex(sender_chain_address), receive_transaction.as_dict()))
-
-                self.state.account_db.add_receivable_transaction(sender_chain_address,
-                                                                 receive_transaction.hash,
-                                                                 block_header_hash)
+        # Refunds skipped here because there are none for the standard fork. This function is overwritten in photon
 
 
             
@@ -957,13 +959,14 @@ class VM(BaseVM):
             self.delete_transaction_as_receivable(transaction.to, transaction.hash)
 
         for receive_transaction in receive_transactions:
-            if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:
-                # receive transactions that have refund remaining will have saved the refund as receivable. Need to
-                # delete those too.
-                # The refund gets sent back to the sender. So lets find the sender chain, and remove it from there.
-                sender_header = self.chaindb.get_block_header_by_hash(receive_transaction.sender_block_hash)
-                sender_wallet_address = sender_header.chain_address
-                self.delete_transaction_as_receivable(sender_wallet_address, receive_transaction.hash)
+            if not receive_transaction.is_refund:
+                if self.state.account_db.get_refund_amount_for_transaction(receive_transaction.hash) > 0:
+                    # receive transactions that have refund remaining will have saved the refund as receivable. Need to
+                    # delete those too.
+                    # The refund gets sent back to the sender. So lets find the sender chain, and remove it from there.
+                    sender_header = self.chaindb.get_block_header_by_hash(receive_transaction.sender_block_hash)
+                    sender_wallet_address = sender_header.chain_address
+                    self.delete_transaction_as_receivable(sender_wallet_address, receive_transaction.hash)
         
     def save_items_to_db_as_trie(self, items, root_hash_to_verify = None):
         root_hash, kv_nodes = make_trie_root_and_nodes(items)

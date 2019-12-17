@@ -175,7 +175,7 @@ class BaseReceiveTransaction(rlp.Serializable, BaseTransactionCommonMethods):
         ('sender_block_hash', hash32),
         ('send_transaction_hash', hash32),
         ('is_refund', boolean),
-        ('remaining_refund', big_endian_int)
+        ('refund_amount', big_endian_int)
     ]
 
     # Variable to temporarily hold the send transaction while importing. Note, this can be another receive transaction if this is a refund.

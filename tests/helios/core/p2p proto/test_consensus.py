@@ -483,7 +483,6 @@ async def test_consensus_avg_network_min_gas(request, event_loop):
         while True:
             # They should have the same parameters once they have received stats from all other nodes.
             length_of_stats = [len(consensus._network_min_gas_limit_statistics) for consensus in consensus_services]
-            print('ZZZZZZZZZZZZZZ')
             print(length_of_stats)
             if all([x >= (num_peers_in_swarm+1) for x in length_of_stats]):
                 return

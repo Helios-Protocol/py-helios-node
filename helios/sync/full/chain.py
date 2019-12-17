@@ -520,12 +520,10 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
                 # later we will add multiprocessing with multiple instances of this object to import in parallel.
                 try:
                     async with self.importing_blocks_lock:
-                        self.logger.debug('XXXXXXXXXXXXXXXXXXX {}'.format(new_block_queue_item.new_block.header.block_number))
                         await self.handle_new_block(new_block=new_block_queue_item.new_block,
                                                     peer=new_block_queue_item.peer,
                                                     propogate_to_network=new_block_queue_item.propogate_to_network,
                                                     from_rpc=new_block_queue_item.from_rpc)
-                        self.logger.debug('YYYYYYYYYYYYYYYYYYY {}'.format(new_block_queue_item.new_block.header.block_number))
                 except OperationCancelled:
                     # Silently swallow OperationCancelled exceptions because we run unsupervised (i.e.
                     # with ensure_future()). Our caller will also get an OperationCancelled anyway, and
@@ -867,7 +865,6 @@ class RegularChainSyncer(BaseService, PeerSubscriber):
             # This will only happen if we have chains that they need,
             # but they have no chains that we need.
 
-            #self.logger.debug('ZZZZZZZZZZZZZZZ {}, {}'.format(len(hash_positions_of_ours_that_they_need),len(hash_positions_of_theirs_that_we_need)))
             if len(hash_positions_of_ours_that_they_need) > 0 and len(hash_positions_of_theirs_that_we_need) == 0:
                 self.logger.debug("Fast sync: deleting chains we have that are not in consensus.")
                 for idx in hash_positions_of_ours_that_they_need:

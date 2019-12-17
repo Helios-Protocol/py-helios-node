@@ -115,11 +115,10 @@ class PhotonVM(VM):
                                                                                         List[Receipt],
                                                                                         List[PhotonComputation],
                                                                                         List[PhotonComputation],
-                                                                                        List[PhotonReceiveTransaction],
                                                                                         List[PhotonTransaction]]:
             
         # First, run all of the receive transactions
-        last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, block.header)
+        last_header, receive_receipts, receive_computations = self._apply_all_receive_transactions(block.receive_transactions, block.header)
         
         current_nonce_for_computation_calls = None
 
@@ -202,10 +201,13 @@ class PhotonVM(VM):
         # Combine receipts in the send transaction, receive transaction order
         receipts.extend(receive_receipts)
 
-        return last_header, receipts, receive_computations, send_computations, processed_receive_transactions, computation_call_send_transactions
+        return last_header, receipts, receive_computations, send_computations, computation_call_send_transactions
 
-    def save_recievable_transactions(self,block_header_hash: Hash32, computations: List[PhotonComputation], receive_transactions: List[PhotonReceiveTransaction]) -> None:
-        for computation in computations:
+    def save_recievable_transactions(self,
+                                     block_header_hash: Hash32,
+                                     send_computations: List[PhotonComputation],
+                                     receive_computations: List[PhotonComputation]) -> None:
+        for computation in send_computations:
             msg = computation.msg
             transaction_context = computation.transaction_context
             if not computation.is_error:
@@ -214,20 +216,28 @@ class PhotonVM(VM):
                                                                  block_header_hash,
                                                                  msg.is_create)
 
-        # Refunds
-        for receive_transaction in receive_transactions:
-            if not receive_transaction.is_refund and receive_transaction.remaining_refund != 0:
-                send_transaction = receive_transaction.referenced_send_transaction
-                if send_transaction is None:
-                    raise ValidationError("The provided receive transaction is missing it's referenced send transaction. "
-                                          "Make sure you haven't copied the transactions and forgotten to copy the referenced transaction.")
+        for computation in receive_computations:
+            # Process refunds here
+            if computation.transaction_context.is_receive and not computation.transaction_context.is_refund:
+                # this kind of receive transaction may include a nonzero gas refund. Must add it in now
+                # It gets a refund if send has data and is not create. ie. there was a computation on receive
 
-                refund_address = send_transaction.refund_address
-                self.logger.debug("SAVING RECEIVABLE REFUND TX WITH HASH {} ON CHAIN {}: {}".format(encode_hex(receive_transaction.hash), encode_hex(refund_address), receive_transaction.as_dict()))
+                if computation.msg.data != b'' and not computation.msg.is_create:
+                    gas_refund_amount = computation.get_gas_remaining_including_refunds()
 
-                self.state.account_db.add_receivable_transaction(refund_address,
-                                                                 receive_transaction.hash,
-                                                                 block_header_hash)
+                    if gas_refund_amount > 0:
+                        self.logger.debug("SAVING RECEIVABLE REFUND TX WITH HASH {} ON CHAIN {}".format(
+                            encode_hex(computation.transaction_context.receive_tx_hash),
+                            encode_hex(computation.transaction_context.refund_address)))
+
+
+                        self.state.account_db.add_receivable_transaction(computation.transaction_context.refund_address,
+                                                                         computation.transaction_context.receive_tx_hash,
+                                                                         block_header_hash,
+                                                                         refund_amount=gas_refund_amount)
+
+
+
 
     def apply_receipt_to_header(self, base_header: BaseBlockHeader, receipt: Receipt) -> BaseBlockHeader:
         new_header = base_header.copy(

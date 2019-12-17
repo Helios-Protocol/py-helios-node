@@ -67,7 +67,7 @@ deps = {
         "pytest-cov==2.5.1",
         "pytest-watch>=4.1.0,<5",
         "pytest-xdist==1.18.1",
-        "py-solc==3.2.0",
+        "py-helios-solc==3.2.1",
         "matplotlib",
         # only needed for hp2p
         "pytest-asyncio-network-simulator==0.1.0a2;python_version>='3.6'",
