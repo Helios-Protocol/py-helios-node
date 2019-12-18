@@ -1156,126 +1156,126 @@ def test_surrogatecall_from_compiled():
 
 test_surrogatecall_from_compiled()
 exit()
-
-
-def test_send_from_compiled():
-    # testdb = MemoryDB()
-    # create_predefined_blockchain_database(testdb)
-
-    absolute_dir = os.path.dirname(os.path.realpath(__file__))
-    testdb = ReadOnlyDB(LevelDB(absolute_dir + "/predefined_databases/test_contract"))
-    deployed_contract_address = decode_hex('0xde4d82cbf59478edc432e03fe29f5930b14a4dd8')
-
-    w3 = Web3()
-
-    max_gas = 20000000
-
-    contract_interface = compile_and_get_contract_interface('test_computation_calls', 'Test')
-
-    tx_value = 1000
-    tx_gas_price = 1
-    call_to = RECEIVER.public_key.to_canonical_address()
-    call_value = 100
-
-    #
-    # Test call
-    #
-
-    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
-    min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
-
-    origin_initial_balance = chain.get_vm().state.account_db.get_balance(
-        TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    Test = w3.hls.contract(
-        address=Web3.toChecksumAddress(deployed_contract_address),
-        abi=contract_interface['abi']
-    )
-
-    # address payable call_to, uint256 call_value
-    w3_tx = Test.functions.test_send(call_to, call_value).buildTransaction(W3_TX_DEFAULTS)
-
-    send_tx_1 = chain.create_and_sign_transaction_for_queue_block(
-        gas_price=tx_gas_price,
-        gas=max_gas,
-        to=deployed_contract_address,
-        value=tx_value,
-        data=decode_hex(w3_tx['data']),
-    )
-
-    chain.import_current_queue_block()
-
-    receiver_chain = TestnetChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY)
-    receiver_chain.populate_queue_block_with_receive_tx()
-
-    receiver_block = receiver_chain.import_current_queue_block()
-
-    expected_refund_1_amount = max_gas - send_tx_1.intrinsic_gas
-    refund_1_amount = receiver_block.receive_transactions[0]['remaining_refund']
-
-    print(refund_1_amount)
-    assert (expected_refund_1_amount == refund_1_amount)
-
-    assert (len(receiver_block.transactions) == 1)
-
-    computation_call_tx = receiver_block.transactions[0]
-
-    assert (computation_call_tx['gas'] == call_gas + GAS_CALLSTIPEND)
-    assert (computation_call_tx['to'] == call_to)
-    assert (computation_call_tx['gas_price'] == tx_gas_price)
-    assert (computation_call_tx['value'] == call_value)
-    assert (computation_call_tx['data'] == call_data)
-    assert (computation_call_tx['caller'] == deployed_contract_address)
-    assert (computation_call_tx['origin'] == TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-
-    # things that change for surrogate
-    assert (computation_call_tx['code_address'] == call_code_address)
-    assert (computation_call_tx['create_address'] == b'')
-    assert (computation_call_tx['execute_on_send'] == call_execute_on_send)
-
-    remaining_balance_on_contract = receiver_chain.get_vm().state.account_db.get_balance(deployed_contract_address)
-    assert (remaining_balance_on_contract == tx_value - call_value)
-
-    origin_remaining_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    # print(origin_remaining_balance-origin_initial_balance)
-    # print(max_gas*tx_gas_price+tx_value)
-    # print(max_gas*tx_gas_price+tx_value + (origin_remaining_balance-origin_initial_balance))
-    assert (origin_remaining_balance - origin_initial_balance == -1 * (max_gas * tx_gas_price + tx_value))
-
-    #
-    # Receive call tx and get refund
-    #
-
-    chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
-    initial_balance = chain.get_vm().state.account_db.get_balance(RECEIVER.public_key.to_canonical_address())
-    chain.populate_queue_block_with_receive_tx()
-    block = chain.import_current_queue_block()
-    final_balance = chain.get_vm().state.account_db.get_balance(RECEIVER.public_key.to_canonical_address())
-    assert (final_balance - initial_balance == call_value)
-
-    refund_2_amount = block.receive_transactions[0]['remaining_refund']
-
-    expected_refund_2_amount = call_gas + GAS_CALLSTIPEND - computation_call_tx.intrinsic_gas
-    assert (expected_refund_2_amount == refund_2_amount)
-
-    # it will receive 2 refunds as long as all the gas wasn't used for the call
-    # on the call that uses all gas, make sure the first tx doesnt generate a refund
-
-    print("waiting {} seconds before importing next block".format(min_time_between_blocks))
-    time.sleep(min_time_between_blocks)
-
-    origin_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-                                TESTNET_GENESIS_PRIVATE_KEY)
-    origin_chain.populate_queue_block_with_receive_tx()
-    origin_chain.import_current_queue_block()
-
-    # make sure there are no more receivable transactions
-    assert (len(origin_chain.create_receivable_transactions()) == 0)
-    origin_final_balance = origin_chain.get_vm().state.account_db.get_balance(
-        TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-
-    # Refund was the amount expected from the two refund transactions
-    expected_origin_final_balance = origin_initial_balance - max_gas - tx_value + refund_1_amount + refund_2_amount
-    assert (origin_final_balance == expected_origin_final_balance)
-
-
-test_send_from_compiled()
+#
+#
+# def test_send_from_compiled():
+#     # testdb = MemoryDB()
+#     # create_predefined_blockchain_database(testdb)
+#
+#     absolute_dir = os.path.dirname(os.path.realpath(__file__))
+#     testdb = ReadOnlyDB(LevelDB(absolute_dir + "/predefined_databases/test_contract"))
+#     deployed_contract_address = decode_hex('0xde4d82cbf59478edc432e03fe29f5930b14a4dd8')
+#
+#     w3 = Web3()
+#
+#     max_gas = 20000000
+#
+#     contract_interface = compile_and_get_contract_interface('test_computation_calls', 'Test')
+#
+#     tx_value = 1000
+#     tx_gas_price = 1
+#     call_to = RECEIVER.public_key.to_canonical_address()
+#     call_value = 100
+#
+#     #
+#     # Test call
+#     #
+#
+#     chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+#     min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
+#
+#     origin_initial_balance = chain.get_vm().state.account_db.get_balance(
+#         TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#     Test = w3.hls.contract(
+#         address=Web3.toChecksumAddress(deployed_contract_address),
+#         abi=contract_interface['abi']
+#     )
+#
+#     # address payable call_to, uint256 call_value
+#     w3_tx = Test.functions.test_send(call_to, call_value).buildTransaction(W3_TX_DEFAULTS)
+#
+#     send_tx_1 = chain.create_and_sign_transaction_for_queue_block(
+#         gas_price=tx_gas_price,
+#         gas=max_gas,
+#         to=deployed_contract_address,
+#         value=tx_value,
+#         data=decode_hex(w3_tx['data']),
+#     )
+#
+#     chain.import_current_queue_block()
+#
+#     receiver_chain = TestnetChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY)
+#     receiver_chain.populate_queue_block_with_receive_tx()
+#
+#     receiver_block = receiver_chain.import_current_queue_block()
+#
+#     expected_refund_1_amount = max_gas - send_tx_1.intrinsic_gas
+#     refund_1_amount = receiver_block.receive_transactions[0]['remaining_refund']
+#
+#     print(refund_1_amount)
+#     assert (expected_refund_1_amount == refund_1_amount)
+#
+#     assert (len(receiver_block.transactions) == 1)
+#
+#     computation_call_tx = receiver_block.transactions[0]
+#
+#     assert (computation_call_tx['gas'] == call_gas + GAS_CALLSTIPEND)
+#     assert (computation_call_tx['to'] == call_to)
+#     assert (computation_call_tx['gas_price'] == tx_gas_price)
+#     assert (computation_call_tx['value'] == call_value)
+#     assert (computation_call_tx['data'] == call_data)
+#     assert (computation_call_tx['caller'] == deployed_contract_address)
+#     assert (computation_call_tx['origin'] == TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#
+#     # things that change for surrogate
+#     assert (computation_call_tx['code_address'] == call_code_address)
+#     assert (computation_call_tx['create_address'] == b'')
+#     assert (computation_call_tx['execute_on_send'] == call_execute_on_send)
+#
+#     remaining_balance_on_contract = receiver_chain.get_vm().state.account_db.get_balance(deployed_contract_address)
+#     assert (remaining_balance_on_contract == tx_value - call_value)
+#
+#     origin_remaining_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#     # print(origin_remaining_balance-origin_initial_balance)
+#     # print(max_gas*tx_gas_price+tx_value)
+#     # print(max_gas*tx_gas_price+tx_value + (origin_remaining_balance-origin_initial_balance))
+#     assert (origin_remaining_balance - origin_initial_balance == -1 * (max_gas * tx_gas_price + tx_value))
+#
+#     #
+#     # Receive call tx and get refund
+#     #
+#
+#     chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+#     initial_balance = chain.get_vm().state.account_db.get_balance(RECEIVER.public_key.to_canonical_address())
+#     chain.populate_queue_block_with_receive_tx()
+#     block = chain.import_current_queue_block()
+#     final_balance = chain.get_vm().state.account_db.get_balance(RECEIVER.public_key.to_canonical_address())
+#     assert (final_balance - initial_balance == call_value)
+#
+#     refund_2_amount = block.receive_transactions[0]['remaining_refund']
+#
+#     expected_refund_2_amount = call_gas + GAS_CALLSTIPEND - computation_call_tx.intrinsic_gas
+#     assert (expected_refund_2_amount == refund_2_amount)
+#
+#     # it will receive 2 refunds as long as all the gas wasn't used for the call
+#     # on the call that uses all gas, make sure the first tx doesnt generate a refund
+#
+#     print("waiting {} seconds before importing next block".format(min_time_between_blocks))
+#     time.sleep(min_time_between_blocks)
+#
+#     origin_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+#                                 TESTNET_GENESIS_PRIVATE_KEY)
+#     origin_chain.populate_queue_block_with_receive_tx()
+#     origin_chain.import_current_queue_block()
+#
+#     # make sure there are no more receivable transactions
+#     assert (len(origin_chain.create_receivable_transactions()) == 0)
+#     origin_final_balance = origin_chain.get_vm().state.account_db.get_balance(
+#         TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+#
+#     # Refund was the amount expected from the two refund transactions
+#     expected_origin_final_balance = origin_initial_balance - max_gas - tx_value + refund_1_amount + refund_2_amount
+#     assert (origin_final_balance == expected_origin_final_balance)
+#
+#
+# test_send_from_compiled()

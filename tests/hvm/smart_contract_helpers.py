@@ -1,5 +1,8 @@
 import os
 import time
+from typing import Type
+
+from hvm.utils.spoof import SpoofTransaction
 
 from helios.dev_tools import create_valid_block_at_timestamp
 from hvm import TestnetChain
@@ -22,15 +25,15 @@ from pathlib import Path
 home = str(Path.home())
 
 # os.environ["SOLC_BINARY"] = home + "/.py-solc/solc-v0.4.25/bin/solc"
-#os.environ["SOLC_BINARY"] = home + "/solidity/cmake-build-debug/solc/solc"
-os.environ["SOLC_BINARY"] = home + "/.py-helios-solc/solc-v100.5.12/bin/solc"
+#os.environ["SOLC_BINARY"] = home + "/solidity/build/solc/solc"
+#os.environ["SOLC_BINARY"] = home + "/.py-helios-solc/solc-v100.5.12/bin/solc"
 
 try:
     solc_version = get_solc_version()
 except Exception:
     print("Solc not found. Installing")
     from helios_solc import install_solc
-    install_solc('v100.5.12')
+    install_solc('v100.5.15')
 
 from helios_web3 import HeliosWeb3 as Web3
 
@@ -94,7 +97,7 @@ def import_all_pending_smart_contract_blocks(db, private_key = TESTNET_GENESIS_P
     return list_of_smart_contracts
 
 
-def deploy_contract(db, base_filename:str, contract_name: str, deploy_private_key = TESTNET_GENESIS_PRIVATE_KEY, vm_class: BaseVM = PhotonVM):
+def deploy_contract(db, base_filename:str, contract_name: str, deploy_private_key = TESTNET_GENESIS_PRIVATE_KEY, vm_class: Type[BaseVM] = PhotonVM):
 
     contract_interface = compile_and_get_contract_interface(base_filename, contract_name)
 
@@ -153,3 +156,30 @@ def assemble(*codes):
         hexstr_if_str(to_bytes, element)
         for element in codes
     )
+
+
+def call_on_chain(testdb, from_address, chain_address, data, code_address = b'', convert_to_int = True):
+    smart_contract_chain = TestnetTesterChain(testdb, chain_address, TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    tx_nonce = smart_contract_chain.get_vm().state.account_db.get_nonce(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
+    max_gas = 20000000
+    transaction = smart_contract_chain.create_transaction(
+        gas_price=1,
+        gas=max_gas,
+        to=chain_address,
+        value=0,
+        nonce=tx_nonce,
+        data=data,
+        code_address=code_address,
+        v=0,
+        r=0,
+        s=0
+    )
+
+    spoof_transaction = SpoofTransaction(transaction, from_=from_address)
+
+    result = smart_contract_chain.get_transaction_result(spoof_transaction)
+
+    if convert_to_int:
+        return to_int(result)
+    else:
+        return result

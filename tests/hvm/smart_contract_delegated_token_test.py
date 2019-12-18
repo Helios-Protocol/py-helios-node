@@ -139,37 +139,13 @@ from tests.hvm.smart_contract_helpers import (
     import_all_pending_smart_contract_blocks,
     format_receipt_for_web3_to_extract_events,
     deploy_contract,
-    compile_and_get_contract_interface)
+    compile_and_get_contract_interface, call_on_chain)
 SIMPLE_TOKEN_SOLIDITY_SRC_FILE = 'contract_data/erc20.sol'
 
 
 from rlp_cython.sedes.big_endian_int import BigEndianInt
 
-def call_on_chain(testdb, from_address, chain_address, data, code_address = b'', convert_to_int = True):
-    smart_contract_chain = TestnetTesterChain(testdb, chain_address, TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
-    tx_nonce = smart_contract_chain.get_vm().state.account_db.get_nonce(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
-    max_gas = 20000000
-    transaction = smart_contract_chain.create_transaction(
-        gas_price=1,
-        gas=max_gas,
-        to=chain_address,
-        value=0,
-        nonce=tx_nonce,
-        data=data,
-        code_address=code_address,
-        v=0,
-        r=0,
-        s=0
-    )
 
-    spoof_transaction = SpoofTransaction(transaction, from_=from_address)
-
-    result = smart_contract_chain.get_transaction_result(spoof_transaction)
-
-    if convert_to_int:
-        return to_int(result)
-    else:
-        return result
 
 
 def test_initial_deploy_min_and_re_mint_tokens():

@@ -23,7 +23,7 @@ class Message(object):
     __slots__ = [
         'to', 'sender', 'value', 'data', 'depth', 'gas', 'code', '_code_address',
         'create_address', 'should_transfer_value', 'is_static', 'refund_amount',
-        'execute_on_send', 'nonce'
+        'execute_on_send', 'nonce', 'use_external_smart_contract_storage'
     ]
 
     logger = logging.getLogger('hvm.vm.message.Message')
@@ -43,7 +43,8 @@ class Message(object):
                  is_static: bool=False,
                  refund_amount: int=0,
                  execute_on_send: bool=False,
-                 nonce: int=0):
+                 nonce: int=0,
+                 use_external_smart_contract_storage = False):
         validate_uint256(gas, title="Message.gas")
         self.gas = gas  # type: int
 
@@ -77,7 +78,7 @@ class Message(object):
 
         if code_address is not None:
             validate_canonical_address(code_address, title="Message.code_address")
-        self.code_address = code_address
+        self._code_address = code_address
 
         validate_is_boolean(should_transfer_value, title="Message.should_transfer_value")
         self.should_transfer_value = should_transfer_value
@@ -90,6 +91,9 @@ class Message(object):
 
         validate_is_boolean(execute_on_send, title="Message.execute_on_send")
         self.execute_on_send = execute_on_send
+
+        validate_is_boolean(use_external_smart_contract_storage, title="Message.use_external_smart_contract_storage")
+        self.use_external_smart_contract_storage = use_external_smart_contract_storage
 
 
     @property

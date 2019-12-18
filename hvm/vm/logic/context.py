@@ -41,7 +41,7 @@ def address(computation):
     computation.stack_push_bytes(computation.transaction_context.this_chain_address)
 
 def code_address(computation):
-    computation.stack_push_bytes(computation.transaction_context.tx_code_address)
+    computation.stack_push_bytes(computation.transaction_context.smart_contract_storage_address)
 
 def caller(computation):
     computation.stack_push_bytes(computation.msg.sender)

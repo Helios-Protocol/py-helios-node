@@ -11,9 +11,17 @@ if TYPE_CHECKING:
 
 
 def get_value_from_storage(computation, slot, from_journal = True):
-    if computation.transaction_context.is_surrogate_call or computation.transaction_context.is_send:
+    if computation.msg.use_external_smart_contract_storage:
+        # In this case, we want to use the external smart contract storage of the smart contract that provided the currently executing code
+        current_value = computation.state.account_db.get_external_smart_contract_storage(
+            address=computation.transaction_context.this_chain_address,
+            smart_contract_address=computation.msg.code_address,
+            slot=slot,
+            from_journal=from_journal
+        )
+    elif computation.transaction_context.is_surrogate_call or computation.transaction_context.is_send:
         if computation.msg.is_create:
-            # Save it in the storage allocated for the newly created address
+            # Load it from the storage allocated for the newly created address
             current_value = computation.state.account_db.get_external_smart_contract_storage(
                 address=computation.transaction_context.this_chain_address,
                 smart_contract_address=computation.msg.resolved_to,
@@ -22,7 +30,7 @@ def get_value_from_storage(computation, slot, from_journal = True):
             )
         else:
 
-            # Save it in the storage allocated for the original contract address
+            # Load it from the storage allocated for the original contract address
             current_value = computation.state.account_db.get_external_smart_contract_storage(
                 address=computation.transaction_context.this_chain_address,
                 smart_contract_address=computation.transaction_context.smart_contract_storage_address,

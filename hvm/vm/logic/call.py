@@ -10,7 +10,7 @@ from hvm.exceptions import (
     OutOfGas,
     WriteProtection,
     AttemptedToAccessExternalStorage,
-    ForbiddenOperationForExecutingOnSend, ForbiddenOperationForSurrogateCall)
+    ForbiddenOperationForExecutingOnSend, ForbiddenOperationForSurrogateCall, DepreciatedVMFunctionality)
 
 from hvm.vm.opcode import (
     Opcode,
@@ -32,6 +32,18 @@ class BaseCall(Opcode, metaclass=ABCMeta):
     @abstractmethod
     def get_call_params(self, computation):
         raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def __call__(self, computation):
+        raise NotImplementedError("Must be implemented by subclasses")
+
+
+class LocalCall(BaseCall):
+    def compute_msg_extra_gas(self, computation, gas, to, value):
+        pass
+
+    def get_call_params(self, computation):
+        pass
 
     def compute_msg_gas(self, computation, gas, to, value):
         extra_gas = self.compute_msg_extra_gas(computation, gas, to, value)
@@ -57,6 +69,7 @@ class BaseCall(Opcode, metaclass=ABCMeta):
             memory_output_size,
             should_transfer_value,
             is_static,
+            use_external_smart_contract_storage,
         ) = self.get_call_params(computation)
 
         computation.extend_memory(memory_input_start_position, memory_input_size)
@@ -77,6 +90,9 @@ class BaseCall(Opcode, metaclass=ABCMeta):
 
         insufficient_funds = should_transfer_value and sender_balance < value
         stack_too_deep = computation.msg.depth + 1 > constants.STACK_DEPTH_LIMIT
+
+        if use_external_smart_contract_storage and not is_static:
+            raise AttemptedToAccessExternalStorage("Computations using external smart contract storage must be static.")
 
         if insufficient_funds or stack_too_deep:
             computation.return_data = b''
@@ -112,6 +128,8 @@ class BaseCall(Opcode, metaclass=ABCMeta):
                 'code_address': code_address,
                 'should_transfer_value': should_transfer_value,
                 'is_static': is_static,
+                'nonce': computation.msg.nonce,
+                'use_external_smart_contract_storage': use_external_smart_contract_storage,
             }
             if sender is not None:
                 child_msg_kwargs['sender'] = sender
@@ -201,7 +219,8 @@ class Call(BaseCall):
 
         call_data = computation.memory_read_bytes(memory_input_start_position, memory_input_size)
 
-
+        if is_static:
+            raise AttemptedToAccessExternalStorage("Static calls cannot use call or surrogatecall because they modify the state")
 
         # Pre-call checks
         # This could actually execute on send if it is within a create transaction. But not if that create transaction has tx_execute_on_send
@@ -260,7 +279,7 @@ class Call(BaseCall):
                 'code': b'',
                 'code_address': code_address,
                 'should_transfer_value': should_transfer_value,
-                'is_static': is_static,
+                'is_static': False,
                 'execute_on_send': execute_on_send,
             }
             if sender is not None:
@@ -280,7 +299,7 @@ class Call(BaseCall):
 
 
 
-class CallCode(BaseCall):
+class CallCode(LocalCall):
     def compute_msg_extra_gas(self, computation, gas, to, value):
         return constants.GAS_CALLVALUE if value else 0
 
@@ -299,6 +318,9 @@ class CallCode(BaseCall):
         to = computation.transaction_context.this_chain_address
         sender = computation.transaction_context.this_chain_address
 
+        if value != 0:
+            raise DepreciatedVMFunctionality("CallCode cannot send value to another chain. Value must = 0")
+
         return (
             gas,
             value,
@@ -311,10 +333,11 @@ class CallCode(BaseCall):
             memory_output_size,
             False,  # should_transfer_value,
             computation.msg.is_static,
+            computation.msg.use_external_smart_contract_storage,
         )
 
 
-class DelegateCall(BaseCall):
+class DelegateCall(LocalCall):
     def compute_msg_gas(self, computation, gas, to, value):
         return gas, gas
 
@@ -348,8 +371,45 @@ class DelegateCall(BaseCall):
             memory_output_size,
             False,  # should_transfer_value,
             computation.msg.is_static,
+            computation.msg.use_external_smart_contract_storage,
         )
 
+# StaticCall will allow the smart contract read only access to the external smart contract storage
+class StaticCall(LocalCall):
+    def compute_msg_extra_gas(self, computation, gas, to, value):
+        return 0
+
+    def compute_msg_gas(self, computation, gas, to, value):
+        extra_gas = self.compute_msg_extra_gas(computation, gas, to, value)
+        callstipend = 0
+        return compute_eip150_msg_gas(
+            computation, gas, extra_gas, value, self.mnemonic, callstipend)
+
+    def get_call_params(self, computation):
+        gas = computation.stack_pop1_int()
+        to = force_bytes_to_address(computation.stack_pop1_bytes())
+
+        (
+            memory_input_start_position,
+            memory_input_size,
+            memory_output_start_position,
+            memory_output_size,
+        ) = computation.stack_pop_ints(num_items=4)
+
+        return (
+            gas,
+            0,  # value
+            to,
+            None,  # sender
+            None,  # code_address
+            memory_input_start_position,
+            memory_input_size,
+            memory_output_start_position,
+            memory_output_size,
+            False,  # should_transfer_value,
+            True,  # is_static,
+            True, # use_external_smart_contract_storage
+        )
 
 #
 # EIP150
@@ -420,31 +480,7 @@ class CallEIP161(CallEIP150):
 #
 # Byzantium
 #
-class StaticCall(CallEIP161):
-    def get_call_params(self, computation):
-        gas = computation.stack_pop1_int()
-        to = force_bytes_to_address(computation.stack_pop1_bytes())
 
-        (
-            memory_input_start_position,
-            memory_input_size,
-            memory_output_start_position,
-            memory_output_size,
-        ) = computation.stack_pop_ints()
-
-        return (
-            gas,
-            0,  # value
-            to,
-            None,  # sender
-            None,  # code_address
-            memory_input_start_position,
-            memory_input_size,
-            memory_output_start_position,
-            memory_output_size,
-            False,  # should_transfer_value,
-            True,  # is_static
-        )
 
 
 class CallByzantium(CallEIP161):
@@ -465,6 +501,9 @@ class StaticCallHelios(StaticCall):
     def __call__(self, computation):
         raise AttemptedToAccessExternalStorage(
             "The StaticCall function uses storage on a different contract. This is not allowed on Helios. Use DelegateCall instead.")
+
+class StaticCallPhoton(StaticCall):
+    pass
 
 
 class CallHelios(CallByzantium):

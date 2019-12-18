@@ -11,8 +11,8 @@ from hvm.vm.forks.photon.constants import (
     GAS_EXTCODEHASH_EIP1052,
     GAS_EXTCODEHASH_EIP1884,
     GAS_BALANCE_EIP1884,
-    GAS_SLOAD_EIP1884
-)
+    GAS_SLOAD_EIP1884,
+    GAS_CALL_EIP150)
 
 from hvm.vm.logic.storage import sstore_photon, sload_photon
 from hvm.vm.logic.system import _selfdestruct, selfdestruct_photon
@@ -81,6 +81,11 @@ PHOTON_UPDATED_OPCODES = {
     ),
 
     # Repriced opcodes
+    opcode_values.STATICCALL: call.StaticCallPhoton.configure(
+        __name__='opcode:STATICCALL',
+        mnemonic=mnemonics.STATICCALL,
+        gas_cost=GAS_CALL_EIP150,
+    )(),
     opcode_values.BALANCE: as_opcode(
         logic_fn=context.balance,
         mnemonic=mnemonics.BALANCE,

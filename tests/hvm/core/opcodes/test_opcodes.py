@@ -81,7 +81,8 @@ def setup_computation(
         is_receive=False,
         is_surrogate=False,
         is_computation_call_origin = False,
-        is_create_tx = False):
+        is_create_tx = False,
+         use_external_smart_contract_storage = False):
 
     message = Message(
         to=to,
@@ -92,7 +93,8 @@ def setup_computation(
         code=code,
         gas=gas,
         code_address=code_address,
-        execute_on_send=execute_on_send
+        execute_on_send=execute_on_send,
+        use_external_smart_contract_storage = use_external_smart_contract_storage
     )
 
     if is_receive:
@@ -1795,3 +1797,59 @@ def test_create2_call(vm_class, tx_gas, value, is_receive, is_surrogate, computa
             assert (comp.transaction_context.child_tx_origin == CANONICAL_ADDRESS_C if computation_call_origin else call_message.sender)
             assert (comp.transaction_context.is_computation_call_origin == computation_call_origin)
             assert (comp.transaction_context.is_surrogate_call == is_surrogate)
+            
+            
+            
+@pytest.mark.parametrize(
+    'vm_class, use_external_smart_contract_storage, expected_output',
+    (
+        ( # not enough gas in transaction
+            PhotonVM,
+            True,
+            1
+        ),
+        ( # not enough gas in transaction
+            PhotonVM,
+            False,
+            0
+        ),
+
+
+    )
+)
+def test_use_external_smart_contract_storage(vm_class, use_external_smart_contract_storage, expected_output):
+    slot = 0
+    code = assemble(
+        # store call parameters in stack
+        opcode_values.PUSH32,
+        encode_hex(pad32(int_to_big_endian(slot))),  # slot
+
+        # call the opcode
+        opcode_values.SLOAD,  # load
+    )
+
+    # chain address is CANONICAL_ADDRESS_B
+    code_address = CANONICAL_ADDRESS_C
+
+    computation = setup_computation(
+        vm_class,
+        None,
+        code=code,
+        gas=20000000,
+        to=CANONICAL_ADDRESS_B,
+        data=b'',
+        is_receive=True,
+        is_surrogate=False,
+        code_address=code_address,
+        is_computation_call_origin=False,
+        execute_on_send=False,
+        use_external_smart_contract_storage=use_external_smart_contract_storage
+    )
+
+    computation.state.account_db.set_storage(CANONICAL_ADDRESS_B, 0, 0)
+    computation.state.account_db.set_external_smart_contract_storage(CANONICAL_ADDRESS_B, CANONICAL_ADDRESS_C, 0, 1)
+
+    comp = computation.apply_message()
+
+    assert(comp.stack_pop1_int() == expected_output)
+
