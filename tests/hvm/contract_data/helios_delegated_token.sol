@@ -106,6 +106,12 @@ contract HeliosDelegatedToken is ExecuteOnSend, Ownable, SmartContractChain {
     * @dev Returns true if the transaction has been received, false otherwise
     */
     function transactionReceived(bytes32 receipt_identifier) public view returns (bool){
+//        if(receipts[receipt_identifier]){
+//            log0('AAAAAAAAAAAAAA');
+//        }else{
+//            log0('BBBBBBBBBBBBBB');
+//        }
+
         return receipts[receipt_identifier];
     }
 

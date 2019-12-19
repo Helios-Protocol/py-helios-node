@@ -1,7 +1,7 @@
 from eth_typing import Hash32, Address
 from eth_utils import encode_hex
 
-from hvm.constants import BLOCK_GAS_LIMIT
+from hvm.constants import BLOCK_GAS_LIMIT, COMPUTATION_CALL_SEND_TRANSACTION_RECURSION_DEPTH_LIMIT
 from hvm.exceptions import ValidationError
 from hvm.utils.address import generate_contract_address
 from hvm.utils.rlp import diff_rlp_object
@@ -39,7 +39,7 @@ from hvm.rlp.headers import BaseBlockHeader, BlockHeader
 
 from hvm.vm.forks.boson import make_boson_receipt
 
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 from eth_bloom import (
     BloomFilter,
@@ -109,55 +109,43 @@ class PhotonVM(VM):
         return SpoofTransaction(transaction, from_=from_address)
 
 
-
-    def apply_all_transactions(self, block: PhotonBlock, private_key: PrivateKey = None) -> Tuple[
-                                                                                        BaseBlockHeader,
-                                                                                        List[Receipt],
-                                                                                        List[PhotonComputation],
-                                                                                        List[PhotonComputation],
-                                                                                        List[PhotonTransaction]]:
-            
-        # First, run all of the receive transactions
-        last_header, receive_receipts, receive_computations = self._apply_all_receive_transactions(block.receive_transactions, block.header)
-        
-        current_nonce_for_computation_calls = None
+    def create_computation_call_transactions_from_finished_computations(self,
+                                                                        finished_computations: List[PhotonComputation],
+                                                                        block: PhotonBlock,
+                                                                        current_nonce_for_computation_calls: int = None,
+                                                                        private_key_for_signing: PrivateKey = None) -> Tuple[List[PhotonTransaction], Optional[int]]:
 
         computation_call_send_transactions = []
-        for receive_computation in receive_computations:
+        for computation in finished_computations:
 
-            if receive_computation.transaction_context.has_data and not receive_computation.is_error:
+            if computation.transaction_context.has_data and not computation.is_error:
 
                 # Only check if there is actually transaction data because this will be an expensive function
-                external_call_messages = receive_computation.get_all_children_external_call_messages()
+                external_call_messages = computation.get_all_children_external_call_messages()
 
                 if len(external_call_messages) > 0:
                     # Do this in here for performance. We only compute it if there are computation calls.
                     if current_nonce_for_computation_calls is None:
                         current_nonce_for_computation_calls = self.get_nonce_for_computation_calls(block)
 
-                    gas_price = receive_computation.transaction_context.gas_price
-                    origin = receive_computation.transaction_context.child_tx_origin
-
                     for i in range(len(external_call_messages)):
                         call_message = external_call_messages[i]
-
-                        execute_on_send = call_message.execute_on_send
 
                         if call_message.is_create:
                             self.validate_create_call(call_message, current_nonce_for_computation_calls)
 
                         new_tx = self.create_transaction(
                             nonce = current_nonce_for_computation_calls,
-                            gas_price=gas_price,
+                            gas_price=computation.transaction_context.gas_price,
                             gas=call_message.gas,
                             to=call_message.to,
                             value=call_message.value,
                             data=call_message.data_as_bytes,
                             caller = block.header.chain_address,
-                            origin = origin,
+                            origin = computation.transaction_context.child_tx_origin,
                             code_address = call_message.child_tx_code_address,
                             create_address = call_message.child_tx_create_address,
-                            execute_on_send = execute_on_send
+                            execute_on_send = call_message.execute_on_send
                         )
 
                         self.logger.debug("Creating a new child transaction with parameters:"
@@ -170,43 +158,108 @@ class PhotonVM(VM):
                             encode_hex(new_tx.origin), encode_hex(new_tx.code_address), new_tx.execute_on_send
                         ))
 
-                        if private_key is not None:
+                        if private_key_for_signing is not None:
                             # sign it only if a private key was given. Otherwise, this is not a queueblock
-                            new_tx = new_tx.get_signed(private_key, self.network_id)
-
+                            new_tx = new_tx.get_signed(private_key_for_signing, self.network_id)
 
                         computation_call_send_transactions.append(new_tx)
 
                         current_nonce_for_computation_calls += 1
 
+        return computation_call_send_transactions, current_nonce_for_computation_calls
 
 
-        if len(computation_call_send_transactions) > 0:
-            if private_key is not None:
-                # the new computation transactions have been signed. Proceed with the new ones.
-                normal_send_transactions, _ = self.separate_normal_transactions_and_computation_calls(block.transactions)
-                normal_send_transactions.extend(computation_call_send_transactions)
-                send_transactions = normal_send_transactions
-            else:
-                # The new computation transactions have not been signed. Import the block with the existing transactions,
-                # but return the unsigned computation transactions to be verified that they are identical other 
-                # than the signature.
-                send_transactions = block.transactions
+    def choose_which_transactions_to_apply(self,
+                                           computation_call_send_transactions: List[PhotonTransaction],
+                                           block_computation_call_send_transactions_remaining: List[PhotonTransaction] = [],
+                                           private_key: PrivateKey = None) -> Tuple[List[PhotonTransaction], List[PhotonTransaction]]:
+
+        if len(computation_call_send_transactions) != 0 and len(block_computation_call_send_transactions_remaining) == 0:
+            if private_key is None:
+                raise ValidationError("The block doesn't have the send transactions generated by the compuation call. "
+                                      "If this is a queue block, then you must provide a private key for signing")
+            # They have been signed, lets add them to the list
+            send_transactions_to_apply = computation_call_send_transactions
         else:
-            send_transactions = block.transactions
+            send_transactions_to_apply = block_computation_call_send_transactions_remaining[:len(computation_call_send_transactions)]
+            block_computation_call_send_transactions_remaining = block_computation_call_send_transactions_remaining[len(computation_call_send_transactions):]
 
-        # Then, run all of the send transactions
-        last_header, receipts, send_computations = self._apply_all_send_transactions(send_transactions, last_header)
+        return send_transactions_to_apply, block_computation_call_send_transactions_remaining
+
+        
+
+    def apply_all_transactions(self, block: PhotonBlock, private_key: PrivateKey = None) -> Tuple[
+                                                                                        BaseBlockHeader,
+                                                                                        List[Receipt],
+                                                                                        List[PhotonComputation],
+                                                                                        List[PhotonComputation],
+                                                                                        List[PhotonTransaction]]:
+            
+
+        # First, run all of the receive transactions
+        last_header, receive_receipts, receive_computations = self._apply_all_receive_transactions(block.receive_transactions, block.header)
+
+        computation_call_send_transactions, current_nonce_for_computation_calls = self.create_computation_call_transactions_from_finished_computations(
+            receive_computations,
+            block,
+            None,
+            private_key
+        )
+
+        # Variables to hold the totals
+        all_computation_call_send_transactions = computation_call_send_transactions
+        send_receipts = []
+        all_send_computations = []
+
+        block_normal_send_transactions, block_computation_call_send_transactions = self.separate_normal_transactions_and_computation_calls(block.transactions)
+
+        computation_call_send_transactions_to_apply, block_computation_call_send_transactions_remaining = self.choose_which_transactions_to_apply(
+                   computation_call_send_transactions,
+                   block_computation_call_send_transactions,
+                   private_key
+            )
+
+        send_transactions_to_apply = block_normal_send_transactions
+        send_transactions_to_apply.extend(computation_call_send_transactions_to_apply)
+
+
+        for i in range(COMPUTATION_CALL_SEND_TRANSACTION_RECURSION_DEPTH_LIMIT):
+            # Then, run all of the send_transactions_to_apply
+            self.logger.debug("Applying send transactions with recursion depth {}".format(i))
+            last_header, receipts, send_computations = self._apply_all_send_transactions(send_transactions_to_apply, last_header)
+
+            send_receipts.extend(receipts)
+            all_send_computations.extend(send_computations)
+
+            computation_call_send_transactions, current_nonce_for_computation_calls = self.create_computation_call_transactions_from_finished_computations(
+                send_computations,
+                block,
+                current_nonce_for_computation_calls,
+                private_key
+            )
+
+            all_computation_call_send_transactions.extend(computation_call_send_transactions)
+
+            send_transactions_to_apply, block_computation_call_send_transactions_remaining = self.choose_which_transactions_to_apply(
+                   computation_call_send_transactions,
+                   block_computation_call_send_transactions_remaining,
+                   private_key
+            )
+
+
+            if len(send_transactions_to_apply) == 0:
+                break
 
         # Combine receipts in the send transaction, receive transaction order
-        receipts.extend(receive_receipts)
+        send_receipts.extend(receive_receipts)
 
-        return last_header, receipts, receive_computations, send_computations, computation_call_send_transactions
+        return last_header, send_receipts, receive_computations, all_send_computations, all_computation_call_send_transactions
 
     def save_recievable_transactions(self,
                                      block_header_hash: Hash32,
                                      send_computations: List[PhotonComputation],
                                      receive_computations: List[PhotonComputation]) -> None:
+
         for computation in send_computations:
             msg = computation.msg
             transaction_context = computation.transaction_context

@@ -4,13 +4,13 @@ from abc import (
 )
 
 from hvm import constants
-from hvm.constants import GAS_TX
 
 from hvm.exceptions import (
     OutOfGas,
-    WriteProtection,
     AttemptedToAccessExternalStorage,
-    ForbiddenOperationForExecutingOnSend, ForbiddenOperationForSurrogateCall, DepreciatedVMFunctionality)
+    ForbiddenOperationForSurrogateCall,
+    DepreciatedVMFunctionality)
+
 
 from hvm.vm.opcode import (
     Opcode,
@@ -24,11 +24,35 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from hvm.vm.forks.photon import PhotonComputation
 
+def max_child_gas_eip150(gas):
+    return gas - (gas // 64)
+
+def compute_msg_gas_internal(computation, gas, extra_gas, value, mnemonic, callstipend):
+    if computation.get_gas_remaining() < extra_gas:
+        # It feels wrong to raise an OutOfGas exception outside of GasMeter,
+        # but I don't see an easy way around it.
+        raise OutOfGas("Out of gas: Needed {0} - Remaining {1} - Reason: {2}".format(
+            extra_gas,
+            computation.get_gas_remaining(),
+            mnemonic,
+        ))
+    gas = min(
+        gas,
+        max_child_gas_eip150(computation.get_gas_remaining() - extra_gas))
+    total_fee = gas + extra_gas
+    child_msg_gas = gas + (callstipend if value else 0)
+    return child_msg_gas, total_fee
+
+
 class BaseCall(Opcode, metaclass=ABCMeta):
+    @abstractmethod
+    def compute_msg_gas(self, computation, gas, to, value):
+        raise NotImplementedError("Must be implemented by subclasses")
+
     @abstractmethod
     def compute_msg_extra_gas(self, computation, gas, to, value):
         raise NotImplementedError("Must be implemented by subclasses")
-
+    
     @abstractmethod
     def get_call_params(self, computation):
         raise NotImplementedError("Must be implemented by subclasses")
@@ -38,18 +62,18 @@ class BaseCall(Opcode, metaclass=ABCMeta):
         raise NotImplementedError("Must be implemented by subclasses")
 
 
-class LocalCall(BaseCall):
+class InternalCall(BaseCall):
+    def compute_msg_gas(self, computation, gas, to, value):
+        extra_gas = self.compute_msg_extra_gas(computation, gas, to, value)
+        callstipend = 0
+        return compute_msg_gas_internal(
+            computation, gas, extra_gas, value, self.mnemonic, callstipend)
+
     def compute_msg_extra_gas(self, computation, gas, to, value):
-        pass
+        return 0
 
     def get_call_params(self, computation):
         pass
-
-    def compute_msg_gas(self, computation, gas, to, value):
-        extra_gas = self.compute_msg_extra_gas(computation, gas, to, value)
-        total_fee = gas + extra_gas
-        child_msg_gas = gas + (constants.GAS_CALLSTIPEND if value else 0)
-        return child_msg_gas, total_fee
 
     def __call__(self, computation):
         computation.consume_gas(
@@ -155,14 +179,31 @@ class LocalCall(BaseCall):
                 computation.return_gas(child_computation.get_gas_remaining())
 
 
-class Call(BaseCall):
+class BaseExternalCall(BaseCall):
+    def compute_msg_gas(self, computation, gas, to, value, data):
+        from hvm.vm.forks.photon.transactions import get_photon_intrinsic_gas_normal
+        extra_gas = self.compute_msg_extra_gas(computation, gas, to, value)
+        tx_intrinsic_gas = get_photon_intrinsic_gas_normal(data)
+        
+        child_msg_gas, total_fee = compute_msg_gas_internal(
+            computation, gas, extra_gas, value, self.mnemonic,
+            constants.GAS_CALLSTIPEND)
+        
+        child_msg_gas = child_msg_gas + tx_intrinsic_gas
+        total_fee = total_fee + tx_intrinsic_gas
+        
+        return child_msg_gas, total_fee
+
     def compute_msg_extra_gas(self, computation, gas, to, value):
-        account_exists = computation.state.account_db.account_exists(to)
+        account_is_dead = (
+            not computation.state.account_db.account_exists(to) or
+            computation.state.account_db.account_is_empty(to)
+        )
 
         transfer_gas_fee = constants.GAS_CALLVALUE if value else 0
-        create_gas_fee = constants.GAS_NEWACCOUNT if not account_exists else 0
+        create_gas_fee = constants.GAS_NEWACCOUNT if (account_is_dead and value) else 0
         return transfer_gas_fee + create_gas_fee
-
+    
     def get_call_params(self, computation):
         gas = computation.stack_pop1_int()
         to = force_bytes_to_address(computation.stack_pop1_bytes())
@@ -224,20 +265,17 @@ class Call(BaseCall):
 
         # Pre-call checks
         # This could actually execute on send if it is within a create transaction. But not if that create transaction has tx_execute_on_send
-        if not computation.transaction_context.is_receive and computation.transaction_context.tx_execute_on_send:
-            raise ForbiddenOperationForExecutingOnSend("Computation executing on send cannot create new call transactions.")
+        # We allow this now.
+        # if not computation.transaction_context.is_receive and computation.transaction_context.tx_execute_on_send:
+        #     raise ForbiddenOperationForExecutingOnSend("Computation executing on send cannot create new call transactions.")
 
         if computation.transaction_context.is_surrogate_call:
             raise ForbiddenOperationForSurrogateCall("Surrogatecalls are not allowed to create children calls or surrogatecalls. They are only allowed to create delegatecalls.")
 
-
         #
         # Message gas allocation and fees
         #
-        child_msg_gas, child_msg_gas_fee = self.compute_msg_gas(computation, gas, to, value)
-
-        if child_msg_gas < GAS_TX:
-            raise OutOfGas("Calls and surrogatecalls require at least {} gas. But only {} was provided.".format(GAS_TX, child_msg_gas))
+        child_msg_gas, child_msg_gas_fee = self.compute_msg_gas(computation, gas, to, value, call_data)
 
         computation.consume_gas(child_msg_gas_fee, reason=self.mnemonic)
 
@@ -296,13 +334,7 @@ class Call(BaseCall):
             computation.stack_push_int(1)
 
 
-
-
-
-class CallCode(LocalCall):
-    def compute_msg_extra_gas(self, computation, gas, to, value):
-        return constants.GAS_CALLVALUE if value else 0
-
+class CallCode(InternalCall):
     def get_call_params(self, computation):
         gas = computation.stack_pop1_int()
         code_address = force_bytes_to_address(computation.stack_pop1_bytes())
@@ -337,13 +369,7 @@ class CallCode(LocalCall):
         )
 
 
-class DelegateCall(LocalCall):
-    def compute_msg_gas(self, computation, gas, to, value):
-        return gas, gas
-
-    def compute_msg_extra_gas(self, computation, gas, to, value):
-        return 0
-
+class DelegateCall(InternalCall):
     def get_call_params(self, computation):
         gas = computation.stack_pop1_int()
         code_address = force_bytes_to_address(computation.stack_pop1_bytes())
@@ -375,16 +401,7 @@ class DelegateCall(LocalCall):
         )
 
 # StaticCall will allow the smart contract read only access to the external smart contract storage
-class StaticCall(LocalCall):
-    def compute_msg_extra_gas(self, computation, gas, to, value):
-        return 0
-
-    def compute_msg_gas(self, computation, gas, to, value):
-        extra_gas = self.compute_msg_extra_gas(computation, gas, to, value)
-        callstipend = 0
-        return compute_eip150_msg_gas(
-            computation, gas, extra_gas, value, self.mnemonic, callstipend)
-
+class StaticCall(InternalCall):
     def get_call_params(self, computation):
         gas = computation.stack_pop1_int()
         to = force_bytes_to_address(computation.stack_pop1_bytes())
@@ -411,104 +428,21 @@ class StaticCall(LocalCall):
             True, # use_external_smart_contract_storage
         )
 
-#
-# EIP150
-#
-class CallEIP150(Call):
-    def compute_msg_gas(self, computation, gas, to, value):
-        extra_gas = self.compute_msg_extra_gas(computation, gas, to, value)
-        return compute_eip150_msg_gas(
-            computation, gas, extra_gas, value, self.mnemonic,
-            constants.GAS_CALLSTIPEND)
-
-
-class CallCodeEIP150(CallCode):
-    def compute_msg_gas(self, computation, gas, to, value):
-        extra_gas = self.compute_msg_extra_gas(computation, gas, to, value)
-        return compute_eip150_msg_gas(
-            computation, gas, extra_gas, value, self.mnemonic,
-            constants.GAS_CALLSTIPEND)
-
-
-class DelegateCallEIP150(DelegateCall):
-    def compute_msg_gas(self, computation, gas, to, value):
-        extra_gas = self.compute_msg_extra_gas(computation, gas, to, value)
-        callstipend = 0
-        return compute_eip150_msg_gas(
-            computation, gas, extra_gas, value, self.mnemonic, callstipend)
-
-
-def max_child_gas_eip150(gas):
-    return gas - (gas // 64)
-
-
-#
-# Added GAS_TX to gas
-#
-def compute_eip150_msg_gas(computation, gas, extra_gas, value, mnemonic, callstipend):
-    if computation.get_gas_remaining() < extra_gas:
-        # It feels wrong to raise an OutOfGas exception outside of GasMeter,
-        # but I don't see an easy way around it.
-        raise OutOfGas("Out of gas: Needed {0} - Remaining {1} - Reason: {2}".format(
-            extra_gas,
-            computation.get_gas_remaining(),
-            mnemonic,
-        ))
-    gas = min(
-        gas,
-        max_child_gas_eip150(computation.get_gas_remaining() - extra_gas))
-    total_fee = gas + extra_gas + GAS_TX
-    child_msg_gas = gas + (callstipend if value else 0) + GAS_TX
-    return child_msg_gas, total_fee
-
-
-#
-# EIP161
-#
-class CallEIP161(CallEIP150):
-    def compute_msg_extra_gas(self, computation, gas, to, value):
-        account_is_dead = (
-            not computation.state.account_db.account_exists(to) or
-            computation.state.account_db.account_is_empty(to)
-        )
-
-        transfer_gas_fee = constants.GAS_CALLVALUE if value else 0
-        create_gas_fee = constants.GAS_NEWACCOUNT if (account_is_dead and value) else 0
-        return transfer_gas_fee + create_gas_fee
-
-
-#
-# Byzantium
-#
-
-
-
-class CallByzantium(CallEIP161):
-    def get_call_params(self, computation):
-        call_params = super(CallByzantium, self).get_call_params(computation)
-        value = call_params[1]
-        if computation.msg.is_static and value != 0:
-            raise WriteProtection("Cannot modify state while inside of a STATICCALL context")
-        return call_params
-
 
 #
 # Helios
 #
-
 class StaticCallHelios(StaticCall):
-
     def __call__(self, computation):
         raise AttemptedToAccessExternalStorage(
             "The StaticCall function uses storage on a different contract. This is not allowed on Helios. Use DelegateCall instead.")
 
-class StaticCallPhoton(StaticCall):
+class CallHelios(BaseExternalCall):
     pass
 
-
-class CallHelios(CallByzantium):
-    pass
-
+#
+# Photon
+#
 class SurrogateCall(CallHelios):
     def get_call_params(self, computation):
         gas = computation.stack_pop1_int()
@@ -536,3 +470,6 @@ class SurrogateCall(CallHelios):
             computation.msg.is_static,
             execute_on_send
         )
+
+class StaticCallPhoton(StaticCall):
+    pass

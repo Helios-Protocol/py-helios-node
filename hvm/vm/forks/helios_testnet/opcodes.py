@@ -705,7 +705,7 @@ FRONTIER_OPCODES = {
         mnemonic=mnemonics.CREATE,
         gas_cost=constants.GAS_CREATE,
     )(),
-    opcode_values.CALL: call.Call.configure(
+    opcode_values.CALL: call.BaseExternalCall.configure(
         __name__='opcode:CALL',
         mnemonic=mnemonics.CALL,
         gas_cost=constants.GAS_CALL,
@@ -770,17 +770,17 @@ TANGERINE_WHISTLE_UPDATED_OPCODES = {
         mnemonic=mnemonics.SELFDESTRUCT,
         gas_cost=GAS_SELFDESTRUCT_EIP150,
     ),
-    opcode_values.CALL: call.CallEIP150.configure(
+    opcode_values.CALL: call.BaseExternalCall.configure(
         __name__='opcode:CALL',
         mnemonic=mnemonics.CALL,
         gas_cost=GAS_CALL_EIP150,
     )(),
-    opcode_values.CALLCODE: call.CallCodeEIP150.configure(
+    opcode_values.CALLCODE: call.CallCode.configure(
         __name__='opcode:CALLCODE',
         mnemonic=mnemonics.CALLCODE,
         gas_cost=GAS_CALL_EIP150,
     )(),
-    opcode_values.DELEGATECALL: call.DelegateCallEIP150.configure(
+    opcode_values.DELEGATECALL: call.DelegateCall.configure(
         __name__='opcode:DELEGATECALL',
         mnemonic=mnemonics.DELEGATECALL,
         gas_cost=GAS_CALL_EIP150,
@@ -805,7 +805,7 @@ SPURIOUS_DRAGON_UPDATED_OPCODES = {
         mnemonic=mnemonics.SELFDESTRUCT,
         gas_cost=GAS_SELFDESTRUCT_EIP150,
     ),
-    opcode_values.CALL: call.CallEIP161.configure(
+    opcode_values.CALL: call.BaseExternalCall.configure(
         __name__='opcode:CALL',
         mnemonic=mnemonics.CALL,
         gas_cost=GAS_CALL_EIP150,
@@ -846,7 +846,7 @@ BYZANTIUM_UPDATED_OPCODES = {
         mnemonic=mnemonics.STATICCALL,
         gas_cost=GAS_CALL_EIP150,
     )(),
-    opcode_values.CALL: call.CallByzantium.configure(
+    opcode_values.CALL: call.BaseExternalCall.configure(
         __name__='opcode:CALL',
         mnemonic=mnemonics.CALL,
         gas_cost=GAS_CALL_EIP150,

@@ -163,7 +163,7 @@ def test_initial_deploy_min_and_re_mint_tokens():
     #
     # The deploy address should have received a new transaction to mint tokens. Import it.
     #
-    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
     chain.populate_queue_block_with_receive_tx()
     block = chain.import_current_queue_block()
     chain.get_transaction_by_hash(block.receive_transactions[0].send_transaction_hash)
@@ -450,7 +450,7 @@ def test_invalid_transfers():
 #test_invalid_transfers()
 
 
-def test_hypothesis_database():
+def _test_hypothesis_database():
     testdb = LevelDB('/home/tommy/temp/full')
     testdb = JournalDB(testdb)
     max_gas = 20000000

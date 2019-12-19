@@ -688,12 +688,13 @@ class BaseComputation(Configurable, metaclass=ABCMeta):
     # External call api
     #
     def apply_external_call_message(self, call_message):
-        if self.transaction_context.is_receive:
+        if self.transaction_context.is_send and self.transaction_context.is_create_tx:
+            self.logger.debug("Skipping adding external call message to computation because create transactions are "
+                              "not allowed to create new transactions on send.")
+        else:
             self.logger.debug("Adding external call message to computation")
             # We can only create external call messages on receive.
             self.external_call_messages.append(call_message)
-        else:
-            self.logger.debug("Skipping adding external call message to computation because this is not a receive transaction")
         self.execution_context.increment_computation_call_nonce()
 
 

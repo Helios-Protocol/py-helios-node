@@ -1,6 +1,5 @@
 from eth_typing import Address
 from hvm import constants
-from hvm.constants import GAS_TX
 from hvm.exceptions import (
     Halt,
     Revert,
@@ -233,7 +232,10 @@ class Create(Opcode):
 
         gas_remaining = child_computation.get_gas_remaining()
         gas_used = initial_gas_given - gas_remaining
-        gas_needed_for_external_call = gas_used + GAS_TX
+
+        from hvm.vm.forks.photon.transactions import get_photon_intrinsic_gas_create
+        gas_needed_for_external_call = gas_used + get_photon_intrinsic_gas_create(child_msg.data_as_bytes)
+
         if initial_gas_given < gas_needed_for_external_call:
             computation.stack_push_int(0)
             raise OutOfGas("Insufficient Gas for {}: provided: {} | needed: {}".format(
@@ -285,7 +287,9 @@ class Create2(Create):
 
         gas_remaining = child_computation.get_gas_remaining()
         gas_used = initial_gas_given - gas_remaining
-        gas_needed_for_external_call = gas_used + GAS_TX
+
+        from hvm.vm.forks.photon.transactions import get_photon_intrinsic_gas_create
+        gas_needed_for_external_call = gas_used + get_photon_intrinsic_gas_create(child_msg.data_as_bytes)
         if initial_gas_given < gas_needed_for_external_call:
             self.logger.debug(
                 "Insufficient Gas for {}: provided: {} | needed: {}".format(

@@ -34,6 +34,11 @@ ZERO_HASH32 = Hash32(32 * b'\x00')
 #
 STACK_DEPTH_LIMIT = 1024
 
+#
+# Computation call recursion limit
+#
+COMPUTATION_CALL_SEND_TRANSACTION_RECURSION_DEPTH_LIMIT = 20
+
 
 #
 # Gas Costs and Refunds

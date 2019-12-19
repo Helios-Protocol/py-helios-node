@@ -252,27 +252,87 @@ def test_exchange_deposit():
         abi=exchange_contract_interface['abi']
     )
 
-    # function depositTokens(address exchange_deposit_address, address token_contract_address, uint256 amount, bytes32 receipt_identifier) public requireExecuteOnSendTx{
+    w3_tx = DecentralizedExchange.functions.depositTokens(exchange_contract_address, token_contract_address, send_amount, 0).buildTransaction(W3_TX_DEFAULTS)
 
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+        execute_on_send=True,
+    )
+    block = chain.import_current_queue_block()
 
-    # getting total supply from the smart contract chain
-    w3_tx = DecentralizedExchange.functions.depositTokens(exchange_contract_address, token_contract_address).buildTransaction(W3_TX_DEFAULTS)
-
-    token_balance = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
-
-    print(token_balance)
 
     #
-    # Use delegatecall on exchange to get teh token balance on its own chain
+    # Receive the transactions on the smart contract
     #
-
-    # getting total supply from the smart contract chain
-    w3_tx = DecentralizedExchange.functions.getTokenBalanceDelegate(token_contract_address).buildTransaction(W3_TX_DEFAULTS)
-
-    token_balance = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
-
-    print(token_balance)
+    exchange_chain = TestnetTesterChain(testdb, exchange_contract_address, TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
 
 
 
-test_exchange_get_token_balance_static_call()
+    #
+    # Check the token balance on the exchange
+    #
+    w3_tx = DecentralizedExchange.functions.getTokenBalance(token_contract_address).buildTransaction(W3_TX_DEFAULTS)
+
+    token_balance_stored_in_token_storage = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
+
+    print('token_balance_stored_in_token_storage')
+    print(token_balance_stored_in_token_storage)
+
+
+    #
+    # Check the sender token balance on the exchange
+    #
+    w3_tx = DecentralizedExchange.functions.tokens(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), token_contract_address).buildTransaction(W3_TX_DEFAULTS)
+
+    token_balance_stored_in_exchange_storage = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
+
+    print('token_balance_stored_in_exchange_storage')
+    print(token_balance_stored_in_exchange_storage)
+
+
+    #
+    # Process pending deposits
+    #
+    w3_tx = DecentralizedExchange.functions.processPendingDeposits(
+        TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        token_contract_address
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    chain.import_current_queue_block()
+
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+
+
+    #
+    # Check the sender token balance on the exchange
+    #
+    w3_tx = DecentralizedExchange.functions.tokens(
+        TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        token_contract_address
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    start_time = time.time()
+    token_balance_stored_in_exchange_storage = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
+    end_time = time.time()
+    print("Took {} seconds".format(end_time-start_time))
+    print('token_balance_stored_in_exchange_storage')
+    print(token_balance_stored_in_exchange_storage)
+
+
+
+
+test_exchange_deposit()

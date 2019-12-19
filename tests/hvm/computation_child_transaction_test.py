@@ -13,7 +13,7 @@ from hvm.chains.testnet import (
     TESTNET_GENESIS_STATE,
     TESTNET_GENESIS_PRIVATE_KEY,
     TESTNET_NETWORK_ID,
-)
+    TestnetTesterChain)
 
 from hvm.utils.spoof import (
     SpoofTransaction,
@@ -246,17 +246,6 @@ from hvm.constants import CREATE_CONTRACT_ADDRESS
             True,
             False
         ),
-        ( # not sending enough gas
-            encode_hex(pad32(b"123120371238719")),
-            1,
-            100,
-            1,
-            RECEIVER.public_key.to_canonical_address(),
-            False,
-            'soft_error',
-            True,
-            False
-        ),
 
         (
             encode_hex(pad32(b"123120371238719")),
@@ -321,8 +310,9 @@ def test_child_transaction_from_call_opcode(call_data, call_value, call_gas, gas
 
     testdb = MemoryDB()
     create_predefined_blockchain_database(testdb)
-
-    sender_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    
+            
+    sender_chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
 
     sender_chain.create_and_sign_transaction_for_queue_block(
         gas_price=gas_price,
@@ -343,7 +333,7 @@ def test_child_transaction_from_call_opcode(call_data, call_value, call_gas, gas
         with pytest.raises(Exception):
             sender_block = sender_chain.import_current_queue_block()
             deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-            receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+            receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
             receiver_chain.populate_queue_block_with_receive_tx()
 
     elif error_expected == 'soft_error':
@@ -358,7 +348,7 @@ def test_child_transaction_from_call_opcode(call_data, call_value, call_gas, gas
             assert((sender_final_balance-sender_initial_balance) == (tx_value + tx_gas*gas_price))
 
         deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
         receiver_chain.populate_queue_block_with_receive_tx()
 
         with pytest.raises(Exception):
@@ -367,7 +357,7 @@ def test_child_transaction_from_call_opcode(call_data, call_value, call_gas, gas
 
         sender_block = sender_chain.import_current_queue_block()
         deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
         receiver_chain.populate_queue_block_with_receive_tx()
 
         receiver_block = receiver_chain.import_current_queue_block()
@@ -403,6 +393,7 @@ def test_child_transaction_from_call_opcode(call_data, call_value, call_gas, gas
 #             False,
 #             True,
 #             False)
+# exit()
 
 
 
@@ -445,7 +436,7 @@ def test_contract_deployment_gas_cost():
     testdb = MemoryDB()
     create_predefined_blockchain_database(testdb)
 
-    sender_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    sender_chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
 
     sender_chain.create_and_sign_transaction_for_queue_block(
         gas_price=gas_price,
@@ -461,10 +452,11 @@ def test_contract_deployment_gas_cost():
 
     sender_final_balance = sender_chain.get_vm().state.account_db.get_balance( TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
-    assert((sender_initial_balance - sender_final_balance) == 158081)
+    assert((sender_initial_balance - sender_final_balance) == 180233)
 
 
 # test_contract_deployment_gas_cost()
+# exit()
 
 
 
@@ -542,7 +534,7 @@ def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call
     testdb = MemoryDB()
     create_predefined_blockchain_database(testdb)
 
-    sender_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    sender_chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
 
     sender_chain.create_and_sign_transaction_for_queue_block(
         gas_price=gas_price,
@@ -562,7 +554,7 @@ def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call
         with pytest.raises(Exception):
             sender_block = sender_chain.import_current_queue_block()
             deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-            receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+            receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
             receiver_chain.populate_queue_block_with_receive_tx()
 
     elif error_expected == 'soft_error':
@@ -577,7 +569,7 @@ def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call
             assert((sender_final_balance-sender_initial_balance) == (tx_value + tx_gas*gas_price))
 
         deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
         receiver_chain.populate_queue_block_with_receive_tx()
 
         with pytest.raises(Exception):
@@ -586,7 +578,7 @@ def test_child_transaction_from_surrogatecall_opcode(call_data, call_value, call
 
         sender_block = sender_chain.import_current_queue_block()
         deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
         receiver_chain.populate_queue_block_with_receive_tx()
 
         receiver_block = receiver_chain.import_current_queue_block()
@@ -673,7 +665,7 @@ def test_child_transaction_from_create_opcode(call_value, error_expected, call_t
     testdb = MemoryDB()
     create_predefined_blockchain_database(testdb)
 
-    sender_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    sender_chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
 
     sender_chain.create_and_sign_transaction_for_queue_block(
         gas_price=gas_price,
@@ -695,7 +687,7 @@ def test_child_transaction_from_create_opcode(call_value, error_expected, call_t
         with pytest.raises(Exception):
             sender_block = sender_chain.import_current_queue_block()
             deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-            receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+            receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
             receiver_chain.populate_queue_block_with_receive_tx()
 
     elif error_expected == 'soft_error':
@@ -707,7 +699,7 @@ def test_child_transaction_from_create_opcode(call_value, error_expected, call_t
         sender_final_balance = sender_chain.get_vm().state.account_db.get_balance( TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
         deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
         receiver_chain.populate_queue_block_with_receive_tx()
 
         with pytest.raises(Exception):
@@ -723,7 +715,7 @@ def test_child_transaction_from_create_opcode(call_value, error_expected, call_t
             computation_call_nonce,
         )
 
-        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
         receiver_chain.populate_queue_block_with_receive_tx()
 
         receiver_block = receiver_chain.import_current_queue_block()
@@ -802,7 +794,7 @@ def test_child_transaction_from_create2_opcode(call_value, error_expected, call_
     testdb = MemoryDB()
     create_predefined_blockchain_database(testdb)
 
-    sender_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    sender_chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
 
     sender_chain.create_and_sign_transaction_for_queue_block(
         gas_price=gas_price,
@@ -824,7 +816,7 @@ def test_child_transaction_from_create2_opcode(call_value, error_expected, call_
         with pytest.raises(Exception):
             sender_block = sender_chain.import_current_queue_block()
             deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-            receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+            receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
             receiver_chain.populate_queue_block_with_receive_tx()
 
     elif error_expected == 'soft_error':
@@ -836,7 +828,7 @@ def test_child_transaction_from_create2_opcode(call_value, error_expected, call_
         sender_final_balance = sender_chain.get_vm().state.account_db.get_balance( TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
 
         deploy_address = generate_contract_address(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), sender_block.transactions[0].nonce)
-        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
         receiver_chain.populate_queue_block_with_receive_tx()
 
         with pytest.raises(Exception):
@@ -852,7 +844,7 @@ def test_child_transaction_from_create2_opcode(call_value, error_expected, call_
             decode_hex(call_data)
         )
 
-        receiver_chain = TestnetChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY)
+        receiver_chain = TestnetTesterChain(testdb, deploy_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
         receiver_chain.populate_queue_block_with_receive_tx()
 
         receiver_block = receiver_chain.import_current_queue_block()
@@ -929,7 +921,7 @@ def test_call_from_compiled():
     #
 
 
-    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
     min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
 
     origin_initial_balance = chain.get_vm().state.account_db.get_balance(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address())
@@ -950,7 +942,7 @@ def test_call_from_compiled():
 
     chain.import_current_queue_block()
 
-    receiver_chain = TestnetChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY)
+    receiver_chain = TestnetTesterChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
     receiver_chain.populate_queue_block_with_receive_tx()
 
     receiver_block = receiver_chain.import_current_queue_block()
@@ -992,7 +984,7 @@ def test_call_from_compiled():
     # Receive call tx and get refund
     #
 
-    chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+    chain = TestnetTesterChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER, vm_class = PhotonVM.with_zero_min_time_between_blocks())
     initial_balance =chain.get_vm().state.account_db.get_balance(RECEIVER.public_key.to_canonical_address())
     chain.populate_queue_block_with_receive_tx()
     block = chain.import_current_queue_block()
@@ -1013,7 +1005,7 @@ def test_call_from_compiled():
     print("waiting {} seconds before importing next block".format(min_time_between_blocks))
     time.sleep(min_time_between_blocks)
 
-    origin_chain =  TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    origin_chain =  TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
     origin_chain.populate_queue_block_with_receive_tx()
     origin_chain.import_current_queue_block()
 
@@ -1059,7 +1051,7 @@ def test_surrogatecall_from_compiled():
     # Test call
     #
 
-    chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY)
+    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
     min_time_between_blocks = chain.get_vm(timestamp=Timestamp(int(time.time()))).min_time_between_blocks
 
     origin_initial_balance = chain.get_vm().state.account_db.get_balance(
@@ -1081,7 +1073,7 @@ def test_surrogatecall_from_compiled():
 
     chain.import_current_queue_block()
 
-    receiver_chain = TestnetChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY)
+    receiver_chain = TestnetTesterChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
     receiver_chain.populate_queue_block_with_receive_tx()
 
     receiver_block = receiver_chain.import_current_queue_block()
@@ -1121,7 +1113,7 @@ def test_surrogatecall_from_compiled():
     # Receive call tx and get refund
     #
 
-    chain = TestnetChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER)
+    chain = TestnetTesterChain(testdb, RECEIVER.public_key.to_canonical_address(), RECEIVER, vm_class = PhotonVM.with_zero_min_time_between_blocks())
     initial_balance = chain.get_vm().state.account_db.get_balance(RECEIVER.public_key.to_canonical_address())
     chain.populate_queue_block_with_receive_tx()
     block = chain.import_current_queue_block()
@@ -1139,8 +1131,7 @@ def test_surrogatecall_from_compiled():
     print("waiting {} seconds before importing next block".format(min_time_between_blocks))
     time.sleep(min_time_between_blocks)
 
-    origin_chain = TestnetChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
-                                TESTNET_GENESIS_PRIVATE_KEY)
+    origin_chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class = PhotonVM.with_zero_min_time_between_blocks())
     origin_chain.populate_queue_block_with_receive_tx()
     origin_chain.import_current_queue_block()
 
@@ -1154,8 +1145,8 @@ def test_surrogatecall_from_compiled():
     assert (origin_final_balance == expected_origin_final_balance)
 
 
-test_surrogatecall_from_compiled()
-exit()
+# test_surrogatecall_from_compiled()
+# exit()
 #
 #
 # def test_send_from_compiled():
@@ -1279,3 +1270,5 @@ exit()
 #
 #
 # test_send_from_compiled()
+
+# Test infinite loop max recursion for adding computation call transactions

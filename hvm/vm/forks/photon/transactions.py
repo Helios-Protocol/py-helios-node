@@ -107,7 +107,7 @@ class PhotonTransaction(BosonTransaction):
         super(PhotonTransaction, self).validate()
 
     def get_intrinsic_gas(self):
-        return _get_photon_intrinsic_gas(self)
+        return get_photon_intrinsic_gas(self)
 
 
 # This is a create
@@ -116,18 +116,22 @@ class PhotonTransaction(BosonTransaction):
 class PhotonReceiveTransaction(BosonReceiveTransaction):
     pass
 
-    
 
-def _get_photon_intrinsic_gas(transaction):
-    num_zero_bytes = transaction.data.count(b'\x00')
-    num_non_zero_bytes = len(transaction.data) - num_zero_bytes
+def get_photon_intrinsic_gas(transaction):
     if transaction.is_create:
-        create_cost = GAS_TXCREATE
+        return get_photon_intrinsic_gas_create(transaction.data)
     else:
-        create_cost = 0
+        return get_photon_intrinsic_gas_normal(transaction.data)
+
+
+def get_photon_intrinsic_gas_normal(tx_data):
+    num_zero_bytes = tx_data.count(b'\x00')
+    num_non_zero_bytes = len(tx_data) - num_zero_bytes
     return (
-        GAS_TX +
-        num_zero_bytes * GAS_TXDATAZERO +
-        num_non_zero_bytes * GAS_TXDATANONZERO +
-        create_cost
+            GAS_TX +
+            num_zero_bytes * GAS_TXDATAZERO +
+            num_non_zero_bytes * GAS_TXDATANONZERO
     )
+
+def get_photon_intrinsic_gas_create(tx_data):
+    return get_photon_intrinsic_gas_normal(tx_data) + GAS_TXCREATE

@@ -2036,12 +2036,6 @@ class Chain(BaseChain):
 
         self.validate_time_from_genesis_block(block)
 
-        # new transaction count limit:
-        transaction_count = len(block.transactions) + len(block.receive_transactions)
-        if transaction_count > BLOCK_TRANSACTION_LIMIT:
-            raise ValidationError("The block has to many transactions. It has {} transactions, but is only allowed a max of {}".format(transaction_count, BLOCK_TRANSACTION_LIMIT))
-
-
         #
         #
         #
