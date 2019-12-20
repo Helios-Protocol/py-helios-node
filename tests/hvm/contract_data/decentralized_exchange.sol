@@ -4,6 +4,7 @@ import "./helpers/smart_contract_chain.sol";
 import "./helpers/safe_math.sol";
 import "./helpers/execute_on_send.sol";
 import "./helpers/ownable.sol";
+import "./helpers/order_book.sol";
 
 
 contract Token {
@@ -12,7 +13,7 @@ contract Token {
 }
 
 // Minting has to occur on smart contract chain because that is where the owner variable is stored.
-contract DecentralizedExchange is Ownable, ExecuteOnSend {
+contract DecentralizedExchange is Ownable, ExecuteOnSend, OrderBook{
     using SafeMath for uint256;
 
     struct PendingDepositInfo {
@@ -22,6 +23,7 @@ contract DecentralizedExchange is Ownable, ExecuteOnSend {
 
     mapping(address => mapping (address => PendingDepositInfo[])) public pending_deposits; // wallet address -> token contract (0 for HLS) -> list of pending deposits for that contract.
     mapping(address => mapping (address => uint256)) public tokens; //mapping of token addresses to mapping of account balances (token contract = 0 means HLS)
+
 
     uint256 deposit_nonce;
 
@@ -83,7 +85,8 @@ contract DecentralizedExchange is Ownable, ExecuteOnSend {
 
         }
     }
-    function withdrawToken(address token_contract_address, uint256 amount) public {
+
+    function withdrawTokens(address token_contract_address, uint256 amount) public {
         require(token_contract_address != address(0));
         require(tokens[msg.sender][token_contract_address] >= amount);
         tokens[msg.sender][token_contract_address] = tokens[msg.sender][token_contract_address].sub(amount);
@@ -141,38 +144,56 @@ contract DecentralizedExchange is Ownable, ExecuteOnSend {
     }
 
     // function to deposit HLS
+    // This could fail if they don't give enough gas. Need to require a certain amount of gas
     function depositHLS() public payable {
         tokens[msg.sender][address(0)] = tokens[msg.sender][address(0)].add(msg.value);
     }
 
-    function withdraw(uint amount) public {
+    function withdrawHLS(uint amount) public {
         require(tokens[msg.sender][address(0)] >= amount);
         tokens[msg.sender][address(0)] = tokens[msg.sender][address(0)].sub(amount);
         msg.sender.transfer(amount);
     }
 
-//    function checkTransactionReceived(bytes32 receipt_identifier) public view returns (uint256){
-//        pass;
+    //
+    // trading
+    //
+    function trade(address sell_token, address buy_token, uint256 amount, uint256 price){
+        // to find anyone to match with, we need to check the head of the people selling buy_token, and buying sell_token
+        bytes32 head = head[buy_token][sell_token];
+        int256 inverse_price = 1 ether * 1 ether/price;
+        while(orders[buy_token][sell_token][head].price >= inverse_price){
+            if(amount < orders[buy_token][sell_token][head].amount){
+                // here we do a partial order and subtract from order remaining
+            }else{
+                // here we take the whole order and delete it
+            }
+        }
+
+    }
+
+
+
+
+//    function getTokenBalance(address token_address) public view returns (uint256){
+//        // This will invoke a STATICCALL which will use the external smart contract storage for the token smart contract
+//        return Token(token_address).getBalance();
 //    }
-
-    function getTokenBalance(address token_address) public view returns (uint256){
-        // This will invoke a STATICCALL which will use the external smart contract storage for the token smart contract
-        return Token(token_address).getBalance();
-    }
-
-    function getTokenBalanceDelegate(address token_address) public returns (uint256){
-        bytes memory payload = abi.encodeWithSignature("getBalance()");
-        (bool success, bytes memory result) =  address(token_address).delegatecall(payload);
-        return abi.decode(result, (uint256));
-    }
+//
+//    function getTokenBalanceDelegate(address token_address) public returns (uint256){
+//        bytes memory payload = abi.encodeWithSignature("getBalance()");
+//        (bool success, bytes memory result) =  address(token_address).delegatecall(payload);
+//        return abi.decode(result, (uint256));
+//    }
 
 
     constructor() public {
 
     }
 
-    // do not allow deposits
-    function() external{
-        revert();
+    // if someone deposits HLS, call the deposit command.
+    // This could fail if they don't give enough gas. Need to require a certain amount of gas
+    function() external payable{
+        depositHLS();
     }
 }

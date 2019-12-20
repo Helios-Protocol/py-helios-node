@@ -92,8 +92,7 @@ from helios_web3 import HeliosWeb3 as Web3
 from hvm.vm.forks import PhotonVM
 from tests.integration_test_helpers import W3_TX_DEFAULTS
 
-from hvm.constants import CREATE_CONTRACT_ADDRESS
-
+from hvm.constants import CREATE_CONTRACT_ADDRESS, ZERO_ADDRESS, GAS_TX
 
 #for testing purposes we will just have the primary private key hardcoded
 #TODO: save to encrypted json file
@@ -222,7 +221,7 @@ def test_exchange_get_token_balance_static_call():
 #test_exchange_get_token_balance_static_call()
 
 
-def test_exchange_deposit():
+def test_exchange_deposit_and_withdraw_tokens():
     testdb = MemoryDB()
     create_predefined_blockchain_database(testdb)
 
@@ -235,6 +234,7 @@ def test_exchange_deposit():
     w3 = Web3()
     max_gas = 20000000
     send_amount = 1000
+    withdraw_amount = 100
 
     #
     # Receive total supply
@@ -283,6 +283,7 @@ def test_exchange_deposit():
 
     print('token_balance_stored_in_token_storage')
     print(token_balance_stored_in_token_storage)
+    assert(token_balance_stored_in_token_storage == send_amount)
 
 
     #
@@ -294,6 +295,7 @@ def test_exchange_deposit():
 
     print('token_balance_stored_in_exchange_storage')
     print(token_balance_stored_in_exchange_storage)
+    assert(token_balance_stored_in_exchange_storage == 0)
 
 
     #
@@ -325,14 +327,189 @@ def test_exchange_deposit():
         token_contract_address
     ).buildTransaction(W3_TX_DEFAULTS)
 
-    start_time = time.time()
     token_balance_stored_in_exchange_storage = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
-    end_time = time.time()
-    print("Took {} seconds".format(end_time-start_time))
     print('token_balance_stored_in_exchange_storage')
     print(token_balance_stored_in_exchange_storage)
+    assert(token_balance_stored_in_exchange_storage == send_amount)
+
+    #
+    # Withdraw the tokens
+    #
+    w3_tx = DecentralizedExchange.functions.withdrawTokens(
+        token_contract_address,
+        withdraw_amount
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    chain.import_current_queue_block()
+
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+
+    chain.populate_queue_block_with_receive_tx()
+    chain.import_current_queue_block()
+    
+    
+    #
+    # Check the sender token balance on the exchange
+    #
+    w3_tx = DecentralizedExchange.functions.tokens(
+        TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        token_contract_address
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    token_balance_stored_in_exchange_storage = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
+    print('token_balance_stored_in_exchange_storage')
+    print(token_balance_stored_in_exchange_storage)
+    assert(token_balance_stored_in_exchange_storage == send_amount-withdraw_amount)
+
+
+    #
+    # Check the sender token balance on the their own chain
+    #
+    HeliosDelegatedToken = w3.hls.contract(
+        address=Web3.toChecksumAddress(token_contract_address),
+        abi=token_contract_interface['abi']
+    )
+    w3_tx = HeliosDelegatedToken.functions.getBalance().buildTransaction(W3_TX_DEFAULTS)
+
+    token_balance_stored_in_sender_chain = call_on_chain(testdb,
+                                                         TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                                         TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+                                                         decode_hex(w3_tx['data']),
+                                                         code_address=token_contract_address,)
+    print('token_balance_stored_in_sender_chain')
+    print(token_balance_stored_in_sender_chain)
+    assert(token_balance_stored_in_sender_chain == to_wei(300000000, 'ether')-(send_amount-withdraw_amount))
+
+    
 
 
 
+#test_exchange_deposit_and_withdraw_tokens()
 
-test_exchange_deposit()
+
+def test_exchange_deposit_and_withdraw_HLS():
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+
+    # deploy the exchange
+    exchange_contract_address, exchange_contract_interface = deploy_contract(testdb, 'decentralized_exchange.sol', 'DecentralizedExchange', TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+
+    w3 = Web3()
+    max_gas = 20000000
+    deposit_amount_1 = 1000
+    deposit_amount_2 = 500
+    withdraw_amount = 100
+
+    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+
+    #
+    # Deposit some HLS using the depositHLS function
+    #
+    DecentralizedExchange = w3.hls.contract(
+        address=Web3.toChecksumAddress(exchange_contract_address),
+        abi=exchange_contract_interface['abi']
+    )
+
+    w3_tx = DecentralizedExchange.functions.depositHLS().buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=deposit_amount_1,
+        data=decode_hex(w3_tx['data']),
+    )
+    chain.import_current_queue_block()
+    
+    exchange_chain = TestnetTesterChain(testdb, exchange_contract_address, TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+
+
+    
+    
+    #
+    # Check the sender HLS balance on the exchange
+    #
+    w3_tx = DecentralizedExchange.functions.tokens(
+        TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        ZERO_ADDRESS
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    HLS_balance_stored_in_exchange_storage = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
+    print('HLS_balance_stored_in_exchange_storage')
+    print(HLS_balance_stored_in_exchange_storage)
+    assert(HLS_balance_stored_in_exchange_storage == deposit_amount_1)
+    
+    #
+    # Deposit some HLS by just paying the contract chain
+    #
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=deposit_amount_2,
+    )
+    chain.import_current_queue_block()
+    
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    
+    #
+    # Check the sender HLS balance on the exchange
+    #
+    w3_tx = DecentralizedExchange.functions.tokens(
+        TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        ZERO_ADDRESS
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    HLS_balance_stored_in_exchange_storage = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
+    print('HLS_balance_stored_in_exchange_storage')
+    print(HLS_balance_stored_in_exchange_storage)
+    assert(HLS_balance_stored_in_exchange_storage == deposit_amount_1+deposit_amount_2)
+
+    
+    #
+    # Withdraw some HLS
+    #
+    w3_tx = DecentralizedExchange.functions.withdrawHLS(withdraw_amount).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    chain.import_current_queue_block()
+
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+
+    chain.populate_queue_block_with_receive_tx()
+    chain.import_current_queue_block()
+
+    
+    #
+    # Check the sender HLS balance on the exchange
+    #
+    w3_tx = DecentralizedExchange.functions.tokens(
+        TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        ZERO_ADDRESS
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    HLS_balance_stored_in_exchange_storage = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
+    print('HLS_balance_stored_in_exchange_storage')
+    print(HLS_balance_stored_in_exchange_storage)
+    assert(HLS_balance_stored_in_exchange_storage == deposit_amount_1+deposit_amount_2-withdraw_amount)
+    
+test_exchange_deposit_and_withdraw_HLS()
