@@ -26,7 +26,7 @@ home = str(Path.home())
 
 # os.environ["SOLC_BINARY"] = home + "/.py-solc/solc-v0.4.25/bin/solc"
 #os.environ["SOLC_BINARY"] = home + "/solidity/build/solc/solc"
-#os.environ["SOLC_BINARY"] = home + "/.py-helios-solc/solc-v100.5.12/bin/solc"
+os.environ["SOLC_BINARY"] = home + "/.py-helios-solc/solc-v100.5.15/bin/solc"
 
 try:
     solc_version = get_solc_version()

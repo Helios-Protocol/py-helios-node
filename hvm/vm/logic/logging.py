@@ -36,9 +36,10 @@ def log_XX(computation, topic_count):
         data=log_data,
     )
     print("Smart contract logging with account: {} | "
-          "topics: {} | data: {}".format(
+          "topics: {} | data_int: {} | data: {}".format(
         encode_hex(computation.transaction_context.this_chain_address),
         topics,
+        to_int(log_data),
         log_data
     ))
 

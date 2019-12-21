@@ -41,6 +41,10 @@ contract DecentralizedExchange is Ownable, ExecuteOnSend, OrderBook{
                 this_deposit_nonce == deposit_nonce,
                 "Your deposit nonce is incorrect."
             );
+            require(
+                token_contract_address != address(0),
+                "To deposit HLS, use depositHLS function"
+            );
 
 
             bytes32 receipt_identifier = getNewReceiptIdentifier(this_deposit_nonce);
@@ -158,20 +162,80 @@ contract DecentralizedExchange is Ownable, ExecuteOnSend, OrderBook{
     //
     // trading
     //
-    function trade(address sell_token, address buy_token, uint256 amount, uint256 price){
-        // to find anyone to match with, we need to check the head of the people selling buy_token, and buying sell_token
-        bytes32 head = head[buy_token][sell_token];
-        int256 inverse_price = 1 ether * 1 ether/price;
-        while(orders[buy_token][sell_token][head].price >= inverse_price){
-            if(amount < orders[buy_token][sell_token][head].amount){
+    function trade(address sell_token, address buy_token, uint256 amount, uint256 price) public{
+        require(
+            (tokens[msg.sender][sell_token] - amount_in_orders[msg.sender][sell_token]) >= amount,
+            "Not enough tokens in your account to place this order"
+        );
+        require(
+            amount != 0,
+            "Cannot trade for 0 amount"
+        );
+        require(
+            price != 0,
+            "Cannot trade for 0 price"
+        );
+        require(
+            price <= (1 ether)*(1 ether),
+            "Price is higher than maximum allowed price"
+        );
+        uint256 amount_remaining_in_sell_token = amount;
+
+        // first lets see if there is anyone to match with.
+        uint256 inverse_price = getInversePrice(price);
+        Order memory top_sell_order = orders[buy_token][sell_token][head[buy_token][sell_token]];
+        while(top_sell_order.price <= inverse_price && top_sell_order.price != 0){
+            uint256 amount_in_buy_token_at_existing_order_price = amount_remaining_in_sell_token.mul(getInversePrice(top_sell_order.price)).div(1 ether);
+
+            if(amount_in_buy_token_at_existing_order_price < top_sell_order.amount_remaining){
                 // here we do a partial order and subtract from order remaining
+
+
+                // trade the tokens
+                tokens[msg.sender][sell_token] = tokens[msg.sender][sell_token].sub(amount_remaining_in_sell_token);
+                tokens[msg.sender][buy_token] = tokens[msg.sender][buy_token].add(amount_in_buy_token_at_existing_order_price);
+
+                tokens[top_sell_order.user][sell_token] = tokens[top_sell_order.user][sell_token].add(amount_remaining_in_sell_token);
+                tokens[top_sell_order.user][buy_token] = tokens[top_sell_order.user][buy_token].sub(amount_in_buy_token_at_existing_order_price);
+
+                // modify the order book
+                // buy and sell tokens are reversed here because we are selling into the opposite order book
+                subtractAmountFromOrder(buy_token, sell_token, head[buy_token][sell_token], amount_in_buy_token_at_existing_order_price);
+                // the entire order is complete. end the loop
+                return;
             }else{
+
                 // here we take the whole order and delete it
+                uint256 amount_in_sell_token_existing_order_will_buy = top_sell_order.price*top_sell_order.amount_remaining/(1 ether);
+
+                // trade the tokens
+                tokens[msg.sender][sell_token] = tokens[msg.sender][sell_token].sub(amount_in_sell_token_existing_order_will_buy);
+                tokens[msg.sender][buy_token] = tokens[msg.sender][buy_token].add(top_sell_order.amount_remaining);
+
+                tokens[top_sell_order.user][sell_token] = tokens[top_sell_order.user][sell_token].add(amount_in_sell_token_existing_order_will_buy);
+                tokens[top_sell_order.user][buy_token] = tokens[top_sell_order.user][buy_token].sub(top_sell_order.amount_remaining);
+                
+                // modify the order book
+                deleteOrder(buy_token, sell_token, head[buy_token][sell_token]);
+
+                // modify amount_remaining_in_sell_token
+                amount_remaining_in_sell_token = amount_remaining_in_sell_token.sub(amount_in_sell_token_existing_order_will_buy);
+
             }
+            // redefine top_sell_order
+            // redefine amount remaining
+            top_sell_order = orders[buy_token][sell_token][head[buy_token][sell_token]];
+
         }
+
+        // any amount left after matching is sent as a new order
+        addOrder(sell_token, buy_token, amount_remaining_in_sell_token, price);
 
     }
 
+    function getInversePrice(uint256 price) public returns (uint256){
+        return uint256(1 ether).mul(1 ether).div(price);
+    }
 
 
 

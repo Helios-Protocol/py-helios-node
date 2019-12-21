@@ -20,7 +20,9 @@ from hvm.utils.spoof import (
 )
 
 from hvm.types import Timestamp
-
+from eth_abi import (
+    decode_abi,
+)
 
 
 from hvm.db.backends.level import LevelDB
@@ -512,4 +514,404 @@ def test_exchange_deposit_and_withdraw_HLS():
     print(HLS_balance_stored_in_exchange_storage)
     assert(HLS_balance_stored_in_exchange_storage == deposit_amount_1+deposit_amount_2-withdraw_amount)
     
-test_exchange_deposit_and_withdraw_HLS()
+#test_exchange_deposit_and_withdraw_HLS()
+
+def test_exchange_order_book():
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+    
+    # deploy the token
+    token_contract_address, token_contract_interface = deploy_contract(testdb, 'helios_delegated_token.sol', 'HeliosDelegatedToken', TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+
+    # deploy the exchange
+    exchange_contract_address, exchange_contract_interface = deploy_contract(testdb, 'decentralized_exchange.sol', 'DecentralizedExchange', TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+
+    w3 = Web3()
+    max_gas = 20000000
+    order_1_amount = 100
+    order_1_price = to_wei(0.0002, 'ether')
+    order_2_amount = 200
+    order_2_price = to_wei(0.0001, 'ether')
+    order_3_amount = 1000
+    order_3_price = to_wei(0.00005, 'ether')
+
+    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+
+    #
+    # Add order
+    #
+    DecentralizedExchange = w3.hls.contract(
+        address=Web3.toChecksumAddress(exchange_contract_address),
+        abi=exchange_contract_interface['abi']
+    )
+
+    w3_tx = DecentralizedExchange.functions.addOrder(token_contract_address, ZERO_ADDRESS, order_1_amount, order_1_price).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    chain.import_current_queue_block()
+    
+    exchange_chain = TestnetTesterChain(testdb, exchange_contract_address, TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    #
+    # Add order
+    #
+  
+    w3_tx = DecentralizedExchange.functions.addOrder(token_contract_address, ZERO_ADDRESS, order_2_amount, order_2_price).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    chain.import_current_queue_block()
+    
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    #
+    # Add order
+    #
+
+    w3_tx = DecentralizedExchange.functions.addOrder(token_contract_address, ZERO_ADDRESS, order_3_amount, order_3_price).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    chain.import_current_queue_block()
+    
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    #
+    # Get the order book
+    #
+    w3_tx = DecentralizedExchange.functions.getOrderBookWeb3(
+        token_contract_address, ZERO_ADDRESS
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    order_book = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']), convert_to_int = False)
+    print('order_book')
+
+    order_book_decoded = decode_abi(('uint256[2][100]',), order_book)
+    print(order_book)
+    assert(order_book_decoded[:3] == (100, 200000000000000), (200, 100000000000000), (1000, 50000000000000))
+
+# test_exchange_order_book()
+
+def test_exchange_trade():
+    testdb = MemoryDB()
+    create_predefined_blockchain_database(testdb)
+    
+    # deploy the token
+    token_contract_address, token_contract_interface = deploy_contract(testdb, 'helios_delegated_token.sol', 'HeliosDelegatedToken', TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+
+    # deploy the exchange
+    exchange_contract_address, exchange_contract_interface = deploy_contract(testdb, 'decentralized_exchange.sol', 'DecentralizedExchange', TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+
+    w3 = Web3()
+    max_gas = 20000000
+    token_deposit_amount = to_wei(100000, 'ether')
+    hls_deposit_amount = to_wei(1000, 'ether')
+
+    # Selling HLS for tokens
+    order_1_amount = to_wei(100, 'ether')
+    order_1_price = to_wei(1000, 'ether') # buy 1000 tokens/HLS
+    order_2_amount = to_wei(2, 'ether')
+    order_2_price = to_wei(700, 'ether')  # buy 700 tokens/HLS
+    order_3_amount = to_wei(1, 'ether')
+    order_3_price = to_wei(500, 'ether')  # buy 500 tokens/HLS
+    order_4_amount = to_wei(1000, 'ether')
+    order_4_price = to_wei(500, 'ether')  # buy 500 tokens/HLS
+
+    # Selling tokens for HLS
+    order_5_amount = to_wei(1400, 'ether')
+    order_5_price = to_wei(0.00142857142, 'ether')  # buy 0.00142857142 HLS/token (800 tokens/hls)
+
+    # Selling tokens for HLS
+    order_6_amount = to_wei(8000, 'ether')
+    order_6_price = to_wei(0.00142857142, 'ether')  # buy 0.00142857142 HLS/token (800 tokens/hls)
+
+    #
+    # Receive total supply
+    #
+    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    chain.populate_queue_block_with_receive_tx()
+    chain.import_current_queue_block()
+
+
+    #
+    # Deposit some tokens
+    #
+    DecentralizedExchange = w3.hls.contract(
+        address=Web3.toChecksumAddress(exchange_contract_address),
+        abi=exchange_contract_interface['abi']
+    )
+
+    w3_tx = DecentralizedExchange.functions.depositTokens(exchange_contract_address, token_contract_address, token_deposit_amount, 0).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+        execute_on_send=True,
+    )
+    chain.import_current_queue_block()
+
+    exchange_chain = TestnetTesterChain(testdb, exchange_contract_address, TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    w3_tx = DecentralizedExchange.functions.processPendingDeposits(
+        TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(),
+        token_contract_address
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    chain.import_current_queue_block()
+
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+
+
+    #
+    # Deposit some HLS
+    #
+    w3_tx = DecentralizedExchange.functions.depositHLS().buildTransaction(W3_TX_DEFAULTS)
+    receiver_chain = TestnetTesterChain(testdb, RECEIVER.public_key.to_canonical_address(),RECEIVER, PhotonVM.with_zero_min_time_between_blocks())
+
+    receiver_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=hls_deposit_amount,
+        data=decode_hex(w3_tx['data']),
+    )
+    receiver_chain.import_current_queue_block()
+
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    #
+    # Place 3 orders to buy some tokens with your HLS
+    #
+    #function trade(address sell_token, address buy_token, uint256 amount, uint256 price)
+    w3_tx = DecentralizedExchange.functions.trade(
+        ZERO_ADDRESS,
+        token_contract_address,
+        order_1_amount,
+        order_1_price).buildTransaction(W3_TX_DEFAULTS)
+
+    receiver_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    receiver_chain.import_current_queue_block()
+    
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    #
+    # Place 3 orders to buy some tokens with your HLS
+    #
+    #function trade(address sell_token, address buy_token, uint256 amount, uint256 price)
+    w3_tx = DecentralizedExchange.functions.trade(
+        ZERO_ADDRESS,
+        token_contract_address,
+        order_2_amount,
+        order_2_price).buildTransaction(W3_TX_DEFAULTS)
+
+    receiver_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    receiver_chain.import_current_queue_block()
+    
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    #
+    # Place 3 orders to buy some tokens with your HLS
+    #
+    #function trade(address sell_token, address buy_token, uint256 amount, uint256 price)
+    w3_tx = DecentralizedExchange.functions.trade(
+        ZERO_ADDRESS,
+        token_contract_address,
+        order_3_amount,
+        order_3_price).buildTransaction(W3_TX_DEFAULTS)
+
+    receiver_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    receiver_chain.import_current_queue_block()
+    
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    #
+    # Place 4th order that will fail
+    #
+    #function trade(address sell_token, address buy_token, uint256 amount, uint256 price)
+    w3_tx = DecentralizedExchange.functions.trade(
+        ZERO_ADDRESS,
+        token_contract_address,
+        order_4_amount,
+        order_4_price).buildTransaction(W3_TX_DEFAULTS)
+
+    receiver_chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    receiver_chain.import_current_queue_block()
+    
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    #
+    # Get amount in orders
+    #
+    #b'\r\x160\xcbw\xc0\r\x95\xf7\xfa2\xbc\xcf\xe8\x00Cc\x96\x81\xbe
+
+    w3_tx = DecentralizedExchange.functions.getAmountInOrders(
+        RECEIVER.public_key.to_canonical_address(),
+        ZERO_ADDRESS
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    amount_in_orders = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
+    print('amount_in_orders')
+    print(amount_in_orders)
+    assert(amount_in_orders == order_1_amount + order_2_amount + order_3_amount)
+
+    
+    #
+    # Get the order book
+    #
+    w3_tx = DecentralizedExchange.functions.getOrderBookWeb3(
+        ZERO_ADDRESS, token_contract_address
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    order_book = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']), convert_to_int = False)
+    print('order_book')
+
+    order_book_decoded = decode_abi(('uint256[2][100]',), order_book)
+    print(order_book_decoded)
+    
+    #
+    # Place order to buy that will use part of first order
+    #
+    #function trade(address sell_token, address buy_token, uint256 amount, uint256 price)
+    w3_tx = DecentralizedExchange.functions.trade(
+        token_contract_address,
+        ZERO_ADDRESS,
+        order_5_amount,
+        order_5_price).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+    chain.import_current_queue_block()
+
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+    
+    #
+    # Place order to buy that will use part of first order
+    #
+    #function trade(address sell_token, address buy_token, uint256 amount, uint256 price)
+    w3_tx = DecentralizedExchange.functions.trade(
+        token_contract_address,
+        ZERO_ADDRESS,
+        order_6_amount,
+        order_6_price).buildTransaction(W3_TX_DEFAULTS)
+
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=exchange_contract_address,
+        value=0,
+        data=decode_hex(w3_tx['data']),
+    )
+
+    chain.import_current_queue_block()
+
+
+    exchange_chain.populate_queue_block_with_receive_tx()
+    exchange_chain.import_current_queue_block()
+
+
+    #
+    # Get the order book
+    #
+    w3_tx = DecentralizedExchange.functions.getOrderBookWeb3(
+         token_contract_address,ZERO_ADDRESS
+    ).buildTransaction(W3_TX_DEFAULTS)
+
+    order_book = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']), convert_to_int = False)
+    print('order_book')
+
+    order_book_decoded = decode_abi(('uint256[2][100]',), order_book)
+    print(order_book_decoded)
+    #
+    # #
+    # # Get the inverse price
+    # #
+    # w3_tx = DecentralizedExchange.functions.getInversePrice(
+    #     #to_wei(0.00125, 'ether')
+    #     1
+    # ).buildTransaction(W3_TX_DEFAULTS)
+    #
+    # inverse_price = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']), convert_to_int = False)
+    # print('inverse_price')
+    # print(to_int(inverse_price))
+    #
+    #
+    # Check the sender token balance on the exchange
+    #
+    w3_tx = DecentralizedExchange.functions.tokens(TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), ZERO_ADDRESS).buildTransaction(W3_TX_DEFAULTS)
+
+    token_balance_stored_in_exchange_storage = call_on_chain(testdb, exchange_contract_address, exchange_contract_address, decode_hex(w3_tx['data']))
+
+    print('token_balance_stored_in_exchange_storage')
+    print(token_balance_stored_in_exchange_storage)
+
+
+
+test_exchange_trade()
