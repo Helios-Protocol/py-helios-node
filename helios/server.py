@@ -253,19 +253,21 @@ class BaseServer(BaseService):
             ephem_pubkey, initiator_nonce, initiator_pubkey = decode_authentication(
                 msg, self.privkey)
         except DecryptionError:
-            # Try to decode as EIP8
-            got_eip8 = True
-            msg_size = big_endian_to_int(msg[:2])
-            remaining_bytes = msg_size - ENCRYPTED_AUTH_MSG_LEN + 2
-            msg += await self.wait(
-                reader.read(remaining_bytes),
-                timeout=REPLY_TIMEOUT)
-            try:
-                ephem_pubkey, initiator_nonce, initiator_pubkey = decode_authentication(
-                    msg, self.privkey)
-            except DecryptionError as e:
-                self.logger.debug("Failed to decrypt handshake: %s", e)
-                return
+            self.logger.debug("Failed to decrypt handshake: %s", e)
+            return
+            # # Try to decode as EIP8
+            # got_eip8 = True
+            # msg_size = big_endian_to_int(msg[:2])
+            # remaining_bytes = msg_size - ENCRYPTED_AUTH_MSG_LEN + 2
+            # msg += await self.wait(
+            #     reader.read(remaining_bytes),
+            #     timeout=REPLY_TIMEOUT)
+            # try:
+            #     ephem_pubkey, initiator_nonce, initiator_pubkey = decode_authentication(
+            #         msg, self.privkey)
+            # except DecryptionError as e:
+            #     self.logger.debug("Failed to decrypt handshake: %s", e)
+            #     return
 
         initiator_remote = Node(initiator_pubkey, remote_address)
         responder = HandshakeResponder(initiator_remote, self.privkey, got_eip8, self.cancel_token)
