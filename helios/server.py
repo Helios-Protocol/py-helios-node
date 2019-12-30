@@ -252,7 +252,7 @@ class BaseServer(BaseService):
         try:
             ephem_pubkey, initiator_nonce, initiator_pubkey = decode_authentication(
                 msg, self.privkey)
-        except DecryptionError:
+        except DecryptionError as e:
             self.logger.debug("Failed to decrypt handshake: %s", e)
             return
             # # Try to decode as EIP8
