@@ -1006,6 +1006,8 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
                 peer = await self.connect(node)
         except ALLOWED_PEER_CONNECTION_EXCEPTIONS:
             return
+        except Exception:
+            return
 
         # Check again to see if we have *become* full since the previous
         # check.
