@@ -9,7 +9,7 @@ from hvm.exceptions import (
     OutOfGas,
     AttemptedToAccessExternalStorage,
     ForbiddenOperationForSurrogateCall,
-    DepreciatedVMFunctionality)
+    DepreciatedVMFunctionality, RequiresCodeFromMissingChain, RequiresCodeFromChainInFuture)
 
 
 from hvm.vm.opcode import (
@@ -138,11 +138,15 @@ class InternalCall(BaseCall):
             computation.return_gas(child_msg_gas)
             computation.stack_push_int(0)
         else:
-            if code_address:
-                code = computation.state.account_db.get_code(code_address)
-            else:
-                code = computation.state.account_db.get_code(to)
+            current_code_address = code_address if code_address else to
 
+            if not computation.state.account_db.account_has_chain(current_code_address):
+                raise RequiresCodeFromMissingChain(code_address = current_code_address)
+            if computation.execution_context.timestamp <= computation.state.account_db.get_contract_deploy_timestamp(current_code_address):
+                raise RequiresCodeFromChainInFuture("This computation requires code from a chain that was deployed in the future")
+            code = computation.state.account_db.get_code(current_code_address)
+
+            
             child_msg_kwargs = {
                 'gas': child_msg_gas,
                 'value': value,

@@ -203,6 +203,10 @@ class BaseAccountDB(metaclass=ABCMeta):
         raise NotImplementedError("Must be implemented by subclass")
 
     @abstractmethod
+    def account_has_chain(self, address: Address) -> bool:
+        raise NotImplementedError("Must be implemented by subclass")
+
+    @abstractmethod
     def get_account_hash(self, address: Address) -> Hash32:
         raise NotImplementedError("Must be implemented by subclass")
 
@@ -608,15 +612,26 @@ class AccountDB(BaseAccountDB):
             return False
 
 
-    def touch_account(self, address):
+    def touch_account(self, address: Address):
         validate_canonical_address(address, title="Storage Address")
 
         account = self._get_account(address)
         self._set_account(address, account)
 
-    def account_is_empty(self, address):
+    def account_is_empty(self, address: Address) -> bool:
         return not self.account_has_code_or_nonce(address) and self.get_balance(address) == 0 and self.has_receivable_transactions(address) is False
     
+    def account_has_chain(self, address: Address) -> bool:
+        if not self.account_exists(address):
+            return False
+        elif not self.account_has_code_or_nonce(address) and self.get_balance(address) == 0:
+            return False
+        else:
+            return True
+
+        
+
+
     def get_account_hash(self, address: Address) -> Hash32:
         account = self._get_account(address)
         #

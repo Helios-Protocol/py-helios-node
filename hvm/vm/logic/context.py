@@ -4,7 +4,8 @@ from eth_utils import encode_hex
 from hvm import constants
 from hvm.exceptions import (
     OutOfBoundsRead,
-    DepreciatedVMFunctionality, AttemptedToAccessExternalStorage)
+    DepreciatedVMFunctionality, AttemptedToAccessExternalStorage, RequiresCodeFromMissingChain,
+    RequiresCodeFromChainInFuture)
 
 from hvm.utils.address import (
     force_bytes_to_address,
@@ -127,6 +128,11 @@ def gasprice(computation):
 
 def extcodesize(computation):
     account = force_bytes_to_address(computation.stack_pop1_bytes())
+    if not computation.state.account_db.account_has_chain(account):
+        raise RequiresCodeFromMissingChain(code_address = account)
+    if computation.execution_context.timestamp <= computation.state.account_db.get_contract_deploy_timestamp(account):
+        raise RequiresCodeFromChainInFuture("This computation requires code from a chain that was deployed in the future")
+
     code_size = len(computation.state.account_db.get_code(account))
 
     computation.stack_push_int(code_size)
@@ -150,6 +156,11 @@ def extcodecopy(computation):
         reason='EXTCODECOPY: word gas cost',
     )
 
+    if not computation.state.account_db.account_has_chain(account):
+        raise RequiresCodeFromMissingChain(code_address = account)
+    if computation.execution_context.timestamp <= computation.state.account_db.get_contract_deploy_timestamp(account):
+        raise RequiresCodeFromChainInFuture("This computation requires code from a chain that was deployed in the future")
+
     code = computation.state.account_db.get_code(account)
 
     code_bytes = code[code_start_position:code_start_position + size]
@@ -165,6 +176,11 @@ def extcodehash(computation: 'BaseComputation') -> None:
     """
     account = force_bytes_to_address(computation.stack_pop1_bytes())
     state = computation.state
+
+    if not computation.state.account_db.account_has_chain(account):
+        raise RequiresCodeFromMissingChain(code_address = account)
+    if computation.execution_context.timestamp <= computation.state.account_db.get_contract_deploy_timestamp(account):
+        raise RequiresCodeFromChainInFuture("This computation requires code from a chain that was deployed in the future")
 
     if state.account_db.account_is_empty(account):
         computation.stack_push_bytes(constants.NULL_BYTE)

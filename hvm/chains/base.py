@@ -1839,6 +1839,11 @@ class Chain(BaseChain):
             self.logger.debug("Changing to chain with wallet address {}".format(encode_hex(wallet_address)))
             self.set_new_wallet_address(wallet_address=wallet_address)
 
+        # If is microblock_origin, then this block is a newly created block from the RPC. This means we are fully synced
+        # and if this block depends on another block that doesnt exist, we shouldn't save it as unprocessed. Just reject it instead.
+        if microblock_origin:
+            allow_unprocessed = False
+
         journal_enabled = False
 
         #if we are given a block that is not one of the two allowed classes, try converting it.
@@ -2036,9 +2041,7 @@ class Chain(BaseChain):
 
         self.validate_time_from_genesis_block(block)
 
-        #
-        #
-        #
+
 
         if isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()):
             # If it was a queueblock, then the header will have changed after importing

@@ -188,16 +188,17 @@ class PhotonVM(VM):
 
         
 
-    def apply_all_transactions(self, block: PhotonBlock, private_key: PrivateKey = None) -> Tuple[
+    def apply_all_transactions(self, block: PhotonBlock, private_key: PrivateKey = None, is_queue_block = False) -> Tuple[
                                                                                         BaseBlockHeader,
                                                                                         List[Receipt],
                                                                                         List[PhotonComputation],
                                                                                         List[PhotonComputation],
-                                                                                        List[PhotonTransaction]]:
+                                                                                        List[PhotonTransaction],
+                                                                                        List[PhotonReceiveTransaction]]:
             
 
         # First, run all of the receive transactions
-        last_header, receive_receipts, receive_computations = self._apply_all_receive_transactions(block.receive_transactions, block.header)
+        last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, block.header, is_queue_block = is_queue_block)
 
         computation_call_send_transactions, current_nonce_for_computation_calls = self.create_computation_call_transactions_from_finished_computations(
             receive_computations,
@@ -253,7 +254,7 @@ class PhotonVM(VM):
         # Combine receipts in the send transaction, receive transaction order
         send_receipts.extend(receive_receipts)
 
-        return last_header, send_receipts, receive_computations, all_send_computations, all_computation_call_send_transactions
+        return last_header, send_receipts, receive_computations, all_send_computations, all_computation_call_send_transactions, processed_receive_transactions
 
     def save_recievable_transactions(self,
                                      block_header_hash: Hash32,
