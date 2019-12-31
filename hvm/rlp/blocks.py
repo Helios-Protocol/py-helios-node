@@ -12,6 +12,7 @@ from eth_typing import (
     Hash32,
     Address
 )
+from hvm.exceptions import RewardAmountRoundsToZero
 from hvm.rlp.receipts import Receipt
 
 from hvm.utils.datatypes import (
@@ -71,6 +72,8 @@ class BaseBlock(rlp.Serializable, Configurable, metaclass=ABCMeta):
     @property
     def is_genesis(self) -> bool:
         return self.number == 0
+
+
 
     def __repr__(self) -> str:
         return '<{class_name}(#{b})>'.format(

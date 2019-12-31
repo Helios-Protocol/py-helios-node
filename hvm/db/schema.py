@@ -168,3 +168,8 @@ class SchemaV1(BaseSchema):
     def make_transaction_refund_amount_lookup(tx_hash: Hash32) -> bytes:
         key = b'tx_refund_amount:%b' % (tx_hash)
         return key
+
+    @staticmethod
+    def make_save_receivable_transaction_as_not_imported_lookup(chain_address: Address, tx_hash: Hash32) -> bytes:
+        key = b'tx_srtanil:%b-%b' % (chain_address, tx_hash)
+        return key

@@ -1,3 +1,4 @@
+from hvm.exceptions import RewardAmountRoundsToZero
 from rlp_cython.sedes import (
     CountableList,
 )
@@ -81,6 +82,10 @@ class HeliosTestnetBlock(BaseBlock):
     @property
     def hash(self):
         return self.header.hash
+
+    def validate_has_content(self) -> None:
+        if len(self.transactions) == 0 and len(self.receive_transactions) == 0 and self.reward_bundle.reward_type_1.amount == 0 and self.reward_bundle.reward_type_2.amount == 0:
+            raise RewardAmountRoundsToZero('The block has no send or receive transactions, and the reward bundle has amount = 0 for all types of rewards. This is not allowed. If this is just a reward block this usually means more time needs to pass before creating reward bundle.')
 
     #
     # Transaction class for this block class

@@ -138,6 +138,18 @@ class BaseAccountDB(metaclass=ABCMeta):
     def delete_receivable_transaction(self, address: Address, transaction_hash: Hash32) -> None:
         raise NotImplementedError("Must be implemented by subclasses")
 
+    @abstractmethod
+    def save_receivable_transaction_as_not_imported(self, address: Address, transaction_hash: Hash32) -> None:
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def get_receivable_transaction_saved_as_not_imported(self, address: Address, transaction_hash: Hash32) -> TransactionKey:
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    @abstractmethod
+    def delete_receivable_transaction_saved_as_not_imported(self, address: Address, transaction_hash: Hash32) -> None:
+        raise NotImplementedError("Must be implemented by subclasses")
+
     #
     # Nonce
     #
@@ -486,7 +498,32 @@ class AccountDB(BaseAccountDB):
             if len(receivable_transactions) == 0:
                 self.logger.debug("Removing address from list of smart contracts with pending transactions")
                 self._remove_address_from_smart_contracts_with_pending_transactions(address)
-    
+
+    def save_receivable_transaction_as_not_imported(self, address: Address, transaction_hash: Hash32) -> None:
+        # moves a receivable transaction into the not imported state. it will no longer be loaded with the other receivable transactions
+        tx_key = self.get_receivable_transaction(address, transaction_hash)
+        if tx_key is not None:
+            lookup_key = SchemaV1.make_save_receivable_transaction_as_not_imported_lookup(address, transaction_hash)
+            encoded = rlp.encode(tx_key, sedes=TransactionKey)
+            self._journaldb[lookup_key] = encoded
+            self.delete_receivable_transaction(address, transaction_hash)
+
+    def get_receivable_transaction_saved_as_not_imported(self, address: Address, transaction_hash: Hash32) -> TransactionKey:
+        lookup_key = SchemaV1.make_save_receivable_transaction_as_not_imported_lookup(address, transaction_hash)
+        try:
+            encoded = self._journaldb[lookup_key]
+            return rlp.decode(encoded, sedes=TransactionKey)
+        except KeyError:
+            return None
+
+    def delete_receivable_transaction_saved_as_not_imported(self, address: Address, transaction_hash: Hash32) -> None:
+        lookup_key = SchemaV1.make_save_receivable_transaction_as_not_imported_lookup(address, transaction_hash)
+        try:
+            del self._journaldb[lookup_key]
+        except KeyError:
+            pass
+
+
     #
     # Gas refunds
     #

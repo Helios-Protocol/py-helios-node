@@ -214,7 +214,7 @@ contract DecentralizedExchange is Ownable, ExecuteOnSend, OrderBook{
 
                 tokens[top_sell_order.user][sell_token] = tokens[top_sell_order.user][sell_token].add(amount_in_sell_token_existing_order_will_buy);
                 tokens[top_sell_order.user][buy_token] = tokens[top_sell_order.user][buy_token].sub(top_sell_order.amount_remaining);
-                
+
                 // modify the order book
                 deleteOrder(buy_token, sell_token, head[buy_token][sell_token]);
 

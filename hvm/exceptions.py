@@ -245,6 +245,19 @@ class Halt(PyEVMError):
     """
     pass
 
+class RequiresCodeFromMissingChain(PyEVMError):
+    """
+    Raised when a dapp tries to access the code of a missing chain.
+    """
+    def __init__(self, code_address):
+        self.code_address = code_address
+
+class RequiresCodeFromChainInFuture(PyEVMError):
+    """
+    Raised when a dapp tries to access the code of a chain from the future.
+    """
+    pass
+
 
 class VMError(PyEVMError):
     """

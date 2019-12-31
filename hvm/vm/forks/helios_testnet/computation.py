@@ -211,7 +211,8 @@ class HeliosTestnetComputation(BaseComputation):
                                 encode_hex(keccak(contract_code))
                             )
 
-                        self.state.account_db.set_code(self.msg.resolved_to, contract_code)
+                        self.state.account_db.set_code(self.transaction_context.this_chain_address, contract_code)
+                        self.state.account_db.set_contract_deploy_timestamp(self.transaction_context.this_chain_address, self.execution_context.timestamp)
 
                     self.state.commit(snapshot)
 

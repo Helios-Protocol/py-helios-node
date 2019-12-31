@@ -1869,11 +1869,7 @@ class Chain(BaseChain):
                     raise ValidationError("Tried to import a new genesis block on the genesis chain. This is not allowed.")
 
 
-        if len(block.transactions) == 0 and len(block.receive_transactions) == 0:
-            # if block.reward_bundle is None:
-            #     raise ValidationError('The block must have at least 1 transaction, or a non-zero reward bundle. Reward bundle = None')
-            if (block.reward_bundle.reward_type_1.amount == 0 and block.reward_bundle.reward_type_2.amount == 0):
-                raise RewardAmountRoundsToZero('The block has no send or receive transactions, and the reward bundle has amount = 0 for all types of rewards. This is not allowed. If this is just a reward block this usually means more time needs to pass before creating reward bundle.')
+        block.validate_has_content()
 
         #if we are adding to the top of the chain, or beyond, we need to check for unprocessed blocks
         #handle deleting any unprocessed blocks that will be replaced.

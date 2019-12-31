@@ -6,7 +6,7 @@ from hvm.rlp.accounts import (
     Account,
     TransactionKey,
     AccountDepreciated)
-
+from hvm.types import Timestamp
 
 from rlp_cython.sedes import (
     big_endian_int,
@@ -57,7 +57,7 @@ class PhotonAccount(rlp.Serializable):
     """
     fields = [
         ('nonce', f_big_endian_int),
-        ('block_number', f_big_endian_int),
+        ('contract_deploy_timestamp', f_big_endian_int),
         ('balance', big_endian_int),
         ('storage_root', trie_root),
         ('external_smart_contract_storage_root', trie_root),
@@ -70,18 +70,49 @@ class PhotonAccount(rlp.Serializable):
 
     def __init__(self,
                  nonce: int=0,
-                 block_number: int=0,
+                 contract_deploy_timestamp: int=0,
                  balance: int=0,
                  storage_root: bytes=BLANK_ROOT_HASH,
                  external_smart_contract_storage_root: bytes = BLANK_ROOT_HASH,
                  code_hash: bytes=EMPTY_SHA3,
                  **kwargs: Any) -> None:
-        super(PhotonAccount, self).__init__(nonce, block_number, balance, storage_root, external_smart_contract_storage_root, code_hash, **kwargs)
+        super(PhotonAccount, self).__init__(nonce, contract_deploy_timestamp, balance, storage_root, external_smart_contract_storage_root, code_hash, **kwargs)
 
 
 class PhotonAccountDB(AccountDB):
 
     version = 1
+
+    #
+    # Block number
+    #
+    def get_block_number(self, address):
+        raise NotImplementedError('Depreciated')
+
+    def set_block_number(self, address, block_number):
+        raise NotImplementedError('Depreciated')
+
+    def increment_block_number(self, address):
+        raise NotImplementedError('Depreciated')
+
+
+    #
+    # Contract deploy timestamp
+    #
+    def get_contract_deploy_timestamp(self, address: Address) -> Timestamp:
+        validate_canonical_address(address, title="address")
+        account = self._get_account(address)
+        return account.contract_deploy_timestamp
+
+    def set_contract_deploy_timestamp(self, address: Address, timestamp: Timestamp) -> None:
+        validate_canonical_address(address, title="address")
+        validate_uint256(timestamp, title="timestamp")
+
+        account = self._get_account(address)
+        self._set_account(address, account.copy(contract_deploy_timestamp=timestamp))
+
+
+
     #
     # Storage
     #

@@ -53,7 +53,7 @@ from hvm.exceptions import (
     BlockOnWrongChain,
     ParentNotFound,
     ReceivableTransactionNotFound,
-    TransactionNotFound)
+    TransactionNotFound, RequiresCodeFromMissingChain, RequiresCodeFromChainInFuture)
 from hvm.rlp.blocks import (  # noqa: F401
     BaseBlock,
     BaseQueueBlock,
@@ -405,19 +405,24 @@ class VM(BaseVM):
     #
     # Execution
     #
-    def apply_all_transactions(self, block: BaseBlock, private_key: PrivateKey = None) -> Tuple[BaseBlockHeader, List[Receipt], List[BaseComputation], List[BaseComputation], List[BaseTransaction]]:
+    def apply_all_transactions(self, block: BaseBlock, private_key: PrivateKey = None, is_queue_block = False) -> Tuple[BaseBlockHeader,
+                                                                                                                  List[Receipt],
+                                                                                                                  List[BaseComputation],
+                                                                                                                  List[BaseComputation],
+                                                                                                                  List[BaseTransaction],
+                                                                                                                  List[BaseReceiveTransaction]]:
 
         #run all of the transactions.
         last_header, receipts, send_computations = self._apply_all_send_transactions(block.transactions, block.header)
 
 
         #then run all receive transactions
-        last_header, receive_receipts, receive_computations = self._apply_all_receive_transactions(block.receive_transactions, last_header)
+        last_header, receive_receipts, receive_computations, processed_receive_transactions = self._apply_all_receive_transactions(block.receive_transactions, last_header, is_queue_block=is_queue_block)
 
         # then combine
         receipts.extend(receive_receipts)
 
-        return last_header, receipts, receive_computations, send_computations, []
+        return last_header, receipts, receive_computations, send_computations, [], processed_receive_transactions
 
     def apply_send_transaction(self,
                                header: BlockHeader,
@@ -709,24 +714,43 @@ class VM(BaseVM):
                 computations.append(computation)
             return result_header, [], computations
 
-    def _apply_all_receive_transactions(self, transactions, base_header, validate=True) -> Tuple[BlockHeader, List[Receipt], List[BaseComputation]]:
+    def _apply_all_receive_transactions(self, transactions, base_header, validate=True, is_queue_block = False) -> Tuple[BlockHeader, List[Receipt], List[BaseComputation], List[BaseReceiveTransaction]]:
         receipts = []
         previous_header = base_header
         result_header = base_header
         computations = []
+        processed_transactions = []
 
         this_chain_address = base_header.chain_address
         if validate:
             for transaction in transactions:
-                result_header, receipt, computation = self.apply_receive_transaction(previous_header, transaction,
-                                                                                  this_chain_address,
-                                                                                  validate=validate)
+                try:
+                    result_header, receipt, computation = self.apply_receive_transaction(previous_header, transaction,
+                                                                                      this_chain_address,
+                                                                                      validate=validate)
+
+                except RequiresCodeFromMissingChain as e:
+                    # If it is a queueblock, delete the receivable and import block without it
+                    if is_queue_block:
+                        self.state.account_db.save_receivable_transaction_as_not_imported(this_chain_address, transaction.hash)
+                        continue
+                    else:
+                        raise e
+                except RequiresCodeFromChainInFuture as e:
+                    # If it is a queueblock, delete the receivable and import block without it
+                    if is_queue_block:
+                        self.state.account_db.save_receivable_transaction_as_not_imported(this_chain_address, transaction.hash)
+                        continue
+                    else:
+                        raise e
 
                 previous_header = result_header
                 receipts.append(receipt)
                 computations.append(computation)
+                processed_transactions.append(transaction)
 
-            return result_header, receipts, computations
+
+            return result_header, receipts, computations, processed_transactions
         else:
             for transaction in transactions:
                 result_header, receipt, computation = self.apply_receive_transaction(previous_header, transaction,
@@ -838,7 +862,7 @@ class VM(BaseVM):
         # We don't need to refresh the state because it should have just been created for this block.
         # self.refresh_state()
 
-        last_header, receipts, receive_computations, send_computations, computation_call_send_transactions = self.apply_all_transactions(block, private_key = private_key)
+        last_header, receipts, receive_computations, send_computations, computation_call_send_transactions, processed_receive_transactions = self.apply_all_transactions(block, private_key = private_key, is_queue_block)
 
         if is_queue_block:
             # need to add any new computation call send transactions to the list of send transactions
@@ -846,8 +870,14 @@ class VM(BaseVM):
                 self.logger.debug("Adding computation call send transactions to block send transactions for queue block")
                 existing_transactions = list(block.transactions)
                 existing_transactions.extend(computation_call_send_transactions)
-                block = block.copy(transactions = existing_transactions)
-        
+                block = block.copy(transactions = existing_transactions, receive_transactions = processed_receive_transactions)
+            else:
+                if len(block.receive_transactions) != len(processed_receive_transactions):
+                    block = block.copy(receive_transactions=processed_receive_transactions)
+
+            # Make sure we haven't removed all of the transactions because they were invalid.
+            block.validate_has_content()
+
         # new transaction count limit - check after adding computation call transactions:
         transaction_count = len(block.transactions) + len(block.receive_transactions)
         if transaction_count > BLOCK_TRANSACTION_LIMIT:
