@@ -1013,7 +1013,7 @@ class DiscoveryService(BaseService):
 
         # In some cases (e.g ROPSTEN or private testnets), the discovery table might be full of
         # bad peers so if we can't connect to any peers we try a random bootstrap node as well.
-        if len(self.peer_pool) < int(len(self.proto.bootstrap_nodes)/2):
+        if len(self.peer_pool) <= int(len(self.proto.bootstrap_nodes)/2):
             self.logger.debug("Force connecting to bootnode because we arent connected to enough peers")
             await self.peer_pool.connect_to_nodes(self.proto.get_random_bootnode())
 
