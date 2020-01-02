@@ -52,6 +52,7 @@ from cancel_token import CancelToken, OperationCancelled
 
 from lahja import Endpoint
 
+from helios.plugins.builtin.peer_blacklist.events import AddPeerToBlacklistRequest
 from helios.protocol.common.datastructures import ConnectedNodesInfo
 from hp2p import auth
 from hp2p import protocol
@@ -68,7 +69,7 @@ from hp2p.exceptions import (
     UnknownProtocolCommand,
     UnreachablePeer,
     NoConnectedPeers,
-    IneligiblePeer, BaseP2PError)
+    IneligiblePeer, BaseP2PError, PeerCapabilitiesOnBlacklist)
 
 
 from hp2p.service import BaseService
@@ -508,6 +509,7 @@ class BasePeer(BaseService):
             self.sub_proto = self.select_sub_protocol(remote_capabilities)
         except NoMatchingPeerCapabilities:
             await self.disconnect(DisconnectReason.useless_peer)
+            self.check_blacklist_protocols(remote_capabilities)
             raise HandshakeFailure(
                 f"No matching capabilities between us ({self.capabilities}) and {self.remote} "
                 f"({remote_capabilities}), disconnecting"
@@ -637,6 +639,18 @@ class BasePeer(BaseService):
             if proto_class.version == highest_matching_version:
                 return proto_class(self, offset)
         raise NoMatchingPeerCapabilities()
+
+    def check_blacklist_protocols(self, remote_capabilities: List[Tuple[bytes, int]]) -> None:
+        # Sometimes ethereum nodes show up. We need to blacklist them here.
+        remote_capabilities_dict = dict(remote_capabilities)
+        if not "HLS" in remote_capabilities_dict:
+            self.logger.debug(
+                f"Peer is using blacklisted capabilities {self.remote} "
+                f"({remote_capabilities}), disconnecting"
+            )
+            raise PeerCapabilitiesOnBlacklist()
+
+
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__} {self.remote}"
@@ -987,6 +1001,8 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
         except TimeoutError as e:
             self.logger.debug("Could not complete handshake with %r: %s", remote, repr(e))
             raise UnreachablePeer()
+        except PeerCapabilitiesOnBlacklist:
+            raise
         except Exception:
             self.logger.exception("Unexpected error during auth/p2p handshake with %r", remote)
             raise
@@ -1005,6 +1021,11 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
             async with self._connection_attempt_lock:
                 peer = await self.connect(node)
         except ALLOWED_PEER_CONNECTION_EXCEPTIONS:
+            return
+        except PeerCapabilitiesOnBlacklist:
+            self.event_bus.broadcast(
+                AddPeerToBlacklistRequest(node.pubkey.to_bytes())
+            )
             return
         except Exception:
             return

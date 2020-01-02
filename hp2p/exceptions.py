@@ -110,6 +110,12 @@ class NoMatchingPeerCapabilities(BaseP2PError):
     """
     pass
 
+class PeerCapabilitiesOnBlacklist(BaseP2PError):
+    """
+    Raised when a non helios peer is found
+    """
+    pass
+
 
 class RemoteDisconnected(BaseP2PError):
     """

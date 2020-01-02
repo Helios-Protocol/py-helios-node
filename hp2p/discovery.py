@@ -5,6 +5,10 @@ listening nodes.
 
 More information at https://github.com/ethereum/devp2p/blob/master/rlpx.md#node-discovery
 """
+from lahja import Endpoint
+from rlp_cython import DecodingError
+
+from helios.plugins.builtin.peer_blacklist.events import IsPeerOnBlacklistRequest, AddPeerToBlacklistRequest
 from hp2p import constants
 import asyncio
 import collections
@@ -53,6 +57,7 @@ from eth_keys import datatypes
 
 from eth_hash.auto import keccak
 
+from hp2p.constants import DISCOVERY_SERVICE_LOOP_SLEEP, DISCOVERY_SERVICE_BLACKLIST_FILTER_LOOP_SLEEP
 from hvm.tools.logging import TraceLogger, TRACE_LEVEL_NUM
 
 from cancel_token import CancelToken, OperationCancelled
@@ -77,14 +82,16 @@ V5_HANDLER_TYPE = Callable[[kademlia.Node, Tuple[Any, ...], Hash32, bytes], None
 
 MAX_ENTRIES_PER_TOPIC = 50
 # UDP packet constants.
+V400_HELIOS_STRING = b"HLS"
 V5_ID_STRING = b"temporary discovery v5"
 MAC_SIZE = 256 // 8  # 32
 SIG_SIZE = 520 // 8  # 65
 HEAD_SIZE = MAC_SIZE + SIG_SIZE  # 97
 HEAD_SIZE_V5 = len(V5_ID_STRING) + SIG_SIZE  # 87
+HEAD_SIZE_V400_HELIOS = len(V400_HELIOS_STRING) + MAC_SIZE + SIG_SIZE
 EXPIRATION = 60  # let messages expire after N secondes
-PROTO_VERSION = 4
-PROTO_VERSION_V5 = 5
+PROTO_VERSION = 400
+PROTO_VERSION_V5 = 500
 
 
 class DefectiveMessage(Exception):
@@ -143,10 +150,12 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
                  privkey: datatypes.PrivateKey,
                  address: kademlia.Address,
                  bootstrap_nodes: Tuple[kademlia.Node, ...],
+                 event_bus: Endpoint,
                  cancel_token: CancelToken) -> None:
         self.privkey = privkey
         self.address = address
         self.bootstrap_nodes = bootstrap_nodes
+        self.event_bus = event_bus
         self.this_node = kademlia.Node(self.pubkey, address)
         self.routing = kademlia.RoutingTable(self.this_node)
         self.topic_table = TopicTable(self.logger)
@@ -174,6 +183,14 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         Bonding consists of pinging the node, waiting for a pong and maybe a ping as well.
         It is necessary to do this at least once before we send find_node requests to a node.
         """
+        response = await self.event_bus.request(
+            IsPeerOnBlacklistRequest(node.pubkey.to_bytes())
+        )
+        if response.is_peer_on_blacklist:
+            self.logger.debug("Not bonding with node {} because it is on the blacklist".format(node))
+            self.routing.remove_node(node)
+            return False
+
         self.logger.debug("Bonding with node {}".format(node))
         if node in self.routing:
             return True
@@ -433,6 +450,8 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         address = kademlia.Address(ip_address, udp_port)
         # The prefix below is what geth uses to identify discv5 msgs.
         # https://github.com/ethereum/go-ethereum/blob/c4712bf96bc1bae4a5ad4600e9719e4a74bde7d5/p2p/discv5/udp.go#L149  # noqa: E501
+        if text_if_str(to_bytes, data).startswith(V400_HELIOS_STRING):
+            data = data[len(V400_HELIOS_STRING):]
         if text_if_str(to_bytes, data).startswith(V5_ID_STRING):
             self.receive_v5(address, cast(bytes, data))
         else:
@@ -488,9 +507,9 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         self.logger.trace('<<< neighbours from %s: %s', node, neighbours)
         self.process_neighbours(node, neighbours)
 
-    def recv_ping_v4(self, node: kademlia.Node, _: Any, message_hash: Hash32) -> None:
+    def recv_ping_v4(self, node: kademlia.Node, payload: Tuple[Any, ...], message_hash: Hash32) -> None:
         self.logger.trace('<<< ping(v4) from %s', node)
-        self.process_ping(node, message_hash)
+        self.process_ping(node, payload, message_hash)
         self.send_pong_v4(node, message_hash)
 
     def recv_find_node_v4(self, node: kademlia.Node, payload: Tuple[Any, ...], _: Hash32) -> None:
@@ -593,13 +612,21 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         else:
             callback()
 
-    def process_ping(self, remote: kademlia.Node, hash_: Hash32) -> None:
+    def process_ping(self, remote: kademlia.Node, payload: Tuple[Any, ...], hash_: Hash32) -> None:
         """Process a received ping packet.
 
         A ping packet may come any time, unrequested, or may be prompted by us bond()ing with a
         new node. In the former case we'll just update the sender's entry in our routing table and
         reply with a pong, whereas in the latter we'll also fire a callback from ping_callbacks.
         """
+        version = rlp.sedes.big_endian_int.deserialize(payload[0])
+        if version != PROTO_VERSION and version != 4:
+            self.logger.debug("Received ping with incompatable version {}. Adding node to blacklist.".format(version))
+            self.event_bus.broadcast(
+                AddPeerToBlacklistRequest(remote.pubkey.to_bytes())
+            )
+            return
+
         if remote == self.this_node:
             self.logger.info('Invariant: received ping from this_node: %s', remote)
             return
@@ -664,7 +691,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         # version, from, to, expiration, topics
         _, _, _, _, topics = payload
         self.logger.trace('<<< ping(v5) from %s, topics: %s', node, topics)
-        self.process_ping(node, message_hash)
+        self.process_ping(node, payload, message_hash)
         topic_hash = keccak(rlp.encode(topics))
         ticket_serial = self.topic_table.issue_ticket(node)
         # TODO: Generate wait_periods list according to spec.
@@ -869,8 +896,9 @@ class PreferredNodeDiscoveryProtocol(DiscoveryProtocol):
                  address: kademlia.Address,
                  bootstrap_nodes: Tuple[kademlia.Node, ...],
                  preferred_nodes: Sequence[kademlia.Node],
+                 event_bus: Endpoint,
                  cancel_token: CancelToken) -> None:
-        super().__init__(privkey, address, bootstrap_nodes, cancel_token)
+        super().__init__(privkey, address, bootstrap_nodes, event_bus, cancel_token)
 
         if preferred_nodes is not None:
             self.preferred_nodes = [preferred_node for preferred_node in preferred_nodes if preferred_node != self.this_node]
@@ -973,21 +1001,27 @@ class DiscoveryService(BaseService):
     _last_lookup: float = 0
     _lookup_interval: int = 30
 
-    def __init__(self, proto: DiscoveryProtocol, peer_pool: BasePeerPool,
-                 port: int, token: CancelToken = None) -> None:
+    def __init__(self,
+                 proto: DiscoveryProtocol,
+                 peer_pool: BasePeerPool,
+                 port: int,
+                 event_bus: Endpoint,
+                 token: CancelToken = None) -> None:
         super().__init__(token)
         self.proto = proto
         self.peer_pool = peer_pool
         self.port = port
+        self.event_bus = event_bus
         self._lookup_running = asyncio.Lock()
+        self.connect_loop_sleep = DISCOVERY_SERVICE_LOOP_SLEEP
 
     async def _run(self) -> None:
         await self._start_udp_listener()
-        connect_loop_sleep = 5
         self.run_task(self.proto.bootstrap())
+        self.run_daemon_task(self.filter_blacklisted_nodes_from_routing_table_loop())
         while self.is_operational:
             await self.maybe_connect_to_more_peers()
-            await self.sleep(connect_loop_sleep)
+            await self.sleep(self.connect_loop_sleep)
             await self.proto.bootstrap_if_needed()
             self.logger.debug("Nodes in discovery service: {}".format(list(self.proto.routing)))
 
@@ -1032,6 +1066,23 @@ class DiscoveryService(BaseService):
                 pass
             finally:
                 self._last_lookup = time.time()
+
+    async def filter_blacklisted_nodes_from_routing_table_loop(self):
+        self.logger.debug("Running filter_blacklisted_nodes_from_routing_table_loop")
+        while self.is_operational:
+            await self.filter_blacklisted_nodes_from_routing_table()
+            await asyncio.sleep(DISCOVERY_SERVICE_BLACKLIST_FILTER_LOOP_SLEEP)
+
+    async def filter_blacklisted_nodes_from_routing_table(self):
+        self.logger.debug("Running filter_blacklisted_nodes_from_routing_table")
+        for node in self.proto.routing:
+            response = await self.event_bus.request(
+                IsPeerOnBlacklistRequest(node.pubkey.to_bytes())
+            )
+            if response.is_peer_on_blacklist:
+                self.logger.debug("Removing node {} from routing table because it is on the blacklist".format(node))
+                self.proto.routing.remove_node(node)
+
 
     async def _cleanup(self) -> None:
         await self.proto.stop()
@@ -1169,7 +1220,10 @@ def _unpack_v4(message: bytes) -> Tuple[datatypes.PublicKey, int, Tuple[Any, ...
     remote_pubkey = signature.recover_public_key_from_msg(signed_data)
     cmd_id = message[HEAD_SIZE]
     cmd = CMD_ID_MAP[cmd_id]
-    payload = tuple(rlp.decode(message[HEAD_SIZE + 1:], strict=False))
+    try:
+        payload = tuple(rlp.decode(message[HEAD_SIZE + 1:], strict=False))
+    except DecodingError as e:
+        raise DefectiveMessage(e)
     # Ignore excessive list elements as required by EIP-8.
     payload = payload[:cmd.elem_count]
     return remote_pubkey, cmd_id, payload, message_hash

@@ -20,6 +20,7 @@ from lahja import (
     Endpoint
 )
 
+from helios.plugins.builtin.peer_blacklist.events import AddPeerToBlacklistRequest
 from helios.utils.profiling import coro_periodically_report_memory_stats
 from helios.chains.coro import AsyncChain
 
@@ -48,7 +49,7 @@ from hp2p.exceptions import (
     DecryptionError,
     HandshakeFailure,
     PeerConnectionLost,
-)
+    PeerCapabilitiesOnBlacklist)
 from hp2p.kademlia import (
     Address,
     Node,
@@ -185,11 +186,12 @@ class BaseServer(BaseService):
                 topic, self.privkey, addr, self.bootstrap_nodes, self.cancel_token)
         else:
             discovery_proto = PreferredNodeDiscoveryProtocol(
-                self.privkey, addr, self.bootstrap_nodes, self.preferred_nodes, self.cancel_token)
+                self.privkey, addr, self.bootstrap_nodes, self.preferred_nodes, self.event_bus, self.cancel_token)
         self.discovery = DiscoveryService(
             discovery_proto,
             self.peer_pool,
             self.port,
+            event_bus = self.event_bus,
             token=self.cancel_token,
         )
         if self.chain_config.report_memory_usage:
@@ -327,7 +329,14 @@ class BaseServer(BaseService):
         await self.wait(self.do_handshake(peer))
 
     async def do_handshake(self, peer: BasePeer) -> None:
-        await peer.do_p2p_handshake()
+        try:
+            await peer.do_p2p_handshake()
+        except PeerCapabilitiesOnBlacklist:
+            self.event_bus.broadcast(
+                AddPeerToBlacklistRequest(peer.remote.pubkey.to_bytes())
+            )
+            return
+
         await peer.do_sub_proto_handshake()
         await self.peer_pool.start_peer(peer)
 

@@ -19,7 +19,7 @@ deps = {
         "trie>=1.3.5,<2.0.0",
         "sortedcontainers>=2.0.4",
         "pbkdf2>=1.3",
-        "rlp-cython>=2.1.6",
+        "rlp-cython>=2.1.7",
         "dataclasses>=0.6, <1;python_version<'3.7'",
     ],
     # The hvm-extra sections is for libraries that the hvm does not
