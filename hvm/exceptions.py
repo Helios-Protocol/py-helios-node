@@ -118,6 +118,8 @@ class RewardAmountRoundsToZero(PyEVMError):
     """
     pass
 
+
+
 class NotEnoughDataForHistoricalMinGasPriceCalculation(PyEVMError):
     """
     Raised when there is not enough historical TPC to perform a calculation. Can occur when the genesis node just starts
