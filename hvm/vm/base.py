@@ -478,6 +478,10 @@ class VM(BaseVM):
         # Lets make sure we have this receivable transaction in the account
         receivable_tx_key = self.state.account_db.get_receivable_transaction(this_chain_address, receive_transaction.send_transaction_hash)
 
+        if receivable_tx_key is None:
+            # It might be saved as not imported because it threw an error before. It could work now if it was missing parents that are now there. Lets check
+            receivable_tx_key = self.state.account_db.get_receivable_transaction_saved_as_not_imported(this_chain_address, receive_transaction.send_transaction_hash)
+
         # Very first thing, check to see if this transaction has been received before:
         try:
             block_hash, index, is_receive = self.chaindb.get_transaction_index(receive_transaction.hash)
@@ -941,7 +945,7 @@ class VM(BaseVM):
         # Moved this from within the computation executor because it can revert memory on error, which will put the transactions back even though they were received already.
 
         for tx in block.receive_transactions:
-            self.state.account_db.delete_receivable_transaction(block.header.chain_address, tx.send_transaction_hash)
+            self.delete_transaction_as_receivable(block.header.chain_address, tx.send_transaction_hash)
 
         
         #save all send transactions in the state as receivable
@@ -992,7 +996,11 @@ class VM(BaseVM):
         try:
             self.state.account_db.delete_receivable_transaction(wallet_address, transaction_hash)
         except ReceivableTransactionNotFound:
-            pass
+            try:
+                self.state.account_db.delete_receivable_transaction_saved_as_not_imported(wallet_address, transaction_hash)
+            except ReceivableTransactionNotFound:
+                pass
+
         
     def delete_transactions_as_receivable(self,transactions, receive_transactions):
         for transaction in transactions:

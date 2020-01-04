@@ -215,7 +215,7 @@ class BaseChainDB(metaclass=ABCMeta):
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
-    def save_block_as_unprocessed(self, block: 'BaseBlock') -> None:
+    def save_block_as_unprocessed(self, block: 'BaseBlock', additional_parent_dependencies: List = None) -> None:
         raise NotImplementedError("ChainDB classes must implement this method")
 
     @abstractmethod
@@ -981,7 +981,7 @@ class ChainDB(BaseChainDB):
     #
     # Unprocessed Block API
     #
-    def save_block_as_unprocessed(self, block: 'BaseBlock') -> None:
+    def save_block_as_unprocessed(self, block: 'BaseBlock', additional_parent_dependencies: List[Hash32] = None) -> None:
         '''
         This saves the block as unprocessed, and saves to any unprocessed parents, including the one on this own chain and from receive transactions
         '''
@@ -992,6 +992,10 @@ class ChainDB(BaseChainDB):
 
         self.save_unprocessed_children_block_lookup_to_transaction_parents(block)
         self.save_unprocessed_children_block_lookup_to_reward_proof_parents(block)
+
+        if additional_parent_dependencies is not None:
+            for dependency in additional_parent_dependencies:
+                self.save_unprocessed_children_block_lookup(dependency)
 
     def remove_block_from_unprocessed(self, block: 'BaseBlock') -> None:
         '''
@@ -1577,8 +1581,9 @@ class ChainDB(BaseChainDB):
         elif child_block_hash in block_children:
             self.logger.debug("tried adding a child block that was already added")
         else:
-            block_children.append(child_block_hash)
-            self.save_block_children(parent_block_hash, block_children)
+            if child_block_hash not in block_children:
+                block_children.append(child_block_hash)
+                self.save_block_children(parent_block_hash, block_children)
 
     def get_block_children(self, parent_block_hash: Hash32) -> List[Hash32]:
         validate_word(parent_block_hash, title="Block_hash")

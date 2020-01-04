@@ -172,7 +172,7 @@ def test_call_missing_chain():
         gas_price=1,
         gas=max_gas,
         to=deployed_contract_address,
-        value=0,
+        value=1,
         data=decode_hex(w3_tx['data']),
     )
     chain.import_current_queue_block()
@@ -180,18 +180,31 @@ def test_call_missing_chain():
     #
     # We expect the import to fail and delete the receivable transaction
     #
-    # TODO: give it one more transaction so it imports the block still.
     contract_chain = TestnetTesterChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
     contract_chain.populate_queue_block_with_receive_tx()
+    # it will raise an error because it will delete the invalid transaction adn the block will have no transactions left
     with pytest.raises(RewardAmountRoundsToZero):
         contract_chain.import_current_queue_block()
 
     # The receive transaction will remain because the state wasnt persisted. But this wont happen if there are any valid transactions
     # so it isnt a problem.
 
+    # Send another valid transaction to the contract
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=deployed_contract_address,
+        value=1,
+    )
+    chain.import_current_queue_block()
+
     contract_chain.populate_queue_block_with_receive_tx()
     contract_chain.import_current_queue_block()
-    # assert(len(contract_chain.create_receivable_transactions()) == 0)
+    assert(len(contract_chain.create_receivable_transactions()) == 0)
+
+    # ensure balance is 1 so it only imported the valid block
+    print(contract_chain.get_vm().state.account_db.get_balance(deployed_contract_address))
+    assert(contract_chain.get_vm().state.account_db.get_balance(deployed_contract_address) == 1)
 
 
 test_call_missing_chain()

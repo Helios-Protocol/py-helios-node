@@ -98,7 +98,8 @@ class ReceivableTransactionNotFound(PyEVMError):
     """
     Raised when a A receive transaction tries to receive a transaction that wasnt sent
     """
-    pass
+    from_out_of_order_import = True
+
 
 class HistoricalNetworkTPCMissing(PyEVMError):
     """
@@ -247,18 +248,7 @@ class Halt(PyEVMError):
     """
     pass
 
-class RequiresCodeFromMissingChain(PyEVMError):
-    """
-    Raised when a dapp tries to access the code of a missing chain.
-    """
-    def __init__(self, code_address):
-        self.code_address = code_address
 
-class RequiresCodeFromChainInFuture(PyEVMError):
-    """
-    Raised when a dapp tries to access the code of a chain from the future.
-    """
-    pass
 
 
 class VMError(PyEVMError):
@@ -398,3 +388,18 @@ class ForbiddenOperationForExecutingOnSend(VMError):
     Raised when the sender side of the computation tries to do something it isnt allowed to.
     """
     pass
+
+
+class RequiresCodeFromMissingChain(VMError):
+    """
+    Raised when a dapp tries to access the code of a missing chain.
+    """
+    from_out_of_order_import = True
+    def __init__(self, code_address):
+        self.code_address = code_address
+
+class RequiresCodeFromChainInFuture(VMError):
+    """
+    Raised when a dapp tries to access the code of a chain from the future.
+    """
+    from_out_of_order_import = True

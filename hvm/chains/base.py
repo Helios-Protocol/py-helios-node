@@ -99,9 +99,9 @@ from hvm.exceptions import (
     ParentNotFound,
     NoChronologicalBlocks,
     RewardProofSenderBlockMissing,
-InvalidHeadRootTimestamp,
+    InvalidHeadRootTimestamp,
 
-    RewardAmountRoundsToZero, TriedDeletingGenesisBlock, NoGenesisBlockPresent)
+    RewardAmountRoundsToZero, TriedDeletingGenesisBlock, NoGenesisBlockPresent, RequiresCodeFromMissingChain)
 from eth_keys.exceptions import (
     BadSignature,
 )
@@ -182,6 +182,12 @@ import asyncio
 AccountState = Dict[Address, Dict[str, Union[int, bytes, Dict[int, int]]]]
 
 from hvm.db.min_gas import MinGasDB, BaseMinGasDB
+
+exceptions_for_saving_as_unprocessed = (
+    ReceivableTransactionNotFound,
+    RewardProofSenderBlockMissing,
+    RequiresCodeFromMissingChain,
+)
 
 class BaseChain(Configurable, metaclass=ABCMeta):
     """
@@ -1856,6 +1862,7 @@ class Chain(BaseChain):
         if isinstance(block, self.get_vm(timestamp = block.header.timestamp).get_queue_block_class()):
             # Set the queue block timestamp to now, when it is being imported.
             block = block.copy(header=block.header.copy(timestamp=int(time.time())))
+            allow_unprocessed = False
         else:
             if block.header.chain_address == self.genesis_wallet_address and block.header.block_number == 0:
                 try:
@@ -2127,20 +2134,18 @@ class Chain(BaseChain):
                 return_block = imported_block
 
 
-            except ReceivableTransactionNotFound as e:
+            except exceptions_for_saving_as_unprocessed as e:
                 if not allow_unprocessed:
                     raise UnprocessedBlockNotAllowed()
-                self.logger.debug("Saving block as unprocessed because of ReceivableTransactionNotFound error: {}".format(e))
-                return_block = self.save_block_as_unprocessed(block)
+
+                self.logger.debug("Saving block as unprocessed because of {} error: {}".format(e.__class__.__name__, e))
+                if isinstance(e, RequiresCodeFromMissingChain):
+                    return_block = self.save_block_as_unprocessed(block, e.code_address)
+                else:
+                    return_block = self.save_block_as_unprocessed(block)
                 if self.raise_errors:
                     raise e
 
-
-            except RewardProofSenderBlockMissing as e:
-                if not allow_unprocessed:
-                    raise UnprocessedBlockNotAllowed()
-                self.logger.debug("Saving block as unprocessed because of RewardProofSenderBlockMissing error: {}".format(e))
-                return_block = self.save_block_as_unprocessed(block)
 
         else:
             if not allow_unprocessed:
@@ -2217,8 +2222,8 @@ class Chain(BaseChain):
                                 self.chaindb.delete_unprocessed_children_blocks_lookup(current_block_hash_to_import)
 
                         except Exception as e:
-                            self.logger.error("Tried to import an unprocessed child block and got this error {}".format(e))
-
+                            self.logger.error("Tried to import an unprocessed child block and got this error {}. Going to delete it from unprocessed blocks.".format(e))
+                            self.chaindb.delete_unprocessed_children_blocks_lookup(current_block_hash_to_import)
 
 
                     if len(block_hashes_to_import) == 0:
@@ -2245,7 +2250,7 @@ class Chain(BaseChain):
             self.logger.debug("saving chronological consistency lookup for chain {}, block {}, timestamp {}".format(encode_hex(sender_chain_header.chain_address), block_number_with_restrictions, block_header.timestamp))
             self.chaindb.add_block_consistency_key(sender_chain_header.chain_address, block_number_with_restrictions, chronological_consistency_key)
 
-    def save_block_as_unprocessed(self, block):
+    def save_block_as_unprocessed(self, block, computation_call_parent_dependency: Hash32 = None):
         #if it is already saved as unprocesessed, do nothing
         if self.chaindb.is_block_unprocessed(block.hash):
             return block
@@ -2256,7 +2261,7 @@ class Chain(BaseChain):
         #     receive_transaction.validate()
 
         #now we add it to unprocessed blocks
-        self.chaindb.save_block_as_unprocessed(block)
+        self.chaindb.save_block_as_unprocessed(block, computation_call_parent_dependency)
 
 
         #save the transactions to db
@@ -2268,6 +2273,10 @@ class Chain(BaseChain):
         #We just want to save it to the database so we can process it later if needbe.
         self.chaindb.persist_non_canonical_block(block)
         #self.chaindb.persist_block(block)
+
+        # If this was caused by a computation call requiring a parent chain, we save this block as a child of the dependency
+        if computation_call_parent_dependency is not None:
+            self.chaindb.add_block_child(computation_call_parent_dependency, block.header.hash)
 
         try:
             self.header = self.create_header_from_parent(self.get_canonical_head())

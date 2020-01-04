@@ -18,8 +18,7 @@ from hvm.utils.hexadecimal import (
 
 from hvm.exceptions import (
     InsufficientFunds,
-    StackDepthLimit,
-)
+    StackDepthLimit)
 from .constants import (
     GAS_ECADD,
     GAS_ECMUL,
@@ -45,6 +44,12 @@ PHOTON_PRECOMPILES = merge(
         force_bytes_to_address(b'\x09'): precompiles.blake2b_fcompress,
     },
 )
+
+def check_for_out_of_order_block_import_error(error):
+    # Check to see if the error is a result of an out of order block import.
+    # If so, bubble the error up to be dealt with.
+    if hasattr(error, 'from_out_of_order_import') and error.from_out_of_order_import:
+        raise error
 
 class PhotonComputation(BosonComputation):
     """
@@ -136,6 +141,10 @@ class PhotonComputation(BosonComputation):
 
                 # Reset the computation call nonce on error.
                 self.state.execution_context.computation_call_nonce = computation_call_nonce_snapshot
+
+                # We cannot let blocks be imported if they reference missing chains. This could result in
+                # inconsistencies
+                check_for_out_of_order_block_import_error(computation._error)
             else:
                 self.state.commit(snapshot)
 
@@ -171,6 +180,9 @@ class PhotonComputation(BosonComputation):
                     )
                     self.state.revert(snapshot)
                     self.state.execution_context.computation_call_nonce = computation_call_nonce_snapshot
+                    # We cannot let blocks be imported if they reference missing chains. This could result in
+                    # inconsistencies if the chains exist later
+                    check_for_out_of_order_block_import_error(computation._error)
                 else:
                     # computation worked, but we don't want it yet until the receive transaction. So lets revert the computation
                     # but commit the transaction above.
@@ -194,6 +206,9 @@ class PhotonComputation(BosonComputation):
                     # This will revert the computation snapshot as well.
                     self.state.revert(snapshot)
                     self.state.execution_context.computation_call_nonce = computation_call_nonce_snapshot
+                    # We cannot let blocks be imported if they reference missing chains. This could result in
+                    # inconsistencies if the chains exist later
+                    check_for_out_of_order_block_import_error(computation._error)
                 else:
                     self.logger.debug(
                         "SUCCESSFULLY EXECUTED SEND PORTION OF TRANSACTION"

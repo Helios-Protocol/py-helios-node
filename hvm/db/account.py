@@ -521,7 +521,7 @@ class AccountDB(BaseAccountDB):
         try:
             del self._journaldb[lookup_key]
         except KeyError:
-            pass
+            raise ReceivableTransactionNotFound("transaction hash {0} not found in receivable_transactions_saved_as_not_imported database for wallet {1}".format(transaction_hash, address))
 
 
     #

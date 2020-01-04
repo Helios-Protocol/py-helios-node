@@ -11,7 +11,10 @@ contract TestInvalidCalls{
     using SafeMath for uint256;
 
 
-    function testCall(address contract_address) public{
+    function testCall(address contract_address) public payable{
         uint256 test = OtherContract(contract_address).getBalance();
+    }
+
+    function() external payable{
     }
 }
