@@ -135,7 +135,7 @@ RECEIVER = get_primary_node_private_helios_key(1)
 RECEIVER2 = get_primary_node_private_helios_key(2)
 RECEIVER3 = get_primary_node_private_helios_key(3)
 RECEIVER4 = get_primary_node_private_helios_key(4)
-
+from eth_account.account import Account
 from tests.hvm.smart_contract_helpers import (
     compile_sol_and_save_to_file,
     load_compiled_sol_dict,
@@ -154,7 +154,8 @@ def test_call_missing_chain():
 
     w3 = Web3()
     max_gas = 20000000
-    random_address = Address(20 * b'\x42')
+    random_private_key = Account.create()._key_obj
+    vm_class = PhotonVM.with_zero_min_time_between_blocks()
 
     TestInvalidCalls = w3.hls.contract(
         address=Web3.toChecksumAddress(deployed_contract_address),
@@ -164,11 +165,11 @@ def test_call_missing_chain():
     #
     # Call a smart contract that doesnt exist
     #
-    w3_tx = TestInvalidCalls.functions.testCall(random_address).buildTransaction(W3_TX_DEFAULTS)
+    w3_tx = TestInvalidCalls.functions.testCall(random_private_key.public_key.to_canonical_address()).buildTransaction(W3_TX_DEFAULTS)
 
-    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    chain = TestnetTesterChain(testdb, TESTNET_GENESIS_PRIVATE_KEY.public_key.to_canonical_address(), TESTNET_GENESIS_PRIVATE_KEY, vm_class)
 
-    chain.create_and_sign_transaction_for_queue_block(
+    bad_tx = chain.create_and_sign_transaction_for_queue_block(
         gas_price=1,
         gas=max_gas,
         to=deployed_contract_address,
@@ -180,7 +181,7 @@ def test_call_missing_chain():
     #
     # We expect the import to fail and delete the receivable transaction
     #
-    contract_chain = TestnetTesterChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY, PhotonVM.with_zero_min_time_between_blocks())
+    contract_chain = TestnetTesterChain(testdb, deployed_contract_address, TESTNET_GENESIS_PRIVATE_KEY, vm_class)
     contract_chain.populate_queue_block_with_receive_tx()
     # it will raise an error because it will delete the invalid transaction adn the block will have no transactions left
     with pytest.raises(RewardAmountRoundsToZero):
@@ -196,15 +197,38 @@ def test_call_missing_chain():
         to=deployed_contract_address,
         value=1,
     )
+    # also send a tx to the chain that is missing. to be imported later
+    chain.create_and_sign_transaction_for_queue_block(
+        gas_price=1,
+        gas=max_gas,
+        to=random_private_key.public_key.to_canonical_address(),
+        value=1,
+    )
     chain.import_current_queue_block()
 
     contract_chain.populate_queue_block_with_receive_tx()
-    contract_chain.import_current_queue_block()
+    timestamp_of_invalid_block = contract_chain.import_current_queue_block().header.timestamp
     assert(len(contract_chain.create_receivable_transactions()) == 0)
 
     # ensure balance is 1 so it only imported the valid block
-    print(contract_chain.get_vm().state.account_db.get_balance(deployed_contract_address))
     assert(contract_chain.get_vm().state.account_db.get_balance(deployed_contract_address) == 1)
+
+    bad_tx_key_not_imported = contract_chain.get_vm().state.account_db.get_receivable_transaction_saved_as_not_imported(deployed_contract_address, bad_tx.hash)
+    print(bad_tx_key_not_imported)
+
+    #
+    # Now lets add the chain that it called, and make the first block before the one we just imported. This simulates out of order import.
+    #
+    missing_chain = TestnetTesterChain(testdb, random_private_key.public_key.to_canonical_address(), random_private_key, vm_class)
+    re_txs = missing_chain.create_receivable_transactions()
+    valid_block = create_valid_block_at_timestamp(testdb,
+                                                  random_private_key,
+                                                  receive_transactions=re_txs,
+                                                  timestamp=timestamp_of_invalid_block,
+                                                  vm_class=vm_class)
+    # import the block that was missing
+    missing_chain.import_block(valid_block)
+
 
 
 test_call_missing_chain()
