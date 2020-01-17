@@ -82,16 +82,16 @@ V5_HANDLER_TYPE = Callable[[kademlia.Node, Tuple[Any, ...], Hash32, bytes], None
 
 MAX_ENTRIES_PER_TOPIC = 50
 # UDP packet constants.
-V400_HELIOS_STRING = b"HLS"
+HELIOS_DISCOVERY_STRING = b"HLS"
 V5_ID_STRING = b"temporary discovery v5"
 MAC_SIZE = 256 // 8  # 32
 SIG_SIZE = 520 // 8  # 65
 HEAD_SIZE = MAC_SIZE + SIG_SIZE  # 97
 HEAD_SIZE_V5 = len(V5_ID_STRING) + SIG_SIZE  # 87
-HEAD_SIZE_V400_HELIOS = len(V400_HELIOS_STRING) + MAC_SIZE + SIG_SIZE
+HEAD_SIZE_V400_HELIOS = len(HELIOS_DISCOVERY_STRING) + MAC_SIZE + SIG_SIZE
 EXPIRATION = 60  # let messages expire after N secondes
-PROTO_VERSION = 400
-PROTO_VERSION_V5 = 500
+PROTO_VERSION = 4
+PROTO_VERSION_V5 = 5
 
 
 class DefectiveMessage(Exception):
@@ -144,6 +144,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
     logger: TraceLogger = cast(TraceLogger, logging.getLogger("hp2p.discovery.DiscoveryProtocol"))
     transport: asyncio.DatagramTransport = None
     use_v5 = False
+    require_helios_discovery_string = False
     _max_neighbours_per_packet_cache = None
 
     def __init__(self,
@@ -166,6 +167,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         self.parity_pong_tokens: Dict[Hash32, Hash32] = {}
         self.cancel_token = CancelToken('DiscoveryProtocol').chain(cancel_token)
         self.bootstrap_lock = asyncio.Lock()
+        self.node_pubkeys_using_helios_discovery_string = set()
 
     def update_routing_table(self, node: kademlia.Node) -> None:
         """Update the routing table entry for the given node."""
@@ -450,17 +452,25 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         address = kademlia.Address(ip_address, udp_port)
         # The prefix below is what geth uses to identify discv5 msgs.
         # https://github.com/ethereum/go-ethereum/blob/c4712bf96bc1bae4a5ad4600e9719e4a74bde7d5/p2p/discv5/udp.go#L149  # noqa: E501
-        if text_if_str(to_bytes, data).startswith(V400_HELIOS_STRING):
-            data = data[len(V400_HELIOS_STRING):]
-        if text_if_str(to_bytes, data).startswith(V5_ID_STRING):
-            self.receive_v5(address, cast(bytes, data))
+        if text_if_str(to_bytes, data).startswith(HELIOS_DISCOVERY_STRING):
+            data = data[len(HELIOS_DISCOVERY_STRING):]
+            uses_helios_discovery_string = True
         else:
-            self.receive(address, cast(bytes, data))
+            if self.require_helios_discovery_string:
+                self.logger.debug("received datagram from {} without helios discovery string. discarding".format(ip_address))
+                return
+            uses_helios_discovery_string = False
+
+        if text_if_str(to_bytes, data).startswith(V5_ID_STRING):
+            self.receive_v5(address, cast(bytes, data), uses_helios_discovery_string)
+        else:
+            self.receive(address, cast(bytes, data), uses_helios_discovery_string)
 
     def error_received(self, exc: Exception) -> None:
         self.logger.error('error received: %s', exc)
 
     def send(self, node: kademlia.Node, message: bytes) -> None:
+        message = self.add_helios_discovery_string_if_needed(node, message)
         self.transport.sendto(message, (node.address.ip, node.address.udp_port))
 
     async def stop(self) -> None:
@@ -471,7 +481,28 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         # and exit cleanly when they notice the cancel token has been triggered.
         await asyncio.sleep(0.1)
 
-    def receive(self, address: kademlia.Address, message: bytes) -> None:
+    def update_helios_discovery_string_table(self, node: kademlia.Node, uses_helios_discovery_string: bool) -> None:
+        if uses_helios_discovery_string:
+            self.logger.debug("Node {} is using the helios discovery string. saving to table.".format(node))
+            self.node_pubkeys_using_helios_discovery_string.add(node.pubkey.to_bytes())
+        else:
+            try:
+                self.node_pubkeys_using_helios_discovery_string.remove(node.pubkey.to_bytes())
+            except KeyError:
+                pass
+
+    def uses_helios_discovery_string(self, node: kademlia.Node) -> bool:
+        return node.pubkey.to_bytes() in self.node_pubkeys_using_helios_discovery_string
+
+    def add_helios_discovery_string_if_needed(self, node: kademlia.Node, message: bytes):
+        if self.require_helios_discovery_string or self.uses_helios_discovery_string(node):
+            self.logger.debug("sending message to node {} with helios discovery string".format(node))
+            return HELIOS_DISCOVERY_STRING + message
+        else:
+            return message
+
+
+    def receive(self, address: kademlia.Address, message: bytes, uses_helios_discovery_string: bool = False) -> None:
         try:
             remote_pubkey, cmd_id, payload, message_hash = _unpack_v4(message)
         except DefectiveMessage as e:
@@ -491,6 +522,9 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             self.logger.error('invalid %s payload: %s', cmd.name, payload)
             return
         node = kademlia.Node(remote_pubkey, address)
+
+        self.update_helios_discovery_string_table(node, uses_helios_discovery_string)
+
         handler = self._get_handler(cmd)
         handler(node, payload, message_hash)
 
@@ -620,7 +654,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         reply with a pong, whereas in the latter we'll also fire a callback from ping_callbacks.
         """
         version = rlp.sedes.big_endian_int.deserialize(payload[0])
-        if version != PROTO_VERSION and version != 4:
+        if version != PROTO_VERSION and version != 400:
             self.logger.debug("Received ping with incompatable version {}. Adding node to blacklist.".format(version))
             self.event_bus.broadcast(
                 AddPeerToBlacklistRequest(remote.pubkey.to_bytes())
@@ -671,7 +705,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         else:
             raise ValueError(f"Unknown command: {cmd}")
 
-    def receive_v5(self, address: kademlia.Address, message: bytes) -> None:
+    def receive_v5(self, address: kademlia.Address, message: bytes, uses_helios_discovery_string = False) -> None:
         try:
             remote_pubkey, cmd_id, payload, message_hash = _unpack_v5(message)
         except DefectiveMessage as e:
@@ -683,6 +717,9 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             self.logger.error('invalid %s payload: %s', cmd.name, payload)
             return
         node = kademlia.Node(remote_pubkey, address)
+
+        self.update_helios_discovery_string_table(node, uses_helios_discovery_string)
+
         handler = self._get_handler_v5(cmd)
         handler(node, payload, message_hash, message)
 
