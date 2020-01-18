@@ -51,6 +51,10 @@ MAINNET_BOOTNODES = (
 ROPSTEN_BOOTNODES = ()
 DISCOVERY_V5_BOOTNODES = ()
 
+DISCOVERY_SERVICE_LOOP_SLEEP = 5
+DISCOVERY_SERVICE_BLACKLIST_FILTER_LOOP_SLEEP = 10
+DISCOVERY_USE_BLACKLIST = True
+
 # Maximum peers number, we'll try to keep open connections up to this number of peers
 DEFAULT_MAX_PEERS = 25
 DEFAULT_MAX_PEERS_BOOTNODE = 35
@@ -69,6 +73,11 @@ SEAL_CHECK_RANDOM_SAMPLE_RATE = 48
 # aborting the connection attempt.
 DEFAULT_PEER_BOOT_TIMEOUT = 20
 
+# The maximum number of concurrent attempts to establis new peer connections
+MAX_CONCURRENT_CONNECTION_ATTEMPTS = 10
+
+# The amount of seconds a connection can be idle.
+HANDSHAKE_TIMEOUT = 10
 
 ############
 # NEW HELIOS
@@ -108,6 +117,38 @@ SYNC_WITH_CONSENSUS_LOOP_TIME_PERIOD = 2 # The amount of time between each main 
 # When doing a fast sync, it will try to sync up until this many seconds ago.
 TIME_OFFSET_TO_FAST_SYNC_TO = 24*60*60
 
+#
+# Kademlia Constants
+#
+
+# number of bits per hop
+KADEMLIA_BITS_PER_HOP = 8
+
+# bucket size for kademlia routing table
+KADEMLIA_BUCKET_SIZE = 16
+
+# round trip message timout
+KADEMLIA_REQUEST_TIMEOUT = 7.2
+
+# Amount of time to consider a bucket idle
+KADEMLIA_IDLE_BUCKET_REFRESH_INTERVAL = 3600
+
+# Number of parallele `find_node` lookups that can be in progress
+KADEMLIA_FIND_CONCURRENCY = 3
+
+# Size of public keys in bits
+KADEMLIA_PUBLIC_KEY_SIZE = 512
+
+# Size of a node id in bits
+KADEMLIA_ID_SIZE = 256
+
+# Maximum node `id` for a kademlia node
+KADEMLIA_MAX_NODE_ID = (2 ** KADEMLIA_ID_SIZE) - 1
 
 
+# Reserved command length for the base `p2p` protocol
+# - https://github.com/ethereum/devp2p/blob/master/rlpx.md#message-id-based-multiplexing
+P2P_PROTOCOL_COMMAND_LENGTH = 16
 
+# RLPx header data
+RLPX_HEADER_DATA = b'\xc2\x80\x80'  # rlp.encode([0, 0])

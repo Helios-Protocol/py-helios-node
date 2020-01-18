@@ -25,7 +25,12 @@ from typing import (
     Tuple,
     Type,
 )
-
+from eth_utils import (
+    clamp,
+)
+from eth_utils.toolz import (
+    take,
+)
 import sha3
 
 from cytoolz import groupby
@@ -47,6 +52,7 @@ from cancel_token import CancelToken, OperationCancelled
 
 from lahja import Endpoint
 
+from helios.plugins.builtin.peer_blacklist.events import AddPeerToBlacklistRequest
 from helios.protocol.common.datastructures import ConnectedNodesInfo
 from hp2p import auth
 from hp2p import protocol
@@ -63,7 +69,7 @@ from hp2p.exceptions import (
     UnknownProtocolCommand,
     UnreachablePeer,
     NoConnectedPeers,
-)
+    IneligiblePeer, BaseP2PError, PeerCapabilitiesOnBlacklist)
 
 
 from hp2p.service import BaseService
@@ -88,7 +94,7 @@ from .constants import (
     DEFAULT_PEER_BOOT_TIMEOUT,
     HEADER_LEN,
     MAC_LEN,
-)
+    MAX_CONCURRENT_CONNECTION_ATTEMPTS, HANDSHAKE_TIMEOUT)
 
 from .events import (
     PeerCountRequest,
@@ -96,6 +102,22 @@ from .events import (
     GetConnectedNodesRequest, GetConnectedNodesResponse)
 
 from sortedcontainers import SortedList
+
+COMMON_PEER_CONNECTION_EXCEPTIONS = cast(Tuple[Type[BaseP2PError], ...], (
+    NoMatchingPeerCapabilities,
+    PeerConnectionLost,
+    asyncio.TimeoutError,
+    UnreachablePeer,
+))
+
+# This should contain all exceptions that should not propogate during a
+# standard attempt to connect to a peer.
+ALLOWED_PEER_CONNECTION_EXCEPTIONS = cast(Tuple[Type[BaseP2PError], ...], (
+    IneligiblePeer,
+    BadAckMessage,
+    MalformedMessage,
+    HandshakeFailure,
+)) + COMMON_PEER_CONNECTION_EXCEPTIONS
 
 async def handshake(remote: Node, factory: 'BasePeerFactory') -> 'BasePeer':
     """Perform the auth and P2P handshakes with the given remote.
@@ -119,7 +141,9 @@ async def handshake(remote: Node, factory: 'BasePeerFactory') -> 'BasePeer':
          writer
          ) = await auth.handshake(remote, factory.privkey, factory.cancel_token)
     except (ConnectionRefusedError, OSError) as e:
-        raise UnreachablePeer() from e
+        raise UnreachablePeer(f"Can't reach {remote!r}") from e
+
+
     connection = PeerConnection(
         reader=reader,
         writer=writer,
@@ -485,6 +509,7 @@ class BasePeer(BaseService):
             self.sub_proto = self.select_sub_protocol(remote_capabilities)
         except NoMatchingPeerCapabilities:
             await self.disconnect(DisconnectReason.useless_peer)
+            self.check_blacklist_protocols(remote_capabilities)
             raise HandshakeFailure(
                 f"No matching capabilities between us ({self.capabilities}) and {self.remote} "
                 f"({remote_capabilities}), disconnecting"
@@ -614,6 +639,18 @@ class BasePeer(BaseService):
             if proto_class.version == highest_matching_version:
                 return proto_class(self, offset)
         raise NoMatchingPeerCapabilities()
+
+    def check_blacklist_protocols(self, remote_capabilities: List[Tuple[bytes, int]]) -> None:
+        # Sometimes ethereum nodes show up. We need to blacklist them here.
+        remote_capabilities_dict = dict(remote_capabilities)
+        if not "HLS" in remote_capabilities_dict:
+            self.logger.debug(
+                f"Peer is using blacklisted capabilities {self.remote} "
+                f"({remote_capabilities}), disconnecting"
+            )
+            raise PeerCapabilitiesOnBlacklist()
+
+
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__} {self.remote}"
@@ -791,6 +828,10 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
         self.connected_nodes: Dict[Node, BasePeer] = {}
         self._subscribers: List[PeerSubscriber] = []
         self.event_bus = event_bus
+
+        # Restricts the number of concurrent connection attempts can be made
+        self._connection_attempt_lock = asyncio.BoundedSemaphore(MAX_CONCURRENT_CONNECTION_ATTEMPTS)
+
         if self.event_bus is not None:
             self.run_task(self.handle_peer_count_requests())
 
@@ -840,13 +881,13 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
         return len(self) >= self.max_peers
 
     def is_valid_connection_candidate(self, candidate: Node) -> bool:
-        # connect to no more then 2 nodes with the same IP
+        # connect to no more then 3 nodes with the same IP
         nodes_by_ip = groupby(
             operator.attrgetter('remote.address.ip'),
             self.connected_nodes.values(),
         )
         matching_ip_nodes = nodes_by_ip.get(candidate.address.ip, [])
-        return len(matching_ip_nodes) <= 2
+        return len(matching_ip_nodes) <= 3
 
     def subscribe(self, subscriber: PeerSubscriber) -> None:
         self._subscribers.append(subscriber)
@@ -910,61 +951,133 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
     async def _cleanup(self) -> None:
         await self.stop_all_peers()
 
+
+
     async def connect(self, remote: Node) -> BasePeer:
         """
         Connect to the given remote and return a Peer instance when successful.
         Returns None if the remote is unreachable, times out or is useless.
         """
-        if remote in self.connected_nodes:
-            self.logger.debug("Skipping %s; already connected to it", remote)
-            return None
-        expected_exceptions = (
-            HandshakeFailure,
-            PeerConnectionLost,
-            TimeoutError,
-            UnreachablePeer,
-        )
-        try:
-            self.logger.trace("Connecting to %s...", remote)
-            # We use self.wait() as well as passing our CancelToken to handshake() as a workaround
-            # for https://github.com/ethereum/py-evm/issues/670.
-            peer = await self.wait(handshake(remote, self.get_peer_factory()))
 
-            return peer
+        if any(peer.remote == remote for peer in self.connected_nodes.values()):
+            self.logger.debug("Skipping %s; already connected to it", remote)
+            raise IneligiblePeer(f"Already connected to {remote}")
+
+
+        try:
+            self.logger.debug("Connecting to %s...", remote)
+            return await self.wait(
+                handshake(remote, self.get_peer_factory()),
+                timeout=HANDSHAKE_TIMEOUT,
+            )
         except OperationCancelled:
             # Pass it on to instruct our main loop to stop.
             raise
         except BadAckMessage:
-            # This is kept separate from the `expected_exceptions` to be sure that we aren't
+            # This is kept separate from the
+            # `COMMON_PEER_CONNECTION_EXCEPTIONS` to be sure that we aren't
             # silencing an error in our authentication code.
             self.logger.error('Got bad auth ack from %r', remote)
             # dump the full stacktrace in the debug logs
             self.logger.debug('Got bad auth ack from %r', remote, exc_info=True)
+            raise
         except MalformedMessage:
-            # This is kept separate from the `expected_exceptions` to be sure that we aren't
+            # This is kept separate from the
+            # `COMMON_PEER_CONNECTION_EXCEPTIONS` to be sure that we aren't
             # silencing an error in how we decode messages during handshake.
             self.logger.error('Got malformed response from %r during handshake', remote)
             # dump the full stacktrace in the debug logs
             self.logger.debug('Got malformed response from %r', remote, exc_info=True)
-        except expected_exceptions as e:
+            raise
+        except HandshakeFailure as e:
             self.logger.debug("Could not complete handshake with %r: %s", remote, repr(e))
+            raise
+        except COMMON_PEER_CONNECTION_EXCEPTIONS as e:
+            self.logger.debug("Could not complete handshake with %r: %s", remote, repr(e))
+            raise
+        except asyncio.CancelledError:
+            # no need to log this exception, this is expected
+            raise
+        except TimeoutError as e:
+            self.logger.debug("Could not complete handshake with %r: %s", remote, repr(e))
+            raise UnreachablePeer()
+        except PeerCapabilitiesOnBlacklist:
+            raise
         except Exception:
-            self.logger.exception("Unexpected error during auth/hp2p handshake with %r", remote)
-        return None
+            self.logger.exception("Unexpected error during auth/p2p handshake with %r", remote)
+            raise
+
+
+    async def connect_to_node(self, node: Node) -> None:
+        """
+        Connect to a single node quietly aborting if the peer pool is full or
+        shutting down, or one of the expected peer level exceptions is raised
+        while connecting.
+        """
+        if self.is_full or not self.is_operational:
+            return
+
+        try:
+            async with self._connection_attempt_lock:
+                peer = await self.connect(node)
+        except ALLOWED_PEER_CONNECTION_EXCEPTIONS:
+            return
+        except PeerCapabilitiesOnBlacklist:
+            self.event_bus.broadcast(
+                AddPeerToBlacklistRequest(node.pubkey.to_bytes())
+            )
+            return
+        except Exception:
+            return
+
+        # Check again to see if we have *become* full since the previous
+        # check.
+        if self.is_full:
+            self.logger.debug(
+                "Successfully connected to %s but peer pool is full.  Disconnecting.",
+                peer,
+            )
+            await peer.disconnect(DisconnectReason.TOO_MANY_PEERS)
+            return
+        elif not self.is_operational:
+            self.logger.debug(
+                "Successfully connected to %s but peer pool no longer operational.  Disconnecting.",
+                peer,
+            )
+            await peer.disconnect(DisconnectReason.CLIENT_QUITTING)
+            return
+        else:
+            await self.start_peer(peer)
 
     async def connect_to_nodes(self, nodes: Iterator[Node]) -> None:
-        for node in nodes:
-            self.logger.debug("Peer pool connecting to node {}".format(node))
-            if self.is_full:
-                self.logger.debug("Peer pool node connection failed because we have max nodes")
+        # create an generator for the nodes
+        nodes_iter = iter(nodes)
+        while True:
+            if self.is_full or not self.is_operational:
                 return
 
-            # TODO: Consider changing connect() to raise an exception instead of returning None,
-            # as discussed in
-            # https://github.com/ethereum/py-evm/pull/139#discussion_r152067425
-            peer = await self.connect(node)
-            if peer is not None:
-                await self.start_peer(peer)
+            # only attempt to connect to up to the maximum number of available
+            # peer slots that are open.
+            available_peer_slots = self.max_peers - len(self)
+            batch_size = clamp(1, 10, available_peer_slots)
+            batch = tuple(take(batch_size, nodes_iter))
+
+            # There are no more *known* nodes to connect to.
+            if not batch:
+                return
+
+            self.logger.debug(
+                'Initiating %d peer connection attempts with %d open peer slots',
+                len(batch),
+                available_peer_slots,
+            )
+            # Try to connect to the peers concurrently.
+            await asyncio.gather(
+                *(self.connect_to_node(node) for node in batch),
+                loop=self.get_event_loop(),
+            )
+
+
 
     def _peer_finished(self, peer: BaseService) -> None:
         """Remove the given peer from our list of connected nodes.

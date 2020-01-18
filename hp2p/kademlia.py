@@ -21,6 +21,7 @@ from urllib import parse as urlparse
 from eth_utils import (
     big_endian_to_int,
     decode_hex,
+    remove_0x_prefix
 )
 
 from eth_keys import (
@@ -28,17 +29,9 @@ from eth_keys import (
     keys,
 )
 
+from hp2p import constants
+
 from eth_hash.auto import keccak
-
-k_b = 8  # 8 bits per hop
-
-k_bucket_size = 16
-k_request_timeout = 0.9                  # timeout of message round trips
-k_idle_bucket_refresh_interval = 3600    # ping all nodes in bucket if bucket was idle
-k_find_concurrency = 3                   # parallel find node lookups
-k_pubkey_size = 512
-k_id_size = 256
-k_max_node_id = 2 ** k_id_size - 1
 
 
 def int_to_big_endian4(integer: int) -> bytes:
@@ -106,6 +99,11 @@ class Node:
         pubkey = keys.PublicKey(decode_hex(parsed.username))
         return cls(pubkey, Address(parsed.hostname, parsed.port))
 
+    def uri(self) -> str:
+        hexstring = self.pubkey.to_hex()
+        hexstring = remove_0x_prefix(hexstring)
+        return f'enode://{hexstring}@{self.address.ip}:{self.address.tcp_port}'
+
     def __str__(self) -> str:
         return '<Node(%s@%s)>' % (self.pubkey.to_hex()[:6], self.address.ip)
 
@@ -142,7 +140,7 @@ class KBucket(Sized):
     The bucket is kept sorted by time last seen—least-recently seen node at the head,
     most-recently seen at the tail.
     """
-    k = k_bucket_size
+    k = constants.KADEMLIA_BUCKET_SIZE
 
     def __init__(self, start: int, end: int) -> None:
         self.start = start
@@ -232,7 +230,7 @@ class RoutingTable:
     def __init__(self, node: Node) -> None:
         self._initialized_at = time.monotonic()
         self.this_node = node
-        self.buckets = [KBucket(0, k_max_node_id)]
+        self.buckets = [KBucket(0, constants.KADEMLIA_MAX_NODE_ID)]
 
     def get_random_nodes(self, count: int) -> Iterator[Node]:
         if count > len(self):
@@ -265,7 +263,7 @@ class RoutingTable:
 
     @property
     def idle_buckets(self) -> List[KBucket]:
-        idle_cutoff_time = time.monotonic() - k_idle_bucket_refresh_interval
+        idle_cutoff_time = time.monotonic() - constants.KADEMLIA_IDLE_BUCKET_REFRESH_INTERVAL
         return [b for b in self.buckets if b.last_updated < idle_cutoff_time]
 
     @property
@@ -287,7 +285,7 @@ class RoutingTable:
             # Split if the bucket has the local node in its range or if the depth is not congruent
             # to 0 mod k_b
             depth = _compute_shared_prefix_bits(bucket.nodes)
-            if bucket.in_range(self.this_node) or (depth % k_b != 0 and depth != k_id_size):
+            if bucket.in_range(self.this_node) or (depth % constants.KADEMLIA_BITS_PER_HOP != 0 and depth != constants.KADEMLIA_ID_SIZE):
                 self.split_bucket(self.buckets.index(bucket))
                 return self.add_node(node)  # retry
             # Nothing added, ping eviction_candidate
@@ -311,7 +309,7 @@ class RoutingTable:
             for n in b.nodes:
                 yield n
 
-    def neighbours(self, node_id: int, k: int = k_bucket_size) -> List[Node]:
+    def neighbours(self, node_id: int, k: int = constants.KADEMLIA_BUCKET_SIZE) -> List[Node]:
         """Return up to k neighbours of the given node."""
         nodes = []
         # Sorting by bucket.midpoint does not work in edge cases, so build a short list of k * 2
@@ -359,13 +357,13 @@ def _compute_shared_prefix_bits(nodes: List[Node]) -> int:
     """Count the number of prefix bits shared by all nodes."""
     def to_binary(x: int) -> str:  # left padded bit representation
         b = bin(x)[2:]
-        return '0' * (k_id_size - len(b)) + b
+        return '0' * (constants.KADEMLIA_ID_SIZE - len(b)) + b
 
     if len(nodes) < 2:
-        return k_id_size
+        return constants.KADEMLIA_ID_SIZE
 
     bits = [to_binary(n.id) for n in nodes]
-    for i in range(1, k_id_size + 1):
+    for i in range(1, constants.KADEMLIA_ID_SIZE + 1):
         if len(set(b[:i] for b in bits)) != 1:
             return i - 1
     # This means we have at least two nodes with the same ID, so raise an AssertionError

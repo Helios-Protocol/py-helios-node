@@ -57,8 +57,19 @@ async def handshake(
     use_eip8 = False
     initiator = HandshakeInitiator(remote, privkey, use_eip8, token)
     reader, writer = await initiator.connect()
-    aes_secret, mac_secret, egress_mac, ingress_mac = await _handshake(
-        initiator, reader, writer, token)
+    try:
+        aes_secret, mac_secret, egress_mac, ingress_mac = await _handshake(
+            initiator, reader, writer, token)
+    except Exception:
+        # Note: This is one of two places where we manually handle closing the
+        # reader/writer connection pair in the event of an error during the
+        # peer connection and handshake process.
+        # See `p2p.peer.handshake` for the other.
+        if not reader.at_eof():
+            reader.feed_eof()
+        writer.close()
+        await asyncio.sleep(0)
+        raise
     return aes_secret, mac_secret, egress_mac, ingress_mac, reader, writer
 
 
@@ -73,6 +84,10 @@ async def _handshake(initiator: 'HandshakeInitiator', reader: asyncio.StreamRead
     initiator_nonce = keccak(os.urandom(HASH_LEN))
     auth_msg = initiator.create_auth_message(initiator_nonce)
     auth_init = initiator.encrypt_auth_message(auth_msg)
+
+    if writer.transport.is_closing():
+        raise HandshakeFailure("Error during handshake with {initiator.remote!r}. Writer closed.")
+
     writer.write(auth_init)
 
     auth_ack = await token.cancellable_wait(
@@ -94,6 +109,7 @@ async def _handshake(initiator: 'HandshakeInitiator', reader: asyncio.StreamRead
     )
 
     return aes_secret, mac_secret, egress_mac, ingress_mac
+
 
 
 class HandshakeBase:

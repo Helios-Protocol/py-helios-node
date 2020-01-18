@@ -20,6 +20,7 @@ from lahja import (
     Endpoint
 )
 
+from helios.plugins.builtin.peer_blacklist.events import AddPeerToBlacklistRequest
 from helios.utils.profiling import coro_periodically_report_memory_stats
 from helios.chains.coro import AsyncChain
 
@@ -36,7 +37,7 @@ from hp2p.constants import (
     DEFAULT_MAX_PEERS,
     HASH_LEN,
     REPLY_TIMEOUT,
-)
+    DISCOVERY_USE_BLACKLIST)
 from hp2p.discovery import (
     get_v5_topic,
     DiscoveryByTopicProtocol,
@@ -48,7 +49,7 @@ from hp2p.exceptions import (
     DecryptionError,
     HandshakeFailure,
     PeerConnectionLost,
-)
+    PeerCapabilitiesOnBlacklist)
 from hp2p.kademlia import (
     Address,
     Node,
@@ -71,7 +72,7 @@ from helios.sync.full.service import FullNodeSyncer
 from hp2p.consensus import Consensus
 from hp2p.smart_contract_chain_manager import SmartContractChainManager
 
-DIAL_IN_OUT_RATIO = 1
+DIAL_IN_OUT_RATIO = 0.75
 
 
 ANY_PEER_POOL = Union[HLSPeerPool]
@@ -185,11 +186,12 @@ class BaseServer(BaseService):
                 topic, self.privkey, addr, self.bootstrap_nodes, self.cancel_token)
         else:
             discovery_proto = PreferredNodeDiscoveryProtocol(
-                self.privkey, addr, self.bootstrap_nodes, self.preferred_nodes, self.cancel_token)
+                self.privkey, addr, self.bootstrap_nodes, self.preferred_nodes, self.event_bus, self.cancel_token)
         self.discovery = DiscoveryService(
             discovery_proto,
             self.peer_pool,
             self.port,
+            event_bus = self.event_bus,
             token=self.cancel_token,
         )
         if self.chain_config.report_memory_usage:
@@ -318,19 +320,24 @@ class BaseServer(BaseService):
             in self.peer_pool.connected_nodes.values()
             if peer.inbound
         ])
-        if self.chain_config.node_type != 4 and total_peers > int(self.peer_pool.max_peers*DIAL_IN_OUT_RATIO) and inbound_peer_count / total_peers > DIAL_IN_OUT_RATIO:
-            # make sure to have at least 1/4 outbound connections
-            await peer.disconnect(DisconnectReason.too_many_peers)
-        elif total_peers >= self.peer_pool.max_peers:
-            # Do this no matter what the inbound outbound ratio is
-            await peer.disconnect(DisconnectReason.too_many_peers)
-        else:
-            # We use self.wait() here as a workaround for
-            # https://github.com/ethereum/py-evm/issues/670.
-            await self.wait(self.do_handshake(peer))
+        # if self.chain_config.node_type != 4 and total_peers > 1 and inbound_peer_count / total_peers > DIAL_IN_OUT_RATIO:
+        #     # make sure to have at least 1/4 outbound connections
+        #     await peer.disconnect(DisconnectReason.too_many_peers)
+        # else:
+        # We use self.wait() here as a workaround for
+        # https://github.com/ethereum/py-evm/issues/670.
+        await self.wait(self.do_handshake(peer))
 
     async def do_handshake(self, peer: BasePeer) -> None:
-        await peer.do_p2p_handshake()
+        try:
+            await peer.do_p2p_handshake()
+        except PeerCapabilitiesOnBlacklist:
+            if DISCOVERY_USE_BLACKLIST:
+                self.event_bus.broadcast(
+                    AddPeerToBlacklistRequest(peer.remote.pubkey.to_bytes())
+                )
+            return
+
         await peer.do_sub_proto_handshake()
         await self.peer_pool.start_peer(peer)
 
