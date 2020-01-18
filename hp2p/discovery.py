@@ -145,7 +145,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
     logger: TraceLogger = cast(TraceLogger, logging.getLogger("hp2p.discovery.DiscoveryProtocol"))
     transport: asyncio.DatagramTransport = None
     use_v5 = False
-    require_helios_discovery_string = False
+    require_helios_discovery_string = True
     use_blacklist = USE_BLACKLIST
     _max_neighbours_per_packet_cache = None
 
