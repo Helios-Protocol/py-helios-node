@@ -50,3 +50,4 @@ ENABLED_PLUGINS = [
     #LightPeerChainBridgePlugin(),
     #TxPlugin(),
 ]
+

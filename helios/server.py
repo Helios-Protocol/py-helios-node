@@ -37,7 +37,7 @@ from hp2p.constants import (
     DEFAULT_MAX_PEERS,
     HASH_LEN,
     REPLY_TIMEOUT,
-)
+    DISCOVERY_USE_BLACKLIST)
 from hp2p.discovery import (
     get_v5_topic,
     DiscoveryByTopicProtocol,
@@ -332,9 +332,10 @@ class BaseServer(BaseService):
         try:
             await peer.do_p2p_handshake()
         except PeerCapabilitiesOnBlacklist:
-            self.event_bus.broadcast(
-                AddPeerToBlacklistRequest(peer.remote.pubkey.to_bytes())
-            )
+            if DISCOVERY_USE_BLACKLIST:
+                self.event_bus.broadcast(
+                    AddPeerToBlacklistRequest(peer.remote.pubkey.to_bytes())
+                )
             return
 
         await peer.do_sub_proto_handshake()

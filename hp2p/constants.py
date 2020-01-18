@@ -53,6 +53,7 @@ DISCOVERY_V5_BOOTNODES = ()
 
 DISCOVERY_SERVICE_LOOP_SLEEP = 5
 DISCOVERY_SERVICE_BLACKLIST_FILTER_LOOP_SLEEP = 10
+DISCOVERY_USE_BLACKLIST = True
 
 # Maximum peers number, we'll try to keep open connections up to this number of peers
 DEFAULT_MAX_PEERS = 25

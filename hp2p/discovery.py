@@ -138,6 +138,7 @@ CMD_ID_MAP_V5 = dict(
         CMD_TOPIC_QUERY,
         CMD_TOPIC_NODES])
 
+from hp2p.constants import DISCOVERY_USE_BLACKLIST as USE_BLACKLIST
 
 class DiscoveryProtocol(asyncio.DatagramProtocol):
     """A Kademlia-like protocol to discover RLPx nodes."""
@@ -145,6 +146,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
     transport: asyncio.DatagramTransport = None
     use_v5 = False
     require_helios_discovery_string = False
+    use_blacklist = USE_BLACKLIST
     _max_neighbours_per_packet_cache = None
 
     def __init__(self,
@@ -185,13 +187,14 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         Bonding consists of pinging the node, waiting for a pong and maybe a ping as well.
         It is necessary to do this at least once before we send find_node requests to a node.
         """
-        response = await self.event_bus.request(
-            IsPeerOnBlacklistRequest(node.pubkey.to_bytes())
-        )
-        if response.is_peer_on_blacklist:
-            self.logger.debug("Not bonding with node {} because it is on the blacklist".format(node))
-            self.routing.remove_node(node)
-            return False
+        if self.use_blacklist:
+            response = await self.event_bus.request(
+                IsPeerOnBlacklistRequest(node.pubkey.to_bytes())
+            )
+            if response.is_peer_on_blacklist:
+                self.logger.debug("Not bonding with node {} because it is on the blacklist".format(node))
+                self.routing.remove_node(node)
+                return False
 
         self.logger.debug("Bonding with node {}".format(node))
         if node in self.routing:
@@ -654,7 +657,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         reply with a pong, whereas in the latter we'll also fire a callback from ping_callbacks.
         """
         version = rlp.sedes.big_endian_int.deserialize(payload[0])
-        if version != PROTO_VERSION and version != 400:
+        if self.use_blacklist and version != PROTO_VERSION and version != 400:
             self.logger.debug("Received ping with incompatable version {}. Adding node to blacklist.".format(version))
             self.event_bus.broadcast(
                 AddPeerToBlacklistRequest(remote.pubkey.to_bytes())
@@ -1037,6 +1040,7 @@ class DiscoveryByTopicProtocol(DiscoveryProtocol):
 class DiscoveryService(BaseService):
     _last_lookup: float = 0
     _lookup_interval: int = 30
+    use_blacklist = USE_BLACKLIST
 
     def __init__(self,
                  proto: DiscoveryProtocol,
@@ -1055,7 +1059,8 @@ class DiscoveryService(BaseService):
     async def _run(self) -> None:
         await self._start_udp_listener()
         self.run_task(self.proto.bootstrap())
-        self.run_daemon_task(self.filter_blacklisted_nodes_from_routing_table_loop())
+        if self.use_blacklist:
+            self.run_daemon_task(self.filter_blacklisted_nodes_from_routing_table_loop())
         while self.is_operational:
             await self.maybe_connect_to_more_peers()
             await self.sleep(self.connect_loop_sleep)
