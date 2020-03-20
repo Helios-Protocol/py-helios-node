@@ -72,30 +72,30 @@ class HeliosTestnetTransaction(BaseTransaction):
 
     @functools.lru_cache(maxsize=128)
     def check_signature_validity(self):
-        if self._cache:
-            if self._valid_transaction is not None:
-                if not self._valid_transaction:
-                    raise ValidationError()
-            else:
-                self._valid_transaction = False
-                self._sender = validate_transaction_signature(self, return_sender = True)
-                #if it gets this far without an exception, then the signature is valid
-                self._valid_transaction = True
-        else:
-            validate_transaction_signature(self)
+        # if self._cache:
+        #     if self._valid_transaction is not None:
+        #         if not self._valid_transaction:
+        #             raise ValidationError()
+        #     else:
+        #         self._valid_transaction = False
+        #         self._sender = validate_transaction_signature(self, return_sender = True)
+        #         #if it gets this far without an exception, then the signature is valid
+        #         self._valid_transaction = True
+        # else:
+        validate_transaction_signature(self)
 
     @functools.lru_cache(maxsize=128)
     def get_sender(self):
-        if self._cache:
-            if self._sender is not None:
-                return self._sender
-            else:
-                #here if the signature is invalid it will throw an error and not return anything.
-                self.check_signature_validity()
-                #if it makes it this far, then it has saved the sender
-                return self._sender
-        else:
-            return extract_transaction_sender(self)
+        # if self._cache:
+        #     if self._sender is not None:
+        #         return self._sender
+        #     else:
+        #         #here if the signature is invalid it will throw an error and not return anything.
+        #         self.check_signature_validity()
+        #         #if it makes it this far, then it has saved the sender
+        #         return self._sender
+        # else:
+        return extract_transaction_sender(self)
 
     def get_intrinsic_gas(self):
         return _get_helios_testnet_intrinsic_gas(self)
